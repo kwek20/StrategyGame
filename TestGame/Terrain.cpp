@@ -138,14 +138,15 @@ void Terrain::camera_2D_setup(){
 void Terrain::camera_3D_setup(){
 	glMatrixMode(GL_PROJECTION);
 	glLoadIdentity();
-	gluPerspective(35.0, (GLdouble)xSize / (GLdouble)ySize, 1.0, 1000.0);
+	gluPerspective(90.0, (GLdouble)xSize / (GLdouble)ySize, 1.0, 2000.0);
 
-	glRotatef(15.0f, 1.0f, 0.0f, 0.0f);
-	glTranslatef(0.0f, -150.0f, -550.0f);
+	glRotatef(25.0f, 1.0f, 0.0f, 0.0f);
+	glTranslatef(0.0f, -250.0f, -550.0f);
 }
 
-void Terrain::load_ht_map(ALLEGRO_BITMAP* heightMap, std::vector<GLfloat> &verts, GLfloat land_scale, GLfloat height_scale, GLfloat height_true){
+void Terrain::load_ht_map(ALLEGRO_BITMAP* heightMap, std::vector<GLfloat> &verts, GLfloat land_scale, GLfloat height_scale){
     ALLEGRO_COLOR ht_pixel;
+	GLfloat height_true = 0.0f;
     int bmp_x = 0;
     int bmp_z = 0;
     unsigned char r, g, b;
@@ -159,8 +160,10 @@ void Terrain::load_ht_map(ALLEGRO_BITMAP* heightMap, std::vector<GLfloat> &verts
  
     verts.reserve(ySize * xSize * 3);
  
+	//for every x, z coord
     for(bmp_z = 0; bmp_z < ySize; bmp_z++){
         for(bmp_x = 0; bmp_x < xSize; bmp_x++){
+			//add x
             verts.push_back(GLfloat((bmp_x * land_scale) - cent_wd));
  
             ht_pixel = al_get_pixel(heightMap, bmp_x, bmp_z); // get pixel color

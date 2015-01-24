@@ -15,12 +15,16 @@ public:
 
 	Terrain(int x, int y, int angle = 10);
 	virtual ~Terrain(void);
+
+	/*
+		Generate a height map
+	*/
 	ALLEGRO_BITMAP* generateHeightMap(void);
 
 	/**
-		
+		Load the height map into an x,y,z coordinate system
 	*/
-	void load_ht_map(ALLEGRO_BITMAP* heightMap, std::vector<GLfloat> &verts, GLfloat land_scale = 5.0f, GLfloat height_scale = 200.0f, GLfloat height_true = 0.0f);
+	void load_ht_map(ALLEGRO_BITMAP* heightMap, std::vector<GLfloat> &verts, GLfloat land_scale = 5.0f, GLfloat height_scale = 200.0f);
 
 	/**
 	   Generates the points for each triangle

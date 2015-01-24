@@ -186,7 +186,7 @@ int main(int argc, char **argv){
 	glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 
 	game = new Game(display);
-	bool redraw = true;
+	bool redraw = true, pause = false;
 	float theta = 0;
 
 	log("Initializing done!\n");
@@ -199,7 +199,9 @@ int main(int argc, char **argv){
 			switch(ev.keyboard.keycode){
 			  case ALLEGRO_KEY_ESCAPE:
 				  game->shutDown();
-				break;
+				  break;
+			  case ALLEGRO_KEY_SPACE:
+				  pause = !pause;
 			}
 			break;
 		  case ALLEGRO_EVENT_TIMER:
@@ -208,7 +210,7 @@ int main(int argc, char **argv){
 			break;
 		}
 
-		if(al_is_event_queue_empty(event_queue) && redraw){
+		if(al_is_event_queue_empty(event_queue) && redraw && !pause){
 			al_set_target_backbuffer(display);
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 			al_clear_to_color(al_map_rgba(0,0,0,0));
@@ -233,11 +235,13 @@ int shutdown(string reason = ""){
 	log("\n");
 
 	al_destroy_display(display);
+
+	/* SLOW SHUTDOWN, annoying for testing
 	al_flush_event_queue(event_queue);
 	al_destroy_event_queue(event_queue);
 
 	al_shutdown_font_addon();
-	al_shutdown_primitives_addon();
+	al_shutdown_primitives_addon();*/
 	return 0;
 }
 
