@@ -161,6 +161,7 @@ int main(int argc, char **argv){
 	}
 	log("Loaded libraries\n");
 
+	al_set_new_display_option(ALLEGRO_VSYNC, 1, ALLEGRO_SUGGEST);
 	al_set_new_display_flags(ALLEGRO_OPENGL);
 	display = al_create_display(800, 600);
 	if(!display) {
@@ -182,6 +183,7 @@ int main(int argc, char **argv){
 	al_register_event_source(event_queue, al_get_display_event_source(display));
 
 	al_start_timer(timer);
+	glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 
 	game = new Game(display);
 	bool redraw = true;
@@ -208,8 +210,10 @@ int main(int argc, char **argv){
 
 		if(al_is_event_queue_empty(event_queue) && redraw){
 			al_set_target_backbuffer(display);
+			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 			al_clear_to_color(al_map_rgba(0,0,0,0));
 			game->tick();
+			glFlush();
 			al_flip_display();
 			redraw = false;
 		}

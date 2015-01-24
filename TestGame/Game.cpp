@@ -7,13 +7,16 @@
 
 using namespace std;
 
+#define TERRAIN_X 256
+#define TERRAIN_Y 256
+
 Game::Game(ALLEGRO_DISPLAY* display){
 	log("Loading game\n");
 	shutdown = false;
 	num = 0;
 
 	this->display = display;
-	terrain = new Terrain(al_get_display_width(display), al_get_display_height(display));
+	terrain = new Terrain(TERRAIN_X, TERRAIN_Y);
 }
 
 Game::~Game(void){
