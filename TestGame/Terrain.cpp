@@ -15,8 +15,8 @@ Terrain::Terrain(int x, int y, int angle){
 	std::cout << "Generating heightmap.\n";
 	heightMap = generateHeightMap();
 
-	std::cout << "Loading verticles..\n";
-	load_ht_map(heightMap, land_verticles);
+	std::cout << "Loading height map verticles..\n";
+	load_ht_map(heightMap, land_verticles, color_points);
 
 	std::cout << "Making connection points...\n";
 	make_point_connections(connect_points);
@@ -31,7 +31,7 @@ void Terrain::draw(void){
 
 	//select model stack
 	glMatrixMode(GL_MODELVIEW);
-	glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 
 	//reset  matrix
 	glLoadIdentity();
@@ -41,13 +41,12 @@ void Terrain::draw(void){
 
 	//enable array for use during rendering
 	glEnableClientState(GL_VERTEX_ARRAY);
+	glEnableClientState(GL_COLOR_ARRAY);
 
 	//give vertex info, 3 points(triangle), using floats, array position
+	glColorPointer(3, GL_UNSIGNED_BYTE, 0, &color_points.at(0));
 	glVertexPointer(3, GL_FLOAT, 0, &land_verticles.at(0));
-
-	/*GLuint id = al_get_opengl_texture(heightMap);
-	glEnable(GL_TEXTURE_2D);
-	glBindTexture(GL_TEXTURE_2D, id);*/
+	
 
 	//draw elements, type triangle, array size, object type, array position,
 	glDrawElements(GL_TRIANGLES, connect_points.size(), GL_UNSIGNED_INT, &connect_points.at(0));
@@ -89,7 +88,7 @@ mountainTerrain.SetOctaveCount (1);
   terrainSelector.SetSourceModule (1, mountainTerrain);
   terrainSelector.SetControlModule (terrainType);
   terrainSelector.SetBounds (0.0, 1000.0);
-  terrainSelector.SetEdgeFalloff (0.4);
+  terrainSelector.SetEdgeFalloff (0.1);
 
   module::Turbulence finalTerrain;
   finalTerrain.SetSourceModule (0, terrainSelector);
@@ -101,18 +100,18 @@ mountainTerrain.SetOctaveCount (1);
   heightMapBuilder.SetSourceModule (finalTerrain);
   heightMapBuilder.SetDestNoiseMap (heightMap);
   heightMapBuilder.SetDestSize (xSize, ySize);
-  heightMapBuilder.SetBounds (6.0, 10.0, 1.0, 5.0);
+  heightMapBuilder.SetBounds (0.0, 4.0, 0.0, 4.0);
   heightMapBuilder.Build ();
 
   utils::RendererImage renderer;
   utils::Image image;
   renderer.SetSourceNoiseMap (heightMap);
   renderer.SetDestImage (image);
-  renderer.ClearGradient ();
+  /*renderer.ClearGradient ();
   renderer.AddGradientPoint (-1.00, utils::Color ( 32, 160,   0, 255)); // grass
   renderer.AddGradientPoint (-0.25, utils::Color (224, 224,   0, 255)); // dirt
   renderer.AddGradientPoint ( 0.25, utils::Color (128, 128, 128, 255)); // rock
-  renderer.AddGradientPoint ( 1.00, utils::Color (255, 255, 255, 255)); // snow
+  renderer.AddGradientPoint ( 1.00, utils::Color (255, 255, 255, 255)); // snow*/
   renderer.EnableLight ();
   renderer.SetLightContrast (3.0);
   renderer.SetLightBrightness (2.0);
@@ -165,7 +164,7 @@ void Terrain::camera_3D_setup(){
 	glEnable(GL_DEPTH_TEST);
 }
 
-void Terrain::load_ht_map(ALLEGRO_BITMAP* heightMap, std::vector<GLfloat> &verts, GLfloat land_scale, GLfloat height_scale){
+void Terrain::load_ht_map(ALLEGRO_BITMAP* heightMap, std::vector<GLfloat> &verts, std::vector<GLbyte> &colors, GLfloat land_scale, GLfloat height_scale){
     ALLEGRO_COLOR ht_pixel;
 	GLfloat height_true = 0.0f;
     int bmp_x = 0;
@@ -180,21 +179,28 @@ void Terrain::load_ht_map(ALLEGRO_BITMAP* heightMap, std::vector<GLfloat> &verts
     GLfloat cent_ht = GLfloat((ySize) / 2.0f) * land_scale;
  
     verts.reserve(ySize * xSize * 3);
- 
+	colors.reserve(ySize * xSize * 3);
+
 	//for every x, z coord
-    for(bmp_z = 0; bmp_z < ySize; bmp_z++){
-        for(bmp_x = 0; bmp_x < xSize; bmp_x++){
+	for(bmp_z = 0; bmp_z < ySize; bmp_z++){
+		for(bmp_x = 0; bmp_x < xSize; bmp_x++){
+			ht_pixel = al_get_pixel(heightMap, bmp_x, bmp_z); // get pixel color
+			al_unmap_rgb(ht_pixel, &r, &g, &b);
+			colors.push_back(r);
+			colors.push_back(g);
+			colors.push_back(b);
+
 			//add x
-            verts.push_back(GLfloat((bmp_x * land_scale) - cent_wd));
- 
-            ht_pixel = al_get_pixel(heightMap, bmp_x, bmp_z); // get pixel color
-            al_unmap_rgb(ht_pixel, &r, &g, &b);
-            height_true = GLfloat(float(r) / 255.0f) * height_scale;
- 
-            verts.push_back(height_true);
-            verts.push_back(GLfloat((bmp_z * land_scale) - cent_ht));
-        }
-    }
+			verts.push_back(GLfloat((bmp_x * land_scale) - cent_wd));
+
+			//add y, color to greyscale conversion
+			height_true = GLfloat(float(0.299*r + 0.587*g + 0.114*b) / 255.0f) * height_scale;
+			verts.push_back(height_true);
+
+			//add z
+			verts.push_back(GLfloat((bmp_z * land_scale) - cent_ht));
+		}
+	}
     al_unlock_bitmap(heightMap);
 }
  

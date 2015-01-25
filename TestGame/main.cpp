@@ -6,6 +6,7 @@
 #include <allegro5/allegro_primitives.h>
 #include <allegro5/allegro_font.h>
 
+#include <time.h>
 #include <noise/noise.h>
 
 using namespace std;
@@ -84,6 +85,8 @@ int main(int argc, char **argv){
 				  break;
 			  case ALLEGRO_KEY_SPACE:
 				  pause = !pause;
+			  case ALLEGRO_KEY_F12:
+				  save_screenshot("screenshot");
 			}
 			break;
 		  case ALLEGRO_EVENT_TIMER:
@@ -123,6 +126,22 @@ int shutdown(string reason = ""){
 	al_shutdown_font_addon();
 	al_shutdown_primitives_addon();*/
 	return 0;
+}
+
+void save_screenshot(std::string name){
+	char* t;
+	struct tm temp;
+	time_t t_time = time(NULL);
+	localtime_s(&temp, &t_time);
+
+	t = (char*)malloc(18);
+	strftime(t, 17, "%c", &temp);
+
+	name.append("-");
+	name.append(t);
+	name.append(".bmp");
+
+	al_save_bitmap(name.c_str(), al_get_target_bitmap());
 }
 
 void log(std::string message){

@@ -14,5 +14,6 @@ void log(string message);
 void error(string message);
 
 int shutdown(string reason);
+void save_screenshot(std::string name="screenshot");
 
 #endif

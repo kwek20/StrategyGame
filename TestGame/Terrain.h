@@ -24,7 +24,7 @@ public:
 	/**
 		Load the height map into an x,y,z coordinate system
 	*/
-	void load_ht_map(ALLEGRO_BITMAP* heightMap, std::vector<GLfloat> &verts, GLfloat land_scale = 6.0f, GLfloat height_scale = 200.0f);
+	void load_ht_map(ALLEGRO_BITMAP* heightMap, std::vector<GLfloat> &verts, std::vector<GLbyte> &colors, GLfloat land_scale = 6.0f, GLfloat height_scale = 200.0f);
 
 	/**
 	   Generates the points for each triangle
@@ -57,6 +57,7 @@ private:
 	ALLEGRO_BITMAP* heightMap;
 	std::vector<GLfloat> land_verticles;
 	std::vector<GLuint> connect_points;
+	std::vector<GLbyte> color_points;
 
 	void camera_2D_setup();
 	void camera_3D_setup();
