@@ -3,11 +3,13 @@
 #include "main.h"
 #include "Game.h"
 
-#include <allegro5/allegro_primitives.h>
-#include <allegro5/allegro_font.h>
+#include <allegro5\allegro_primitives.h>
+#include <allegro5\allegro_font.h>
+#include <allegro5\allegro_image.h>
+#include <allegro5\mouse.h>
 
 #include <time.h>
-#include <noise/noise.h>
+#include <noise\noise.h>
 
 using namespace std;
 
@@ -18,7 +20,8 @@ const static struct {
 	{al_init_primitives_addon, "primitives"},
 	{al_install_keyboard, "keyboard"},
 	{al_install_mouse, "mouse"},
-	{al_init_font_addon, "font"}
+	{al_init_font_addon, "font"},
+	{al_init_image_addon, "images"}
 };
 
 ALLEGRO_CONFIG *cfg;
@@ -59,7 +62,7 @@ int main(int argc, char **argv){
 		return -1;
 	}
 
-	auto timer = al_create_timer(1.0 / 60.0);
+	ALLEGRO_TIMER *timer = al_create_timer(1.0 / FPS);
 
 	al_register_event_source(event_queue, al_get_timer_event_source(timer));
 	al_register_event_source(event_queue, al_get_keyboard_event_source());
@@ -78,22 +81,25 @@ int main(int argc, char **argv){
 		ALLEGRO_EVENT ev;
 		al_wait_for_event(event_queue, &ev);
 		switch(ev.type){
-		  case ALLEGRO_EVENT_KEY_DOWN:
+		case ALLEGRO_EVENT_KEY_DOWN:
 			switch(ev.keyboard.keycode){
-			  case ALLEGRO_KEY_ESCAPE:
-				  game->shutDown();
-				  break;
-			  case ALLEGRO_KEY_SPACE:
-				  pause = !pause;
-			  case ALLEGRO_KEY_F12:
-				  save_screenshot("screenshot");
+			case ALLEGRO_KEY_ESCAPE:
+				game->shutDown();
+				break;
+			case ALLEGRO_KEY_SPACE:
+				pause = !pause;
+			case ALLEGRO_KEY_F12:
+				save_screenshot("screenshot");
 			}
 			break;
-		  case ALLEGRO_EVENT_TIMER:
+		case ALLEGRO_EVENT_TIMER:
 			theta += 0.01;
 			redraw = true;
 			break;
 		}
+
+		al_grab_mouse(display);
+		al_show_mouse_cursor(display);
 
 		if(al_is_event_queue_empty(event_queue) && redraw && !pause){
 			al_set_target_backbuffer(display);
@@ -106,6 +112,7 @@ int main(int argc, char **argv){
 		}
 	}
 
+	al_ungrab_mouse();
 	i = shutdown(game->getShutDownReason());
 	log("Thank you for playing!\n");
 

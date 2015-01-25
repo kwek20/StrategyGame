@@ -14,6 +14,11 @@ Terrain::Terrain(int x, int y, int angle){
 
 	std::cout << "Generating heightmap.\n";
 	heightMap = generateHeightMap();
+	
+	if (!heightMap){
+		std::cout << "error loading heightmap!\n";
+		return;
+	}
 
 	std::cout << "Loading height map verticles..\n";
 	load_ht_map(heightMap, land_verticles, color_points);
@@ -27,6 +32,7 @@ Terrain::~Terrain(void){
 }
 
 void Terrain::draw(void){
+	if (!heightMap) return;
 	camera_3D_setup();
 
 	//select model stack

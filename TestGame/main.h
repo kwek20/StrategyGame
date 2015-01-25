@@ -8,6 +8,8 @@
 
 #include <string>
 
+#define FPS 60
+
 using namespace std;
 
 void log(string message);
