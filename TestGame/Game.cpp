@@ -13,7 +13,7 @@ Game::Game(ALLEGRO_DISPLAY* display){
 	num = 0;
 
 	this->display = display;
-	terrain = new Terrain(TERRAIN_X, TERRAIN_Y);
+	map = new Map();
 }
 
 Game::~Game(void){
@@ -22,6 +22,6 @@ Game::~Game(void){
 
 void Game::tick(){
 	num++;
-	terrain->draw();
+	map->draw();
 	al_draw_text(al_create_builtin_font(), al_map_rgb(255,0,0), 10, 10, 0, ("tick: " + to_string(num)).c_str());
 }

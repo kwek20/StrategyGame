@@ -6,11 +6,11 @@
 #include <string>
 #include <allegro5\allegro.h>
 
-#include "Terrain.h"
-#include "noiseutils.h"
+#include "Map.h"
+#include "Camera.h"
+#include "HUD.h"
 
-#define TERRAIN_X 256
-#define TERRAIN_Y 256
+#include "noiseutils.h"
 
 class Game
 {
@@ -34,7 +34,9 @@ public:
 
 private:
 	ALLEGRO_DISPLAY *display;
-	Terrain* terrain;
+	Map *map;
+	Camera *camera;
+	HUD *hud;
 
 	bool shutdown;
 	int num;
