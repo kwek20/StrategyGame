@@ -7,9 +7,6 @@
 
 using namespace std;
 
-#define TERRAIN_X 256
-#define TERRAIN_Y 256
-
 Game::Game(ALLEGRO_DISPLAY* display){
 	log("Loading game\n");
 	shutdown = false;
@@ -26,5 +23,5 @@ Game::~Game(void){
 void Game::tick(){
 	num++;
 	terrain->draw();
-	al_draw_text(al_create_builtin_font(), al_map_rgb(255,0,0), 0, 0, 0, ("tick: " + to_string(num)).c_str());
+	al_draw_text(al_create_builtin_font(), al_map_rgb(255,0,0), 10, 10, 0, ("tick: " + to_string(num)).c_str());
 }

@@ -1,6 +1,9 @@
 #include "Terrain.h"
 #include "noiseutils.h"
 #include <gl\glu.h>
+
+#include <allegro5\opengl\gl_ext.h>
+
 #include <vector>
 #include <iostream>
 
@@ -10,19 +13,17 @@ Terrain::Terrain(int x, int y, int angle){
 	this->angle = angle < -360 ? 360 : (angle > 360 ? 360 : angle);
 
 	std::cout << "Generating heightmap.\n";
-	ALLEGRO_BITMAP* heightMap = generateHeightMap();
+	heightMap = generateHeightMap();
 
 	std::cout << "Loading verticles..\n";
 	load_ht_map(heightMap, land_verticles);
 
 	std::cout << "Making connection points...\n";
 	make_point_connections(connect_points);
-
-	al_destroy_bitmap(heightMap);
 }
 
 Terrain::~Terrain(void){
-
+	al_destroy_bitmap(heightMap);
 }
 
 void Terrain::draw(void){
@@ -30,6 +31,7 @@ void Terrain::draw(void){
 
 	//select model stack
 	glMatrixMode(GL_MODELVIEW);
+	glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 
 	//reset  matrix
 	glLoadIdentity();
@@ -43,65 +45,82 @@ void Terrain::draw(void){
 	//give vertex info, 3 points(triangle), using floats, array position
 	glVertexPointer(3, GL_FLOAT, 0, &land_verticles.at(0));
 
+	/*GLuint id = al_get_opengl_texture(heightMap);
+	glEnable(GL_TEXTURE_2D);
+	glBindTexture(GL_TEXTURE_2D, id);*/
+
 	//draw elements, type triangle, array size, object type, array position,
 	glDrawElements(GL_TRIANGLES, connect_points.size(), GL_UNSIGNED_INT, &connect_points.at(0));
 
 	angle += 1;
 	if (angle >= 360) angle = -360;
+
+	camera_2D_setup();
+	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+	al_draw_bitmap(heightMap, 0, 0, 0);
 }
 
-/*
-void Terrain::save(std::string name){
+void Terrain::save(noise::utils::Image image, std::string name){
 	utils::WriterBMP writer;
 	writer.SetSourceImage (image);
 	writer.SetDestFilename (name);
 	writer.WriteDestFile ();
 }
-*/
 
 ALLEGRO_BITMAP* Terrain::generateHeightMap(void){
-	module::RidgedMulti mountainTerrain;
-	mountainTerrain.SetFrequency(0.5);
+module::RidgedMulti mountainTerrain;
+mountainTerrain.SetOctaveCount (1);
 
-	 module::Billow baseFlatTerrain;
-	 baseFlatTerrain.SetFrequency (6.0);
+  module::Billow baseFlatTerrain;
+  baseFlatTerrain.SetFrequency (2.0);
 
-	 module::ScaleBias flatTerrain;
-	 flatTerrain.SetSourceModule (0, baseFlatTerrain);
-	 flatTerrain.SetScale (0.05);
-	 flatTerrain.SetBias (0.25);
+  module::ScaleBias flatTerrain;
+  flatTerrain.SetSourceModule (0, baseFlatTerrain);
+  flatTerrain.SetScale (0.125);
+  flatTerrain.SetBias (-0.75);
 
-	 module::Perlin terrainType;
-	 terrainType.SetFrequency (0.5);
-	 terrainType.SetPersistence (0.25);
+  module::Perlin terrainType;
+  terrainType.SetFrequency (0.5);
+  terrainType.SetPersistence (0.25);
+  terrainType.SetOctaveCount (1);
 
-	 module::Select finalTerrain;
-	 finalTerrain.SetSourceModule (0, flatTerrain);
-	 finalTerrain.SetSourceModule (0.5, mountainTerrain);
-	 finalTerrain.SetSourceModule (1, mountainTerrain);
-	 finalTerrain.SetControlModule (terrainType);
-	 finalTerrain.SetBounds (0.0, 1000);
-	 finalTerrain.SetEdgeFalloff (2);
+  module::Select terrainSelector;
+  terrainSelector.SetSourceModule (0, flatTerrain);
+  terrainSelector.SetSourceModule (1, mountainTerrain);
+  terrainSelector.SetControlModule (terrainType);
+  terrainSelector.SetBounds (0.0, 1000.0);
+  terrainSelector.SetEdgeFalloff (0.4);
 
-	utils::NoiseMap heightMap;
-	  utils::NoiseMapBuilderPlane heightMapBuilder;
-	  heightMapBuilder.SetSourceModule (finalTerrain);
-	  heightMapBuilder.SetDestNoiseMap (heightMap);
-	  heightMapBuilder.SetDestSize (xSize, ySize);
-	  heightMapBuilder.SetBounds (6.0, 10.0, 1.0, 5.0);
-	  heightMapBuilder.Build ();
+  module::Turbulence finalTerrain;
+  finalTerrain.SetSourceModule (0, terrainSelector);
+  finalTerrain.SetFrequency (4.0);
+  finalTerrain.SetPower (0.125);
 
-	  utils::RendererImage renderer;
-	  utils::Image image;
-	  renderer.SetSourceNoiseMap (heightMap);
-	  renderer.SetDestImage (image);
-	  
-	  renderer.EnableLight ();
-	  renderer.SetLightContrast (3.0);
-	  renderer.SetLightBrightness (2.0);
-	  renderer.Render ();
+  utils::NoiseMap heightMap;
+  utils::NoiseMapBuilderPlane heightMapBuilder;
+  heightMapBuilder.SetSourceModule (finalTerrain);
+  heightMapBuilder.SetDestNoiseMap (heightMap);
+  heightMapBuilder.SetDestSize (xSize, ySize);
+  heightMapBuilder.SetBounds (6.0, 10.0, 1.0, 5.0);
+  heightMapBuilder.Build ();
 
-	  return convertBMP(image);
+  utils::RendererImage renderer;
+  utils::Image image;
+  renderer.SetSourceNoiseMap (heightMap);
+  renderer.SetDestImage (image);
+  renderer.ClearGradient ();
+  renderer.AddGradientPoint (-1.00, utils::Color ( 32, 160,   0, 255)); // grass
+  renderer.AddGradientPoint (-0.25, utils::Color (224, 224,   0, 255)); // dirt
+  renderer.AddGradientPoint ( 0.25, utils::Color (128, 128, 128, 255)); // rock
+  renderer.AddGradientPoint ( 1.00, utils::Color (255, 255, 255, 255)); // snow
+  renderer.EnableLight ();
+  renderer.SetLightContrast (3.0);
+  renderer.SetLightBrightness (2.0);
+  renderer.Render ();
+
+  save(image, "save.bmp");
+
+	return convertBMP(image);
 }
 
 ALLEGRO_BITMAP* Terrain::convertBMP(utils::Image image){
@@ -114,7 +133,7 @@ ALLEGRO_BITMAP* Terrain::convertBMP(utils::Image image){
 	int x,y;
 	for (x=0; x<image.GetWidth(); x++){
 		for (y=0; y<image.GetHeight(); y++){
-			al_put_pixel(x, image.GetHeight()-y, convertColor(image.GetValue(x, y)));
+			al_put_pixel(x, /*image.GetHeight()-*/y, convertColor(image.GetValue(x, y)));
 		}
 	}
 
@@ -127,21 +146,23 @@ ALLEGRO_COLOR Terrain::convertColor(utils::Color color){
 }
 
 void Terrain::camera_2D_setup(){
-	glMatrixMode(GL_PROJECTION);
-	glLoadIdentity();
-	glOrtho(0,0, (GLdouble)xSize / (GLdouble)ySize, 0.0, -1.0, 1.0);
-
+	/*glMatrixMode(GL_PROJECTION);
+	glLoadIdentity();*/
+	glOrtho(0, xSize, ySize, 0.0, 0.0, 1.0);
+	
 	glMatrixMode(GL_MODELVIEW);
 	glLoadIdentity();
+	glDisable(GL_DEPTH_TEST);
 }
 
 void Terrain::camera_3D_setup(){
 	glMatrixMode(GL_PROJECTION);
 	glLoadIdentity();
-	gluPerspective(90.0, (GLdouble)xSize / (GLdouble)ySize, 1.0, 2000.0);
+	gluPerspective(35, (GLdouble)xSize / (GLdouble)ySize, 1.0, 2000.0);
 
 	glRotatef(25.0f, 1.0f, 0.0f, 0.0f);
-	glTranslatef(0.0f, -250.0f, -550.0f);
+	glTranslatef(0.0f, -450.0f, -550.0f);
+	glEnable(GL_DEPTH_TEST);
 }
 
 void Terrain::load_ht_map(ALLEGRO_BITMAP* heightMap, std::vector<GLfloat> &verts, GLfloat land_scale, GLfloat height_scale){

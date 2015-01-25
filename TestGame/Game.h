@@ -9,8 +9,8 @@
 #include "Terrain.h"
 #include "noiseutils.h"
 
-#define WIDTH 512
-#define HEIGHT 512
+#define TERRAIN_X 256
+#define TERRAIN_Y 256
 
 class Game
 {
