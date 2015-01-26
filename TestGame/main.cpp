@@ -1,36 +1,11 @@
-#include <stdio.h>
-
 #include "main.h"
 #include "Game.h"
 
-#include <allegro5\allegro_primitives.h>
-#include <allegro5\allegro_font.h>
-#include <allegro5\allegro_image.h>
-#include <allegro5\mouse.h>
-
 #include <time.h>
-#include <noise\noise.h>
-
-using namespace std;
-
-const static struct {
-	bool (*func)();
-	const string name;
-} load_functions[] = {
-	{al_init_primitives_addon, "primitives"},
-	{al_install_keyboard, "keyboard"},
-	{al_install_mouse, "mouse"},
-	{al_init_font_addon, "font"},
-	{al_init_image_addon, "images"}
-};
-
-ALLEGRO_CONFIG *cfg;
-ALLEGRO_DISPLAY *display = NULL;
-ALLEGRO_EVENT_QUEUE *event_queue = NULL;
-ALLEGRO_TIMEOUT timeout;
 
 int main(int argc, char **argv){
 	Game *game;
+	vector<IResource*> resources;
 	int i;
 
 	log("Initializing...\n");
@@ -48,15 +23,21 @@ int main(int argc, char **argv){
 	}
 	log("Loaded libraries\n");
 
+	resources.reserve(3);
+	resources.push_back(new Image("images"));
+	resources.push_back(new Sound("sounds"));
+	resources.push_back(new Font("fonts"));
+	
 	al_set_new_display_option(ALLEGRO_VSYNC, 1, ALLEGRO_SUGGEST);
 	al_set_new_display_flags(ALLEGRO_OPENGL);
-	al_set_window_title(display, NAME);
 	display = al_create_display(800, 600);
 	if(!display) {
 		error("failed to create display!\n");
 		return -1;
 	}
 
+	al_set_window_title(display, NAME);
+	//al_set_display_icon(display, NULL);
 	event_queue = al_create_event_queue();
 	if(!event_queue) {
 		error("failed to create event queue!\n");
@@ -89,10 +70,11 @@ int main(int argc, char **argv){
 				break;
 			case ALLEGRO_KEY_SPACE:
 				pause = !pause;
+				break;
 			case ALLEGRO_KEY_F12:
 				ale_screenshot(NULL, "screenshots", NULL);
+				break;
 			}
-			break;
 		case ALLEGRO_EVENT_TIMER:
 			theta += 0.01;
 			redraw = true;

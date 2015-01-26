@@ -83,6 +83,7 @@
     <ClCompile Include="noiseutils.cpp" />
     <ClCompile Include="Object.cpp" />
     <ClCompile Include="Resource.cpp" />
+    <ClCompile Include="Resources.cpp" />
     <ClCompile Include="Terrain.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -96,6 +97,7 @@
     <ClInclude Include="noiseutils.h" />
     <ClInclude Include="Object.h" />
     <ClInclude Include="Resource.h" />
+    <ClInclude Include="Resources.h" />
     <ClInclude Include="Terrain.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
