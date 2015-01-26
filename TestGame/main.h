@@ -9,6 +9,7 @@
 #include <string>
 
 #define FPS 60
+#define NAME "StrategyGame"
 
 using namespace std;
 
@@ -16,6 +17,6 @@ void log(string message);
 void error(string message);
 
 int shutdown(string reason);
-void save_screenshot(std::string name="screenshot");
+inline int ale_screenshot(const char *destination_path, const char *folder, const char *gamename);
 
 #endif

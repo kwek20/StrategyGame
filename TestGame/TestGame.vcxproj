@@ -45,7 +45,7 @@
       <Optimization>Disabled</Optimization>
       <SDLCheck>true</SDLCheck>
       <AdditionalIncludeDirectories>c:\allegro\include;c:\allegro\Libnoise\include</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>ALLEGRO_STATICLINK;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>ALLEGRO_STATICLINK;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -61,7 +61,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
       <AdditionalIncludeDirectories>c:\allegro\include;c:\allegro\Libnoise\include</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>ALLEGRO_STATICLINK;</PreprocessorDefinitions>
+      <PreprocessorDefinitions>ALLEGRO_STATICLINK;_CRT_SECURE_NO_WARNINGS</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
     </ClCompile>
     <Link>

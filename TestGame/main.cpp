@@ -50,6 +50,7 @@ int main(int argc, char **argv){
 
 	al_set_new_display_option(ALLEGRO_VSYNC, 1, ALLEGRO_SUGGEST);
 	al_set_new_display_flags(ALLEGRO_OPENGL);
+	al_set_window_title(display, NAME);
 	display = al_create_display(800, 600);
 	if(!display) {
 		error("failed to create display!\n");
@@ -89,7 +90,7 @@ int main(int argc, char **argv){
 			case ALLEGRO_KEY_SPACE:
 				pause = !pause;
 			case ALLEGRO_KEY_F12:
-				save_screenshot("screenshot");
+				ale_screenshot(NULL, "screenshots", NULL);
 			}
 			break;
 		case ALLEGRO_EVENT_TIMER:
@@ -124,31 +125,118 @@ int shutdown(string reason = ""){
 	if (strcmp(reason.c_str(), "") != 0) log(" because of " + reason);
 	log("\n");
 
-	/* SLOW SHUTDOWN, annoying for testing
 	al_destroy_display(display);
 
 	al_flush_event_queue(event_queue);
 	al_destroy_event_queue(event_queue);
 
 	al_shutdown_font_addon();
-	al_shutdown_primitives_addon();*/
+	al_shutdown_primitives_addon();
 	return 0;
 }
 
-void save_screenshot(std::string name){
-	char* t;
-	struct tm temp;
-	time_t t_time = time(NULL);
-	localtime_s(&temp, &t_time);
 
-	t = (char*)malloc(18);
-	strftime(t, 17, "%c", &temp);
+// Save a copy of the current target_bitmap (usually what's on the screen).
+// The screenshot is placed in `destination_path`.
+// The filename will follow the format "`gamename`-YYYYMMDD[a-z].png"
+// Where [a-z] starts at 'a' and increases (towards 'z') to prevent duplicates
+// on the same day.
+// This filename format allows for easy time-based sorting in a file manager,
+// even if the "Modified Date" or other file information is lost.
+//
+// Arguments:
+// `destination_path` - Where to put the screenshot. If NULL, uses
+//      ALLEGRO_USER_DOCUMENTS_PATH.
+//
+// `folderName` - What folder to put the screenshot. If NULL, uses
+//      the parent folder
+//
+// `gamename` - The name of your game (only use path-valid characters).
+//      If NULL, uses al_get_app_name().
+//
+//
+// Returns:
+// 0 on success, anything else on failure.
+inline int ale_screenshot(const char *destination_path, const char* folderName, const char *gamename){
+	ALLEGRO_PATH *path;
+	char *filename, *filename_wp;
+	struct tm *tmp = (tm*)malloc(sizeof(tm)+1);
+	time_t t;
+	unsigned int i;
+	const char *path_cstr;
+ 
+	if(destination_path == NULL || !destination_path)
+		path = al_get_standard_path(ALLEGRO_USER_DOCUMENTS_PATH);
+	else
+		path = al_create_path_for_directory(destination_path);
+ 
+	if(!path)
+		return -1;
+ 
+	if(!gamename) {
+		if( !(gamename = al_get_app_name()) ) {
+			al_destroy_path(path);
+			return -2;
+		}
+	}
+ 
+	t = time(0);
+	tmp =localtime(&t);
+	if(!tmp) {
+		al_destroy_path(path);
+		return -3;
+	}
+ 
+	if (folderName != NULL && folderName)al_append_path_component(path, folderName);
+	al_make_directory(al_path_cstr(path, ALLEGRO_NATIVE_PATH_SEP));
 
-	name.append("-");
-	name.append(t);
-	name.append(".bmp");
+	// Length of gamename + length of "-YYYYMMDD" + length of maximum [a-z] + NULL terminator
+	if ( !(filename_wp = filename = (char *)malloc(strlen(gamename) + 9 + 2 + 1)) ) {
+		al_destroy_path(path);
+		return -4;
+	}
+ 
+	strcpy(filename, gamename);
+	// Skip to the '.' in the filename, or the end.
+	for(; *filename_wp != '.' && *filename_wp != 0; ++filename_wp);
+ 
+	*filename_wp++ = '-';
+	if(strftime(filename_wp, 9, "%Y%m%d", tmp) != 8) {
+		free(filename);
+		al_destroy_path(path);
+		return -5;
+	}
+	filename_wp += 8;
+ 
+	for(i = 0; i < 26*26; ++i) {
+		if(i > 25) {
+			filename_wp[0] = (i / 26) + 'a';
+			filename_wp[1] = (i % 26) + 'a';
+			filename_wp[2] = 0;
+		}
+		else {
+			filename_wp[0] = (i % 26) + 'a';
+			filename_wp[1] = 0;
+		}
+ 
+		al_set_path_filename(path, filename);
+		al_set_path_extension(path, ".png");
+		path_cstr = al_path_cstr(path, ALLEGRO_NATIVE_PATH_SEP);
 
-	al_save_bitmap(name.c_str(), al_get_target_bitmap());
+		if (al_filename_exists(path_cstr))
+			continue;
+		
+		log(std::string("Saved screenshot at ") + path_cstr + "\n");
+		al_save_bitmap(path_cstr, al_get_target_bitmap());
+		free(filename);
+		al_destroy_path(path);
+		return 0;
+	}
+ 
+	free(filename);
+	al_destroy_path(path);
+ 
+	return -6;
 }
 
 void log(std::string message){

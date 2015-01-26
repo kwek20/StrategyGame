@@ -2,12 +2,12 @@
 
 
 Map::Map(void){
-	terrain = new Terrain(TERRAIN_X, TERRAIN_Y);
+	Generator *g = new FlagGenerator();
+	terrain = new Terrain(TERRAIN_X, TERRAIN_Y, g);
 }
+ 
+Map::~Map(void){
 
-
-Map::~Map(void)
-{
 }
 
 void Map::draw(void){

@@ -14,14 +14,15 @@ Game::Game(ALLEGRO_DISPLAY* display){
 
 	this->display = display;
 	map = new Map();
+	hud = new IngameHUD();
 }
 
 Game::~Game(void){
+	map = NULL;
 
 }
 
 void Game::tick(){
 	num++;
 	map->draw();
-	al_draw_text(al_create_builtin_font(), al_map_rgb(255,0,0), 10, 10, 0, ("tick: " + to_string(num)).c_str());
 }

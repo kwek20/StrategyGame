@@ -7,13 +7,13 @@
 #include <vector>
 #include <iostream>
 
-Terrain::Terrain(int x, int y, int angle){
+Terrain::Terrain(int x, int y, Generator *gen, int angle){
 	xSize = x < 1 ? 1 : x;
 	ySize = y < 1 ? 1 : y;
 	this->angle = angle < -360 ? 360 : (angle > 360 ? 360 : angle);
 
 	std::cout << "Generating heightmap.\n";
-	heightMap = generateHeightMap();
+	heightMap = gen->generate(x, y);
 	
 	if (!heightMap){
 		std::cout << "error loading heightmap!\n";
@@ -70,84 +70,6 @@ void Terrain::save(noise::utils::Image image, std::string name){
 	writer.SetSourceImage (image);
 	writer.SetDestFilename (name);
 	writer.WriteDestFile ();
-}
-
-ALLEGRO_BITMAP* Terrain::generateHeightMap(void){
-module::RidgedMulti mountainTerrain;
-mountainTerrain.SetOctaveCount (1);
-
-  module::Billow baseFlatTerrain;
-  baseFlatTerrain.SetFrequency (2.0);
-
-  module::ScaleBias flatTerrain;
-  flatTerrain.SetSourceModule (0, baseFlatTerrain);
-  flatTerrain.SetScale (0.125);
-  flatTerrain.SetBias (-0.75);
-
-  module::Perlin terrainType;
-  terrainType.SetFrequency (0.5);
-  terrainType.SetPersistence (0.25);
-  terrainType.SetOctaveCount (1);
-
-  module::Select terrainSelector;
-  terrainSelector.SetSourceModule (0, flatTerrain);
-  terrainSelector.SetSourceModule (1, mountainTerrain);
-  terrainSelector.SetControlModule (terrainType);
-  terrainSelector.SetBounds (0.0, 1000.0);
-  terrainSelector.SetEdgeFalloff (0.1);
-
-  module::Turbulence finalTerrain;
-  finalTerrain.SetSourceModule (0, terrainSelector);
-  finalTerrain.SetFrequency (4.0);
-  finalTerrain.SetPower (0.125);
-
-  utils::NoiseMap heightMap;
-  utils::NoiseMapBuilderPlane heightMapBuilder;
-  heightMapBuilder.SetSourceModule (finalTerrain);
-  heightMapBuilder.SetDestNoiseMap (heightMap);
-  heightMapBuilder.SetDestSize (xSize, ySize);
-  heightMapBuilder.SetBounds (0.0, 4.0, 0.0, 4.0);
-  heightMapBuilder.Build ();
-
-  utils::RendererImage renderer;
-  utils::Image image;
-  renderer.SetSourceNoiseMap (heightMap);
-  renderer.SetDestImage (image);
-  /*renderer.ClearGradient ();
-  renderer.AddGradientPoint (-1.00, utils::Color ( 32, 160,   0, 255)); // grass
-  renderer.AddGradientPoint (-0.25, utils::Color (224, 224,   0, 255)); // dirt
-  renderer.AddGradientPoint ( 0.25, utils::Color (128, 128, 128, 255)); // rock
-  renderer.AddGradientPoint ( 1.00, utils::Color (255, 255, 255, 255)); // snow*/
-  renderer.EnableLight ();
-  renderer.SetLightContrast (3.0);
-  renderer.SetLightBrightness (2.0);
-  renderer.Render ();
-
-  save(image, "save.bmp");
-
-	return convertBMP(image);
-}
-
-ALLEGRO_BITMAP* Terrain::convertBMP(utils::Image image){
-	ALLEGRO_BITMAP* bitmap;
-	
-	bitmap = al_create_bitmap(image.GetWidth(), image.GetHeight());
-	al_lock_bitmap(bitmap, al_get_bitmap_format(bitmap), ALLEGRO_LOCK_WRITEONLY);
-	al_set_target_bitmap(bitmap);
-
-	int x,y;
-	for (x=0; x<image.GetWidth(); x++){
-		for (y=0; y<image.GetHeight(); y++){
-			al_put_pixel(x, /*image.GetHeight()-*/y, convertColor(image.GetValue(x, y)));
-		}
-	}
-
-	al_unlock_bitmap(bitmap);
-	return bitmap;
-}
-
-ALLEGRO_COLOR Terrain::convertColor(utils::Color color){
-	return al_map_rgba(float(color.red), float(color.green), float(color.blue), float(color.alpha));
 }
 
 void Terrain::camera_2D_setup(){

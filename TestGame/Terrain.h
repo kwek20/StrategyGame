@@ -5,6 +5,7 @@
 #include <allegro5\allegro.h>
 #include <allegro5\allegro_opengl.h>
 
+#include "Generator.h"
 #include "noiseutils.h"
 #include <vector>
 
@@ -13,13 +14,8 @@ class Terrain {
 
 public:
 
-	Terrain(int x, int y, int angle = 10);
+	Terrain(int x, int y, Generator *g, int angle = 10);
 	virtual ~Terrain(void);
-
-	/*
-		Generate a height map
-	*/
-	ALLEGRO_BITMAP* generateHeightMap(void);
 
 	/**
 		Load the height map into an x,y,z coordinate system
@@ -36,16 +32,6 @@ public:
 	void make_point_connections(std::vector<GLuint> &points);
 
 	void draw(void);
-
-	/*
-		Converts Util bitmaps to Allegro bitmaps
-	*/
-	ALLEGRO_BITMAP* convertBMP(utils::Image image);
-
-	/*
-		Converts util COlors to Allegro colors
-	*/
-	ALLEGRO_COLOR convertColor(utils::Color color);
 
 	void save(noise::utils::Image image, std::string name);
 
