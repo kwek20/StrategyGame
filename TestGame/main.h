@@ -41,14 +41,11 @@ ALLEGRO_DISPLAY *display = NULL;
 ALLEGRO_EVENT_QUEUE *event_queue = NULL;
 ALLEGRO_TIMEOUT timeout;
 
-ResourceManager *resources;
-
 void log(string message);
 void error(string message);
 
 int shutdown(string reason);
 
-void addResource(IResource *resource);
 inline int ale_screenshot(const char *destination_path, const char *folder, const char *gamename);
 
 #endif

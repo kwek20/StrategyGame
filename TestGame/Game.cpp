@@ -13,6 +13,7 @@ Game::Game(ALLEGRO_DISPLAY* display){
 	num = 0;
 
 	this->display = display;
+	manager = new ResourceManager();
 	map = new Map();
 	hud = new IngameHUD();
 }

@@ -9,6 +9,7 @@
 #include "Map.h"
 #include "Camera.h"
 #include "HUD.h"
+#include "ResourceManager.h"
 
 #include "noiseutils.h"
 
@@ -37,6 +38,7 @@ private:
 	Map *map;
 	Camera *camera;
 	HUD *hud;
+	ResourceManager *manager;
 
 	bool shutdown;
 	int num;

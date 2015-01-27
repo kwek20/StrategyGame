@@ -39,10 +39,11 @@ public:
 	}
 
 	~Resource<type>(void){al_destroy_path(path);}
-
 	ALLEGRO_PATH *getPath(){return path;}
+	void addData(Data<type> d){data.push_back(d);}
 
-	void Resource<type>::load(){
+	void load(){
+		std::cout << "Loading resource " << getName().c_str() << "\n";
 		ALLEGRO_PATH *path = getPath();
 		ALLEGRO_FS_ENTRY *entry = al_create_fs_entry(al_path_cstr(path, ALLEGRO_NATIVE_PATH_SEP));
 
@@ -91,7 +92,6 @@ public:
 		}
 	}
 
-	void addData(Data<type> d){data.push_back(d);}
 	virtual type* loadFile(const char *fileName) = 0;
 private:
 	std::vector< Data<type> > data;

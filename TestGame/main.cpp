@@ -49,7 +49,6 @@ int main(int argc, char **argv){
 
 	al_start_timer(timer);
 	
-	resources = new ResourceManager();
 	game = new Game(display);
 	bool redraw = true, pause = false;
 	float theta = 0;
@@ -112,12 +111,6 @@ int shutdown(string reason = ""){
 	al_shutdown_font_addon();
 	al_shutdown_primitives_addon();
 	return 0;
-}
-
-void addResource(IResource *resource){
-	resource->load();
-	//resources.push_back(resource);
-	log("Loading resource manager " + resource->getName() + "\n");
 }
 
 
