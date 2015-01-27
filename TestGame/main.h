@@ -1,6 +1,10 @@
 #ifndef __MAIN_H_INCLUDED__
 #define __MAIN_H_INCLUDED__
 
+#define _CRTDBG_MAP_ALLOC_NEW
+#include <stdlib.h>
+#include <crtdbg.h>
+
 #pragma once
 
 #include <allegro5/allegro.h>
@@ -13,7 +17,7 @@
 #include <allegro5\mouse.h>
 
 #include <string>
-#include "Resources.h"
+#include "ResourceManager.h"
 
 #define FPS 60
 #define NAME "Strategy Game"
@@ -37,10 +41,14 @@ ALLEGRO_DISPLAY *display = NULL;
 ALLEGRO_EVENT_QUEUE *event_queue = NULL;
 ALLEGRO_TIMEOUT timeout;
 
+ResourceManager *resources;
+
 void log(string message);
 void error(string message);
 
 int shutdown(string reason);
+
+void addResource(IResource *resource);
 inline int ale_screenshot(const char *destination_path, const char *folder, const char *gamename);
 
 #endif

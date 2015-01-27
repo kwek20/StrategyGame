@@ -2,10 +2,10 @@
 #include "Game.h"
 
 #include <time.h>
+#include <memory>
 
 int main(int argc, char **argv){
 	Game *game;
-	vector<IResource*> resources;
 	int i;
 
 	log("Initializing...\n");
@@ -23,10 +23,6 @@ int main(int argc, char **argv){
 	}
 	log("Loaded libraries\n");
 
-	resources.reserve(3);
-	resources.push_back(new Image("images"));
-	resources.push_back(new Sound("sounds"));
-	resources.push_back(new Font("fonts"));
 	
 	al_set_new_display_option(ALLEGRO_VSYNC, 1, ALLEGRO_SUGGEST);
 	al_set_new_display_flags(ALLEGRO_OPENGL);
@@ -53,6 +49,7 @@ int main(int argc, char **argv){
 
 	al_start_timer(timer);
 	
+	resources = new ResourceManager();
 	game = new Game(display);
 	bool redraw = true, pause = false;
 	float theta = 0;
@@ -98,7 +95,7 @@ int main(int argc, char **argv){
 	al_ungrab_mouse();
 	i = shutdown(game->getShutDownReason());
 	log("Thank you for playing!\n");
-
+	_CrtDumpMemoryLeaks();
 	return i;
 }
 
@@ -115,6 +112,12 @@ int shutdown(string reason = ""){
 	al_shutdown_font_addon();
 	al_shutdown_primitives_addon();
 	return 0;
+}
+
+void addResource(IResource *resource){
+	resource->load();
+	//resources.push_back(resource);
+	log("Loading resource manager " + resource->getName() + "\n");
 }
 
 

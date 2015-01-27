@@ -13,47 +13,110 @@
 
 #include <vector>
 
-struct IResource {
+template <class type>
+struct Data {
+	std::string path;
+	type *data;
+};
+
+class IResource {
+public:
+	IResource(std::string p){_name = p;}
+
 	virtual void load() = 0;
+	std::string getName(){ return _name;}
+
+private:
+	std::string _name;
 };
 
 template <class type>
-class Resource : virtual public IResource
+class Resource : public IResource
 {
 public:
-	Resource(std::string p) {
+	Resource<type>(std::string p) : IResource(p) {
 		al_append_path_component(path = al_get_standard_path(ALLEGRO_RESOURCES_PATH), p.c_str());
-		std::cout << "Loading " << p.c_str() << "\n";
-		//load();
 	}
 
-	~Resource(void){al_destroy_path(path);}
-	virtual void load() = 0;
+	~Resource<type>(void){al_destroy_path(path);}
+
+	ALLEGRO_PATH *getPath(){return path;}
+
+	void Resource<type>::load(){
+		ALLEGRO_PATH *path = getPath();
+		ALLEGRO_FS_ENTRY *entry = al_create_fs_entry(al_path_cstr(path, ALLEGRO_NATIVE_PATH_SEP));
+
+		if (!(al_get_fs_entry_mode(entry) & ALLEGRO_FILEMODE_ISDIR)) return;
+		loadFolder(entry);
+	}
+
+	type *getData(std::string name){
+		Data<type> tempData;
+
+		for (unsigned int i=0; i<data.size(); i++){
+			tempData = data.at(i);
+			if (strcmp(name.c_str(), tempData.path.c_str()) == 0) return tempData.data;
+		}
+		return NULL;
+	}
+
+	void loadFolder(ALLEGRO_FS_ENTRY *folder){
+		if (!al_open_directory(folder)) {
+			std::cout << "cant open directory!\n";
+			return;
+		}
+
+		ALLEGRO_FS_ENTRY *next;
+		std::string pathName = al_get_fs_entry_name(folder);
+		int size = strlen(pathName.c_str()) + 1;
+		while (true){
+			next = al_read_directory(folder);
+			if (next) {
+				if (al_get_fs_entry_mode(next) & ALLEGRO_FILEMODE_ISFILE) {
+					std::string fileName = al_get_fs_entry_name(next);
+					int end = fileName.find_last_of('.');
+
+					Data<type> d;
+					d.path = fileName.substr(size, end-size);
+					d.data = loadFile(fileName.c_str());
+					addData(d);
+				} else if (al_get_fs_entry_mode(next) & ALLEGRO_FILEMODE_ISDIR){
+					loadFolder(next);
+				}
+				al_destroy_fs_entry(next);
+			} else {
+				std::cout << "end of directory!\n";
+				break;
+			}
+		}
+	}
+
+	void addData(Data<type> d){data.push_back(d);}
+	virtual type* loadFile(const char *fileName) = 0;
 private:
-	std::vector<type*> data;
-private:
+	std::vector< Data<type> > data;
 	ALLEGRO_PATH *path;
 };
 
-class Font : virtual public Resource<ALLEGRO_FONT>
+class Font : public Resource<ALLEGRO_FONT>
 {
 public:
 	Font(std::string p) : Resource(p){};
-	void load();
+	ALLEGRO_FONT *Font::loadFile(const char *fileName);
 };
 
-class Image : virtual public Resource<ALLEGRO_BITMAP>
+class Image : public Resource<ALLEGRO_BITMAP>
 {
 public:
 	Image(std::string p) : Resource(p){};
-	void load();
+	ALLEGRO_BITMAP *Image::loadFile(const char *fileName);
 };
 
-class Sound : virtual public Resource<ALLEGRO_SAMPLE>
+class Sound : public Resource<ALLEGRO_SAMPLE>
 {
 public:
 	Sound(std::string p) : Resource(p){};
-	void load();
+	ALLEGRO_SAMPLE *Sound::loadFile(const char *fileName);
 };
 
 #endif

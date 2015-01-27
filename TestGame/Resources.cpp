@@ -1,13 +1,14 @@
 #include "Resources.h"
 
-void Font::load(){
-
+ALLEGRO_FONT *Font::loadFile(const char *fileName){
+	return al_load_font(fileName, 10, 0);
 }
 
-void Image::load(){
-
+ALLEGRO_BITMAP *Image::loadFile(const char *fileName){
+	return al_load_bitmap(fileName);
 }
 
-void Sound::load(){
-
+ALLEGRO_SAMPLE *Sound::loadFile(const char *fileName){
+	return al_load_sample(fileName);
 }
+
