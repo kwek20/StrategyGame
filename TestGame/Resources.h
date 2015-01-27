@@ -35,6 +35,7 @@ class Resource : public IResource
 {
 public:
 	Resource<type>(std::string p) : IResource(p) {
+		//append name to resource path
 		al_append_path_component(path = al_get_standard_path(ALLEGRO_RESOURCES_PATH), p.c_str());
 	}
 
@@ -48,45 +49,59 @@ public:
 		ALLEGRO_FS_ENTRY *entry = al_create_fs_entry(al_path_cstr(path, ALLEGRO_NATIVE_PATH_SEP));
 
 		if (!(al_get_fs_entry_mode(entry) & ALLEGRO_FILEMODE_ISDIR)) return;
+		//load folder, it exists
 		loadFolder(entry);
+		//cleanup
+		al_destroy_fs_entry(entry);
 	}
 
 	type *getData(std::string name){
 		Data<type> tempData;
 
+		//loop over data
 		for (unsigned int i=0; i<data.size(); i++){
 			tempData = data.at(i);
+			//if name equals data name
 			if (strcmp(name.c_str(), tempData.path.c_str()) == 0) return tempData.data;
 		}
 		return NULL;
 	}
 
 	void loadFolder(ALLEGRO_FS_ENTRY *folder){
+		//can we open it? (permissions related)
 		if (!al_open_directory(folder)) {
-			std::cout << "cant open directory!\n";
 			return;
 		}
 
 		ALLEGRO_FS_ENTRY *next;
 		std::string pathName = al_get_fs_entry_name(folder);
 		int size = strlen(pathName.c_str()) + 1;
+
+		//loop untill we dont have files
 		while (true){
+			//read next file in directory
 			next = al_read_directory(folder);
+
+			//we have a winner
 			if (next) {
+				//is it a file or a directory?
 				if (al_get_fs_entry_mode(next) & ALLEGRO_FILEMODE_ISFILE) {
+					//load this file
 					std::string fileName = al_get_fs_entry_name(next);
 					int end = fileName.find_last_of('.');
 
 					Data<type> d;
+					//strip resource path and file extension
 					d.path = fileName.substr(size, end-size);
 					d.data = loadFile(fileName.c_str());
 					addData(d);
 				} else if (al_get_fs_entry_mode(next) & ALLEGRO_FILEMODE_ISDIR){
+					//load this folder too!
 					loadFolder(next);
 				}
+				//clean up the mess
 				al_destroy_fs_entry(next);
 			} else {
-				std::cout << "end of directory!\n";
 				break;
 			}
 		}

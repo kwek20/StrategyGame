@@ -8,8 +8,6 @@ ResourceManager::ResourceManager(void){
 	sounds->load();
 	fonts->load();
 	images->load();
-
-	getImage("gsdg");
 } 
 
 ResourceManager::~ResourceManager(void){

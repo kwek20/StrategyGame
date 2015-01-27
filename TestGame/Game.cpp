@@ -20,7 +20,6 @@ Game::Game(ALLEGRO_DISPLAY* display){
 
 Game::~Game(void){
 	map = NULL;
-
 }
 
 void Game::tick(){
