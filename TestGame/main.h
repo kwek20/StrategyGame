@@ -7,7 +7,7 @@
 
 #pragma once
 
-#include <allegro5/allegro.h>
+#include <allegro5\allegro.h>
 #include <allegro5\allegro_opengl.h>
 
 #include <allegro5\allegro_primitives.h>
@@ -22,6 +22,7 @@
 #define FPS 60
 #define NAME "Strategy Game"
 
+class Game;
 using namespace std;
 
 const static struct {
@@ -47,5 +48,6 @@ void error(string message);
 int shutdown(string reason);
 
 inline int ale_screenshot(const char *destination_path, const char *folder, const char *gamename);
+void handleEvent(ALLEGRO_EVENT ev, Game *game);
 
 #endif

@@ -13,6 +13,10 @@
 
 #include <vector>
 
+/////////////////////////////////////////////
+////== TODO move functions to cpp file ==////
+/////////////////////////////////////////////
+
 template <class type>
 struct Data {
 	std::string path;
@@ -41,7 +45,7 @@ public:
 
 	~Resource<type>(void){al_destroy_path(path);}
 	ALLEGRO_PATH *getPath(){return path;}
-	void addData(Data<type> d){data.push_back(d);}
+	void addData(Data<type> d){data.push_back(d); std::cout << "Loaded " << d.path.c_str() << "\n";}
 
 	void load(){
 		std::cout << "Loading resource " << getName().c_str() << "\n";
@@ -62,6 +66,7 @@ public:
 		for (unsigned int i=0; i<data.size(); i++){
 			tempData = data.at(i);
 			//if name equals data name
+			std::cout << tempData.path.c_str() << " " << tempData.data << "\n";
 			if (strcmp(name.c_str(), tempData.path.c_str()) == 0) return tempData.data;
 		}
 		return NULL;
@@ -94,6 +99,7 @@ public:
 					//strip resource path and file extension
 					d.path = fileName.substr(size, end-size);
 					d.data = loadFile(fileName.c_str());
+					if (!d.data){ std::cout << "Cant load file " << d.path.c_str() << "\n"; continue;}
 					addData(d);
 				} else if (al_get_fs_entry_mode(next) & ALLEGRO_FILEMODE_ISDIR){
 					//load this folder too!

@@ -10,7 +10,6 @@
 Terrain::Terrain(int x, int y, Generator *gen, int angle){
 	xSize = x < 1 ? 1 : x;
 	ySize = y < 1 ? 1 : y;
-	this->angle = angle < -360 ? 360 : (angle > 360 ? 360 : angle);
 
 	std::cout << "Generating heightmap.\n";
 	heightMap = gen->generate(x, y);
@@ -33,17 +32,10 @@ Terrain::~Terrain(void){
 
 void Terrain::draw(void){
 	if (!heightMap) return;
-	camera_3D_setup();
 
 	//select model stack
 	glMatrixMode(GL_MODELVIEW);
 	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-
-	//reset  matrix
-	glLoadIdentity();
-	
-	//rotate to angle
-	glRotatef(angle, 0.0f, 1.0f, 0.0f);
 
 	//enable array for use during rendering
 	glEnableClientState(GL_VERTEX_ARRAY);
@@ -56,13 +48,6 @@ void Terrain::draw(void){
 
 	//draw elements, type triangle, array size, object type, array position,
 	glDrawElements(GL_TRIANGLES, connect_points.size(), GL_UNSIGNED_INT, &connect_points.at(0));
-
-	angle += 1;
-	if (angle >= 360) angle = -360;
-
-	camera_2D_setup();
-	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-	al_draw_bitmap(heightMap, 0, 0, 0);
 }
 
 void Terrain::save(noise::utils::Image image, std::string name){
@@ -70,26 +55,6 @@ void Terrain::save(noise::utils::Image image, std::string name){
 	writer.SetSourceImage (image);
 	writer.SetDestFilename (name);
 	writer.WriteDestFile ();
-}
-
-void Terrain::camera_2D_setup(){
-	/*glMatrixMode(GL_PROJECTION);
-	glLoadIdentity();*/
-	glOrtho(0, xSize, ySize, 0.0, 0.0, 1.0);
-	
-	glMatrixMode(GL_MODELVIEW);
-	glLoadIdentity();
-	glDisable(GL_DEPTH_TEST);
-}
-
-void Terrain::camera_3D_setup(){
-	glMatrixMode(GL_PROJECTION);
-	glLoadIdentity();
-	gluPerspective(35, (GLdouble)xSize / (GLdouble)ySize, 1.0, 2000.0);
-
-	glRotatef(25.0f, 1.0f, 0.0f, 0.0f);
-	glTranslatef(0.0f, -450.0f, -550.0f);
-	glEnable(GL_DEPTH_TEST);
 }
 
 void Terrain::load_ht_map(ALLEGRO_BITMAP* heightMap, std::vector<GLfloat> &verts, std::vector<GLbyte> &colors, GLfloat land_scale, GLfloat height_scale){

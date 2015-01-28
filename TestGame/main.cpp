@@ -53,13 +53,19 @@ int main(int argc, char **argv){
 	bool redraw = true, pause = false;
 	float theta = 0;
 
+	al_grab_mouse(display);
+	ALLEGRO_BITMAP *mouseCursor = game->getManager()->getImage("empty");
+	al_set_mouse_cursor(display, al_create_mouse_cursor(mouseCursor, 10, 10));
+	al_show_mouse_cursor(display);
+
 	log("Initializing done!\n");
 
 	while (!game->shouldShutDown()){
 		ALLEGRO_EVENT ev;
 		al_wait_for_event(event_queue, &ev);
+		handleEvent(ev, game);
 		switch(ev.type){
-		case ALLEGRO_EVENT_KEY_DOWN:
+		case ALLEGRO_EVENT_KEY_UP:
 			switch(ev.keyboard.keycode){
 			case ALLEGRO_KEY_ESCAPE:
 				game->shutDown();
@@ -77,13 +83,10 @@ int main(int argc, char **argv){
 			break;
 		}
 
-		al_grab_mouse(display);
-		al_show_mouse_cursor(display);
-
 		if(al_is_event_queue_empty(event_queue) && redraw && !pause){
 			al_set_target_backbuffer(display);
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-			al_clear_to_color(al_map_rgba(0,0,0,0));
+			al_clear_to_color(al_map_rgb_f(0,0,0));
 			game->tick();
 			glFlush();
 			al_flip_display();
@@ -111,6 +114,28 @@ int shutdown(string reason = ""){
 	al_shutdown_font_addon();
 	al_shutdown_primitives_addon();
 	return 0;
+}
+
+void handleEvent(ALLEGRO_EVENT ev, Game *game){
+	switch (ev.type) {
+		case ALLEGRO_EVENT_KEY_DOWN:
+		case ALLEGRO_EVENT_KEY_UP: {
+			ALLEGRO_KEYBOARD_STATE state;
+			al_get_keyboard_state(&state);
+			game->handleKeyboard(ev.type, state);
+			break;
+		}
+		case ALLEGRO_EVENT_MOUSE_AXES:
+		case ALLEGRO_EVENT_MOUSE_BUTTON_DOWN:
+		case ALLEGRO_EVENT_MOUSE_BUTTON_UP:
+		case ALLEGRO_EVENT_MOUSE_ENTER_DISPLAY:
+		case ALLEGRO_EVENT_MOUSE_LEAVE_DISPLAY: {
+			ALLEGRO_MOUSE_STATE state;
+			al_get_mouse_state(&state);
+			game->handleMouse(ev.type, state);
+			break;				 
+		}
+	}
 }
 
 

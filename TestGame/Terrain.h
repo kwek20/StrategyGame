@@ -37,16 +37,12 @@ public:
 
 private:
 	int xSize, ySize;
-	float angle;
 	GLuint agl_tex;
 	
 	ALLEGRO_BITMAP* heightMap;
 	std::vector<GLfloat> land_verticles;
 	std::vector<GLuint> connect_points;
 	std::vector<GLbyte> color_points;
-
-	void camera_2D_setup();
-	void camera_3D_setup();
 };
 
 #endif
