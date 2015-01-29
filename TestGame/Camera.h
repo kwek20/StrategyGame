@@ -7,9 +7,17 @@
 #include "Status.h"
 
 #define MAX_HEIGHT 500
-#define START_ANGLE 45
+
 #define ONE_MOVE 1
 #define SPEED 1.2
+
+#define YAW_MIN 0
+#define YAW_MAX 360
+#define PITCH_MIN 15
+#define PITCH_MAX 90
+
+#define START_PITCH PITCH_MIN+PITCH_MAX/2
+#define START_YAW YAW_MIN+YAW_MAX/2
 
 struct ALLEGRO_DISPLAY;
 
@@ -19,7 +27,7 @@ private:
 	float _posX, _posY, _posZ, _pitch, _yaw;
 public:
 	Camera(Map *map);
-	Camera(float x=0, float z=0, float y=MAX_HEIGHT, float pitch=START_ANGLE);
+	Camera(float x=0, float z=0, float y=MAX_HEIGHT, float pitch=START_PITCH, float yaw=START_YAW);
 	virtual ~Camera(void);
 
 	//
@@ -44,6 +52,9 @@ public:
 	void addZ(float z){_posZ += z;}
 
 	void move(MOVE_DIRECTION direction);
+
+	template <typename T>
+	T clamp(T val, T min, T max, bool goNegative=false);
 
 	void camera_2D_setup(ALLEGRO_DISPLAY* display);
 	void camera_3D_setup(ALLEGRO_DISPLAY* display);

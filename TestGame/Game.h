@@ -11,8 +11,6 @@
 #include "HUD.h"
 #include "ResourceManager.h"
 
-#include "noiseutils.h"
-
 class Game
 {
 private:
