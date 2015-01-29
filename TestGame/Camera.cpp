@@ -50,8 +50,8 @@ const double Camera::toRads(const double &theAngleInDegrees) const
 void Camera::handleMouseMove(int mouseX, int mouseY)
 {
 	// Calculate our horizontal and vertical mouse movement from middle of the window
-	double horizMovement = (mouseX - windowMidX+1) * yawSensitivity;
-	double vertMovement  = (mouseY - windowMidY) * pitchSensitivity;
+	double horizMovement = mouseX * yawSensitivity;
+	double vertMovement  = mouseY * pitchSensitivity;
  
 	std::cout << "Mid window values: " << windowMidX << "\t" << windowMidY << std::endl;
 	std::cout << "Mouse values     : " << mouseX << "\t" << mouseY << std::endl;
@@ -63,7 +63,7 @@ void Camera::handleMouseMove(int mouseX, int mouseY)
 	rotation.addX(vertMovement);
 	rotation.addY(horizMovement);
  
-	// Limit loking up to vertically up
+	// Limit looking up to vertically up
 	if (rotation.getX() < -90)
 	{
 		rotation.setX(-90);
@@ -177,9 +177,9 @@ void Camera::camera_3D_setup(ALLEGRO_DISPLAY* display){
 	gluPerspective(35, (GLdouble)al_get_display_width(display) / (GLdouble)al_get_display_height(display), 1.0, 2000.0);
 
 
-	glRotatef(getPitch(), 1, 0, 0);
-	glRotatef(getYaw(), 0, 1, 0);
+	glRotatef(getXRot(), 1, 0, 0);
+	glRotatef(getYRot(), 0, 1, 0);
 
-	glTranslatef(-getX(), -getY(), -getZ());
+	glTranslatef(-getXPos(), -getYPos(), -getZPos());
 	glEnable(GL_DEPTH_TEST);
 }

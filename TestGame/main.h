@@ -18,6 +18,7 @@
 
 #include <string>
 #include "ResourceManager.h"
+#include "FpsManager.hpp"
 
 #define FPS 60
 #define NAME "Strategy Game"
@@ -41,6 +42,9 @@ ALLEGRO_CONFIG *cfg;
 ALLEGRO_DISPLAY *display = NULL;
 ALLEGRO_EVENT_QUEUE *event_queue = NULL;
 ALLEGRO_TIMEOUT timeout;
+
+// Create a FPS manager that locks to 60fps and updates the window title with stats every 3 seconds
+FpsManager *fpsManager;
 
 void log(string message);
 void error(string message);

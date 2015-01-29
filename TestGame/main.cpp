@@ -32,27 +32,29 @@ int main(int argc, char **argv){
 		return -1;
 	}
 
-	al_set_window_title(display, NAME);
-	//al_set_display_icon(display, NULL);
+	al_set_window_title(display, std::string(NAME).append(" | ").append(to_string(FPS) + " FPS").c_str());
 	event_queue = al_create_event_queue();
 	if(!event_queue) {
 		error("failed to create event queue!\n");
 		return -1;
 	}
 
-	ALLEGRO_TIMER *timer = al_create_timer(1.0 / FPS);
+	//ALLEGRO_TIMER *timer = al_create_timer(1.0 / FPS);
 
-	al_register_event_source(event_queue, al_get_timer_event_source(timer));
+	//al_register_event_source(event_queue, al_get_timer_event_source(timer));
 	al_register_event_source(event_queue, al_get_keyboard_event_source());
 	al_register_event_source(event_queue, al_get_mouse_event_source());
 	al_register_event_source(event_queue, al_get_display_event_source(display));
 
-	al_start_timer(timer);
+	//al_start_timer(timer);
 	
+	fpsManager = new FpsManager(FPS, 3.0, std::string(NAME), display);
 	game = new Game(display);
-	bool redraw = true, pause = false;
+	al_set_display_icon(display, game->getManager()->getImage("icon"));
+
+	bool /*redraw = true,*/ pause = false;
 	double deltaTime = 0.0;
-	float theta = 0;
+	//float theta = 0;
 
 	al_grab_mouse(display);
 	ALLEGRO_BITMAP *mouseCursor = game->getManager()->getImage("empty");
@@ -78,20 +80,20 @@ int main(int argc, char **argv){
 				ale_screenshot(NULL, "screenshots", NULL);
 				break;
 			}
-		case ALLEGRO_EVENT_TIMER:
+		/*case ALLEGRO_EVENT_TIMER:
 			theta += 0.01;
 			redraw = true;
-			break;
+			break;*/
 		}
 
-		if(al_is_event_queue_empty(event_queue) && redraw && !pause){
+		if(al_is_event_queue_empty(event_queue) && !pause){
 			al_set_target_backbuffer(display);
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 			al_clear_to_color(al_map_rgb_f(0,0,0));
 			game->tick(deltaTime);
+			deltaTime = fpsManager->enforceFPS();
 			glFlush();
 			al_flip_display();
-			redraw = false;
 		}
 	}
 

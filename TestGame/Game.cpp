@@ -29,11 +29,11 @@ Game::~Game(void){
 
 void Game::tick(double deltaTime){
 	num++;
-	/*camera->camera_3D_setup(display);
+	camera->camera_3D_setup(display);
 	map->draw();
-	camera->camera_2D_setup(display);*/
+	//camera->camera_2D_setup(display);
 	camera->move(deltaTime);
-	hud->draw(this);
+	//hud->draw(this);
 }
 
 void Game::handleKeyboard(ALLEGRO_EVENT_TYPE type, int keycode){
