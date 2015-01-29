@@ -31,7 +31,7 @@ public:
 
 	virtual ~Game(void);
 
-	void tick(void);
+	void tick(double deltaTime);
 
 	bool shouldShutDown(){return shutdown;}
 	void shutDown(){shutdown=true;}
@@ -43,7 +43,7 @@ public:
 
 	void error(std::string message){fprintf(stderr, message.c_str());}
 
-	void handleKeyboard(ALLEGRO_EVENT_TYPE type, ALLEGRO_KEYBOARD_STATE state);
+	void handleKeyboard(ALLEGRO_EVENT_TYPE type, int keycode);
 	void handleMouse(ALLEGRO_EVENT_TYPE type, ALLEGRO_MOUSE_STATE state);
 
 	Map *getMap(){return map;}

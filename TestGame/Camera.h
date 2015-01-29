@@ -1,63 +1,85 @@
 #ifndef __CAMERA_H_INCLUDED__
 #define __CAMERA_H_INCLUDED__
-
-#pragma once
-
-#include "Map.h"
-#include "Status.h"
-
-#define MAX_HEIGHT 500
-
-#define ONE_MOVE 1
-#define SPEED 1.2
-
-#define YAW_MIN 0
-#define YAW_MAX 360
-#define PITCH_MIN 15
-#define PITCH_MAX 90
-
-#define START_PITCH PITCH_MIN+PITCH_MAX/2
-#define START_YAW YAW_MIN+YAW_MAX/2
-
-struct ALLEGRO_DISPLAY;
-
+ 
+#include <iostream>
+#include <math.h>         // Used only for sin() and cos() functions
+#include <allegro5\allegro.h>
+#include <allegro5\allegro_opengl.h>
+#include <gl\GLU.h>
+ 
+#include "Vec3.hpp"       // Include our custom Vec3 class
+ 
 class Camera
 {
-private:
-	float _posX, _posY, _posZ, _pitch, _yaw;
-public:
-	Camera(Map *map);
-	Camera(float x=0, float z=0, float y=MAX_HEIGHT, float pitch=START_PITCH, float yaw=START_YAW);
-	virtual ~Camera(void);
+    protected:
+        // Camera position
+        Vec3<double> position;
+     
+        // Camera rotation
+        Vec3<double> rotation;
+     
+        // Camera movement speed. When we call the move() function on a camera, it moves using these speeds
+        Vec3<double> speed;
+     
+        double movementSpeedFactor; // Controls how fast the camera moves
+        double pitchSensitivity;    // Controls how sensitive mouse movements affect looking up and down
+        double yawSensitivity;      // Controls how sensitive mouse movements affect looking left and right
+     
+        // Window size in pixels and where the midpoint of it falls
+        int windowWidth;
+        int windowHeight;
+        int windowMidX;
+        int windowMidY;
+     
+        // Method to set some reasonable default values. For internal use by the class only.
+        void initCamera();
+     
+    public:
+        static const double TO_RADS; // The value of 1 degree in radians
+     
+        // Holding any keys down?
+        bool holdingForward;
+        bool holdingBackward;
+        bool holdingLeftStrafe;
+        bool holdingRightStrafe;
+     
+        // Constructor
+        Camera(float windowWidth, float windowHeight);
 
-	//
-	void setPitch(float pitch);
-	void addPitch(float pitch);
-	float getPitch(){return _pitch;}
+        // Destructor
+        ~Camera();
+     
+        // Mouse movement handler to look around
+        void handleMouseMove(int mouseX, int mouseY);
+     
+        // Method to convert an angle in degress to radians
+        const double toRads(const double &angleInDegrees) const;
+     
+        // Method to move the camera based on the current direction
+        void move(double deltaTime);
+     
+        // --------------------------------- Inline methods ----------------------------------------------
+     
+        // Setters to allow for change of vertical (pitch) and horizontal (yaw) mouse movement sensitivity
+        float getPitchSensitivity()            { return pitchSensitivity;  }
+        void  setPitchSensitivity(float value) { pitchSensitivity = value; }
+        float getYawSensitivity()              { return yawSensitivity;    }
+        void  setYawSensitivity(float value)   { yawSensitivity   = value; }
+     
+        // Position getters
+        Vec3<double> getPosition() const { return position;        }
+        double getXPos()           const { return position.getX(); }
+        double getYPos()           const { return position.getY(); }
+        double getZPos()           const { return position.getZ(); }
+     
+        // Rotation getters
+        Vec3<double> getRotation() const { return rotation;        }
+        double getXRot()           const { return rotation.getX(); }
+        double getYRot()           const { return rotation.getY(); }
+        double getZRot()           const { return rotation.getZ(); }
 
-	void setYaw(float yaw);
-	void addYaw(float yaw);
-	float getYaw(){return _yaw;}
-
-	float getX(){return _posX;}
-	float getY(){return _posY;}
-	float getZ(){return _posZ;}
-
-	void setX(float x){_posX = x;}
-	void setY(float y){_posY = y;}
-	void setZ(float z){_posZ = z;}
-
-	void addX(float x){_posX += x;}
-	void addY(float y){_posY += y;}
-	void addZ(float z){_posZ += z;}
-
-	void move(MOVE_DIRECTION direction);
-
-	template <typename T>
-	T clamp(T val, T min, T max, bool goNegative=false);
-
-	void camera_2D_setup(ALLEGRO_DISPLAY* display);
-	void camera_3D_setup(ALLEGRO_DISPLAY* display);
+		void camera_2D_setup(ALLEGRO_DISPLAY* display);
+		void camera_3D_setup(ALLEGRO_DISPLAY* display);
 };
-
-#endif
+ 
+#endif // CAMERA_H

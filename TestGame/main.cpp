@@ -51,6 +51,7 @@ int main(int argc, char **argv){
 	
 	game = new Game(display);
 	bool redraw = true, pause = false;
+	double deltaTime = 0.0;
 	float theta = 0;
 
 	al_grab_mouse(display);
@@ -87,7 +88,7 @@ int main(int argc, char **argv){
 			al_set_target_backbuffer(display);
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 			al_clear_to_color(al_map_rgb_f(0,0,0));
-			game->tick();
+			game->tick(deltaTime);
 			glFlush();
 			al_flip_display();
 			redraw = false;
@@ -122,7 +123,7 @@ void handleEvent(ALLEGRO_EVENT ev, Game *game){
 		case ALLEGRO_EVENT_KEY_UP: {
 			ALLEGRO_KEYBOARD_STATE state;
 			al_get_keyboard_state(&state);
-			game->handleKeyboard(ev.type, state);
+			game->handleKeyboard(ev.type, ev.keyboard.keycode);
 			break;
 		}
 		case ALLEGRO_EVENT_MOUSE_AXES:

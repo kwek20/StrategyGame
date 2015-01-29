@@ -17,7 +17,7 @@ Game::Game(ALLEGRO_DISPLAY* display){
 	manager = new ResourceManager();
 	map = new Map();
 	hud = new IngameHUD();
-	camera = new Camera(map);
+	camera = new Camera(al_get_display_width(display), al_get_display_height(display));
 }
 
 Game::~Game(void){
@@ -27,43 +27,58 @@ Game::~Game(void){
 	delete manager;
 }
 
-void Game::tick(){
+void Game::tick(double deltaTime){
 	num++;
-	camera->camera_3D_setup(display);
+	/*camera->camera_3D_setup(display);
 	map->draw();
-	camera->camera_2D_setup(display);
+	camera->camera_2D_setup(display);*/
+	camera->move(deltaTime);
 	hud->draw(this);
 }
 
-void Game::handleKeyboard(ALLEGRO_EVENT_TYPE type, ALLEGRO_KEYBOARD_STATE state){
+void Game::handleKeyboard(ALLEGRO_EVENT_TYPE type, int keycode){
+	// If a key is pressed, toggle the relevant key-press flag
 	if (type == ALLEGRO_EVENT_KEY_DOWN){
-		if (al_key_down(&state, ALLEGRO_KEY_W)){
-			if (al_key_down(&state, ALLEGRO_KEY_S)) return;
-
-			if (al_key_down(&state, ALLEGRO_KEY_D)){
-				if (al_key_down(&state, ALLEGRO_KEY_A)) return;
-				camera->move(UP_RIGHT);
-			} else if (al_key_down(&state, ALLEGRO_KEY_A)){
-				camera->move(LEFT_UP);
-			} else {
-				camera->move(UP);
-			}
-		} else if (al_key_down(&state, ALLEGRO_KEY_D)){
-			if (al_key_down(&state, ALLEGRO_KEY_A)) return;
-
-			if (al_key_down(&state, ALLEGRO_KEY_S)){
-				camera->move(RIGHT_DOWN);
-			} else {
-				camera->move(RIGHT);
-			}
-		} else if (al_key_down(&state, ALLEGRO_KEY_S)){
-			if (al_key_down(&state, ALLEGRO_KEY_A)){
-				camera->move(DOWN_LEFT);
-			} else {
-				camera->move(DOWN);
-			}
-		} else if (al_key_down(&state, ALLEGRO_KEY_A)){
-			camera->move(LEFT);
+		switch (keycode) {
+		case ALLEGRO_KEY_W:
+			camera->holdingForward = true;
+			break;
+		case ALLEGRO_KEY_S:
+			camera->holdingBackward = true;
+			break;
+		case ALLEGRO_KEY_A:
+			camera->holdingLeftStrafe = true;
+			break;
+		case ALLEGRO_KEY_D:
+			camera->holdingRightStrafe = true;
+			break;
+			/*case '[':
+			fpsManager.setTargetFps(fpsManager.getTargetFps() - 10);
+			break;
+			case ']':
+			fpsManager.setTargetFps(fpsManager.getTargetFps() + 10);
+			break;*/
+		default:
+			// Do nothing...
+			break;
+		}
+	} else if (type == ALLEGRO_EVENT_KEY_UP) { // If a key is released, toggle the relevant key-release flag 
+		switch (keycode) {
+		case ALLEGRO_KEY_W:
+			camera->holdingForward = false;
+			break;
+		case ALLEGRO_KEY_S:
+			camera->holdingBackward = false;
+			break;
+		case ALLEGRO_KEY_A:
+			camera->holdingLeftStrafe = false;
+			break;
+		case ALLEGRO_KEY_D:
+			camera->holdingRightStrafe = false;
+			break;
+		default:
+			// Do nothing...
+			break;
 		}
 	}
 }
@@ -77,8 +92,7 @@ void Game::handleMouse(ALLEGRO_EVENT_TYPE type, ALLEGRO_MOUSE_STATE state){
 				mouseTempY = state.y;
 			}
 
-			camera->addPitch(float(state.y) - mouseTempY);
-			camera->addYaw(float(state.x) - mouseTempX);
+			camera->handleMouseMove(state.x - mouseTempX, state.y - mouseTempY);
 			al_set_mouse_xy(display, mouseTempX, mouseTempY);
 		} else if (mouseTempX >= 0 || mouseTempY >= 0){
 			//mouse released after dragging
