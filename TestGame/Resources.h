@@ -8,7 +8,7 @@
 #include <allegro5\file.h>
 #include <allegro5\bitmap_io.h>
 #include <allegro5\allegro_audio.h>
-#include <allegro5\allegro_font.h>
+#include <allegro5\allegro_ttf.h>
 #include <allegro5\bitmap.h>
 
 #include <vector>
@@ -66,7 +66,6 @@ public:
 		for (unsigned int i=0; i<data.size(); i++){
 			tempData = data.at(i);
 			//if name equals data name
-			std::cout << tempData.path.c_str() << " " << tempData.data << "\n";
 			if (strcmp(name.c_str(), tempData.path.c_str()) == 0) return tempData.data;
 		}
 		return NULL;

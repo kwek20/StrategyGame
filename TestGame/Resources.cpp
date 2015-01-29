@@ -1,7 +1,7 @@
 #include "Resources.h"
 
 ALLEGRO_FONT *Font::loadFile(const char *fileName){
-	return al_load_font(fileName, 10, 0);
+	return al_load_ttf_font(fileName, 10, 0);
 }
 
 ALLEGRO_BITMAP *Image::loadFile(const char *fileName){

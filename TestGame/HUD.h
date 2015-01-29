@@ -2,13 +2,16 @@
 #define __HUD_H_INCLUDED__
 
 #pragma once
+
+#include "Game.h"
+
 class HUD abstract
 {
 public:
 	HUD(void);
 	~HUD(void);
 
-	virtual void draw() = 0;
+	virtual void draw(Game *game) = 0;
 };
 
 class IngameHUD : public HUD
@@ -16,7 +19,7 @@ class IngameHUD : public HUD
 public:
 	IngameHUD(void) : HUD(){}
 	~IngameHUD(void);
-	void draw();
+	void draw(Game *game);
 };
 
 #endif

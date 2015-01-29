@@ -18,6 +18,9 @@ public:
 	~Map(void);
 
 	void draw(void);
+	float getX(){return TERRAIN_X;}
+	float getZ(){return TERRAIN_Y;}
+	float getHeight(){return TERRAIN_Y;}
 private:
 	Terrain *terrain;
 	std::vector<Object> objects;

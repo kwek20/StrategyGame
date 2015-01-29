@@ -15,8 +15,20 @@
 
 class Game
 {
-public:
+private:
+	ALLEGRO_DISPLAY *display;
+	Map *map;
+	Camera *camera;
+	HUD *hud;
+	ResourceManager *manager;
 
+	bool shutdown;
+	int num;
+	std::string shutdownReason;
+
+	float mouseTempX, mouseTempY;
+
+public:
 	Game(ALLEGRO_DISPLAY* display);
 
 	virtual ~Game(void);
@@ -36,20 +48,10 @@ public:
 	void handleKeyboard(ALLEGRO_EVENT_TYPE type, ALLEGRO_KEYBOARD_STATE state);
 	void handleMouse(ALLEGRO_EVENT_TYPE type, ALLEGRO_MOUSE_STATE state);
 
-	Map * getMap(){return map;}
-	Camera * getCamera(){return camera;}
-	HUD * getHud(){return hud;}
-	ResourceManager * getManager(){return manager;}
-private:
-	ALLEGRO_DISPLAY *display;
-	Map *map;
-	Camera *camera;
-	HUD *hud;
-	ResourceManager *manager;
-
-	bool shutdown;
-	int num;
-	std::string shutdownReason;
+	Map *getMap(){return map;}
+	Camera *getCamera(){return camera;}
+	HUD *getHud(){return hud;}
+	ResourceManager *getManager(){return manager;}
 };
 
 #endif
