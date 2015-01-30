@@ -84,6 +84,7 @@
     <ClCompile Include="noiseutils.cpp" />
     <ClCompile Include="Object.cpp" />
     <ClCompile Include="Player.cpp" />
+    <ClCompile Include="PlayerController.cpp" />
     <ClCompile Include="ResourceManager.cpp" />
     <ClCompile Include="Resources.cpp" />
     <ClCompile Include="Terrain.cpp" />
@@ -101,6 +102,7 @@
     <ClInclude Include="noiseutils.h" />
     <ClInclude Include="Object.h" />
     <ClInclude Include="Player.h" />
+    <ClInclude Include="PlayerController.h" />
     <ClInclude Include="Resource.h" />
     <ClInclude Include="ResourceManager.h" />
     <ClInclude Include="Resources.h" />

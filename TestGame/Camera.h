@@ -9,6 +9,11 @@
  
 #include "Vec3.hpp"       // Include our custom Vec3 class
  
+/*
+ * Camera class from http://r3dux.org/2012/12/a-c-camera-class-for-simple-opengl-fps-controls/
+ *
+ *
+*/
 class Camera
 {
     protected:

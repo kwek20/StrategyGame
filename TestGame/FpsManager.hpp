@@ -8,7 +8,9 @@
 #define MIN_TARGET_FPS 20.0
 #define MAX_TARGET_FPS 60.0
 
-/** The FpsManager class is designed to work with GLFW and enforces a specified framerate on an application.
+/** 
+  * From: http://r3dux.org/2012/12/fpsmanager-a-c-helper-class-for-framerate-independent-movement/
+  * The FpsManager class is designed to work with GLFW and enforces a specified framerate on an application.
   * It can also display the current framerate at user-specified intervals, and in addition returns the time
   * duration since the last frame, which can be used to implement framerate independent movement.
   *

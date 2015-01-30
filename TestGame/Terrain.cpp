@@ -35,7 +35,7 @@ void Terrain::draw(void){
 
 	//select model stack
 	glMatrixMode(GL_MODELVIEW);
-	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+	//glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 
 	//enable array for use during rendering
 	glEnableClientState(GL_VERTEX_ARRAY);
@@ -45,7 +45,6 @@ void Terrain::draw(void){
 	glColorPointer(3, GL_UNSIGNED_BYTE, 0, &color_points.at(0));
 	glVertexPointer(3, GL_FLOAT, 0, &land_verticles.at(0));
 	
-
 	//draw elements, type triangle, array size, object type, array position,
 	glDrawElements(GL_TRIANGLES, connect_points.size(), GL_UNSIGNED_INT, &connect_points.at(0));
 }
