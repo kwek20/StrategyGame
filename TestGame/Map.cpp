@@ -17,18 +17,6 @@ void Map::draw(void){
 	terrain->draw();
 }
 
-template <class T>
-std::vector<T*> Map::getEntitiesByClass(){
-	std::vector<T*> v;
-	
-	for (Entity *e : entities){
-		T *ent = dynamic_cast<T*>(e);
-		if (ent) v.push_back(ent);
-	}
-
-	return v;
-}
-
 void Map::dump(){
 	std::cout << "-- Map dump --\n";
 	if (objects.empty()){

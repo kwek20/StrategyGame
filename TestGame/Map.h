@@ -35,7 +35,16 @@ public:
 	void addEntity(Entity *entity){entities.push_back(entity);}
 	
 	template <typename T>
-	std::vector<T*> getEntitiesByClass();
+	std::vector<T*> getEntitiesByClass(){
+		std::vector<T*> v;
+
+		for (Entity *e : entities){
+			T *ent = dynamic_cast<T*>(e);
+			if (ent) v.push_back(ent);
+		}
+
+		return v;
+	}
 
 	void dump();
 };

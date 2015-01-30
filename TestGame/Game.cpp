@@ -17,9 +17,7 @@ Game::Game(ALLEGRO_DISPLAY* display){
 	map = new Map();
 	hud = new IngameHUD();
 
-	map->getEntitiesByClass<Player>();
-
-	controller = new PlayerController(new Player());
+	controller = new PlayerController(map->getEntitiesByClass<Player>().at(0));
 	camera = new Camera(al_get_display_width(display), al_get_display_height(display), *controller);
 }
 
@@ -41,6 +39,7 @@ void Game::tick(double deltaTime){
 }
 
 void Game::handleKeyboard(ALLEGRO_EVENT_TYPE type, int keycode){
+	std::cout << "keyboard event " << keycode << "\n";
 	// If a key is pressed, toggle the relevant key-press flag
 	if (type == ALLEGRO_EVENT_KEY_DOWN){
 		switch (keycode) {
