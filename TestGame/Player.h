@@ -5,12 +5,15 @@
 
 #include "entity.h"
 
-class Player :
-	public Entity
+class Player : public Entity
 {
 public:
 	Player(void);
 	virtual ~Player(void);
+
+
+
+	const std::string getName(){return "Player";}
 };
 
 #endif

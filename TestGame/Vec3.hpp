@@ -4,6 +4,7 @@
 #pragma once
 
 #include <iostream>
+#include <string.h>
 
 template <class T> class Vec3
 {
@@ -213,6 +214,10 @@ template <class T> class Vec3
         {
             return Vec3<T>(x / value, y / value, z / value);
         }
+
+		friend std::ostream& operator<< (std::ostream& out, const Vec3<T>& v){
+			return out << v.getX() << "," << v.getY() << "," << v.getZ();
+		}
 
         // Overloaded multiply and assign operator to multiply a vector by a scalar
         void operator/=(const T &value)

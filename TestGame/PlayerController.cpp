@@ -1,6 +1,5 @@
 #include "PlayerController.h"
 
-
 PlayerController::PlayerController(void){
 	load();
 }
@@ -27,7 +26,7 @@ PlayerController::~PlayerController(void){
 
 void PlayerController::setTarget(Entity *newTarget){
 	if (hasTarget()) target->unPossess();
-	target  = newTarget;
+	target = newTarget;
 }
 
 Vec3<double> PlayerController::getLocation(){

@@ -1,5 +1,6 @@
 #include "Entity.h"
-
+#include <typeinfo>
+#include <stdio.h>
 
 Entity::Entity(void){
 	load(Vec3<double>(0,0,0), Vec3<double>(0,0,0));
@@ -28,4 +29,8 @@ void Entity::load(Vec3<double> position, Vec3<double> rotation){
  
 	// How fast we move (higher values mean we move and strafe faster)
 	movementSpeedFactor = 100.0;
+}
+
+void Entity::dump(){
+	std::cout << getName().c_str() << ": position=[" << position << "] " << "rotation=[" << rotation << "]\n";
 }

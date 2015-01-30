@@ -7,6 +7,8 @@ class Object
 public:
 	Object(void);
 	~Object(void);
+
+	void dump(){}
 };
 
 #endif

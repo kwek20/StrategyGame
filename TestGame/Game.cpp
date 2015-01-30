@@ -1,12 +1,12 @@
 #include "Game.h"
 #include "Status.h"
+#include "Player.h"
 
+#include <vector>
 #include <time.h>
 #include <iostream>
 
 #include <allegro5\allegro_font.h>
-
-using namespace std;
 
 Game::Game(ALLEGRO_DISPLAY* display){
 	log("Loading game\n");
@@ -16,7 +16,11 @@ Game::Game(ALLEGRO_DISPLAY* display){
 	manager = new ResourceManager();
 	map = new Map();
 	hud = new IngameHUD();
-	camera = new Camera(al_get_display_width(display), al_get_display_height(display));
+
+	map->getEntitiesByClass<Player>();
+
+	controller = new PlayerController(new Player());
+	camera = new Camera(al_get_display_width(display), al_get_display_height(display), *controller);
 }
 
 Game::~Game(void){
@@ -27,8 +31,9 @@ Game::~Game(void){
 }
 
 void Game::tick(double deltaTime){
+	controller->move(deltaTime);
+
 	camera->camera_3D_setup(display);
-	camera->move(deltaTime);
 	map->draw();
 
 	camera->camera_2D_setup(display);
@@ -40,16 +45,16 @@ void Game::handleKeyboard(ALLEGRO_EVENT_TYPE type, int keycode){
 	if (type == ALLEGRO_EVENT_KEY_DOWN){
 		switch (keycode) {
 		case ALLEGRO_KEY_W:
-			camera->holdingForward = true;
+			controller->holdingForward = true;
 			break;
 		case ALLEGRO_KEY_S:
-			camera->holdingBackward = true;
+			controller->holdingBackward = true;
 			break;
 		case ALLEGRO_KEY_A:
-			camera->holdingLeftStrafe = true;
+			controller->holdingLeftStrafe = true;
 			break;
 		case ALLEGRO_KEY_D:
-			camera->holdingRightStrafe = true;
+			controller->holdingRightStrafe = true;
 			break;
 		default:
 			// Do nothing...
@@ -58,16 +63,16 @@ void Game::handleKeyboard(ALLEGRO_EVENT_TYPE type, int keycode){
 	} else if (type == ALLEGRO_EVENT_KEY_UP) { // If a key is released, toggle the relevant key-release flag 
 		switch (keycode) {
 		case ALLEGRO_KEY_W:
-			camera->holdingForward = false;
+			controller->holdingForward = false;
 			break;
 		case ALLEGRO_KEY_S:
-			camera->holdingBackward = false;
+			controller->holdingBackward = false;
 			break;
 		case ALLEGRO_KEY_A:
-			camera->holdingLeftStrafe = false;
+			controller->holdingLeftStrafe = false;
 			break;
 		case ALLEGRO_KEY_D:
-			camera->holdingRightStrafe = false;
+			controller->holdingRightStrafe = false;
 			break;
 		default:
 			// Do nothing...
@@ -85,7 +90,7 @@ void Game::handleMouse(ALLEGRO_EVENT_TYPE type, ALLEGRO_MOUSE_STATE state){
 				mouseTempY = state.y;
 			}
 
-			camera->handleMouseMove(state.x - mouseTempX, state.y - mouseTempY);
+			controller->handleMouseMove(state.x - mouseTempX, state.y - mouseTempY);
 			al_set_mouse_xy(display, mouseTempX, mouseTempY);
 		} else if (mouseTempX >= 0 || mouseTempY >= 0){
 			//mouse released after dragging

@@ -10,6 +10,7 @@
 #include "Camera.h"
 #include "HUD.h"
 #include "ResourceManager.h"
+#include "PlayerController.h"
 
 class Game
 {
@@ -19,6 +20,7 @@ private:
 	Camera *camera;
 	HUD *hud;
 	ResourceManager *manager;
+	PlayerController *controller;
 
 	bool shutdown, pause;
 	std::string shutdownReason;
@@ -50,6 +52,7 @@ public:
 	Camera *getCamera(){return camera;}
 	HUD *getHud(){return hud;}
 	ResourceManager *getManager(){return manager;}
+	PlayerController *getController(){return controller;}
 };
 
 #endif

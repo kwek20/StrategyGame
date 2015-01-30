@@ -4,8 +4,9 @@
 #pragma once
 
 #include "Vec3.hpp"       // Include our custom Vec3 class
+#include <iostream>
 
-class Entity
+class Entity abstract
 {
 public:
 	Entity(void);
@@ -14,10 +15,23 @@ public:
 
 	virtual ~Entity(void);
 	void unPossess();
-	Vec3<double> getPosition(){return position;}
-	Vec3<double> getRotation(){return rotation;}
-	double getMovementSpeedFactor(){return movementSpeedFactor;}
 
+	virtual const std::string getName() = 0;
+
+	// Position getters
+	Vec3<double> getPosition() const { return position;        }
+	double getXPos()           const { return position.getX(); }
+	double getYPos()           const { return position.getY(); }
+	double getZPos()           const { return position.getZ(); }
+
+	// Rotation getters
+	Vec3<double> getRotation() const { return rotation;        }
+	double getXRot()           const { return rotation.getX(); }
+	double getYRot()           const { return rotation.getY(); }
+	double getZRot()           const { return rotation.getZ(); }
+
+	double getMovementSpeedFactor(){return movementSpeedFactor;}
+	void dump();
 protected:
 	// Entity position
 	Vec3<double> position;
