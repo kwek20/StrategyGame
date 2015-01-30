@@ -37,9 +37,6 @@ public:
 	template <typename T>
 	std::vector<T*> getEntitiesByClass();
 
-	template <>
-	std::vector<Player*> getEntitiesByClass<Player>();
-
 	void dump();
 };
 
