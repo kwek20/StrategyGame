@@ -75,6 +75,7 @@
   <ItemGroup>
     <ClCompile Include="Building.cpp" />
     <ClCompile Include="Camera.cpp" />
+    <ClCompile Include="Entity.cpp" />
     <ClCompile Include="Game.cpp" />
     <ClCompile Include="Generator.cpp" />
     <ClCompile Include="HUD.cpp" />
@@ -82,6 +83,7 @@
     <ClCompile Include="Map.cpp" />
     <ClCompile Include="noiseutils.cpp" />
     <ClCompile Include="Object.cpp" />
+    <ClCompile Include="Player.cpp" />
     <ClCompile Include="ResourceManager.cpp" />
     <ClCompile Include="Resources.cpp" />
     <ClCompile Include="Terrain.cpp" />
@@ -89,6 +91,7 @@
   <ItemGroup>
     <ClInclude Include="Building.h" />
     <ClInclude Include="Camera.h" />
+    <ClInclude Include="Entity.h" />
     <ClInclude Include="FpsManager.hpp" />
     <ClInclude Include="Game.h" />
     <ClInclude Include="Generator.h" />
@@ -97,6 +100,7 @@
     <ClInclude Include="Map.h" />
     <ClInclude Include="noiseutils.h" />
     <ClInclude Include="Object.h" />
+    <ClInclude Include="Player.h" />
     <ClInclude Include="Resource.h" />
     <ClInclude Include="ResourceManager.h" />
     <ClInclude Include="Resources.h" />
