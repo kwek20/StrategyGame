@@ -99,14 +99,14 @@ class FpsManager
 
         // Two parameter constructor which sets a desired framerate and a reporting interval in seconds
         FpsManager(int theTargetFps, double theReportInterval, ALLEGRO_DISPLAY *display){
-            init(theTargetFps, display, true);
+            init(theTargetFps, display, false);
 
             setReportInterval(theReportInterval);
         }
 
         // Three parameter constructor which sets a desired framerate, how often to report, and the window title to append the FPS to
         FpsManager(int theTargetFps, float theReportInterval, std::string theWindowTitle, ALLEGRO_DISPLAY *display){
-            init(theTargetFps, display, true); // If you specify a window title it's safe to say you want the FPS to update there ;)
+            init(theTargetFps, display, false); // If you specify a window title it's safe to say you want the FPS to update there ;)
 
             setReportInterval(theReportInterval);
 
@@ -180,19 +180,18 @@ class FpsManager
 
                     if (verbose){
                         std::cout << "FPS: " << currentFps << std::endl;
-
-                        // If the user specified a window title to append the FPS value to...
-                        if (windowTitle != "NONE"){
-
-                            // Append the FPS value to the window title details
-                            std::string tempWindowTitle = windowTitle + " | " + std::to_string(currentFps) + " FPS";
-
-                            // Convert the new window title to a c_str and set it
-                            const char* pszConstString = tempWindowTitle.c_str();
-							al_set_window_title(display, pszConstString);
-                        }
-
                     } // End of if verbose section
+
+					// If the user specified a window title to append the FPS value to...
+					if (windowTitle != "NONE"){
+
+						// Append the FPS value to the window title details
+						std::string tempWindowTitle = windowTitle + " | " + std::to_string(currentFps) + " FPS";
+
+						// Convert the new window title to a c_str and set it
+						const char* pszConstString = tempWindowTitle.c_str();
+						al_set_window_title(display, pszConstString);
+					}
 
                 } else {// FPS calculation time interval hasn't elapsed yet? Simply increment the FPS frame counter
                     ++frameCount;

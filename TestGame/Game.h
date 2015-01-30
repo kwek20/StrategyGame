@@ -20,8 +20,7 @@ private:
 	HUD *hud;
 	ResourceManager *manager;
 
-	bool shutdown;
-	int num;
+	bool shutdown, pause;
 	std::string shutdownReason;
 
 	float mouseTempX, mouseTempY;
@@ -32,6 +31,7 @@ public:
 	virtual ~Game(void);
 
 	void tick(double deltaTime);
+	void togglePause(){pause = !pause;}
 
 	bool shouldShutDown(){return shutdown;}
 	void shutDown(){shutdown=true;}

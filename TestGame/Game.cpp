@@ -11,7 +11,6 @@ using namespace std;
 Game::Game(ALLEGRO_DISPLAY* display){
 	log("Loading game\n");
 	shutdown = false;
-	num = 0;
 
 	this->display = display;
 	manager = new ResourceManager();
@@ -28,12 +27,12 @@ Game::~Game(void){
 }
 
 void Game::tick(double deltaTime){
-	num++;
 	camera->camera_3D_setup(display);
-	map->draw();
-	//camera->camera_2D_setup(display);
 	camera->move(deltaTime);
-	//hud->draw(this);
+	map->draw();
+
+	camera->camera_2D_setup(display);
+	hud->draw(this);
 }
 
 void Game::handleKeyboard(ALLEGRO_EVENT_TYPE type, int keycode){
@@ -52,12 +51,6 @@ void Game::handleKeyboard(ALLEGRO_EVENT_TYPE type, int keycode){
 		case ALLEGRO_KEY_D:
 			camera->holdingRightStrafe = true;
 			break;
-			/*case '[':
-			fpsManager.setTargetFps(fpsManager.getTargetFps() - 10);
-			break;
-			case ']':
-			fpsManager.setTargetFps(fpsManager.getTargetFps() + 10);
-			break;*/
 		default:
 			// Do nothing...
 			break;

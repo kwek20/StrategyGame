@@ -39,22 +39,16 @@ int main(int argc, char **argv){
 		return -1;
 	}
 
-	//ALLEGRO_TIMER *timer = al_create_timer(1.0 / FPS);
-
-	//al_register_event_source(event_queue, al_get_timer_event_source(timer));
 	al_register_event_source(event_queue, al_get_keyboard_event_source());
 	al_register_event_source(event_queue, al_get_mouse_event_source());
 	al_register_event_source(event_queue, al_get_display_event_source(display));
-
-	//al_start_timer(timer);
 	
 	fpsManager = new FpsManager(FPS, 3.0, std::string(NAME), display);
 	game = new Game(display);
 	al_set_display_icon(display, game->getManager()->getImage("icon"));
 
-	bool /*redraw = true,*/ pause = false;
-	double deltaTime = 0.0;
-	//float theta = 0;
+	bool pause = false;
+	double deltaTime = 0.50;
 
 	al_grab_mouse(display);
 	ALLEGRO_BITMAP *mouseCursor = game->getManager()->getImage("empty");
@@ -65,25 +59,27 @@ int main(int argc, char **argv){
 
 	while (!game->shouldShutDown()){
 		ALLEGRO_EVENT ev;
-		al_wait_for_event(event_queue, &ev);
-		handleEvent(ev, game);
-		switch(ev.type){
-		case ALLEGRO_EVENT_KEY_UP:
-			switch(ev.keyboard.keycode){
-			case ALLEGRO_KEY_ESCAPE:
-				game->shutDown();
-				break;
-			case ALLEGRO_KEY_SPACE:
-				pause = !pause;
-				break;
-			case ALLEGRO_KEY_F12:
-				ale_screenshot(NULL, "screenshots", NULL);
-				break;
+		ALLEGRO_TIMEOUT timeout;
+		al_init_timeout(&timeout, 2/FPS);
+
+		bool get_event = al_wait_for_event_until(event_queue, &ev, &timeout);
+		if (!pause)handleEvent(ev, game);
+		if (get_event){
+			switch(ev.type){
+			case ALLEGRO_EVENT_KEY_UP:
+				switch(ev.keyboard.keycode){
+				case ALLEGRO_KEY_ESCAPE:
+					game->shutDown();
+					break;
+				case ALLEGRO_KEY_SPACE:
+					pause = !pause;
+					game->togglePause();
+					break;
+				case ALLEGRO_KEY_F12:
+					ale_screenshot(NULL, "screenshots", NULL);
+					break;
+				}
 			}
-		/*case ALLEGRO_EVENT_TIMER:
-			theta += 0.01;
-			redraw = true;
-			break;*/
 		}
 
 		if(al_is_event_queue_empty(event_queue) && !pause){
