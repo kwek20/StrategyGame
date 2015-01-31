@@ -14,6 +14,12 @@ Map::~Map(void){
 
 void Map::draw(void){
 	terrain->draw();
+	for (Entity *e : entities){e->draw();}
+	for (Object *o : objects){o->draw();}
+}
+
+float Map::getHeightAt(float x, float z){
+	return 1;
 }
 
 void Map::dump(){

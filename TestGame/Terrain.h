@@ -5,8 +5,11 @@
 #include <allegro5\allegro.h>
 #include <allegro5\allegro_opengl.h>
 
+#include "Decorator.h"
 #include "Generator.h"
+
 #include "noiseutils.h"
+
 #include <vector>
 
 
@@ -44,6 +47,8 @@ private:
 	std::vector<GLfloat> land_verticles;
 	std::vector<GLuint> connect_points;
 	std::vector<GLbyte> color_points;
+
+	Decorator decorator;
 };
 
 #endif

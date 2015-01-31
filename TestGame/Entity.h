@@ -23,6 +23,7 @@ public:
 
 	virtual ~Entity(void);
 	void unPossess();
+	void draw();
 
 	virtual void moveAdd(Vec3<double> newPos);
 	virtual void rotateAdd(Vec3<double> newRot);

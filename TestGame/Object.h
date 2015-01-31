@@ -9,6 +9,7 @@ public:
 	~Object(void);
 
 	void dump(){}
+	void draw();
 };
 
 #endif

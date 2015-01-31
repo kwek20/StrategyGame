@@ -13,5 +13,10 @@ public:
 	LivingEntity(double x, double y, double z, double xr, double yr, double zr) : Entity(x,y,z,xr,yr,zr){}
 
 	~LivingEntity(void){};
+
+private:
+	float health;
+	float healthMax;
+
 };
 

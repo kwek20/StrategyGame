@@ -78,9 +78,6 @@ void Terrain::load_ht_map(ALLEGRO_BITMAP* heightMap, std::vector<GLfloat> &verts
 		for(bmp_x = 0; bmp_x < xSize; bmp_x++){
 			ht_pixel = al_get_pixel(heightMap, bmp_x, bmp_z); // get pixel color
 			al_unmap_rgb(ht_pixel, &r, &g, &b);
-			colors.push_back(r);
-			colors.push_back(g);
-			colors.push_back(b);
 
 			//add x
 			verts.push_back(GLfloat((bmp_x * land_scale) - cent_wd));
@@ -93,6 +90,11 @@ void Terrain::load_ht_map(ALLEGRO_BITMAP* heightMap, std::vector<GLfloat> &verts
 
 			//add z
 			verts.push_back(GLfloat((bmp_z * land_scale) - cent_ht));
+
+			decorator.getColorAt(height_true, &r, &g, &b);
+			colors.push_back(r);
+			colors.push_back(g);
+			colors.push_back(b);
 		}
 	}
     al_unlock_bitmap(heightMap);

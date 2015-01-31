@@ -75,6 +75,8 @@
   <ItemGroup>
     <ClCompile Include="Building.cpp" />
     <ClCompile Include="Camera.cpp" />
+    <ClCompile Include="ControllableEntity.cpp" />
+    <ClCompile Include="Decorator.cpp" />
     <ClCompile Include="Entity.cpp" />
     <ClCompile Include="Game.cpp" />
     <ClCompile Include="Generator.cpp" />
@@ -89,10 +91,13 @@
     <ClCompile Include="ResourceManager.cpp" />
     <ClCompile Include="Resources.cpp" />
     <ClCompile Include="Terrain.cpp" />
+    <ClCompile Include="Villager.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Building.h" />
     <ClInclude Include="Camera.h" />
+    <ClInclude Include="ControllableEntity.h" />
+    <ClInclude Include="Decorator.h" />
     <ClInclude Include="Entity.h" />
     <ClInclude Include="FpsManager.hpp" />
     <ClInclude Include="Game.h" />
@@ -111,6 +116,7 @@
     <ClInclude Include="Status.h" />
     <ClInclude Include="Terrain.h" />
     <ClInclude Include="Vec3.hpp" />
+    <ClInclude Include="Villager.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

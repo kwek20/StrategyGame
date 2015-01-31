@@ -20,7 +20,7 @@ class Map
 private:
 	Terrain *terrain;
 
-	std::vector<Object> objects;
+	std::vector<Object*> objects;
 	std::vector<Entity*> entities;
 
 public:
@@ -30,9 +30,11 @@ public:
 	void draw(void);
 	float getX(){return TERRAIN_X;}
 	float getZ(){return TERRAIN_Y;}
-	float getHeight(){return TERRAIN_Y;}
+	float getHeight(){return terrain->getTopHeight();}
 
 	void addEntity(Entity *entity){entities.push_back(entity);}
+
+	float getHeightAt(float x, float z);
 	
 	template <typename T>
 	std::vector<T*> getEntitiesByClass(){

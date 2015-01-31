@@ -56,6 +56,10 @@ void Entity::load(Vec3<double> position, Vec3<double> rotation){
 	movementSpeedFactor = 100.0;
 }
 
+void Entity::draw(){
+
+}
+
 void Entity::dump(){
 	std::cout << getName().c_str() << ": position=[" << position << "] " << "rotation=[" << rotation << "]\n";
 }

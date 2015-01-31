@@ -47,11 +47,7 @@ ALLEGRO_BITMAP* FlagGenerator::generate(int xSize, int ySize){
 	utils::Image image;
 	renderer.SetSourceNoiseMap (heightMap);
 	renderer.SetDestImage (image);
-	/*renderer.ClearGradient ();
-	renderer.AddGradientPoint (-1.00, utils::Color ( 32, 160,   0, 255)); // grass
-	renderer.AddGradientPoint (-0.25, utils::Color (224, 224,   0, 255)); // dirt
-	renderer.AddGradientPoint ( 0.25, utils::Color (128, 128, 128, 255)); // rock
-	renderer.AddGradientPoint ( 1.00, utils::Color (255, 255, 255, 255)); // snow*/
+
 	renderer.EnableLight ();
 	renderer.SetLightContrast (3.0);
 	renderer.SetLightBrightness (2.0);
@@ -70,7 +66,7 @@ ALLEGRO_BITMAP* Generator::convertBMP(utils::Image image){
 	int x,y;
 	for (x=0; x<image.GetWidth(); x++){
 		for (y=0; y<image.GetHeight(); y++){
-			al_put_pixel(x, /*image.GetHeight()-*/y, convertColor(image.GetValue(x, y)));
+			al_put_pixel(x, y, convertColor(image.GetValue(x, y)));
 		}
 	}
 
@@ -79,6 +75,6 @@ ALLEGRO_BITMAP* Generator::convertBMP(utils::Image image){
 }
 
 ALLEGRO_COLOR Generator::convertColor(utils::Color color){
-	return al_map_rgba(float(color.red), float(color.green), float(color.blue), float(color.alpha));
+	return al_map_rgba(color.red, color.green, color.blue, color.alpha);
 }
 

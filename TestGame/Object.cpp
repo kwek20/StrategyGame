@@ -9,3 +9,7 @@ Object::Object(void)
 Object::~Object(void)
 {
 }
+
+void Object::draw(){
+
+}

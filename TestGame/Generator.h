@@ -4,6 +4,7 @@
 #pragma once
 
 #include <allegro5\allegro.h>
+
 #include "noiseutils.h"
 
 class Generator abstract
