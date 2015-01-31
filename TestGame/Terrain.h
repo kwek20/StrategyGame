@@ -35,9 +35,10 @@ public:
 
 	void save(noise::utils::Image image, std::string name);
 
+	GLfloat getTopHeight(){return max_height;} 
 private:
 	int xSize, ySize;
-	GLuint agl_tex;
+	GLfloat max_height;
 	
 	ALLEGRO_BITMAP* heightMap;
 	std::vector<GLfloat> land_verticles;

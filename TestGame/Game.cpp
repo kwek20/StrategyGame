@@ -39,7 +39,6 @@ void Game::tick(double deltaTime){
 }
 
 void Game::handleKeyboard(ALLEGRO_EVENT_TYPE type, int keycode){
-	std::cout << "keyboard event " << keycode << "\n";
 	// If a key is pressed, toggle the relevant key-press flag
 	if (type == ALLEGRO_EVENT_KEY_DOWN){
 		switch (keycode) {

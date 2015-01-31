@@ -1,10 +1,7 @@
 #include "Player.h"
+#include <stdio.h>
 
-Player::Player(void){
-
-}
-
-
-Player::~Player(void){
-
+void Player::moveAdd(Vec3<double> newPos){
+	newPos.setY(0);
+	position += newPos;
 }

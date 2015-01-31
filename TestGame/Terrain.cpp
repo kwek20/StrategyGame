@@ -87,6 +87,8 @@ void Terrain::load_ht_map(ALLEGRO_BITMAP* heightMap, std::vector<GLfloat> &verts
 
 			//add y, color to greyscale conversion
 			height_true = GLfloat(float(0.299*r + 0.587*g + 0.114*b) / 255.0f) * height_scale;
+			if (max_height < height_true) max_height = height_true;
+
 			verts.push_back(height_true);
 
 			//add z

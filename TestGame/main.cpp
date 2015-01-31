@@ -63,8 +63,9 @@ int main(int argc, char **argv){
 		al_init_timeout(&timeout, 2/FPS); // we dont need 1/FPS, this is less intensive
 
 		bool get_event = al_wait_for_event_until(event_queue, &ev, &timeout);
-		if (!pause)handleEvent(ev, game);
 		if (get_event){
+			if (!pause) handleEvent(ev, game);
+
 			switch(ev.type){
 			case ALLEGRO_EVENT_KEY_UP:
 				switch(ev.keyboard.keycode){

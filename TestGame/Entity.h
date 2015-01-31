@@ -9,14 +9,28 @@
 class Entity abstract
 {
 public:
+	virtual int getMaxPitch() = 0;
+	virtual int getMinPitch() = 0;
+	virtual int getMaxYaw() = 0;
+	virtual int getMinYaw() = 0;
+
 	Entity(void);
+	Entity(double x, double y, double z);
+	Entity(double x, double y, double z, double xr, double yr, double zr);
+
 	Entity(Vec3<double> position);
 	Entity(Vec3<double> position, Vec3<double> rotation);
 
 	virtual ~Entity(void);
 	void unPossess();
 
-	virtual const std::string getName() = 0;
+	virtual void moveAdd(Vec3<double> newPos);
+	virtual void rotateAdd(Vec3<double> newRot);
+
+	virtual void moveTo(Vec3<double> newPos);
+	virtual void rotateTo(Vec3<double> newRot);
+
+	virtual const std::string getName(){return "Entity";};
 
 	// Position getters
 	Vec3<double> getPosition() const { return position;        }
@@ -31,6 +45,8 @@ public:
 	double getZRot()           const { return rotation.getZ(); }
 
 	double getMovementSpeedFactor(){return movementSpeedFactor;}
+
+	//dump to stdout
 	void dump();
 protected:
 	// Entity position

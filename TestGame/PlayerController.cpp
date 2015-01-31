@@ -36,6 +36,7 @@ Vec3<double> PlayerController::getLocation(){
 
 Vec3<double> PlayerController::getRotation(){
 	if (hasTarget()) return target->getRotation();
+
 	return Vec3<double>(0,0,0);
 }
 
@@ -50,36 +51,36 @@ void PlayerController::handleMouseMove(int mouseX, int mouseY){
 	double horizMovement = mouseX * yawSensitivity;
 	double vertMovement  = mouseY * pitchSensitivity;
  
-	//std::cout << "Mid window values: " << windowMidX << "\t" << windowMidY << std::endl;
-	//std::cout << "Mouse values     : " << mouseX << "\t" << mouseY << std::endl;
-	//std::cout << horizMovement << "\t" << vertMovement << std::endl << std::endl;
+	Vec3<double> newRot = getRotation();
  
 	// Apply the mouse movement to our rotation vector. The vertical (look up and down)
 	// movement is applied on the X axis, and the horizontal (look left and right)
 	// movement is applied on the Y Axis
-	getRotation().addX(vertMovement);
-	getRotation().addY(horizMovement);
- 
+	newRot.addX(vertMovement);
+	newRot.addY(horizMovement);
+
 	// Limit looking up to vertically up
-	if (getRotation().getX() < -90){
-		getRotation().setX(-90);
+	if (newRot.getX() < target->getMaxPitch()){
+		newRot.setX(target->getMaxPitch());
 	}
  
 	// Limit looking down to vertically down
-	if (getRotation().getX() > 90){
-		getRotation().setX(90);
+	if (newRot.getX() > target->getMinPitch()){
+		newRot.setX(target->getMinPitch());
 	}
  
 	// Looking left and right - keep angles in the range 0.0 to 360.0
 	// 0 degrees is looking directly down the negative Z axis "North", 90 degrees is "East", 180 degrees is "South", 270 degrees is "West"
 	// We can also do this so that our 360 degrees goes -180 through +180 and it works the same, but it's probably best to keep our
 	// range to 0 through 360 instead of -180 through +180.
-	if (getRotation().getY() < 0){
-		getRotation().addY(360);
+	if (newRot.getY() < target->getMinYaw()){
+		newRot.addY(target->getMaxYaw());
 	}
-	if (getRotation().getY() > 360){
-		getRotation().addY(-360);
+	if (newRot.getY() > target->getMaxYaw()){
+		newRot.addY(-target->getMinYaw());
 	}
+
+	target->rotateTo(newRot);
 }
  
 // Function to calculate which direction we need to move the camera and by what amount
@@ -128,5 +129,5 @@ void PlayerController::move(double deltaTime){
 	movement *= framerateIndependentFactor;
  
 	// Finally, apply the movement to our position
-	getLocation() += movement;
+	target->moveAdd(movement);
 }

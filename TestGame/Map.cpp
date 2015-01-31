@@ -5,8 +5,7 @@ Map::Map(void){
 	Generator *g = new FlagGenerator();
 	terrain = new Terrain(TERRAIN_X, TERRAIN_Y, g);
 
-	addEntity(new Player());
-	dump();
+	addEntity(new Player(0,terrain->getTopHeight()*1.5,0));
 }
  
 Map::~Map(void){
