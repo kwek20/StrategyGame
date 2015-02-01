@@ -22,6 +22,7 @@ void Camera::camera_2D_setup(ALLEGRO_DISPLAY* display){
 	glOrtho(0, al_get_display_width(display), al_get_display_height(display), 0.0, 0.0, 1.0);
 	
 	glMatrixMode(GL_MODELVIEW);
+	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 	glLoadIdentity();
 	glDisable(GL_DEPTH_TEST);
 }

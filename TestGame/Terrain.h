@@ -1,5 +1,6 @@
 #ifndef __TERRAIN_H_INCLUDED__
 #define __TERRAIN_H_INCLUDED__
+
 #pragma once
 
 #include <allegro5\allegro.h>
@@ -12,6 +13,7 @@
 
 #include <vector>
 
+#define MODE GL_LINE
 
 class Terrain {
 
@@ -23,7 +25,7 @@ public:
 	/**
 		Load the height map into an x,y,z coordinate system
 	*/
-	void load_ht_map(ALLEGRO_BITMAP* heightMap, std::vector<GLfloat> &verts, std::vector<GLbyte> &colors, GLfloat land_scale = 6.0f, GLfloat height_scale = 200.0f);
+	void load_ht_map(ALLEGRO_BITMAP* heightMap, std::vector<GLfloat> &verts, std::vector<GLbyte> &colors, GLfloat land_scale = 10.0f, GLfloat height_scale = 200.0f);
 
 	/**
 	   Generates the points for each triangle
@@ -34,7 +36,7 @@ public:
 	  */
 	void make_point_connections(std::vector<GLuint> &points);
 
-	void draw(void);
+	void draw(int mode = MODE);
 
 	void save(noise::utils::Image image, std::string name);
 

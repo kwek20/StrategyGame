@@ -19,7 +19,11 @@ void Map::draw(void){
 }
 
 float Map::getHeightAt(float x, float z){
-	return 1;
+	//for (int point=0; point < terrain->connect_points.size()){
+
+	//}
+
+	return 0;
 }
 
 void Map::dump(){
@@ -28,8 +32,8 @@ void Map::dump(){
 		std::cout << "No objects\n";
 	} else {
 		std::cout << objects.size() << " objects: \n";
-		for (Object o : objects){
-			o.dump();
+		for (Object *o : objects){
+			o->dump();
 		}
 	}
 

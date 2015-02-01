@@ -11,11 +11,11 @@ ALLEGRO_BITMAP* FlagGenerator::generate(int xSize, int ySize){
 	mountainTerrain.SetOctaveCount (1);
 
 	module::Billow baseFlatTerrain;
-	baseFlatTerrain.SetFrequency (2.0);
+	baseFlatTerrain.SetFrequency (3.0);
 
 	module::ScaleBias flatTerrain;
 	flatTerrain.SetSourceModule (0, baseFlatTerrain);
-	flatTerrain.SetScale (0.125);
+	flatTerrain.SetScale (0.025);
 	flatTerrain.SetBias (-0.75);
 
 	module::Perlin terrainType;
@@ -28,7 +28,7 @@ ALLEGRO_BITMAP* FlagGenerator::generate(int xSize, int ySize){
 	terrainSelector.SetSourceModule (1, mountainTerrain);
 	terrainSelector.SetControlModule (terrainType);
 	terrainSelector.SetBounds (0.0, 1000.0);
-	terrainSelector.SetEdgeFalloff (0.1);
+	terrainSelector.SetEdgeFalloff (0.5);
 
 	module::Turbulence finalTerrain;
 	finalTerrain.SetSourceModule (0, terrainSelector);
@@ -40,7 +40,7 @@ ALLEGRO_BITMAP* FlagGenerator::generate(int xSize, int ySize){
 	heightMapBuilder.SetSourceModule (finalTerrain);
 	heightMapBuilder.SetDestNoiseMap (heightMap);
 	heightMapBuilder.SetDestSize (xSize, ySize);
-	heightMapBuilder.SetBounds (0.0, 4.0, 0.0, 4.0);
+	heightMapBuilder.SetBounds (0.0, 2.0, 0.0, 2.0);
 	heightMapBuilder.Build ();
 
 	utils::RendererImage renderer;

@@ -30,12 +30,12 @@ Terrain::~Terrain(void){
 	al_destroy_bitmap(heightMap);
 }
 
-void Terrain::draw(void){
+void Terrain::draw(int mode){
 	if (!heightMap) return;
 
 	//select model stack
 	glMatrixMode(GL_MODELVIEW);
-	//glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+	glPolygonMode(GL_FRONT_AND_BACK, mode);
 
 	//enable array for use during rendering
 	glEnableClientState(GL_VERTEX_ARRAY);
@@ -72,7 +72,8 @@ void Terrain::load_ht_map(ALLEGRO_BITMAP* heightMap, std::vector<GLfloat> &verts
  
     verts.reserve(ySize * xSize * 3);
 	colors.reserve(ySize * xSize * 3);
-
+	//std::cout <<"landscale="<<land_scale<<" heightscale="<<height_scale<<"\n";
+	//std::cout <<"cent_wd="<<cent_wd<<" cent_ht="<<cent_ht<<"\n";
 	//for every x, z coord
 	for(bmp_z = 0; bmp_z < ySize; bmp_z++){
 		for(bmp_x = 0; bmp_x < xSize; bmp_x++){
@@ -85,7 +86,6 @@ void Terrain::load_ht_map(ALLEGRO_BITMAP* heightMap, std::vector<GLfloat> &verts
 			//add y, color to greyscale conversion
 			height_true = GLfloat(float(0.299*r + 0.587*g + 0.114*b) / 255.0f) * height_scale;
 			if (max_height < height_true) max_height = height_true;
-
 			verts.push_back(height_true);
 
 			//add z
@@ -95,6 +95,9 @@ void Terrain::load_ht_map(ALLEGRO_BITMAP* heightMap, std::vector<GLfloat> &verts
 			colors.push_back(r);
 			colors.push_back(g);
 			colors.push_back(b);
+
+			//std::cout << "x="<<GLfloat((bmp_x * land_scale) - cent_wd)<<" y="<<height_true<<" z="<<GLfloat((bmp_z * land_scale) - cent_ht)<<" - r="<<r<<" g="<<g<<" b="<<b<<"\n";
+			//al_rest(1);
 		}
 	}
     al_unlock_bitmap(heightMap);

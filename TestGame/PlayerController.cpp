@@ -77,7 +77,7 @@ void PlayerController::handleMouseMove(int mouseX, int mouseY){
 		newRot.addY(target->getMaxYaw());
 	}
 	if (newRot.getY() > target->getMaxYaw()){
-		newRot.addY(-target->getMinYaw());
+		newRot.setY(target->getMinYaw());
 	}
 
 	target->rotateTo(newRot);
