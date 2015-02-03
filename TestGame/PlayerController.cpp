@@ -129,5 +129,6 @@ void PlayerController::move(double deltaTime){
 	movement *= framerateIndependentFactor;
  
 	// Finally, apply the movement to our position
-	target->moveAdd(movement);
+	target->setVelocity(target->getVelocity()+movement);
+	//target->moveAdd(movement);
 }

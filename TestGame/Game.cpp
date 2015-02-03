@@ -32,7 +32,7 @@ void Game::tick(double deltaTime){
 	controller->move(deltaTime);
 
 	camera->camera_3D_setup(display);
-	map->draw();
+	map->draw(deltaTime);
 
 	camera->camera_2D_setup(display);
 	hud->draw(this);

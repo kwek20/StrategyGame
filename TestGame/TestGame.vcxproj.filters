@@ -143,5 +143,8 @@
     <ClInclude Include="Decorator.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="Math.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

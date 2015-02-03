@@ -1,29 +1,36 @@
 #include "Map.h"
 #include "Player.h"
 
+#include "Villager.h"
+
 Map::Map(void){
 	Generator *g = new FlagGenerator();
 	terrain = new Terrain(TERRAIN_X, TERRAIN_Y, g);
 
 	addEntity(new Player(0,terrain->getTopHeight()*1.5,0));
+	addEntity(new Villager(5, terrain->getTopHeight()*1.5,-105));
 }
  
 Map::~Map(void){
 
 }
 
-void Map::draw(void){
+void Map::draw(float deltaTime){
 	terrain->draw();
-	for (Entity *e : entities){e->draw();}
+	for (Entity *e : entities){
+		if (dynamic_cast<LivingEntity*>(e)){
+			e->setInAir(getHeightAt(e->getXPos(), e->getZPos()) < e->getYPos());
+		}
+
+		e->update(deltaTime); 
+		e->draw();
+	}
+
 	for (Object *o : objects){o->draw();}
 }
 
 float Map::getHeightAt(float x, float z){
-	//for (int point=0; point < terrain->connect_points.size()){
-
-	//}
-
-	return 0;
+	return terrain->getHeight(x,z);
 }
 
 void Map::dump(){

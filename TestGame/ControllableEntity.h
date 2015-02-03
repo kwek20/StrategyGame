@@ -6,5 +6,7 @@ class ControllableEntity :
 public:
 	ControllableEntity(void);
 	~ControllableEntity(void);
+
+	ControllableEntity(float x, float y, float z) : LivingEntity(x,y,z){}
 };
 

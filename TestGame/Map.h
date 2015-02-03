@@ -27,7 +27,7 @@ public:
 	Map(void);
 	~Map(void);
 
-	void draw(void);
+	void draw(float deltaTime);
 	float getX(){return TERRAIN_X;}
 	float getZ(){return TERRAIN_Y;}
 	float getHeight(){return terrain->getTopHeight();}

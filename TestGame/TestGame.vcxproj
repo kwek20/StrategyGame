@@ -106,6 +106,7 @@
     <ClInclude Include="LivingEntity.h" />
     <ClInclude Include="main.h" />
     <ClInclude Include="Map.h" />
+    <ClInclude Include="Math.hpp" />
     <ClInclude Include="noiseutils.h" />
     <ClInclude Include="Object.h" />
     <ClInclude Include="Player.h" />

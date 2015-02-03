@@ -23,7 +23,10 @@ public:
 
 	virtual ~Entity(void);
 	void unPossess();
-	void draw();
+
+	virtual void draw();
+	virtual void move(float deltaTime);
+	virtual void update(float deltaTime);
 
 	virtual void moveAdd(Vec3<double> newPos);
 	virtual void rotateAdd(Vec3<double> newRot);
@@ -32,6 +35,9 @@ public:
 	virtual void rotateTo(Vec3<double> newRot);
 
 	virtual const std::string getName(){return "Entity";};
+
+	bool isInAir(){return inAir;}
+	void setInAir(bool air){inAir = air;}
 
 	// Position getters
 	Vec3<double> getPosition() const { return position;        }
@@ -47,6 +53,13 @@ public:
 
 	double getMovementSpeedFactor(){return movementSpeedFactor;}
 
+	Vec3<double> getVelocity(){return velocity;}
+	void setVelocity(Vec3<double> newVelocity){velocity = newVelocity;}
+
+	bool hasVelocity(){return velocity.getX() != 0 || velocity.getY() != 0 || velocity.getZ() != 0;}
+
+	void getPixelLocation(int *x, int *y);
+
 	//dump to stdout
 	void dump();
 protected:
@@ -56,12 +69,17 @@ protected:
 	// Entity rotation
 	Vec3<double> rotation;
 
-	// Entity movement speed. When we call the move() function on it, it moves using these speeds
-	Vec3<double> speed;
+	// Entity velocity, update() functions uses this to calculate movement per deltatime
+	Vec3<double> velocity;
 
+	double gravity;
+	double friction;
+	double density;
     double movementSpeedFactor; // Controls how fast the camera moves
 private:
 	void load(Vec3<double> position, Vec3<double> rotation);
+
+	bool inAir;
 };
 
 #endif

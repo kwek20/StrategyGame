@@ -1,10 +1,9 @@
 #include "Terrain.h"
-#include "noiseutils.h"
-#include <gl\glu.h>
+#include "Math.hpp"
 
+#include <gl\glu.h>
 #include <allegro5\opengl\gl_ext.h>
 
-#include <vector>
 #include <iostream>
 
 Terrain::Terrain(int x, int y, Generator *gen, int angle){
@@ -56,12 +55,15 @@ void Terrain::save(noise::utils::Image image, std::string name){
 	writer.WriteDestFile ();
 }
 
+//loads the height map into points on the terrain
 void Terrain::load_ht_map(ALLEGRO_BITMAP* heightMap, std::vector<GLfloat> &verts, std::vector<GLbyte> &colors, GLfloat land_scale, GLfloat height_scale){
     ALLEGRO_COLOR ht_pixel;
 	GLfloat height_true = 0.0f;
     int bmp_x = 0;
     int bmp_z = 0;
     unsigned char r, g, b;
+
+	tile_size = land_scale;
  
     // locking the bitmap makes the reading of it noticably faster...
     al_lock_bitmap(heightMap, ALLEGRO_PIXEL_FORMAT_ANY, ALLEGRO_LOCK_READONLY);
@@ -102,7 +104,8 @@ void Terrain::load_ht_map(ALLEGRO_BITMAP* heightMap, std::vector<GLfloat> &verts
 	}
     al_unlock_bitmap(heightMap);
 }
- 
+
+//link the verticle points to 2 triangle abc's
 void Terrain::make_point_connections(std::vector<GLuint> &points){
     GLuint i = 0;
     size_t point_count = (xSize - 1) * (ySize - 1) * 6;
@@ -138,4 +141,32 @@ void Terrain::make_point_connections(std::vector<GLuint> &points){
             width_cnt++;
         }
     }
+}
+
+//returns max ySize if not possible
+float Terrain::getHeight(float x, float z){
+
+	Vec3<GLfloat> p1, p2, p3;
+	p1 = getPoint(x,z);
+	p2 = getPoint(x-tile_size,z);
+	p3 = getPoint(x,z-tile_size);
+	float height = calcY(p1, p2, p3, x, z);
+	return height;
+}
+
+Vec3<GLfloat> Terrain::getPoint(float x, float z){
+	x = x - fmod(x, tile_size);
+	z = z - fmod(z, tile_size);
+
+	x/=tile_size;
+	z/=tile_size;
+
+	//vec3 center to vec2 center
+	x+= xSize/2;
+	z+= ySize/2;
+	if (x >= xSize || z  >= ySize) return Vec3<GLfloat>(0,0,0);
+
+	//amount per coordinate * z position * amount per z + x 
+	int position = 3 * (z*xSize + x);
+	return Vec3<GLfloat>(land_verticles.at(position), land_verticles.at(position+1), land_verticles.at(position+2));
 }

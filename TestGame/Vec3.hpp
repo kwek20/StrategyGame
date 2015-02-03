@@ -39,9 +39,9 @@ template <class T> class Vec3
         T getY() const { return y; }
         T getZ() const { return z; }
 
-        void setX(const T &xValue) { x = xValue; }
-        void setY(const T &yValue) { y = yValue; }
-        void setZ(const T &zValue) { z = zValue; }
+        Vec3<T> setX(const T &xValue) { x = xValue; return *this;}
+        Vec3<T> setY(const T &yValue) { y = yValue; return *this;}
+        Vec3<T> setZ(const T &zValue) { z = zValue; return *this;}
 
         // ------------ Helper methods ------------
 
@@ -109,9 +109,9 @@ template <class T> class Vec3
         }
 
         // Easy adders
-        void addX(T value) { x += value; }
-        void addY(T value) { y += value; }
-        void addZ(T value) { z += value; }
+        Vec3<T> addX(T value) { x += value; return *this;}
+        Vec3<T> addY(T value) { y += value; return *this;}
+        Vec3<T> addZ(T value) { z += value; return *this;}
 
         // Method to return the distance between two vectors in 3D space
         //
@@ -168,11 +168,12 @@ template <class T> class Vec3
         }
 
         // Overloaded add and asssign operator to add Vec3s together
-        void operator+=(const Vec3 &vector)
+        Vec3 operator+=(const Vec3 &vector)
         {
             x += vector.x;
             y += vector.y;
             z += vector.z;
+			return *this;
         }
 
         // Overloaded subtraction operator to subtract a Vec3 from another Vec3
@@ -182,11 +183,12 @@ template <class T> class Vec3
         }
 
         // Overloaded subtract and asssign operator to subtract a Vec3 from another Vec3
-        void operator-=(const Vec3 &vector)
+        Vec3 operator-=(const Vec3 &vector)
         {
             x -= vector.x;
             y -= vector.y;
             z -= vector.z;
+			return *this;
         }
 
         // Overloaded multiplication operator to multiply two Vec3s together
@@ -202,11 +204,12 @@ template <class T> class Vec3
         }
 
         // Overloaded multiply and assign operator to multiply a vector by a scalar
-        void operator*=(const T &value)
+        Vec3 operator*=(const T &value)
         {
             x *= value;
             y *= value;
             z *= value;
+			return *this;
         }
 
         // Overloaded multiply operator to multiply a vector by a scalar
@@ -215,17 +218,18 @@ template <class T> class Vec3
             return Vec3<T>(x / value, y / value, z / value);
         }
 
-		friend std::ostream& operator<< (std::ostream& out, const Vec3<T>& v){
-			return out << v.getX() << "," << v.getY() << "," << v.getZ();
-		}
-
         // Overloaded multiply and assign operator to multiply a vector by a scalar
-        void operator/=(const T &value)
+        Vec3 operator/=(const T &value)
         {
             x /= value;
             y /= value;
             z /= value;
+			return *this;
         }
+
+		friend std::ostream& operator<< (std::ostream& out, const Vec3<T>& v){
+			return out << v.getX() << "," << v.getY() << "," << v.getZ();
+		}
 };
 
 #endif
