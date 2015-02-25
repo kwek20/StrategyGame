@@ -1,0 +1,30 @@
+Physics:
+	Friction
+
+Terrain:
+	Textures
+	Multiple generation types
+	Water/fluit
+
+AI:
+	Pathfinding
+	Mesh loading
+	Statistics
+
+Gameplay:
+	Buildings
+	Countries
+	Resources
+
+HUD:
+	Menu boven
+	score calculation
+	per building screen
+	AI option screen(selected)
+	minimap
+
+	Main menu
+	scenario editor
+	pause menu
+
+
