@@ -1,5 +1,5 @@
-#ifndef __RESOURCES_H_INCLUDED__
-#define __RESOURCES_H_INCLUDED__
+#ifndef __RESOURCELOADER_H_INCLUDED__
+#define __RESOURCELOADER_H_INCLUDED__
 
 #pragma once
 
@@ -23,9 +23,9 @@ struct Data {
 	type *data;
 };
 
-class IResource {
+class IResourceLoader {
 public:
-	IResource(std::string p){_name = p;}
+	IResourceLoader(std::string p){_name = p;}
 
 	virtual void load() = 0;
 	std::string getName(){ return _name;}
@@ -35,15 +35,22 @@ private:
 };
 
 template <class type>
-class Resource : public IResource
+class ResourceLoader : public IResourceLoader
 {
 public:
-	Resource<type>(std::string p) : IResource(p) {
+	ResourceLoader<type>(std::string p) : IResourceLoader(p) {
 		//append name to resource path
 		al_append_path_component(path = al_get_standard_path(ALLEGRO_RESOURCES_PATH), p.c_str());
 	}
 
-	~Resource<type>(void){al_destroy_path(path);}
+	~ResourceLoader<type>(void){
+		al_destroy_path(path);
+
+		for (const Data<type> var : data){
+			//delete var.data;
+		}
+	}
+
 	ALLEGRO_PATH *getPath(){return path;}
 	void addData(Data<type> d){data.push_back(d); std::cout << "Loaded " << d.path.c_str() << "\n";}
 
@@ -121,25 +128,25 @@ private:
 	ALLEGRO_PATH *path;
 };
 
-class Font : public Resource<ALLEGRO_FONT>
+class FontLoader : public ResourceLoader<ALLEGRO_FONT>
 {
 public:
-	Font(std::string p) : Resource(p){};
-	ALLEGRO_FONT *Font::loadFile(const char *fileName);
+	FontLoader(std::string p) : ResourceLoader(p){};
+	ALLEGRO_FONT *loadFile(const char *fileName);
 };
 
-class Image : public Resource<ALLEGRO_BITMAP>
+class ImageLoader : public ResourceLoader<ALLEGRO_BITMAP>
 {
 public:
-	Image(std::string p) : Resource(p){};
-	ALLEGRO_BITMAP *Image::loadFile(const char *fileName);
+	ImageLoader(std::string p) : ResourceLoader(p){};
+	ALLEGRO_BITMAP *loadFile(const char *fileName);
 };
 
-class Sound : public Resource<ALLEGRO_SAMPLE>
+class SoundLoader : public ResourceLoader<ALLEGRO_SAMPLE>
 {
 public:
-	Sound(std::string p) : Resource(p){};
-	ALLEGRO_SAMPLE *Sound::loadFile(const char *fileName);
+	SoundLoader(std::string p) : ResourceLoader(p){};
+	ALLEGRO_SAMPLE *loadFile(const char *fileName);
 };
 
 #endif

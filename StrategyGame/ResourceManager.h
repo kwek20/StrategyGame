@@ -8,8 +8,8 @@
 #define IMAGES "images"
 #define MODELS "models"
 
-#include "Resources.h"
-#include "Model.h"
+#include "ResourceLoader.h"
+#include "ResourceLoaderModel.h"
 
 #include "assimp/scene.h"
 
@@ -22,12 +22,12 @@ public:
 	ALLEGRO_BITMAP *getImage(std::string name);
 	ALLEGRO_SAMPLE *getSound(std::string name);
 	ALLEGRO_FONT *getFont(std::string name);
-	const aiScene *getModel(std::string name);
+	Model *getModel(std::string name);
 private:
-	Sound *sounds;
-	Font *fonts;
-	Image *images;
-	Model *models;
+	SoundLoader *sounds;
+	FontLoader *fonts;
+	ImageLoader *images;
+	ModelLoader *models;
 };
 
 #endif

@@ -2,14 +2,18 @@
 #define __OBJECT_H_INCLUDED__
 
 #pragma once
+
 class Object
 {
 public:
 	Object(void);
 	~Object(void);
 
-	void dump(){}
-	void draw();
+	virtual void dump() {}
+	virtual void draw() = 0;
+
+private:
+	
 };
 
 #endif

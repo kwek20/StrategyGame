@@ -1,11 +1,10 @@
 #include "ResourceManager.h"
-#include "Model.h"
 
 ResourceManager::ResourceManager(void){
-	sounds = new Sound(SOUNDS);
-	fonts = new Font(FONTS);
-	images = new Image(IMAGES);
-	models = new Model(MODELS);
+	sounds = new SoundLoader(SOUNDS);
+	fonts = new FontLoader(FONTS);
+	images = new ImageLoader(IMAGES);
+	models = new ModelLoader(MODELS);
 
 	sounds->load();
 	fonts->load();
@@ -32,6 +31,6 @@ ALLEGRO_FONT* ResourceManager::getFont(std::string name){
 	return fonts->getData(name);
 }
 
-const aiScene* ResourceManager::getModel(std::string name){
+Model* ResourceManager::getModel(std::string name){
 	return models->getData(name);
 }

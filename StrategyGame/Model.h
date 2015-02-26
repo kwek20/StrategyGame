@@ -3,35 +3,37 @@
 
 #pragma once
 
-#include "Resources.h"
+#include "object.h"
 
-#include "assimp/scene.h"
-#include "assimp/Importer.hpp"	//OO version Header!
-
-#include <string>
-#include <iostream>
 #include <map>
 
-#include <allegro5\allegro_opengl.h>
+#include <Windows.h> //TODO remove windows depends
+#include <GL/gl.h>
 
-class Model : public Resource<const aiScene>
+#include "assimp/scene.h"
+
+class Model :
+	public Object
 {
 public:
-	Model(std::string p) : Resource(p){};
-	const aiScene *loadFile(const char *fileName);
-	
-	const aiScene *Import3DFromFile(const std::string& pFile);
-	int LoadGLTextures(const aiScene* scene, const std::string path);
-	void loadDataFile(int delSize, std::string path);
-private:
-	std::string getBasePath(const std::string& path);
+	Model(const aiScene* scene);
+	~Model(void);
 
-	// Create an instance of the Importer class
-	Assimp::Importer importer;
+	virtual void draw();
 
 	// images / texture
 	std::map<std::string, GLuint*> textureIdMap;	// map image filenames to textureIds
 	GLuint*		textureIds;							// pointer to texture Array
+private:
+	const aiScene* model;
+
+	void Color4f(const aiColor4D *color);
+	void set_float4(float f[4], float a, float b, float c, float d);
+	void color4_to_float4(const aiColor4D *c, float f[4]);
+
+	void apply_material(const aiMaterial *mtl);
+	void recursive_render (const struct aiScene *scene, const struct aiNode* nd, float scale);
 };
 
 #endif
+

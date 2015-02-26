@@ -1,15 +1,9 @@
 #include "Object.h"
 
+Object::Object(void){
 
-Object::Object(void)
-{
 }
 
-
-Object::~Object(void)
-{
-}
-
-void Object::draw(){
+Object::~Object(void){
 
 }
