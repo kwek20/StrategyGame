@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include "ResourceManager.h"
+
 #include "Terrain.h"
 #include "Object.h"
 
@@ -24,7 +26,7 @@ private:
 	std::vector<Entity*> entities;
 
 public:
-	Map(void);
+	Map(ResourceManager *manager);
 	~Map(void);
 
 	void draw(float deltaTime);
@@ -32,7 +34,9 @@ public:
 	float getZ(){return TERRAIN_Y;}
 	float getHeight(){return terrain->getTopHeight();}
 
-	void addEntity(Entity *entity){entities.push_back(entity);}
+	void addEntity(Entity *entity){if (entity != NULL)entities.push_back(entity);}
+	void addObject(Object *obj){if (obj != NULL)objects.push_back(obj);}
+
 
 	float getHeightAt(float x, float z);
 	

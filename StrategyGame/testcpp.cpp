@@ -61,12 +61,6 @@ GLboolean abortGLInit(const char*);
 
 const char* windowTitle = "OpenGL Framework";
 
-GLfloat LightAmbient[]= { 0.5f, 0.5f, 0.5f, 1.0f };
-GLfloat LightDiffuse[]= { 1.0f, 1.0f, 1.0f, 1.0f };
-GLfloat LightPosition[]= { 0.0f, 0.0f, 15.0f, 1.0f };
-
-
-
 // the global Assimp scene object
 const aiScene* scene = NULL;
 GLuint scene_list = 0;
@@ -271,9 +265,9 @@ int InitGL()					 // All Setup For OpenGL goes here
 	glLightModeli(GL_LIGHT_MODEL_TWO_SIDE, GL_TRUE);
 	glEnable(GL_NORMALIZE);
 
-	glLightfv(GL_LIGHT1, GL_AMBIENT, LightAmbient);
+/*	glLightfv(GL_LIGHT1, GL_AMBIENT, LightAmbient);
 	glLightfv(GL_LIGHT1, GL_DIFFUSE, LightDiffuse);
-	glLightfv(GL_LIGHT1, GL_POSITION, LightPosition);
+	glLightfv(GL_LIGHT1, GL_POSITION, LightPosition);*/
 	glEnable(GL_LIGHT1);
 
 	//glColorMaterial(GL_FRONT_AND_BACK, GL_DIFFUSE);

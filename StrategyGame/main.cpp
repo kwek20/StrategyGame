@@ -25,7 +25,11 @@ int main(int argc, char **argv){
 
 	
 	al_set_new_display_option(ALLEGRO_VSYNC, 1, ALLEGRO_SUGGEST);
+	al_set_new_display_option(ALLEGRO_SAMPLE_BUFFERS, 1, ALLEGRO_SUGGEST);
+	al_set_new_display_option(ALLEGRO_SAMPLES, 3, ALLEGRO_SUGGEST);
+
 	al_set_new_display_flags(ALLEGRO_OPENGL);
+
 	display = al_create_display(800, 600);
 	if(!display) {
 		error("failed to create display!\n");
@@ -91,6 +95,7 @@ int main(int argc, char **argv){
 			deltaTime = fpsManager->enforceFPS();
 			glFlush();
 			al_flip_display();
+			
 		}
 	}
 

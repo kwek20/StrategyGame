@@ -14,7 +14,7 @@ Game::Game(ALLEGRO_DISPLAY* display){
 
 	this->display = display;
 	manager = new ResourceManager();
-	map = new Map();
+	map = new Map(manager);
 	hud = new IngameHUD();
 
 	controller = new PlayerController(map->getEntitiesByClass<Player>().at(0));

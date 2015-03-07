@@ -6,33 +6,51 @@
 #include "object.h"
 
 #include <map>
+#include <vector>
 
 #include <Windows.h> //TODO remove windows depends
 #include <GL/gl.h>
 
 #include "assimp/scene.h"
 
-class Model :
-	public Object
+#include "vertexBufferObject.h"
+#include "texture.h"
+
+#define FOR(q,n) for(int q=0;q<n;q++)
+#define SFOR(q,s,e) for(int q=s;q<=e;q++)
+#define RFOR(q,n) for(int q=n;q>=0;q--)
+#define RSFOR(q,s,e) for(int q=s;q>=e;q--)
+
+#define ESZ(elem) (int)elem.size()
+
+
+class CMaterial
 {
 public:
-	Model(const aiScene* scene);
+	int iTexture;
+};
+
+class Model : public Object {
+public:
+	Model(std::string sFilePath);
 	~Model(void);
 
 	virtual void draw();
 
-	// images / texture
-	std::map<std::string, GLuint*> textureIdMap;	// map image filenames to textureIds
-	GLuint*		textureIds;							// pointer to texture Array
+	bool LoadModelFromFile(std::string sFilePath);
+
+	static void FinalizeVBO();
+	static void BindModelsVAO();
 private:
-	const aiScene* model;
+	bool bLoaded;
+	static CVertexBufferObject vboModelData;
+	static UINT uiVAO;
+	static std::vector<CTexture> tTextures;
 
-	void Color4f(const aiColor4D *color);
-	void set_float4(float f[4], float a, float b, float c, float d);
-	void color4_to_float4(const aiColor4D *c, float f[4]);
-
-	void apply_material(const aiMaterial *mtl);
-	void recursive_render (const struct aiScene *scene, const struct aiNode* nd, float scale);
+	std::vector<int> iMeshStartIndices;
+	std::vector<int> iMeshSizes;
+	std::vector<int> iMaterialIndices;
+	int iNumMaterials;
 };
 
 #endif

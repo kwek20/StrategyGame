@@ -52,7 +52,7 @@ public:
 	}
 
 	ALLEGRO_PATH *getPath(){return path;}
-	void addData(Data<type> d){data.push_back(d); std::cout << "Loaded " << d.path.c_str() << "\n";}
+	void addData(Data<type> d){data.push_back(d); std::cout << "Loaded \"" << d.path.c_str() << "\"\n";}
 
 	void load(){
 		std::cout << "Loading resource " << getName().c_str() << "\n";
@@ -73,7 +73,7 @@ public:
 		for (unsigned int i=0; i<data.size(); i++){
 			tempData = data.at(i);
 			//if name equals data name
-			if (strcmp(name.c_str(), tempData.path.c_str()) == 0) return tempData.data;
+			if (stricmp(name.c_str(), tempData.path.c_str()) == 0) return tempData.data;
 		}
 		return NULL;
 	}

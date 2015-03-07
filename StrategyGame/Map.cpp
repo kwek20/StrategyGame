@@ -2,13 +2,16 @@
 #include "Player.h"
 
 #include "Villager.h"
+#include "Model.h"
 
-Map::Map(void){
+Map::Map(ResourceManager *manager){
 	Generator *g = new FlagGenerator();
 	terrain = new Terrain(TERRAIN_X, TERRAIN_Y, g);
 
 	addEntity(new Player(0,terrain->getTopHeight()*1.5,0));
 	addEntity(new Villager(5, terrain->getTopHeight()*1.5,-105));
+
+	addObject(manager->getModel("bench"));
 }
  
 Map::~Map(void){
@@ -16,7 +19,7 @@ Map::~Map(void){
 }
 
 void Map::draw(float deltaTime){
-	terrain->draw();
+	//terrain->draw();
 	for (Entity *e : entities){
 		if (dynamic_cast<LivingEntity*>(e)){
 			e->setInAir(getHeightAt(e->getXPos(), e->getZPos()) < e->getYPos());

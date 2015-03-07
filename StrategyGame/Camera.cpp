@@ -9,6 +9,21 @@ Camera::Camera(float theWindowWidth, float theWindowHeight, PlayerController tar
 	windowMidY = windowHeight / 2.0f;
 
 	this->target = target;
+
+	LightAmbient[0] = 30.5f;
+	LightAmbient[1] = 0.5f;
+	LightAmbient[2] = 0.5f;
+	LightAmbient[3] = 1.0f;
+
+	LightDiffuse[0] = 1.0f;
+	LightDiffuse[1] = 1.0f;
+	LightDiffuse[2] = 1.0f;
+	LightDiffuse[3] = 1.0f;
+
+	LightPosition[0] = 0.0f;
+	LightPosition[1] = 20.0f;
+	LightPosition[2] = 100.0f;
+	LightPosition[3] = 1.0f;
 }
  
 Camera::~Camera(){
@@ -36,5 +51,27 @@ void Camera::camera_3D_setup(ALLEGRO_DISPLAY* display){
 	glRotatef(target.getTarget()->getYRot(), 0, 1, 0);
 
 	glTranslatef(-target.getTarget()->getXPos(), -target.getTarget()->getYPos(), -target.getTarget()->getZPos());
-	glEnable(GL_DEPTH_TEST);
+
+	//glEnable(GL_TEXTURE_2D);
+	
+	glShadeModel(GL_SMOOTH);		 // Enables Smooth Shading
+	glClearColor(1.0f, 1.0f, 1.0f, 0.0f);
+	glClearDepth(1.0f);				// Depth Buffer Setup
+
+	glEnable(GL_DEPTH_TEST);		// Enables Depth Testing
+	glDepthFunc(GL_LEQUAL);			// The Type Of Depth Test To Do
+	glHint(GL_PERSPECTIVE_CORRECTION_HINT, GL_NICEST);	// Really Nice Perspective Calculation
+	
+
+	/*glEnable(GL_LIGHTING);
+	glEnable(GL_LIGHT0);    // Uses default lighting parameters
+	glLightModeli(GL_LIGHT_MODEL_TWO_SIDE, GL_TRUE);
+	glEnable(GL_NORMALIZE);
+	
+	glLightfv(GL_LIGHT1, GL_AMBIENT, LightAmbient);
+	//glLightfv(GL_LIGHT1, GL_DIFFUSE, LightDiffuse);
+	glLightfv(GL_LIGHT1, GL_POSITION, LightPosition);
+	glEnable(GL_LIGHT1);*/
+
+	glColorMaterial(GL_FRONT_AND_BACK, GL_DIFFUSE);
 }

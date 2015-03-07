@@ -1,186 +1,189 @@
 #include "Model.h"
 
 #include <stdio.h>
+#include <iostream>
 
 #include <GL/glu.h>
 
 #include <allegro5\allegro.h>
 #include <allegro5\allegro_opengl.h>
 
-Model::Model(const aiScene* scene){
-	this->model = model;
-}
+#include <assimp/Importer.hpp>      // C++ importer interface
+#include <assimp/scene.h>           // Output data structure
+#include <assimp/postprocess.h>     // Post processing flags
 
-Model::~Model(void){
+CVertexBufferObject Model::vboModelData;
+UINT Model::uiVAO;
+std::vector<CTexture> Model::tTextures;
 
+Model::Model(std::string sFilePath){
+
+	bLoaded = LoadModelFromFile(sFilePath.c_str());
 }
 
 void Model::draw(){
-	recursive_render(model, model->mRootNode, 0.5);
+	if(!bLoaded)return;
+	int iNumMeshes = ESZ(iMeshSizes);
+	FOR(i, iNumMeshes){
+		int iMatIndex = iMaterialIndices[i];
+		tTextures[iMatIndex].BindTexture();
+		glDrawArrays(GL_TRIANGLES, iMeshStartIndices[i], iMeshSizes[i]);
+	}
 }
 
-// Can't send color down as a pointer to aiColor4D because AI colors are ABGR.
-void Model::Color4f(const aiColor4D *color){
-	glColor4f(color->r, color->g, color->b, color->a);
+/*-----------------------------------------------
+
+Name:	GetDirectoryPath
+
+Params:	sFilePath - guess ^^
+
+Result: Returns directory name only from filepath.
+
+/*---------------------------------------------*/
+
+std::string GetDirectoryPath(std::string sFilePath){
+	// Get directory path
+	std::string sDirectory = "";
+	RFOR(i, ESZ(sFilePath)-1){
+		if(sFilePath[i] == '\\' || sFilePath[i] == '/'){
+			sDirectory = sFilePath.substr(0, i+1);
+			break;
+		}
+	}
+	return sDirectory;
 }
 
-void Model::set_float4(float f[4], float a, float b, float c, float d){
-	f[0] = a;
-	f[1] = b;
-	f[2] = c;
-	f[3] = d;
-}
+/*-----------------------------------------------
 
-void Model::color4_to_float4(const aiColor4D *c, float f[4]){
-	f[0] = c->r;
-	f[1] = c->g;
-	f[2] = c->b;
-	f[3] = c->a;
-}
+Name:	LoadModelFromFile
 
-void Model::apply_material(const aiMaterial *mtl){
-	float c[4];
+Params:	sFilePath - guess ^^
 
-	GLenum fill_mode;
-	int ret1, ret2;
-	aiColor4D diffuse;
-	aiColor4D specular;
-	aiColor4D ambient;
-	aiColor4D emission;
-	float shininess, strength;
-	int two_sided;
-	int wireframe;
-	unsigned int max;	// changed: to unsigned
+Result: Loads model using Assimp library.
 
-	int texIndex = 0;
-	aiString texPath;	//contains filename of texture
+/*---------------------------------------------*/
 
-	if(AI_SUCCESS == mtl->GetTexture(aiTextureType_DIFFUSE, texIndex, &texPath)){
-		
+bool Model::LoadModelFromFile(std::string sFilePath){
+	if(vboModelData.GetBufferID() == 0){
+		vboModelData.CreateVBO();
+		tTextures.reserve(50);
+	}
+	Assimp::Importer importer;
+	const aiScene* scene = importer.ReadFile( sFilePath, 
+		aiProcess_CalcTangentSpace       | 
+		aiProcess_Triangulate            |
+		aiProcess_JoinIdenticalVertices  |
+		aiProcess_SortByPType);
 
-		//bind texture
-		unsigned int texId = *textureIdMap[texPath.data];
-		glBindTexture(GL_TEXTURE_2D, texId);
+	if(!scene){
+		//MessageBox(appMain.hWnd, "Couldn't load model ", "Error Importing Asset", MB_ICONERROR);
+		return false;
 	}
 
-	set_float4(c, 0.8f, 0.8f, 0.8f, 1.0f);
-	if(AI_SUCCESS == aiGetMaterialColor(mtl, AI_MATKEY_COLOR_DIFFUSE, &diffuse))
-		color4_to_float4(&diffuse, c);
-	glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, c);
+	const int iVertexTotalSize = sizeof(aiVector3D)*2+sizeof(aiVector2D);
+	
+	int iTotalVertices = 0;
 
-	set_float4(c, 0.0f, 0.0f, 0.0f, 1.0f);
-	if(AI_SUCCESS == aiGetMaterialColor(mtl, AI_MATKEY_COLOR_SPECULAR, &specular))
-		color4_to_float4(&specular, c);
-	glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, c);
+	FOR(i, scene->mNumMeshes){
+		aiMesh* mesh = scene->mMeshes[i];
+		int iMeshFaces = mesh->mNumFaces;
+		iMaterialIndices.push_back(mesh->mMaterialIndex);
+		int iSizeBefore = vboModelData.GetCurrentSize();
+		iMeshStartIndices.push_back(iSizeBefore/iVertexTotalSize);
+		FOR(j, iMeshFaces){
+			const aiFace& face = mesh->mFaces[j];
 
-	set_float4(c, 0.2f, 0.2f, 0.2f, 1.0f);
-	if(AI_SUCCESS == aiGetMaterialColor(mtl, AI_MATKEY_COLOR_AMBIENT, &ambient))
-		color4_to_float4(&ambient, c);
-	glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, c);
-
-	set_float4(c, 0.0f, 0.0f, 0.0f, 1.0f);
-	if(AI_SUCCESS == aiGetMaterialColor(mtl, AI_MATKEY_COLOR_EMISSIVE, &emission))
-		color4_to_float4(&emission, c);
-	glMaterialfv(GL_FRONT_AND_BACK, GL_EMISSION, c);
-
-	max = 1;
-	ret1 = aiGetMaterialFloatArray(mtl, AI_MATKEY_SHININESS, &shininess, &max);
-	max = 1;
-	ret2 = aiGetMaterialFloatArray(mtl, AI_MATKEY_SHININESS_STRENGTH, &strength, &max);
-	if((ret1 == AI_SUCCESS) && (ret2 == AI_SUCCESS))
-		glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, shininess * strength);
-	else {
-		glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, 0.0f);
-		set_float4(c, 0.0f, 0.0f, 0.0f, 0.0f);
-		glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, c);
+			FOR(k, 3){
+				aiVector3D pos = mesh->mVertices[face.mIndices[k]];
+				aiVector3D uv = mesh->mTextureCoords[0][face.mIndices[k]];
+				aiVector3D normal = mesh->HasNormals() ? mesh->mNormals[face.mIndices[k]] : aiVector3D(1.0f, 1.0f, 1.0f);
+				vboModelData.AddData(&pos, sizeof(aiVector3D));
+				vboModelData.AddData(&uv, sizeof(aiVector2D));
+				vboModelData.AddData(&normal, sizeof(aiVector3D));
+			}
+		}
+		int iMeshVertices = mesh->mNumVertices;
+		iTotalVertices += iMeshVertices;
+		iMeshSizes.push_back((vboModelData.GetCurrentSize()-iSizeBefore)/iVertexTotalSize);
 	}
+	iNumMaterials = scene->mNumMaterials;
 
-	max = 1;
-	if(AI_SUCCESS == aiGetMaterialIntegerArray(mtl, AI_MATKEY_ENABLE_WIREFRAME, &wireframe, &max))
-		fill_mode = wireframe ? GL_LINE : GL_FILL;
-	else
-		fill_mode = GL_FILL;
-	glPolygonMode(GL_FRONT_AND_BACK, fill_mode);
+	std::vector<int> materialRemap(iNumMaterials);
 
-	max = 1;
-	if((AI_SUCCESS == aiGetMaterialIntegerArray(mtl, AI_MATKEY_TWOSIDED, &two_sided, &max)) && two_sided)
-		glEnable(GL_CULL_FACE);
-	else
-		glDisable(GL_CULL_FACE);
-}
+	FOR(i, iNumMaterials){
+		const aiMaterial* material = scene->mMaterials[i];
+		int a = 5;
+		int texIndex = 0;
+		aiString path;  // filename
 
-
-void Model::recursive_render (const struct aiScene *scene, const struct aiNode* nd, float scale){
-	unsigned int i;
-	unsigned int n=0, t;
-	aiMatrix4x4 m = nd->mTransformation;
-
-	aiMatrix4x4 m2;
-	aiMatrix4x4::Scaling(aiVector3D(scale, scale, scale), m2);
-	m = m * m2;
-
-	// update transform
-	m.Transpose();
-	glPushMatrix();
-	glMultMatrixf((float*)&m);
-
-	// draw all meshes assigned to this node
-	for (; n < nd->mNumMeshes; ++n){
-		const struct aiMesh* mesh = scene->mMeshes[nd->mMeshes[n]];
-
-		apply_material(scene->mMaterials[mesh->mMaterialIndex]);
-
-
-		if(mesh->mNormals == NULL) {
-			glDisable(GL_LIGHTING);
-		} else {
-			glEnable(GL_LIGHTING);
-		}
-
-		if(mesh->mColors[0] != NULL) {
-			glEnable(GL_COLOR_MATERIAL);
-		} else {
-			glDisable(GL_COLOR_MATERIAL);
-		}
-
-		for (t = 0; t < mesh->mNumFaces; ++t) {
-			const struct aiFace* face = &mesh->mFaces[t];
-			GLenum face_mode;
-
-			switch(face->mNumIndices){
-				case 1: face_mode = GL_POINTS; break;
-				case 2: face_mode = GL_LINES; break;
-				case 3: face_mode = GL_TRIANGLES; break;
-				default: face_mode = GL_POLYGON; break;
+		if(material->GetTexture(aiTextureType_DIFFUSE, texIndex, &path) == AI_SUCCESS) {
+			std::string sDir = GetDirectoryPath(sFilePath);
+			std::string sTextureName = path.data;
+			std::string sFullPath = sDir+sTextureName;
+			int iTexFound = -1;
+			FOR(j, ESZ(tTextures)){
+				if(sFullPath == tTextures[j].GetPath()){
+					iTexFound = j;
+					break;
+				}
 			}
 
-			glBegin(face_mode);
-
-			for(i = 0; i < face->mNumIndices; i++)		// go through all vertices in face
-			{
-				int vertexIndex = face->mIndices[i];	// get group index for current index
-				if(mesh->mColors[0] != NULL)
-					Color4f(&mesh->mColors[0][vertexIndex]);
-				if(mesh->mNormals != NULL)
-
-					if(mesh->HasTextureCoords(0))		//HasTextureCoords(texture_coordinates_set)
-					{
-						glTexCoord2f(mesh->mTextureCoords[0][vertexIndex].x, 1 - mesh->mTextureCoords[0][vertexIndex].y); //mTextureCoords[channel][vertex]
-					}
-
-					glNormal3fv(&mesh->mNormals[vertexIndex].x);
-					glVertex3fv(&mesh->mVertices[vertexIndex].x);
+			if(iTexFound != -1){
+				materialRemap[i] = iTexFound;
+			} else {
+				CTexture tNew;
+				tNew.LoadTexture2D(sFullPath, true);
+				materialRemap[i] = ESZ(tTextures);
+				tTextures.push_back(tNew);
 			}
-
-			glEnd();
 		}
 	}
 
-
-	// draw all children
-	for (n = 0; n < nd->mNumChildren; ++n){
-		recursive_render(scene, nd->mChildren[n], scale);
+	FOR(i, ESZ(iMeshSizes)){
+		int iOldIndex = iMaterialIndices[i];
+		iMaterialIndices[i] = materialRemap[iOldIndex];
 	}
 
-	glPopMatrix();
+	return bLoaded = true;
+}
+
+/*-----------------------------------------------
+
+Name:	FinalizeVBO
+
+Params: none
+
+Result: Uploads all loaded model data in one global
+		models' VBO.
+
+/*---------------------------------------------*/
+
+void Model::FinalizeVBO(){
+	glGenVertexArrays(1, &uiVAO);
+	glBindVertexArray(uiVAO);
+	vboModelData.BindVBO();
+	vboModelData.UploadDataToGPU(GL_STATIC_DRAW);
+	// Vertex positions
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 2*sizeof(aiVector3D)+sizeof(aiVector2D), 0);
+	// Texture coordinates
+	glEnableVertexAttribArray(1);
+	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 2*sizeof(aiVector3D)+sizeof(aiVector2D), (void*)sizeof(aiVector3D));
+	// Normal vectors
+	glEnableVertexAttribArray(2);
+	glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 2*sizeof(aiVector3D)+sizeof(aiVector2D), (void*)(sizeof(aiVector3D)+sizeof(aiVector2D)));
+}
+
+/*-----------------------------------------------
+
+Name:	BindModelsVAO
+
+Params: none
+
+Result: Binds VAO of models with their VBO.
+
+/*---------------------------------------------*/
+
+void Model::BindModelsVAO(){
+	glBindVertexArray(uiVAO);
 }

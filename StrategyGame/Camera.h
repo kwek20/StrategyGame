@@ -16,6 +16,11 @@
  *
 */
 class Camera{
+private:
+	GLfloat LightAmbient[4];
+	GLfloat LightDiffuse[4];
+	GLfloat LightPosition[4];
+
     protected:
         // Window size in pixels and where the midpoint of it falls
         int windowWidth;
