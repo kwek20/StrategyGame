@@ -183,3 +183,8 @@ $RECYCLE.BIN/
 *.exe
 *.out
 *.app
+
+# libraries
+Libnoise/
+allegro/
+assimp/
