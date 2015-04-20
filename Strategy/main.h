@@ -23,7 +23,6 @@
 #define FPS 60
 #define NAME "Strategy Game"
 
-class PlayState;
 using namespace std;
 
 const static struct {
@@ -52,6 +51,5 @@ void error(string message);
 int shutdown(string reason);
 
 inline int ale_screenshot(const char *destination_path, const char *folder, const char *gamename);
-void handleEvent(ALLEGRO_EVENT ev, PlayState *game);
 
 #endif

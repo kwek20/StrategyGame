@@ -1,11 +1,13 @@
 #include "main.h"
-#include "PlayState.h"
+
+#include "Game.h"
+#include "LoadState.h"
 
 #include <time.h>
 #include <memory>
 
 int main(int argc, char **argv){
-	PlayState *game;
+	Game *game;
 	int i;
 
 	log("Initializing...\n");
@@ -47,17 +49,17 @@ int main(int argc, char **argv){
 	al_register_event_source(event_queue, al_get_mouse_event_source());
 	al_register_event_source(event_queue, al_get_display_event_source(display));
 	
-	fpsManager = new FpsManager(FPS, 3.0, std::string(NAME), display);
-	game = new PlayState(display);
-	al_set_display_icon(display, game->getManager()->getImage("icon"));
+	fpsManager = new FpsManager(FPS, 1.0, std::string(NAME), display);
+	game = new Game();
+	game->setScreenState(new LoadState(display));
 
 	bool pause = false;
 	double deltaTime = 0.50;
 
 	al_grab_mouse(display);
-	ALLEGRO_BITMAP *mouseCursor = game->getManager()->getImage("empty");
-	al_set_mouse_cursor(display, al_create_mouse_cursor(mouseCursor, 10, 10));
-	al_show_mouse_cursor(display);
+	//ALLEGRO_BITMAP *mouseCursor = game->getManager()->getImage("empty");
+	//al_set_mouse_cursor(display, al_create_mouse_cursor(mouseCursor, 20, 20));
+	//al_show_mouse_cursor(display);
 
 	log("Initializing done!\n");
 
@@ -68,7 +70,7 @@ int main(int argc, char **argv){
 
 		bool get_event = al_wait_for_event_until(event_queue, &ev, &timeout);
 		if (get_event){
-			if (!pause) handleEvent(ev, game);
+			if (!pause) game->handleEvent(ev);
 
 			switch(ev.type){
 			case ALLEGRO_EVENT_KEY_UP:
@@ -78,7 +80,7 @@ int main(int argc, char **argv){
 					break;
 				case ALLEGRO_KEY_SPACE:
 					pause = !pause;
-					game->togglePause();
+					//game->togglePause();
 					break;
 				case ALLEGRO_KEY_F12:
 					ale_screenshot(NULL, "screenshots", NULL);
@@ -95,14 +97,12 @@ int main(int argc, char **argv){
 			deltaTime = fpsManager->enforceFPS();
 			glFlush();
 			al_flip_display();
-			
 		}
 	}
 
 	al_ungrab_mouse();
 	i = shutdown(game->getShutDownReason());
 	log("Thank you for playing!\n");
-	_CrtDumpMemoryLeaks();
 	return i;
 }
 
@@ -119,28 +119,6 @@ int shutdown(string reason = ""){
 	al_shutdown_font_addon();
 	al_shutdown_primitives_addon();
 	return 0;
-}
-
-void handleEvent(ALLEGRO_EVENT ev, PlayState *game){
-	switch (ev.type) {
-		case ALLEGRO_EVENT_KEY_DOWN:
-		case ALLEGRO_EVENT_KEY_UP: {
-			ALLEGRO_KEYBOARD_STATE state;
-			al_get_keyboard_state(&state);
-			game->handleKeyboard(ev.type, ev.keyboard.keycode);
-			break;
-		}
-		case ALLEGRO_EVENT_MOUSE_AXES:
-		case ALLEGRO_EVENT_MOUSE_BUTTON_DOWN:
-		case ALLEGRO_EVENT_MOUSE_BUTTON_UP:
-		case ALLEGRO_EVENT_MOUSE_ENTER_DISPLAY:
-		case ALLEGRO_EVENT_MOUSE_LEAVE_DISPLAY: {
-			ALLEGRO_MOUSE_STATE state;
-			al_get_mouse_state(&state);
-			game->handleMouse(ev.type, state);
-			break;				 
-		}
-	}
 }
 
 

@@ -1,5 +1,5 @@
-#ifndef __GAME_H_INCLUDED__
-#define __GAME_H_INCLUDED__
+#ifndef __PLAYSTATE_H_INCLUDED__
+#define __PLAYSTATE_H_INCLUDED__
 
 #pragma once
 
@@ -25,6 +25,7 @@ class PlayState : public ScreenState
 	PlayerController *controller;
 
 	bool pause;
+	float mouseTempX = 0, mouseTempY = 0;
 public:
 	PlayState(ALLEGRO_DISPLAY* display);
 

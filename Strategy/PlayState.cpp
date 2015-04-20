@@ -9,12 +9,9 @@
 
 #include <allegro5\allegro_font.h>
 
-Mesh *mesh;
-
 PlayState::PlayState(ALLEGRO_DISPLAY* display) : ScreenState(display) {
 	log("Loading game\n");
 
-	manager = new ResourceManager();
 	map = new Map(manager);
 	hud = new IngameHUD();
 
@@ -26,7 +23,6 @@ PlayState::~PlayState(void){
 	delete map;
 	delete hud;
 	delete camera;
-	delete manager;
 }
 
 void PlayState::tick(double deltaTime){
@@ -83,8 +79,7 @@ void PlayState::handleKeyboard(ALLEGRO_EVENT_TYPE type, int keycode){
 
 void PlayState::handleMouse(ALLEGRO_EVENT_TYPE type, ALLEGRO_MOUSE_STATE state){
 	float width = getDisplayWidth(), height = getDisplayHeight();
-	float mouseTempX = 0, mouseTempY = 0;
-
+	
 	if (type == ALLEGRO_EVENT_MOUSE_AXES){
 		if (al_mouse_button_down(&state, 2)){
 			if (mouseTempX < 0 || mouseTempY < 0){

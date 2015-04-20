@@ -1,5 +1,13 @@
 #include "ScreenState.h"
 
+void ScreenState::start(Game *game, ScreenState *oldState){
+
+}
+
+void ScreenState::end(Game *game){
+
+}
+
 ALLEGRO_DISPLAY *ScreenState::getDisplay(){
 	return display;
 }

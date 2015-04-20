@@ -7,10 +7,15 @@
 
 #include <allegro5\allegro.h>
 
-class ScreenState{
+class Game;
+
+class ScreenState {
 public:
 	ScreenState(ALLEGRO_DISPLAY* display) { this->display = display; shutdown = false; }
 	~ScreenState() {}
+
+	virtual void end(Game *game);
+	virtual void start(Game *game, ScreenState *previous);
 
 	virtual void tick(double deltaTime) = 0;
 

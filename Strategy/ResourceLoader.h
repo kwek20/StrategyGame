@@ -13,10 +13,6 @@
 
 #include <vector>
 
-/////////////////////////////////////////////
-////== TODO move functions to cpp file ==////
-/////////////////////////////////////////////
-
 template <class type>
 struct Data {
 	std::string path;

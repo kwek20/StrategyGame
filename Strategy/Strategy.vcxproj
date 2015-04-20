@@ -17,6 +17,8 @@
     <ClInclude Include="Decorator.h" />
     <ClInclude Include="Entity.h" />
     <ClInclude Include="FpsManager.hpp" />
+    <ClInclude Include="Game.h" />
+    <ClInclude Include="LoadState.h" />
     <ClInclude Include="PlayState.h" />
     <ClInclude Include="Generator.h" />
     <ClInclude Include="HUD.h" />
@@ -47,6 +49,8 @@
     <ClCompile Include="ControllableEntity.cpp" />
     <ClCompile Include="Decorator.cpp" />
     <ClCompile Include="Entity.cpp" />
+    <ClCompile Include="Game.cpp" />
+    <ClCompile Include="LoadState.cpp" />
     <ClCompile Include="PlayState.cpp" />
     <ClCompile Include="Generator.cpp" />
     <ClCompile Include="HUD.cpp" />
