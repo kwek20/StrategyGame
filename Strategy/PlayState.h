@@ -21,7 +21,6 @@ class PlayState : public ScreenState
 	Map *map;
 	Camera *camera;
 	HUD *hud;
-	ResourceManager *manager;
 	PlayerController *controller;
 
 	bool pause;
@@ -40,7 +39,6 @@ public:
 	Map *getMap(){return map;}
 	Camera *getCamera(){return camera;}
 	HUD *getHud(){return hud;}
-	ResourceManager *getManager(){return manager;}
 	PlayerController *getController(){return controller;}
 };
 

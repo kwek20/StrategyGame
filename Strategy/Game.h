@@ -5,6 +5,7 @@
 
 #include "ScreenState.h"
 #include "ResourceManager.h"
+#include "Scheduler.h"
 
 class Game {
 public:
@@ -18,14 +19,19 @@ public:
 	void handleEvent(ALLEGRO_EVENT ev);
 
 	ResourceManager *getManager();
+	Scheduler *getScheduler();
+
 	bool shouldShutDown();
 	std::string getShutDownReason();
 	void shutDown();
 
+	static Game *get(){ return game; }
 private:
 	ScreenState *state;
 	ResourceManager *manager;
-};
+	Scheduler *scheduler;
 
+	static Game *game;
+};
 
 #endif

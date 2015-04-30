@@ -32,6 +32,8 @@ public:
 
 	void error(std::string message);
 
+	std::string name() { return typeid(*this).name(); }
+
 	ALLEGRO_DISPLAY *getDisplay();
 	int getDisplayWidth();
 	int getDisplayHeight();

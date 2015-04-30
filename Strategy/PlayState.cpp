@@ -6,13 +6,14 @@
 #include <iostream>
 
 #include "mesh.h"
+#include "Game.h"
 
 #include <allegro5\allegro_font.h>
 
 PlayState::PlayState(ALLEGRO_DISPLAY* display) : ScreenState(display) {
 	log("Loading game\n");
 
-	map = new Map(manager);
+	map = new Map(Game::get()->getManager());
 	hud = new IngameHUD();
 
 	controller = new PlayerController(map->getEntitiesByClass<Player>().at(0));

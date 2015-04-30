@@ -36,8 +36,11 @@
     <ClInclude Include="ResourceLoader.h" />
     <ClInclude Include="ResourceLoaderModel.h" />
     <ClInclude Include="ResourceManager.h" />
+    <ClInclude Include="Runnable.h" />
+    <ClInclude Include="Scheduler.h" />
     <ClInclude Include="ScreenState.h" />
     <ClInclude Include="Status.h" />
+    <ClInclude Include="Task.h" />
     <ClInclude Include="Terrain.h" />
     <ClInclude Include="Texture.h" />
     <ClInclude Include="Vec.hpp" />
@@ -66,7 +69,10 @@
     <ClCompile Include="ResourceLoader.cpp" />
     <ClCompile Include="ResourceLoaderModel.cpp" />
     <ClCompile Include="ResourceManager.cpp" />
+    <ClCompile Include="Runnable.cpp" />
+    <ClCompile Include="Scheduler.cpp" />
     <ClCompile Include="ScreenState.cpp" />
+    <ClCompile Include="Task.cpp" />
     <ClCompile Include="Terrain.cpp" />
     <ClCompile Include="Texture.cpp" />
     <ClCompile Include="Villager.cpp" />

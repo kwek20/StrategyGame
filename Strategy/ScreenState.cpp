@@ -1,11 +1,11 @@
 #include "ScreenState.h"
 
 void ScreenState::start(Game *game, ScreenState *oldState){
-
+	std::cout << "Starting state " << name().c_str() << "\n";
 }
 
 void ScreenState::end(Game *game){
-
+	std::cout << "Ending state " << name().c_str() << "\n";
 }
 
 ALLEGRO_DISPLAY *ScreenState::getDisplay(){

@@ -1,11 +1,25 @@
 #include "Game.h"
 
+#include "Runnable.h"
+
+Game *Game::game;
+
 Game::Game(){
-	
+	game = this;
+	scheduler = new Scheduler();
+
+	Runnable *runnable = new Runnable([](void){
+		std::cout << "task\n";
+	});
+	runnable->runTaskDelayed(50);
 }
 
 ResourceManager * Game::getManager(){
 	return manager;
+}
+
+Scheduler *Game::getScheduler(){
+	return scheduler;
 }
 
 void Game::setManager(ResourceManager *manager){
@@ -29,9 +43,11 @@ std::string Game::getShutDownReason(){
 void Game::setScreenState(ScreenState *state){
 	if (!state) return;
 
-	if (this->state) state->end(this);
-	state->start(this, this->state);
+	if (this->state) this->state->end(this);
+
+	std::cout << "Swapping state to " << state->name() << "\n";
 	this->state = state;
+	state->start(this, this->state);
 }
 
 void Game::tick(float deltatime){
