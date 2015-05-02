@@ -28,9 +28,11 @@ public:
 
 	void cancelTask();
 	int getTaskId();
-
+	int getCount() { return count; }
 private:
 	void checkState();
+
+	int count;
 	std::function<void(void)> task;
 };
 

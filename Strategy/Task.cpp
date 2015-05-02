@@ -1,6 +1,7 @@
 #include "Task.h"
 
 #include "Runnable.h"
+#include "Game.h"
 
 Task::Task(Runnable *task, int id, int period){
 	this->task = task;
@@ -14,11 +15,7 @@ Task::~Task(){
 
 void Task::setPeriod(long period){ 
 	this->period = period; 
-
-	if (period == 0){
-		run();
-	}
-};
+}
 
 int Task::getTaskId(){
 	return id;
@@ -30,11 +27,10 @@ bool Task::isSync(){
 
 void Task::run(){
 	task->run();
-	cancel();
 }
 
 void Task::cancel(){
-	cancel0();
+	Game::get()->getScheduler()->removeTask(this);
 }
 
 bool Task::cancel0(){

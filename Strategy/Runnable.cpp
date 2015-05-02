@@ -13,6 +13,7 @@ Runnable::~Runnable(){
 
 void Runnable::run(){
 	task();
+	count++;
 }
 
 Task *Runnable::runTaskTimer(int delay, int period){

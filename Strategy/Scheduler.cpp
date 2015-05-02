@@ -1,5 +1,8 @@
 #include "Scheduler.h"
 
+#include <iostream>
+#include <algorithm>
+
 Scheduler::Scheduler(){
 
 }
@@ -9,18 +12,32 @@ Scheduler::~Scheduler(){
 
 }
 
+// Checks currently active scheduled events for run
+void Scheduler::tick(int currentTicks){
+	this->currentTicks = currentTicks;
 
-// adds a tick to every currently active task
-void Scheduler::tick(){
+	auto tasks = this->tasks;
 	for (auto t : tasks){
-		switch (t->getPeriod()){
-			case -2: 
-				removeTask(t);
-				break;
-			default: break;
+		//-2 menas cancel
+		std::cout << "Task id: \"" + t->getTaskId() << "\"\n";
+		if (t->getPeriod() == -2){
+			std::cout << "Cancel";
+			t->cancel();
 		}
-
-		t->setPeriod(t->getPeriod() - 1);
+		
+		//weve reached the end!! :)
+		if (t->getNextRun() == currentTicks){
+			t->run();
+			if (t->getPeriod() > 0){
+				//Lets start over
+				t->updateNextRun(currentTicks);
+			} else if (t->getPeriod() == -1){
+				//awwww we gotta go
+				t->cancel();
+			} else {
+				//whuut
+			}
+		}
 	}
 }
 
@@ -49,7 +66,9 @@ bool Scheduler::removeTask(int id){
 bool Scheduler::removeTask(Task *task){
 	if (task == NULL) return false;
 
-	task->cancel();
+	task->cancel0();
+	tasks.erase(std::remove(tasks.begin(), tasks.end(), task), tasks.end());
+
 	return true;
 }
 
@@ -75,7 +94,9 @@ Task *Scheduler::runTaskTimerAsynch(Runnable *runnable, int delay, int period){
 }
 
 Task *Scheduler::handle(Task *task, int delay){
-	
+	std::cout << "Handle task " << task->getTaskId() << "\n";
+	task->updateNextRun(currentTicks);
+	addTask(task);
 	return task;
 }
 

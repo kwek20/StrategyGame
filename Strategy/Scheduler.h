@@ -14,16 +14,15 @@ public:
 	Scheduler();
 	~Scheduler();
 private:
+	int currentTicks;
 	std::vector<Task*> tasks;
-
-	Task *handle(Task *task, int delay);
 	std::atomic_int ids; 
 	
 	int nextId();
-
+	Task *handle(Task *task, int delay);
 public:
 	// adds a tick to every currently active task
-	void tick();
+	void tick(int currentTicks);
 	bool hasActiveTasks();
 	void addTask(Task *task);
 	Task *getTask(int id);

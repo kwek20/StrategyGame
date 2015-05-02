@@ -31,6 +31,8 @@ private:
 	ResourceManager *manager;
 	Scheduler *scheduler;
 
+	int ticks = 0;
+
 	static Game *game;
 };
 

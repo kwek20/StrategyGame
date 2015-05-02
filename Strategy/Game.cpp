@@ -11,7 +11,7 @@ Game::Game(){
 	Runnable *runnable = new Runnable([](void){
 		std::cout << "task\n";
 	});
-	runnable->runTaskDelayed(50);
+	runnable->runTaskTimer(50, 50);
 }
 
 ResourceManager * Game::getManager(){
@@ -51,6 +51,8 @@ void Game::setScreenState(ScreenState *state){
 }
 
 void Game::tick(float deltatime){
+	ticks++;
+	scheduler->tick(ticks);
 	if (state) state->tick(deltatime);
 }
 

@@ -15,11 +15,17 @@ public:
 	int getTaskId();
 	bool isSync();
 	void run();
-
+	
+	//-2 means cancel
+	//-1 means no repeat
+	// 0 should not happen
+	// > 0 means delay between runs
 	long getPeriod() { return period; }
-	void setPeriod(long period);
+	void setPeriod(long period); 
 
 	long getNextRun(){ return nextRun; }
+	void updateNextRun(long currentTicks) { nextRun = currentTicks + period; }
+	void resetNextPeriod(){}
 
 	//Task getNext(){ return next; }
 	//void setNext(Task next) { this->next = next; }
