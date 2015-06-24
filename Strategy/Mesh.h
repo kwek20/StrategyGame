@@ -3,78 +3,45 @@
 
 #pragma once
 
-#include <windows.h>
-
-#include <iostream>
-
-// assimp include files. These three are usually needed.
-#include "assimp/Importer.hpp"	//OO version Header!
-#include "assimp/postprocess.h"
-#include "assimp/scene.h"
-#include "assimp/DefaultLogger.hpp"
-#include "assimp/LogStream.hpp"
-
-#include <GL/gl.h>
-#include <GL/glu.h>
-
 #include <allegro5\allegro.h>
-#include <allegro5\allegro_opengl.h>
+#include "allegro5\allegro_opengl.h"
 
-#include "Vec.hpp"
-#include "Texture.h"
+//#include <gl\glu.h>
+//#include <allegro5\opengl\gl_ext.h>
 
-struct Vertex {
-	Vec3<float> m_pos;
-	Vec2<float> m_tex;
-	Vec3<float> m_normal;
+#include "assimp\scene.h"
+#include "assimp\mesh.h"
 
-	Vertex() {}
+#include <vector>
 
-	Vertex(const Vec3<float>& pos, const Vec2<float>& tex, const Vec3<float>& normal)
-	{
-		m_pos = pos;
-		m_tex = tex;
-		m_normal = normal;
-	}
-};
-
-
-class Mesh {
+/**
+ * Mesh code from http://www.nexcius.net/2014/04/13/loading-meshes-using-assimp-in-opengl/
+ */
+class Mesh
+{
 public:
-	Mesh();
-
-	~Mesh();
-
-	bool LoadMesh(const std::string& Filename);
-
-	void Render();
-
-private:
-	bool InitFromScene(const aiScene* pScene, const std::string& Filename);
-	void InitMesh(unsigned int Index, const aiMesh* paiMesh);
-	bool InitMaterials(const aiScene* pScene, const std::string& Filename);
-	void Clear();
-
-	#define INVALID_OGL_VALUE 0xFFFFFFFF
-	#define INVALID_MATERIAL 0xFFFFFFFF
-	#define SAFE_DELETE(p) if (p) { delete p; p = NULL; }
-
 	struct MeshEntry {
-		MeshEntry();
+		static enum BUFFERS {
+			VERTEX_BUFFER, TEXCOORD_BUFFER, NORMAL_BUFFER, INDEX_BUFFER
+		};
+		GLuint vao;
+		GLuint vbo[4];
 
+		unsigned int elementCount;
+
+		MeshEntry(aiMesh *mesh);
 		~MeshEntry();
 
-		void Init(const std::vector<Vertex>& Vertices,
-			const std::vector<unsigned int>& Indices);
-
-		GLuint VB;
-		GLuint IB;
-		unsigned int NumIndices;
-		unsigned int MaterialIndex;
+		void load(aiMesh *mesh);
+		void render();
 	};
 
-	std::vector<MeshEntry> m_Entries;
-	std::vector<Texture*> m_Textures;
-};
+	std::vector<MeshEntry*> meshEntries;
 
+public:
+	Mesh(const char *filename);
+	~Mesh(void);
+
+	void render();
+};
 #endif

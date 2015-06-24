@@ -1,10 +1,9 @@
 #include "Model.h"
 
 Model::Model(std::string sFilePath){
-	mesh = new Mesh();
-	mesh->LoadMesh(sFilePath);
+	mesh = new Mesh(sFilePath.c_str());
 }
 
 void Model::draw(){
-	mesh->Render();
+	mesh->render();
 }

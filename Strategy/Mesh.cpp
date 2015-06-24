@@ -1,212 +1,166 @@
-/*
-
-Copyright 2011 Etay Meiri
-
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*/
-
-#include <assert.h>
-
 #include "Mesh.h"
 
-Mesh::MeshEntry::MeshEntry(){
-	VB = INVALID_OGL_VALUE;
-	IB = INVALID_OGL_VALUE;
-	NumIndices = 0;
-	MaterialIndex = INVALID_MATERIAL;
-};
-
-Mesh::MeshEntry::~MeshEntry(){
-	if (VB != INVALID_OGL_VALUE)
-	{
-		glDeleteBuffers(1, &VB);
-	}
-
-	if (IB != INVALID_OGL_VALUE)
-	{
-		glDeleteBuffers(1, &IB);
-	}
-}
-
-void Mesh::MeshEntry::Init(const std::vector<Vertex>& Vertices,
-	const std::vector<unsigned int>& Indices){
-	NumIndices = Indices.size();
-
-	/*glGenBuffers(1, &VB);
-	glBindBuffer(GL_ARRAY_BUFFER, VB);
-	glBufferData(GL_ARRAY_BUFFER, sizeof(Vertex) * Vertices.size(), &Vertices[0], GL_STATIC_DRAW);
-
-	glGenBuffers(1, &IB);
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, IB);
-	glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(unsigned int) * NumIndices, &Indices[0], GL_STATIC_DRAW);*/
-}
-
-Mesh::Mesh(){
-	
-}
+#include "assimp\Importer.hpp"
+#include "assimp\postprocess.h"
 
 
-Mesh::~Mesh(){
-	Clear();
-}
+/**
+*	Constructor, loading the specified aiMesh
+**/
+Mesh::MeshEntry::MeshEntry(aiMesh *mesh) {
+	vbo[VERTEX_BUFFER] = NULL;
+	vbo[TEXCOORD_BUFFER] = NULL;
+	vbo[NORMAL_BUFFER] = NULL;
+	vbo[INDEX_BUFFER] = NULL;
 
+	glGenVertexArrays(1, &vao);
+	glBindVertexArray(vao);
 
-void Mesh::Clear(){
-	for (unsigned int i = 0; i < m_Textures.size(); i++) {
-		SAFE_DELETE(m_Textures[i]);
-	}
-}
+	elementCount = mesh->mNumFaces * 3;
 
-
-bool Mesh::LoadMesh(const std::string& Filename){
-	// Release the previously loaded mesh (if it exists)
-	Clear();
-
-	bool Ret = false;
-	Assimp::Importer Importer;
-
-	const aiScene* pScene = Importer.ReadFile(Filename.c_str(), aiProcess_Triangulate | aiProcess_GenSmoothNormals | aiProcess_FlipUVs);
-
-	if (pScene) {
-		Ret = InitFromScene(pScene, Filename);
-	} else {
-		printf("Error parsing '%s': '%s'\n", Filename.c_str(), Importer.GetErrorString());
-	}
-
-	return Ret;
-}
-
-bool Mesh::InitFromScene(const aiScene* pScene, const std::string& Filename){
-	m_Entries.resize(pScene->mNumMeshes);
-	m_Textures.resize(pScene->mNumMaterials);
-
-	// Initialize the meshes in the scene one by one
-	for (unsigned int i = 0; i < m_Entries.size(); i++) {
-		const aiMesh* paiMesh = pScene->mMeshes[i];
-		InitMesh(i, paiMesh);
-	}
-
-	return InitMaterials(pScene, Filename);
-}
-
-void Mesh::InitMesh(unsigned int Index, const aiMesh* paiMesh){
-	m_Entries[Index].MaterialIndex = paiMesh->mMaterialIndex;
-
-	std::vector<Vertex> Vertices;
-	std::vector<unsigned int> Indices;
-
-	const aiVector3D Zero3D(0.0f, 0.0f, 0.0f);
-
-	for (unsigned int i = 0; i < paiMesh->mNumVertices; i++) {
-		const aiVector3D* pPos = &(paiMesh->mVertices[i]);
-		const aiVector3D* pNormal = &(paiMesh->mNormals[i]);
-		const aiVector3D* pTexCoord = paiMesh->HasTextureCoords(0) ? &(paiMesh->mTextureCoords[0][i]) : &Zero3D;
-
-		Vertex v(Vec3<float>(pPos->x, pPos->y, pPos->z),
-			Vec2<float>(pTexCoord->x, pTexCoord->y),
-			Vec3<float>(pNormal->x, pNormal->y, pNormal->z));
-
-		Vertices.push_back(v);
-	}
-
-	for (unsigned int i = 0; i < paiMesh->mNumFaces; i++) {
-		const aiFace& Face = paiMesh->mFaces[i];
-		assert(Face.mNumIndices == 3);
-		Indices.push_back(Face.mIndices[0]);
-		Indices.push_back(Face.mIndices[1]);
-		Indices.push_back(Face.mIndices[2]);
-	}
-
-	m_Entries[Index].Init(Vertices, Indices);
-}
-
-bool Mesh::InitMaterials(const aiScene* pScene, const std::string& Filename){
-	// Extract the directory part from the file name
-	std::string::size_type SlashIndex = Filename.find_last_of("\\");
-	std::string Dir;
-
-	if (SlashIndex == std::string::npos) {
-		Dir = ".";
-	} else if (SlashIndex == 0) {
-		Dir = "/";
-	} else {
-		Dir = Filename.substr(0, SlashIndex);
-	}
-
-	bool Ret = true;
-
-	// Initialize the materials
-	m_Textures.reserve(pScene->mNumMaterials);
-	for (unsigned int i = 0; i < pScene->mNumMaterials; i++) {
-		const aiMaterial* pMaterial = pScene->mMaterials[i];
-
-		m_Textures[i] = NULL;
-		if (pMaterial->GetTextureCount(aiTextureType_DIFFUSE) > 0) {
-			aiString Path;
-
-			if (pMaterial->GetTexture(aiTextureType_DIFFUSE, 0, &Path, NULL, NULL, NULL, NULL, NULL) == AI_SUCCESS) {
-				std::string FullPath = Dir + "/" + Path.data;
-				m_Textures[i] = new Texture(GL_TEXTURE_2D, FullPath.c_str());
-
-				if (!m_Textures[i]->Load()) {
-					printf("Error loading texture '%s'\n", FullPath.c_str());
-					delete m_Textures[i];
-					m_Textures[i] = NULL;
-					Ret = false;
-				}
-				else {
-					printf("Loaded texture '%s'\n", FullPath.c_str());
-				}
-			}
-		}
-		
-		Texture *tex;
-		// Load a white texture in case the model does not include its own texture
-		if (!m_Textures[i]) {
-			tex = new Texture(GL_TEXTURE_2D, "D:/Projects/Visual Studio/Strategy/Release/images/white.png");
-			m_Textures[i] = tex;
-
-			Ret = m_Textures[i]->Load();
-		}
-	}
-
-	return Ret;
-}
-
-void Mesh::Render(){
-	glEnableVertexAttribArray(0);
-	glEnableVertexAttribArray(1);
-	glEnableVertexAttribArray(2);
-
-	for (unsigned int i = 0; i < m_Entries.size(); i++) {
-		glBindBuffer(GL_ARRAY_BUFFER, m_Entries[i].VB);
-		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), 0);
-		glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (const GLvoid*)12);
-		glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (const GLvoid*)20);
-
-		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_Entries[i].IB);
-
-		const unsigned int MaterialIndex = m_Entries[i].MaterialIndex;
-
-		if (MaterialIndex < m_Textures.size() && m_Textures[MaterialIndex]) {
-			m_Textures[MaterialIndex]->Bind(GL_TEXTURE0);
+	if (mesh->HasPositions()) {
+		float *vertices = new float[mesh->mNumVertices * 3];
+		for (int i = 0; i < mesh->mNumVertices; ++i) {
+			vertices[i * 3] = mesh->mVertices[i].x;
+			vertices[i * 3 + 1] = mesh->mVertices[i].y;
+			vertices[i * 3 + 2] = mesh->mVertices[i].z;
 		}
 
-		glDrawElements(GL_TRIANGLES, m_Entries[i].NumIndices, GL_UNSIGNED_INT, 0);
+		glGenBuffers(1, &vbo[VERTEX_BUFFER]);
+		glBindBuffer(GL_ARRAY_BUFFER, vbo[VERTEX_BUFFER]);
+		glBufferData(GL_ARRAY_BUFFER, 3 * mesh->mNumVertices * sizeof(GLfloat), vertices, GL_STATIC_DRAW);
+
+		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, NULL);
+		glEnableVertexAttribArray(0);
+
+		delete vertices;
 	}
 
-	glDisableVertexAttribArray(0);
-	glDisableVertexAttribArray(1);
-	glDisableVertexAttribArray(2);
+
+	if (mesh->HasTextureCoords(0)) {
+		float *texCoords = new float[mesh->mNumVertices * 2];
+		for (int i = 0; i < mesh->mNumVertices; ++i) {
+			texCoords[i * 2] = mesh->mTextureCoords[0][i].x;
+			texCoords[i * 2 + 1] = mesh->mTextureCoords[0][i].y;
+		}
+
+		glGenBuffers(1, &vbo[TEXCOORD_BUFFER]);
+		glBindBuffer(GL_ARRAY_BUFFER, vbo[TEXCOORD_BUFFER]);
+		glBufferData(GL_ARRAY_BUFFER, 2 * mesh->mNumVertices * sizeof(GLfloat), texCoords, GL_STATIC_DRAW);
+
+		glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 0, NULL);
+		glEnableVertexAttribArray(1);
+
+		delete texCoords;
+	}
+
+
+	if (mesh->HasNormals()) {
+		float *normals = new float[mesh->mNumVertices * 3];
+		for (int i = 0; i < mesh->mNumVertices; ++i) {
+			normals[i * 3] = mesh->mNormals[i].x;
+			normals[i * 3 + 1] = mesh->mNormals[i].y;
+			normals[i * 3 + 2] = mesh->mNormals[i].z;
+		}
+
+		glGenBuffers(1, &vbo[NORMAL_BUFFER]);
+		glBindBuffer(GL_ARRAY_BUFFER, vbo[NORMAL_BUFFER]);
+		glBufferData(GL_ARRAY_BUFFER, 3 * mesh->mNumVertices * sizeof(GLfloat), normals, GL_STATIC_DRAW);
+
+		glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 0, NULL);
+		glEnableVertexAttribArray(2);
+
+		delete normals;
+	}
+
+
+	if (mesh->HasFaces()) {
+		unsigned int *indices = new unsigned int[mesh->mNumFaces * 3];
+		for (int i = 0; i < mesh->mNumFaces; ++i) {
+			indices[i * 3] = mesh->mFaces[i].mIndices[0];
+			indices[i * 3 + 1] = mesh->mFaces[i].mIndices[1];
+			indices[i * 3 + 2] = mesh->mFaces[i].mIndices[2];
+		}
+
+		glGenBuffers(1, &vbo[INDEX_BUFFER]);
+		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, vbo[INDEX_BUFFER]);
+		glBufferData(GL_ELEMENT_ARRAY_BUFFER, 3 * mesh->mNumFaces * sizeof(GLuint), indices, GL_STATIC_DRAW);
+
+		glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, 0, NULL);
+		glEnableVertexAttribArray(3);
+
+		delete indices;
+	}
+
+
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+	glBindVertexArray(0);
+}
+
+/**
+*	Deletes the allocated OpenGL buffers
+**/
+Mesh::MeshEntry::~MeshEntry() {
+	if (vbo[VERTEX_BUFFER]) {
+		glDeleteBuffers(1, &vbo[VERTEX_BUFFER]);
+	}
+
+	if (vbo[TEXCOORD_BUFFER]) {
+		glDeleteBuffers(1, &vbo[TEXCOORD_BUFFER]);
+	}
+
+	if (vbo[NORMAL_BUFFER]) {
+		glDeleteBuffers(1, &vbo[NORMAL_BUFFER]);
+	}
+
+	if (vbo[INDEX_BUFFER]) {
+		glDeleteBuffers(1, &vbo[INDEX_BUFFER]);
+	}
+
+	glDeleteVertexArrays(1, &vao);
+}
+
+/**
+*	Renders this MeshEntry
+**/
+void Mesh::MeshEntry::render() {
+	glBindVertexArray(vao);
+	glDrawElements(GL_TRIANGLES, elementCount, GL_UNSIGNED_INT, NULL);
+	glBindVertexArray(0);
+}
+
+/**
+*	Mesh constructor, loads the specified filename if supported by Assimp
+**/
+Mesh::Mesh(const char *filename)
+{
+	Assimp::Importer importer;
+	const aiScene *scene = importer.ReadFile(filename, NULL);
+	if (!scene) {
+		printf("Unable to laod mesh: %s\n", importer.GetErrorString());
+	}
+
+	for (int i = 0; i < scene->mNumMeshes; ++i) {
+		meshEntries.push_back(new Mesh::MeshEntry(scene->mMeshes[i]));
+	}
+}
+
+/**
+*	Clears all loaded MeshEntries
+**/
+Mesh::~Mesh(void)
+{
+	for (int i = 0; i < meshEntries.size(); ++i) {
+		delete meshEntries.at(i);
+	}
+	meshEntries.clear();
+}
+
+/**
+*	Renders all loaded MeshEntries
+**/
+void Mesh::render() {
+	for (int i = 0; i < meshEntries.size(); ++i) {
+		meshEntries.at(i)->render();
+	}
 }
