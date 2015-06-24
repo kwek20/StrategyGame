@@ -66,7 +66,7 @@ int main(int argc, char **argv){
 	while (!game->shouldShutDown()){
 		ALLEGRO_EVENT ev;
 		ALLEGRO_TIMEOUT timeout;
-		al_init_timeout(&timeout, 2/FPS); // we dont need 1/FPS, this is less intensive
+		al_init_timeout(&timeout, 1/FPS); // we dont need 1/FPS, this is less intensive
 
 		bool get_event = al_wait_for_event_until(event_queue, &ev, &timeout);
 		if (get_event){

@@ -23,6 +23,7 @@ PlayState::PlayState(ALLEGRO_DISPLAY* display) : ScreenState(display) {
 PlayState::~PlayState(void){
 	delete map;
 	delete hud;
+	delete controller;
 	delete camera;
 }
 

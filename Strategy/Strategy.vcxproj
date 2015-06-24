@@ -78,6 +78,7 @@
     <ClCompile Include="Villager.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <Text Include="scheduler.txt" />
     <Text Include="TODO.txt" />
   </ItemGroup>
   <PropertyGroup Label="Globals">

@@ -17,11 +17,9 @@ void Scheduler::tick(int currentTicks){
 	this->currentTicks = currentTicks;
 
 	auto tasks = this->tasks;
-	for (auto t : tasks){
+	for (Task *t : tasks){
 		//-2 menas cancel
-		std::cout << "Task id: \"" + t->getTaskId() << "\"\n";
 		if (t->getPeriod() == -2){
-			std::cout << "Cancel";
 			t->cancel();
 		}
 		
@@ -94,12 +92,12 @@ Task *Scheduler::runTaskTimerAsynch(Runnable *runnable, int delay, int period){
 }
 
 Task *Scheduler::handle(Task *task, int delay){
-	std::cout << "Handle task " << task->getTaskId() << "\n";
 	task->updateNextRun(currentTicks);
 	addTask(task);
 	return task;
 }
 
 int Scheduler::nextId(){
-	return ids.fetch_add(1);
+	int nextId = ids.fetch_add(1);
+	return nextId;
 }

@@ -1,0 +1,6 @@
+//works
+//Runnable *runnable = new Runnable(static_cast<std::function<void(int count)>>([&](int count){
+Runnable *runnable = new Runnable(([&](int count){
+	std::cout << "!!task run!!\n";
+}));
+runnable->runTaskTimer(120, 120);

@@ -9,7 +9,7 @@ Map::Map(ResourceManager *manager){
 	terrain = new Terrain(TERRAIN_X, TERRAIN_Y, g);
 
 	addEntity(new Player(0,terrain->getTopHeight()*1.5,0));
-	addEntity(new Villager(5, terrain->getTopHeight()*1.5,-105));
+	addEntity(new Villager(5, terrain->getTopHeight()*1.5,0));
 
 	//addObject(manager->getModel("house"));
 }

@@ -5,7 +5,7 @@
 #include "object.h"
 class Resource :
 	public Object
-{
+{ 
 public:
 	Resource(void);
 	~Resource(void);

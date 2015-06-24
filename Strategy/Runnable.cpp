@@ -2,17 +2,24 @@
 
 #include "Game.h"
 
-Runnable::Runnable(std::function<void(void)> task){
+/*Runnable::Runnable(std::function<void(void)> task){
 	this->task = task;
-}
+}*/
 
+Runnable::Runnable(std::function<void(int count)> task){
+	this->task1 = task;
+}
 
 Runnable::~Runnable(){
 	
 }
 
 void Runnable::run(){
-	task();
+	if (task){
+		task();
+	} else {
+		task1(count);
+	}
 	count++;
 }
 

@@ -9,7 +9,8 @@
 class Runnable
 {
 public:
-	Runnable(std::function<void(void)> task);
+	//Runnable(std::function<void(void)> task);
+	Runnable(std::function<void(int count)> task);
 	~Runnable();
 
 	void run();
@@ -34,6 +35,7 @@ private:
 
 	int count;
 	std::function<void(void)> task;
+	std::function<void(int count)> task1;
 };
 
 #endif

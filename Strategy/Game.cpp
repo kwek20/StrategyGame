@@ -7,11 +7,6 @@ Game *Game::game;
 Game::Game(){
 	game = this;
 	scheduler = new Scheduler();
-
-	Runnable *runnable = new Runnable([](void){
-		std::cout << "task\n";
-	});
-	runnable->runTaskTimer(50, 50);
 }
 
 ResourceManager * Game::getManager(){
