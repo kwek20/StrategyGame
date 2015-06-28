@@ -51,8 +51,6 @@ void Camera::camera_3D_setup(ALLEGRO_DISPLAY* display){
 	glRotatef(target.getTarget()->getYRot(), 0, 1, 0);
 
 	glTranslatef(-target.getTarget()->getXPos(), -target.getTarget()->getYPos(), -target.getTarget()->getZPos());
-
-	//glEnable(GL_TEXTURE_2D);
 	
 	glShadeModel(GL_SMOOTH);		 // Enables Smooth Shading
 	glClearColor(1.0f, 1.0f, 1.0f, 0.0f);

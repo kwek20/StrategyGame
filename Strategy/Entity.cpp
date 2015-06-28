@@ -84,14 +84,14 @@ void Entity::draw(){
 
 	gluDeleteQuadric(g);
 
-	glMatrixMode(GL_MODELVIEW);
+	/*glMatrixMode(GL_MODELVIEW);
 	glLoadIdentity();
 
 	int x, y;
 	getPixelLocation(&x, &y);
 	al_draw_text(al_create_builtin_font(), al_map_rgb(255,0,0), x, y, ALLEGRO_ALIGN_CENTER, getName().c_str() ); 
 
-	glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+	glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);*/
 }
 
 void Entity::getPixelLocation(int *x, int *y){

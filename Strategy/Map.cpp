@@ -11,6 +11,7 @@ Map::Map(ResourceManager *manager){
 	addEntity(new Player(0,terrain->getTopHeight()*1.5,0));
 	addEntity(new Villager(5, terrain->getTopHeight()*1.5,0));
 
+	addObject(manager->getModel("house"));
 	addObject(manager->getModel("wolf"));
 }
  
