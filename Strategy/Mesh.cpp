@@ -3,6 +3,7 @@
 #include "assimp\Importer.hpp"
 #include "assimp\postprocess.h"
 
+#include <iostream>
 
 /**
 *	Constructor, loading the specified aiMesh
@@ -47,7 +48,6 @@ Mesh::MeshEntry::MeshEntry(aiMesh *mesh) {
 		glGenBuffers(1, &vbo[TEXCOORD_BUFFER]);
 		glBindBuffer(GL_ARRAY_BUFFER, vbo[TEXCOORD_BUFFER]);
 		glBufferData(GL_ARRAY_BUFFER, 2 * mesh->mNumVertices * sizeof(GLfloat), texCoords, GL_STATIC_DRAW);
-
 		glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 0, NULL);
 		glEnableVertexAttribArray(1);
 
@@ -132,14 +132,13 @@ void Mesh::MeshEntry::render() {
 /**
 *	Mesh constructor, loads the specified filename if supported by Assimp
 **/
-Mesh::Mesh(const char *filename)
-{
+Mesh::Mesh(const char *filename){
 	Assimp::Importer importer;
 	const aiScene *scene = importer.ReadFile(filename, NULL);
 	if (!scene) {
 		printf("Unable to laod mesh: %s\n", importer.GetErrorString());
 	}
-
+	std::cout << "hastextures:" << scene->mNumTextures  << "\n";
 	for (int i = 0; i < scene->mNumMeshes; ++i) {
 		meshEntries.push_back(new Mesh::MeshEntry(scene->mMeshes[i]));
 	}

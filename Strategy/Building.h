@@ -2,13 +2,16 @@
 #define __BUILDING_H_INCLUDED__
 
 #pragma once
-#include "object.h"
-class Building :
-	public Object
+
+#include "Model.h"
+
+class Building : public Model
 {
 public:
-	Building(void);
+	Building(std::string sFilePath);
 	~Building(void);
+
+	virtual const std::string getName(){return "Entity";};
 };
 
 #endif

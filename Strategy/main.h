@@ -48,6 +48,8 @@ FpsManager *fpsManager;
 void log(string message);
 void error(string message);
 
+void setGlFlags();
+
 int shutdown(string reason);
 
 inline int ale_screenshot(const char *destination_path, const char *folder, const char *gamename);

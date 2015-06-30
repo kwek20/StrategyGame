@@ -31,6 +31,8 @@ int main(int argc, char **argv){
 	al_set_new_display_option(ALLEGRO_SAMPLES, 3, ALLEGRO_SUGGEST);
 
 	al_set_new_display_flags(ALLEGRO_OPENGL);
+	setGlFlags();
+
 
 	display = al_create_display(800, 600);
 	if(!display) {
@@ -66,6 +68,8 @@ int main(int argc, char **argv){
 	while (!game->shouldShutDown()){
 		ALLEGRO_EVENT ev;
 		ALLEGRO_TIMEOUT timeout;
+
+		//redraws even with no input
 		al_init_timeout(&timeout, 1/FPS); // we dont need 1/FPS, this is less intensive
 
 		bool get_event = al_wait_for_event_until(event_queue, &ev, &timeout);
@@ -223,6 +227,10 @@ inline int ale_screenshot(const char *destination_path, const char* folderName, 
 	al_destroy_path(path);
  
 	return -6;
+}
+
+void setGlFlags(){
+	glEnable(GL_BLEND); //alpha for glColor4f()
 }
 
 void log(std::string message){

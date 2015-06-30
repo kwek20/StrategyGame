@@ -6,7 +6,9 @@
 #include "Vec.hpp"       // Include our custom Vec3 class
 #include <iostream>
 
-class Entity abstract
+#include "Object.h"
+
+class Entity abstract : public Object
 {
 public:
 	virtual int getMaxPitch() = 0;
@@ -25,31 +27,14 @@ public:
 	void unPossess();
 
 	virtual void draw();
+	virtual void draw2D();
 	virtual void move(float deltaTime);
 	virtual void update(float deltaTime);
-
-	virtual void moveAdd(Vec3<double> newPos);
-	virtual void rotateAdd(Vec3<double> newRot);
-
-	virtual void moveTo(Vec3<double> newPos);
-	virtual void rotateTo(Vec3<double> newRot);
 
 	virtual const std::string getName(){return "Entity";};
 
 	bool isInAir(){return inAir;}
 	void setInAir(bool air){inAir = air;}
-
-	// Position getters
-	Vec3<double> getPosition() const { return position;        }
-	double getXPos()           const { return position.getX(); }
-	double getYPos()           const { return position.getY(); }
-	double getZPos()           const { return position.getZ(); }
-
-	// Rotation getters
-	Vec3<double> getRotation() const { return rotation;        }
-	double getXRot()           const { return rotation.getX(); }
-	double getYRot()           const { return rotation.getY(); }
-	double getZRot()           const { return rotation.getZ(); }
 
 	double getMovementSpeedFactor(){return movementSpeedFactor;}
 
@@ -59,16 +44,7 @@ public:
 	bool hasVelocity(){return velocity.getX() != 0 || velocity.getY() != 0 || velocity.getZ() != 0;}
 
 	void getPixelLocation(int *x, int *y);
-
-	//dump to stdout
-	void dump();
 protected:
-	// Entity position
-	Vec3<double> position;
-
-	// Entity rotation
-	Vec3<double> rotation;
-
 	// Entity velocity, update() functions uses this to calculate movement per deltatime
 	Vec3<double> velocity;
 

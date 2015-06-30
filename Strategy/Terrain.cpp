@@ -33,7 +33,7 @@ void Terrain::draw(int mode){
 	if (!heightMap) return;
 	
 	//select model stack
-	glMatrixMode(GL_MODELVIEW);
+	//glMatrixMode(GL_MODELVIEW);
 	glPolygonMode(GL_FRONT_AND_BACK, mode);
 
 	//enable array for use during rendering
@@ -46,6 +46,9 @@ void Terrain::draw(int mode){
 	
 	//draw elements, type triangle, array size, object type, array position,
 	glDrawElements(GL_TRIANGLES, connect_points.size(), GL_UNSIGNED_INT, &connect_points.at(0));
+
+	glDisableClientState(GL_VERTEX_ARRAY);
+	glDisableClientState(GL_COLOR_ARRAY);
 }
 
 void Terrain::save(noise::utils::Image image, std::string name){

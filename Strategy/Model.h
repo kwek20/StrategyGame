@@ -15,7 +15,7 @@ public:
 
 	virtual void draw();
 
-	bool LoadModelFromFile(std::string sFilePath);
+	virtual const std::string getName(){ return "Model"; };
 private:
 	Mesh *mesh;
 };

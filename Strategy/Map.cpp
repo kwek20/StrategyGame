@@ -13,6 +13,7 @@ Map::Map(ResourceManager *manager){
 
 	addObject(manager->getModel("house"));
 	addObject(manager->getModel("wolf"));
+	addObject(manager->getModel("cube"));
 }
  
 Map::~Map(void){
@@ -30,7 +31,9 @@ void Map::draw(float deltaTime){
 		e->draw();
 	}
 
-	for (Object *o : objects){o->draw();}
+	for (Object *o : objects){
+		o->draw();
+	}
 }
 
 float Map::getHeightAt(float x, float z){

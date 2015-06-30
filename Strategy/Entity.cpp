@@ -38,27 +38,9 @@ void Entity::unPossess(){
 
 }
 
-void Entity::moveAdd(Vec3<double> newPos){
-	moveTo(position + newPos);
-}
-
-void Entity::moveTo(Vec3<double> newPos){
-	position = newPos;
-}
-
-void Entity::rotateAdd(Vec3<double> newRot){
-	rotateTo(rotation + newRot);
-}
-
-void Entity::rotateTo(Vec3<double> newRot){
-	rotation = newRot;
-}
-
 void Entity::load(Vec3<double> position, Vec3<double> rotation){
 	// Set position, rotation 
-
-	this->position = position;
-	this->rotation = rotation;
+	this->Object::load(position, rotation);
 
 	// How fast we move (higher values mean we move and strafe faster)
 	movementSpeedFactor = 100.0;
@@ -80,10 +62,12 @@ void Entity::draw(){
 
 	glPushMatrix();
 	glTranslatef(getXPos(), getYPos(), getZPos());
+	glColor3f(1, 0, 0);
 	gluSphere(g, 1,10, 10);
 
 	gluDeleteQuadric(g);
 
+	glColor4f(1, 1, 1, 1);
 	/*glMatrixMode(GL_MODELVIEW);
 	glLoadIdentity();
 
@@ -92,6 +76,12 @@ void Entity::draw(){
 	al_draw_text(al_create_builtin_font(), al_map_rgb(255,0,0), x, y, ALLEGRO_ALIGN_CENTER, getName().c_str() ); 
 
 	glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);*/
+}
+
+void Entity::draw2D(){
+	int x, y;
+	getPixelLocation(&x, &y);
+	al_draw_text(al_create_builtin_font(), al_map_rgb(255, 0, 0), x, y, ALLEGRO_ALIGN_CENTER, getName().c_str());
 }
 
 void Entity::getPixelLocation(int *x, int *y){
@@ -138,8 +128,4 @@ void Entity::update(float deltaTime){
 	}
 
 	move(deltaTime);
-}
-
-void Entity::dump(){
-	std::cout << getName().c_str() << ": position=[" << position << "] " << "rotation=[" << rotation << "]\n";
 }

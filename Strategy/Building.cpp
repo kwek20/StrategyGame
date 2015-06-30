@@ -1,7 +1,7 @@
 #include "Building.h"
 
 
-Building::Building(void)
+Building::Building(std::string sFilePath) : Model(sFilePath)
 {
 }
 

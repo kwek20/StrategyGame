@@ -6,9 +6,6 @@
 #include <allegro5\allegro.h>
 #include "allegro5\allegro_opengl.h"
 
-//#include <gl\glu.h>
-//#include <allegro5\opengl\gl_ext.h>
-
 #include "assimp\scene.h"
 #include "assimp\mesh.h"
 
