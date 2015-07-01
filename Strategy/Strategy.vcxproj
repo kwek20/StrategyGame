@@ -34,7 +34,7 @@
     <ClInclude Include="PlayerController.h" />
     <ClInclude Include="Resource.h" />
     <ClInclude Include="ResourceLoader.h" />
-    <ClInclude Include="ResourceLoaderModel.h" />
+    <ClInclude Include="ResourceLoaderMesh.h" />
     <ClInclude Include="ResourceManager.h" />
     <ClInclude Include="Runnable.h" />
     <ClInclude Include="Scheduler.h" />
@@ -67,7 +67,7 @@
     <ClCompile Include="Player.cpp" />
     <ClCompile Include="PlayerController.cpp" />
     <ClCompile Include="ResourceLoader.cpp" />
-    <ClCompile Include="ResourceLoaderModel.cpp" />
+    <ClCompile Include="ResourceLoaderMesh.cpp" />
     <ClCompile Include="ResourceManager.cpp" />
     <ClCompile Include="Runnable.cpp" />
     <ClCompile Include="Scheduler.cpp" />

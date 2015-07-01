@@ -1,7 +1,8 @@
 #include "Model.h"
 
-Model::Model(std::string sFilePath) : Object(){
-	mesh = new Mesh(sFilePath.c_str());
+Model::Model(Mesh *mesh, Vec3<double> position, Vec3<double> rotation){
+	load(position, rotation);
+	this->mesh = mesh;
 }
 
 Model::~Model(void){
@@ -9,9 +10,8 @@ Model::~Model(void){
 }
 
 void Model::draw(){
-	glPushMatrix();
 	glTranslatef(getXPos(), getYPos(), getZPos());
 	mesh->render();
-	glMatrixMode(GL_MODELVIEW);
-	glLoadIdentity();
+	//glMatrixMode(GL_MODELVIEW);
+	//glLoadIdentity();
 }

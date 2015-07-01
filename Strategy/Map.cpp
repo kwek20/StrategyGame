@@ -11,9 +11,7 @@ Map::Map(ResourceManager *manager){
 	addEntity(new Player(0,terrain->getTopHeight()*1.5,0));
 	addEntity(new Villager(5, terrain->getTopHeight()*1.5,0));
 
-	addObject(manager->getModel("house"));
-	addObject(manager->getModel("wolf"));
-	addObject(manager->getModel("cube"));
+	addObject(new Model(manager->getMesh("house"), 0, 0, 0));
 }
  
 Map::~Map(void){
@@ -21,16 +19,14 @@ Map::~Map(void){
 }
 
 void Map::draw(float deltaTime){
-	terrain->draw(); 
-	for (Entity *e : entities){
+	//terrain->draw(); 
+	/*for (Entity *e : entities){
 		if (dynamic_cast<LivingEntity*>(e)){
 			e->setInAir(getHeightAt(e->getXPos(), e->getZPos()) < e->getYPos());
 		}
-
 		e->update(deltaTime); 
 		e->draw();
-	}
-
+	}*/
 	for (Object *o : objects){
 		o->draw();
 	}

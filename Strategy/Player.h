@@ -5,7 +5,7 @@
 
 #include "LivingEntity.h"
 
-class Player : public Entity
+class Player : public LivingEntity
 {
 public:
 	virtual int getMaxPitch(){return 15;}
@@ -15,7 +15,7 @@ public:
 
 	void update(float deltaTime);
 
-	Player(double x, double y, double z) : Entity(x,y,z, (getMaxPitch()+getMinPitch())/2, 0, 0){}
+	Player(double x, double y, double z) : LivingEntity(x, y, z, (getMaxPitch() + getMinPitch()) / 2, 0, 0){}
 
 	void moveAdd(Vec3<double> locTo);
 

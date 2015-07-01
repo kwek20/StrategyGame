@@ -1,5 +1,5 @@
-#ifndef __RESOURCELOADERMODEL_H_INCLUDED__
-#define __RESOURCELOADERMODEL_H_INCLUDED__
+#ifndef __RESOURCELOADERMESH_H_INCLUDED__
+#define __RESOURCELOADERMESH_H_INCLUDED__
 
 #pragma once
 
@@ -15,14 +15,14 @@
 
 #include <allegro5\allegro_opengl.h>
 
-class ModelLoader : public ResourceLoader<Model>
+class MeshLoader : public ResourceLoader<Mesh>
 {
 public:
-	ModelLoader(std::string p) : ResourceLoader(p){};
-	Model *loadFile(const char *fileName);
+	MeshLoader(std::string p) : ResourceLoader(p){};
+	Mesh *loadFile(const char *fileName);
 	
 	const aiScene *Import3DFromFile(const std::string& pFile);
-	Model *LoadGLTextures(const aiScene* scene, const std::string modelPath);
+	Mesh *LoadGLTextures(const aiScene* scene, const std::string modelPath);
 	void loadDataFile(int delSize, std::string path);
 private:
 	std::string getBasePath(const std::string& path);

@@ -9,7 +9,7 @@
 #define MODELS "models"
 
 #include "ResourceLoader.h"
-#include "ResourceLoaderModel.h"
+#include "ResourceLoaderMesh.h"
 
 class ResourceManager
 {
@@ -20,12 +20,12 @@ public:
 	ALLEGRO_BITMAP *getImage(std::string name);
 	ALLEGRO_SAMPLE *getSound(std::string name);
 	ALLEGRO_FONT *getFont(std::string name);
-	Model *getModel(std::string name);
+	Mesh *getMesh(std::string name);
 private:
 	SoundLoader *sounds;
 	FontLoader *fonts;
 	ImageLoader *images;
-	ModelLoader *models;
+	MeshLoader *meshes;
 };
 
 #endif

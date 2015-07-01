@@ -55,27 +55,17 @@ void Entity::load(Vec3<double> position, Vec3<double> rotation){
 }
 
 void Entity::draw(){
-	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-
 	GLUquadric *g = gluNewQuadric();
 	gluQuadricNormals(g, GLU_SMOOTH);
 
-	glPushMatrix();
 	glTranslatef(getXPos(), getYPos(), getZPos());
+
 	glColor3f(1, 0, 0);
-	gluSphere(g, 1,10, 10);
+	gluSphere(g, 1, 100, 10);
 
 	gluDeleteQuadric(g);
 
 	glColor4f(1, 1, 1, 1);
-	/*glMatrixMode(GL_MODELVIEW);
-	glLoadIdentity();
-
-	int x, y;
-	getPixelLocation(&x, &y);
-	al_draw_text(al_create_builtin_font(), al_map_rgb(255,0,0), x, y, ALLEGRO_ALIGN_CENTER, getName().c_str() ); 
-
-	glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);*/
 }
 
 void Entity::draw2D(){

@@ -28,14 +28,13 @@ PlayState::~PlayState(void){
 }
 
 void PlayState::tick(double deltaTime){
-	
 	controller->move(deltaTime);
 
 	camera->camera_3D_setup(getDisplay());
 	map->draw(deltaTime);
 
-	camera->camera_2D_setup(getDisplay());
-	hud->draw(this);
+	/*camera->camera_2D_setup(getDisplay());
+	hud->draw(this);*/
 }
 
 void PlayState::handleKeyboard(ALLEGRO_EVENT_TYPE type, int keycode){

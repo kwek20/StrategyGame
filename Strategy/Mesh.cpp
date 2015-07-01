@@ -39,6 +39,7 @@ Mesh::MeshEntry::MeshEntry(aiMesh *mesh) {
 
 
 	if (mesh->HasTextureCoords(0)) {
+		std::cout << "has textures!\n";
 		float *texCoords = new float[mesh->mNumVertices * 2];
 		for (int i = 0; i < mesh->mNumVertices; ++i) {
 			texCoords[i * 2] = mesh->mTextureCoords[0][i].x;
@@ -138,7 +139,7 @@ Mesh::Mesh(const char *filename){
 	if (!scene) {
 		printf("Unable to laod mesh: %s\n", importer.GetErrorString());
 	}
-	std::cout << "hastextures:" << scene->mNumTextures  << "\n";
+	std::cout << "mNumMaterials:" << scene->mNumMaterials << "\n";
 	for (int i = 0; i < scene->mNumMeshes; ++i) {
 		meshEntries.push_back(new Mesh::MeshEntry(scene->mMeshes[i]));
 	}
@@ -159,7 +160,7 @@ Mesh::~Mesh(void)
 *	Renders all loaded MeshEntries
 **/
 void Mesh::render() {
-	for (int i = 0; i < meshEntries.size(); ++i) {
+	for (int i = 0; i < meshEntries.size(); i++) {
 		meshEntries.at(i)->render();
 	}
 }

@@ -4,21 +4,20 @@ ResourceManager::ResourceManager(void){
 	sounds = new SoundLoader(SOUNDS);
 	fonts = new FontLoader(FONTS);
 	images = new ImageLoader(IMAGES);
-	models = new ModelLoader(MODELS);
+	meshes = new MeshLoader(MODELS);
 
 	sounds->load();
 	fonts->load();
 	images->load();
 
-	models->load();
-	//Model::FinalizeVBO();
+	meshes->load();
 } 
 
 ResourceManager::~ResourceManager(void){
 	delete sounds;
 	delete fonts;
 	delete images;
-	delete models;
+	delete meshes;
 }
 
 ALLEGRO_BITMAP* ResourceManager::getImage(std::string name){
@@ -33,6 +32,6 @@ ALLEGRO_FONT* ResourceManager::getFont(std::string name){
 	return fonts->getData(name);
 }
 
-Model* ResourceManager::getModel(std::string name){
-	return models->getData(name);
+Mesh* ResourceManager::getMesh(std::string name){
+	return meshes->getData(name);
 }
