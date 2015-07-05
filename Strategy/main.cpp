@@ -231,6 +231,7 @@ inline int ale_screenshot(const char *destination_path, const char* folderName, 
 
 void setGlFlags(){
 	glEnable(GL_BLEND); //alpha for glColor4f()
+	glEnable(GL_TEXTURE_2D); //textures! Huray
 }
 
 void log(std::string message){
