@@ -153,7 +153,6 @@ std::string Mesh::getBasePath(const std::string& path){
 }
 
 void Mesh::genVAOsAndUniformBuffer(const aiScene *sc) {
-
 	struct MyMesh aMesh;
 	struct MyMaterial aMat;
 	GLuint buffer;
@@ -299,8 +298,6 @@ bool Mesh::Import3DFromFile(const std::string& pFile){
 	}
 
 	// Now we can access the file's contents.
-	printf("Import of scene %s succeeded.\n", pFile.c_str());
-
 	aiVector3D scene_min, scene_max, scene_center;
 	get_bounding_box(&scene_min, &scene_max);
 	float tmp;
