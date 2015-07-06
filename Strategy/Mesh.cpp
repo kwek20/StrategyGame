@@ -19,60 +19,8 @@ Mesh::Mesh(const char *filename){
 }
 
 void Mesh::recursive_render(const aiScene *sc, const aiNode* nd){
-	// Get node transformation matrix
-	aiMatrix4x4 m = nd->mTransformation;
-	// OpenGL matrices are column major
-	m.Transpose();
-
-	// save model matrix and apply node transformation
-	//pushMatrix();
-
-	float aux[16];
-	memcpy(aux, &m, sizeof(float) * 16);
-	multMatrix(modelMatrix, aux);
-	//setModelMatrix();
-
 	// draw all meshes assigned to this node
 	for (unsigned int n = 0; n < nd->mNumMeshes; ++n){
-		/*glMatrixMode(GL_PROJECTION);
-		glPushMatrix();
-		glLoadIdentity();
-		glOrtho(0.0, 600, 0.0, 400, -1.0, 1.0);
-		glMatrixMode(GL_MODELVIEW);
-		glPushMatrix();
-
-
-		glLoadIdentity();
-		glDisable(GL_LIGHTING);
-
-
-		glColor3f(1, 1, 1);
-		glEnable(GL_TEXTURE_2D);
-		glBindTexture(GL_TEXTURE_2D, myMeshes[nd->mMeshes[n]].texIndex);
-
-
-		// Draw a textured quad
-		glBegin(GL_QUADS);
-		glTexCoord2f(0, 0); glVertex3f(0, 0, 0);
-		glTexCoord2f(0, 1); glVertex3f(0, 100, 0);
-		glTexCoord2f(1, 1); glVertex3f(100, 100, 0);
-		glTexCoord2f(1, 0); glVertex3f(100, 0, 0);
-		glEnd();
-
-
-		glDisable(GL_TEXTURE_2D);
-		glPopMatrix();
-
-
-		glMatrixMode(GL_PROJECTION);
-		glPopMatrix();
-
-		glMatrixMode(GL_MODELVIEW);*/
-
-		// bind material uniform
-		//glBindBufferRange(GL_UNIFORM_BUFFER, materialUniLoc, myMeshes[nd->mMeshes[n]].uniformBlockIndex, 0, sizeof(struct MyMaterial));
-		// bind texture
-
 		glEnable(GL_TEXTURE_2D);
 		glBindTexture(GL_TEXTURE_2D, myMeshes[nd->mMeshes[n]].texIndex);
 
@@ -87,7 +35,6 @@ void Mesh::recursive_render(const aiScene *sc, const aiNode* nd){
 	for (unsigned int n = 0; n < nd->mNumChildren; ++n){
 		recursive_render(sc, nd->mChildren[n]);
 	}
-	//popMatrix();
 }
 
 int Mesh::LoadGLTextures(const aiScene* scene){
