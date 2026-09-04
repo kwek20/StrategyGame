@@ -1,0 +1,10 @@
+#include "game/SettingsState.hpp"
+#include "render/Renderer.hpp"
+#include <SDL3/SDL.h>
+#include <algorithm>
+namespace strategy {
+SettingsState::SettingsState():config_(GameConfig::load("gamedata/config.json")){for(std::size_t i=0;i<resolutions.size();++i)if(resolutions[i].first==config_.resolutionWidth&&resolutions[i].second==config_.resolutionHeight)resolution_=i;}
+void SettingsState::apply(){config_.resolutionWidth=resolutions[resolution_].first;config_.resolutionHeight=resolutions[resolution_].second;config_.write("gamedata/config.json");if(SDL_Window* window=SDL_GetWindowFromID(windowId_)){SDL_SetWindowFullscreen(window,config_.fullscreen);if(!config_.fullscreen)SDL_SetWindowSize(window,config_.resolutionWidth,config_.resolutionHeight);}}
+void SettingsState::handleEvent(const SDL_Event& event){if(event.type==SDL_EVENT_MOUSE_MOTION){windowId_=event.motion.windowID;hovered_=event.motion.x>=60&&event.motion.x<=700&&event.motion.y>=120?static_cast<int>((event.motion.y-120)/45):-1;return;}if(event.type==SDL_EVENT_KEY_DOWN){windowId_=event.key.windowID;if(binding_>=0){static constexpr const char* names[]={"forward","backward","left","right","debug","pause"};config_.keybinds[names[binding_]]=static_cast<std::int32_t>(event.key.key);binding_=-1;return;}if(event.key.key==SDLK_ESCAPE){request_=StateRequest::returnToMainMenu;return;}}if(event.type!=SDL_EVENT_MOUSE_BUTTON_DOWN||event.button.button!=SDL_BUTTON_LEFT)return;windowId_=event.button.windowID;const int row=event.button.x>=60&&event.button.x<=700&&event.button.y>=120?static_cast<int>((event.button.y-120)/45):-1;if(row==0)resolution_=(resolution_+1)%resolutions.size();else if(row==1)config_.fullscreen=!config_.fullscreen;else if(row==2)config_.masterVolume=std::max(0.0F,config_.masterVolume-0.1F);else if(row==3)config_.masterVolume=std::min(1.0F,config_.masterVolume+0.1F);else if(row>=4&&row<10)binding_=row-4;else if(row==10){apply();request_=StateRequest::returnToMainMenu;}else if(row==11)request_=StateRequest::returnToMainMenu;}
+void SettingsState::render(Renderer& renderer)const{renderer.drawSettings(config_,resolution_,hovered_,binding_);}
+}
