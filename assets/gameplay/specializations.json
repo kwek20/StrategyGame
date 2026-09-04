@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "specializations": [
+    {"id":"unassigned","modifiers":[]},
+    {"id":"logistics","modifiers":[
+      {"id":"specialization.logistics.carry","stat":"carryCapacity","target":{"tags":["worker"]},"operation":"multiply","value":1.25},
+      {"id":"specialization.logistics.gather","stat":"gatherRate","target":{"tags":["worker"]},"operation":"multiply","value":1.10}
+    ]},
+    {"id":"rapid_deployment","modifiers":[
+      {"id":"specialization.rapid_deployment.speed","stat":"movementSpeed","target":{"tags":["unit"]},"operation":"multiply","value":1.10}
+    ]},
+    {"id":"ranged_doctrine","modifiers":[
+      {"id":"specialization.ranged_doctrine.speed","stat":"movementSpeed","target":{"tags":["unit","ranged"]},"operation":"multiply","value":1.12}
+    ]}
+  ]
+}

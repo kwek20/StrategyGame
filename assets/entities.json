@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "entities": {
+    "town_center": {
+      "model": "buildings/TownCenter_FirstAge_Level1",
+      "scale": 12.0,
+      "selection": { "radius": 10.5, "height": 5.0 },
+      "animations": {}
+    },
+    "town_center_level_2": {
+      "model": "buildings/TownCenter_FirstAge_Level2",
+      "scale": 12.0,
+      "selection": { "radius": 10.5, "height": 5.0 },
+      "animations": {}
+    },
+    "town_center_level_3": {
+      "model": "buildings/TownCenter_FirstAge_Level3",
+      "scale": 12.0,
+      "selection": { "radius": 10.5, "height": 5.0 },
+      "animations": {}
+    },
+    "worker": {
+      "model": "units/Worker_Male",
+      "scale": 0.55,
+      "selection": { "radius": 0.75, "height": 2.0 },
+      "animations": {
+        "idle": "Idle",
+        "walk": "Walk",
+        "run": "Run",
+        "attack": "Punch",
+        "death": "Death"
+      }
+    },
+    "tree": {
+      "model": "buildings/Resource_PineTree",
+      "scale": 8.0,
+      "selection": { "radius": 1.5, "height": 5.0 },
+      "animations": {}
+    },
+    "stone": {
+      "model": "buildings/Resource_Rock_1",
+      "scale": 6.0,
+      "selection": { "radius": 2.0, "height": 2.5 },
+      "animations": {}
+    },
+    "gold": {
+      "model": "buildings/Resource_Gold_1",
+      "scale": 6.0,
+      "selection": { "radius": 2.0, "height": 2.5 },
+      "animations": {}
+    }
+  }
+}

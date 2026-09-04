@@ -1,0 +1,6 @@
+{
+  "configuration": {
+    "saveDirectory": "gamedata/saves/",
+    "saveFile": "autosave.json"
+  }
+}

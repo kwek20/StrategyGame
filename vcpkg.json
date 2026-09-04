@@ -1,0 +1,13 @@
+{
+  "name": "strategy-game",
+  "version-string": "0.1.0",
+  "dependencies": [
+    "sdl3",
+    "glad",
+    "glm",
+    "assimp",
+    "stb",
+    "freetype",
+    "rapidjson"
+  ]
+}

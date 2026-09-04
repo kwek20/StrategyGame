@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "entities": {
+    "worker": {"kind":"unit","components":["health","vision","unit","gatherer","combat","upgrades"],"availableUpgrades":[],"tags":["unit","worker","civilian","melee"],"stats":{"health":100,"movementSpeed":7,"sightRange":10,"attackDamage":8,"attackRange":0.7,"attackCooldown":1,"gatherRate":4,"carryCapacity":10,"trainingTime":10}},
+    "town_center": {"kind":"building","components":["health","vision","production","buildingUpgrades","upgrades"],"availableUpgrades":[],"tags":["building","economic","production"],"canTrain":["worker"],"stats":{"health":1000,"sightRange":18,"productionSpeed":1,"upgradeTime":15,"researchTime":8,"productionUpgradeAmount":0.1,"maximumProductionUpgrades":8}},
+    "town_center_level_2": {"kind":"building","components":["health","vision","production","buildingUpgrades","upgrades"],"availableUpgrades":[],"tags":["building","economic","production"],"canTrain":["worker"],"stats":{"health":1250,"sightRange":20,"productionSpeed":1.1,"upgradeTime":18,"researchTime":7,"productionUpgradeAmount":0.1,"maximumProductionUpgrades":8}},
+    "town_center_level_3": {"kind":"building","components":["health","vision","production","buildingUpgrades","upgrades"],"availableUpgrades":[],"tags":["building","economic","production"],"canTrain":["worker"],"stats":{"health":1500,"sightRange":22,"productionSpeed":1.2,"upgradeTime":22,"researchTime":6,"productionUpgradeAmount":0.1,"maximumProductionUpgrades":8}},
+    "outpost": {"kind":"building","components":["health","vision","production","upgrades"],"availableUpgrades":[],"tags":["building","military","production"],"canTrain":["worker"],"stats":{"health":650,"sightRange":24,"productionSpeed":0.65,"researchTime":10,"productionUpgradeAmount":0.05,"maximumProductionUpgrades":4}},
+    "tree": {"kind":"resource","components":["resource"],"tags":["resource","wood"],"stats":{}},
+    "stone": {"kind":"resource","components":["resource"],"tags":["resource","stone"],"stats":{}},
+    "gold": {"kind":"resource","components":["resource"],"tags":["resource","gold"],"stats":{}}
+  }
+}

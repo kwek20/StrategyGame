@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "countries": [
+    { "id": "brazil", "nameKey": "country.brazil", "specialization": "unassigned", "modifiers": [{"id":"country.brazil.gather","stat":"gatherRate","target":{"tags":["worker"]},"operation":"multiply","value":1.10}] },
+    { "id": "china", "nameKey": "country.china", "specialization": "unassigned" },
+    { "id": "france", "nameKey": "country.france", "specialization": "unassigned" },
+    { "id": "germany", "nameKey": "country.germany", "specialization": "unassigned", "modifiers": [{"id":"country.germany.unit_speed","stat":"movementSpeed","target":{"tags":["unit"]},"operation":"multiply","value":1.05}] },
+    { "id": "india", "nameKey": "country.india", "specialization": "unassigned" },
+    { "id": "japan", "nameKey": "country.japan", "specialization": "unassigned", "modifiers": [{"id":"country.japan.melee_speed","stat":"movementSpeed","target":{"tags":["unit","melee"]},"operation":"multiply","value":1.08}] },
+    { "id": "spain", "nameKey": "country.spain", "specialization": "unassigned", "modifiers": [{"id":"country.spain.production","stat":"productionSpeed","target":{"producerTags":["production"]},"operation":"multiply","value":1.05}] },
+    { "id": "united_states", "nameKey": "country.united_states", "specialization": "unassigned" }
+  ]
+}
