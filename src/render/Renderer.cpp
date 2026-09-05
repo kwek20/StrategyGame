@@ -1183,8 +1183,12 @@ void Renderer::drawSettings(const GameConfig& config,
                             int binding) const {
     static constexpr std::array<std::pair<int, int>, 4> sizes{
         {{1280, 720}, {1600, 900}, {1920, 1080}, {2560, 1440}}};
-    static constexpr const char* actions[] = {
-        "FORWARD", "BACKWARD", "LEFT", "RIGHT", "DEBUG", "PAUSE"};
+    static constexpr const char* actions[] = {"settings.action.forward",
+                                              "settings.action.backward",
+                                              "settings.action.left",
+                                              "settings.action.right",
+                                              "settings.action.debug",
+                                              "settings.action.pause"};
     static constexpr const char* ids[] = {"forward", "backward", "left", "right", "debug", "pause"};
     glDisable(GL_DEPTH_TEST); glDisable(GL_CULL_FACE); glUseProgram(hudProgram_);
     glBindVertexArray(hudVao_); glBindBuffer(GL_ARRAY_BUFFER, hudVbo_);
@@ -1212,26 +1216,27 @@ void Renderer::drawSettings(const GameConfig& config,
     box({470,500,850,538},12); box({470,545,850,583},13);
     const auto percent=[](float value){return std::to_string(static_cast<int>(std::round(value*100.0F)))+"%";};
     drawText(Text::get("settings.title"), 60, 52, 3.0F);
-    drawText("VIDEO",60,100,2.0F,{0.35F,0.72F,0.92F});
-    drawText("RESOLUTION     " + std::to_string(sizes[resolution].first) + " x " +
-                 std::to_string(sizes[resolution].second),
-             75,140,1.5F);
-    drawText(std::string("FULLSCREEN     ") + (config.fullscreen ? "ON" : "OFF"),75,185,1.5F);
-    drawText("AUDIO",60,250,2.0F,{0.35F,0.72F,0.92F});
-    drawText("MASTER VOLUME     -   "+percent(config.masterVolume)+"   +",75,295,1.4F);
-    drawText("MUSIC VOLUME      -   "+percent(config.musicVolume)+"   +",75,340,1.4F);
-    drawText("EFFECTS VOLUME    -   "+percent(config.effectsVolume)+"   +",75,385,1.4F);
-    drawText(std::string("MUTE ALL          ")+(config.muted?"ON":"OFF"),75,430,1.4F);
-    drawText("CONTROLS",470,100,2.0F,{0.35F,0.72F,0.92F});
+    const std::string enabled = Text::get("settings.on"), disabled = Text::get("settings.off");
+    drawText(Text::get("settings.video"),60,100,2.0F,{0.35F,0.72F,0.92F});
+    drawText(Text::format("settings.resolution", {std::to_string(sizes[resolution].first),
+                                                   std::to_string(sizes[resolution].second)}),75,140,1.5F);
+    drawText(Text::format("settings.fullscreen", {config.fullscreen ? enabled : disabled}),75,185,1.5F);
+    drawText(Text::get("settings.audio"),60,250,2.0F,{0.35F,0.72F,0.92F});
+    drawText(Text::format("settings.master_volume", {percent(config.masterVolume)}),75,295,1.4F);
+    drawText(Text::format("settings.music_volume", {percent(config.musicVolume)}),75,340,1.4F);
+    drawText(Text::format("settings.effects_volume", {percent(config.effectsVolume)}),75,385,1.4F);
+    drawText(Text::format("settings.mute", {config.muted ? enabled : disabled}),75,430,1.4F);
+    drawText(Text::get("settings.controls"),470,100,2.0F,{0.35F,0.72F,0.92F});
     for (int i = 0; i < 6; ++i) {
         const auto found = config.keybinds.find(ids[i]);
         const SDL_Keycode key = found == config.keybinds.end() ? 0 : found->second;
-        drawText(std::string(actions[i]),485,140+i*45,1.35F,{0.72F,0.78F,0.82F});
-        drawText(binding == i ? "PRESS A KEY..." : std::string("BOUND TO: ")+SDL_GetKeyName(key),
+        drawText(Text::get(actions[i]),485,140+i*45,1.35F,{0.72F,0.78F,0.82F});
+        drawText(binding == i ? Text::get("settings.press_key")
+                              : Text::format("settings.bound_to", {SDL_GetKeyName(key)}),
                  625,140+i*45,1.35F,binding==i?glm::vec3{1.0F,0.72F,0.18F}:glm::vec3{0.95F,0.98F,0.82F});
     }
-    drawText("APPLY AND BACK",485,510,1.5F);
-    drawText("CANCEL CHANGES",485,555,1.5F);
+    drawText(Text::get("settings.apply"),485,510,1.5F);
+    drawText(Text::get("settings.cancel"),485,555,1.5F);
     glBindVertexArray(0);
     glEnable(GL_CULL_FACE);
     glEnable(GL_DEPTH_TEST);

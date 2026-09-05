@@ -8,7 +8,10 @@
             "fullscreen": false
         },
         "audio": {
-            "masterVolume": 1.0
+            "masterVolume": 1.0,
+            "musicVolume": 0.8,
+            "effectsVolume": 1.0,
+            "muted": false
         },
         "keybinds": {
             "backward": 115,

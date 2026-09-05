@@ -24,12 +24,18 @@ int main() {
     config.resolutionWidth = 1920;
     config.resolutionHeight = 1080;
     config.fullscreen = true;
+    config.masterVolume = 0.7F;
+    config.musicVolume = 0.4F;
+    config.effectsVolume = 0.9F;
+    config.muted = true;
     config.keybinds["forward"] = 42;
     config.write(configPath);
     const strategy::GameConfig settingsRoundTrip = strategy::GameConfig::load(configPath);
     valid = valid && settingsRoundTrip.resolutionWidth == 1920 &&
             settingsRoundTrip.resolutionHeight == 1080 && settingsRoundTrip.fullscreen &&
-            settingsRoundTrip.keybinds.at("forward") == 42;
+            settingsRoundTrip.keybinds.at("forward") == 42 &&
+            settingsRoundTrip.masterVolume == 0.7F && settingsRoundTrip.musicVolume == 0.4F &&
+            settingsRoundTrip.effectsVolume == 0.9F && settingsRoundTrip.muted;
 
     strategy::World world;
     strategy::Entity& entity = world.createEntity("House", "house");
