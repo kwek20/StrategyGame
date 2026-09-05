@@ -8,6 +8,8 @@ struct CameraView {
     glm::vec3 position{0.0F};
     glm::vec3 target{0.0F};
     float detailDistance{55.0F};
-    [[nodiscard]] glm::mat4 viewProjection() const { return projection * view; }
+    [[nodiscard]] glm::mat4 viewProjection() const {
+        return projection * view;
+    }
 };
-}
+} // namespace strategy

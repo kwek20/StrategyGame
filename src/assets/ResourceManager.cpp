@@ -2,11 +2,11 @@
 
 #include <algorithm>
 #include <cctype>
-#include <iostream>
-#include <unordered_set>
 #include <fstream>
+#include <iostream>
 #include <rapidjson/document.h>
 #include <rapidjson/istreamwrapper.h>
+#include <unordered_set>
 
 namespace strategy {
 
@@ -25,13 +25,13 @@ void ResourceManager::loadEntityDefinitions(const std::filesystem::path& path) {
     rapidjson::IStreamWrapper input(stream);
     rapidjson::Document document;
     document.ParseStream(input);
-    if (document.HasParseError() || !document.HasMember("entities")
-        || !document["entities"].IsObject()) {
+    if (document.HasParseError() || !document.HasMember("entities") ||
+        !document["entities"].IsObject()) {
         throw std::runtime_error("Invalid entity catalogue: " + path.string());
     }
     for (const auto& member : document["entities"].GetObject()) {
-        if (!member.value.IsObject() || !member.value.HasMember("model")
-            || !member.value["model"].IsString()) {
+        if (!member.value.IsObject() || !member.value.HasMember("model") ||
+            !member.value["model"].IsString()) {
             continue;
         }
         EntityDefinition definition;
@@ -40,9 +40,11 @@ void ResourceManager::loadEntityDefinitions(const std::filesystem::path& path) {
             definition.scale = member.value["scale"].GetFloat();
         }
         if (member.value.HasMember("selection") && member.value["selection"].IsObject()) {
-            const auto& selection=member.value["selection"];
-            if(selection.HasMember("radius")&&selection["radius"].IsNumber()) definition.selectionRadius=selection["radius"].GetFloat();
-            if(selection.HasMember("height")&&selection["height"].IsNumber()) definition.selectionHeight=selection["height"].GetFloat();
+            const auto& selection = member.value["selection"];
+            if (selection.HasMember("radius") && selection["radius"].IsNumber())
+                definition.selectionRadius = selection["radius"].GetFloat();
+            if (selection.HasMember("height") && selection["height"].IsNumber())
+                definition.selectionHeight = selection["height"].GetFloat();
         }
         if (member.value.HasMember("animations") && member.value["animations"].IsObject()) {
             for (const auto& animation : member.value["animations"].GetObject()) {
@@ -53,21 +55,21 @@ void ResourceManager::loadEntityDefinitions(const std::filesystem::path& path) {
             }
         }
         entityDefinitions_.insert_or_assign(normalizedKey(member.name.GetString()),
-                                             std::move(definition));
+                                            std::move(definition));
     }
 }
 
 std::string ResourceManager::normalizedKey(std::string key) {
     std::replace(key.begin(), key.end(), '\\', '/');
-    std::transform(key.begin(), key.end(), key.begin(),
-        [](unsigned char value) { return static_cast<char>(std::tolower(value)); });
+    std::transform(key.begin(), key.end(), key.begin(), [](unsigned char value) {
+        return static_cast<char>(std::tolower(value));
+    });
     return key;
 }
 
 void ResourceManager::indexModels(const std::filesystem::path& directory) {
     static const std::unordered_set<std::string> extensions{
-        ".obj", ".fbx", ".dae", ".3ds", ".gltf", ".glb", ".ply", ".stl"
-    };
+        ".obj", ".fbx", ".dae", ".3ds", ".gltf", ".glb", ".ply", ".stl"};
     if (!std::filesystem::is_directory(directory)) {
         std::cout << "No model asset directory at " << directory.string() << '\n';
         return;
@@ -81,8 +83,10 @@ void ResourceManager::indexModels(const std::filesystem::path& directory) {
         if (!extensions.contains(extension)) {
             continue;
         }
-        const std::string relativeKey = normalizedKey(
-            std::filesystem::relative(entry.path(), directory).replace_extension().generic_string());
+        const std::string relativeKey =
+            normalizedKey(std::filesystem::relative(entry.path(), directory)
+                              .replace_extension()
+                              .generic_string());
         modelPaths_.insert_or_assign(relativeKey, entry.path());
     }
 }

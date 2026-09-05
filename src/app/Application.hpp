@@ -1,16 +1,21 @@
 #pragma once
 
+#include "app\GameState.hpp"
+#include "app\StateStack.hpp"
+#include "core\EventBus.hpp"
+
 #include <memory>
 
 struct SDL_Window;
 
 namespace strategy {
 
-class GameState;
+class AudioSystem;
+class Logger;
 class Renderer;
 
 class Application final {
-public:
+  public:
     Application();
     ~Application();
 
@@ -19,13 +24,16 @@ public:
 
     int run();
 
-private:
+  private:
     SDL_Window* window_{nullptr};
     void* glContext_{nullptr};
+    EventBus events_;
+    std::unique_ptr<Logger> logger_;
+    std::unique_ptr<AudioSystem> audio_;
     std::unique_ptr<Renderer> renderer_;
-    std::unique_ptr<GameState> state_;
+    std::unique_ptr<StateContext> stateContext_;
+    std::unique_ptr<StateStack> states_;
     bool running_{true};
 };
 
 } // namespace strategy
-

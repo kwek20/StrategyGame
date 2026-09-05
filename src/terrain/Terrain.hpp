@@ -1,14 +1,13 @@
 #pragma once
 
 #include <cstdint>
-#include <vector>
-
 #include <glm/vec3.hpp>
+#include <vector>
 
 namespace strategy {
 
 class Terrain final {
-public:
+  public:
     static constexpr int cellCount = 512;
     static constexpr int vertexCount = cellCount + 1;
     static constexpr int chunkCellCount = 64;
@@ -25,13 +24,13 @@ public:
     [[nodiscard]] glm::vec3 colorAt(float normalizedHeight) const;
     [[nodiscard]] float worldExtent() const;
 
-private:
+  private:
     std::vector<float> heights_;
 
     void generate(std::uint32_t seed);
     [[nodiscard]] static float valueNoise(float x, float z, std::uint32_t seed);
-    [[nodiscard]] static float fractalNoise(float x, float z, std::uint32_t seed,
-                                            int octaves, float persistence);
+    [[nodiscard]] static float
+    fractalNoise(float x, float z, std::uint32_t seed, int octaves, float persistence);
 };
 
 } // namespace strategy

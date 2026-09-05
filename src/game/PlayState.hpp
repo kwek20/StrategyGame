@@ -3,30 +3,36 @@
 #include "app/GameState.hpp"
 #include "game/RtsCamera.hpp"
 #include "game/ThirdPersonCamera.hpp"
-#include "simulation/GameSession.hpp"
 #include "persistence/GameConfig.hpp"
 #include "persistence/SaveGame.hpp"
+#include "simulation/GameSession.hpp"
 
-#include <glm/vec3.hpp>
-#include <cstdint>
-#include <optional>
 #include <array>
-#include <vector>
+#include <cstdint>
+#include <glm/vec3.hpp>
 #include <glm/vec4.hpp>
+#include <optional>
+#include <vector>
 
 namespace strategy {
 
 class PlayState final : public GameState {
-public:
-    explicit PlayState(std::uint32_t terrainSeed,std::string playerOneCountry="spain",
-                       std::string playerTwoCountry="japan");
-    explicit PlayState(SaveData data);
+  public:
+    PlayState(StateContext& context,
+              std::uint32_t terrainSeed,
+              std::string playerOneCountry = "spain",
+              std::string playerTwoCountry = "japan");
+    PlayState(StateContext& context, SaveData data);
     void handleEvent(const SDL_Event& event) override;
     void update(float deltaSeconds) override;
     void render(Renderer& renderer) const override;
-    [[nodiscard]] StateRequest request() const override { return request_; }
+    StateRequest takeRequest() override {
+        const StateRequest result = request_;
+        request_ = StateRequest::none;
+        return result;
+    }
 
-private:
+  private:
     enum class ViewMode { strategy, unitControl };
     RtsCamera camera_;
     ThirdPersonCamera thirdPersonCamera_;
@@ -46,6 +52,7 @@ private:
     bool paused_{false};
     bool detailedDebug_{false};
     bool resumeHovered_{false};
+    bool settingsHovered_{false};
     bool exitHovered_{false};
     StateRequest request_{StateRequest::none};
     GameConfig config_;
@@ -70,7 +77,7 @@ private:
     mutable std::optional<glm::vec4> pendingSelectionRectangle_;
     mutable std::optional<std::vector<EntityId>> pickedEntities_;
     std::uint32_t inputWindowId_{0};
-    std::array<bool,3> townHallButtonHovered_{false,false,false};
+    std::array<bool, 3> townHallButtonHovered_{false, false, false};
 
     void setMouseCaptured(bool captured);
 

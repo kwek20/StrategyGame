@@ -1,32 +1,44 @@
 #include "simulation/GameSession.hpp"
+#include "simulation/StateChecksum.hpp"
+
+#include "localization/Text.hpp"
+#include "terrain/Terrain.hpp"
+#include "world/Collision.hpp"
+#include "world/Navigation.hpp"
+#include "world/WorldGeneration.hpp"
 
 #include <algorithm>
 #include <cmath>
+#include <glm/geometric.hpp>
+#include <glm/gtc/constants.hpp>
+#include <glm/trigonometric.hpp>
 #include <limits>
 #include <type_traits>
 
-#include <glm/geometric.hpp>
-#include <glm/trigonometric.hpp>
-#include <glm/gtc/constants.hpp>
-#include "localization/Text.hpp"
-#include "terrain/Terrain.hpp"
-#include "world/WorldGeneration.hpp"
-#include "world/Collision.hpp"
-#include "world/Navigation.hpp"
-
 namespace strategy {
 
-GameSession::GameSession(std::uint32_t terrainSeed,std::string playerOneCountry,
-                         std::string playerTwoCountry,std::string playerOneSpecialization,
+std::uint64_t GameSession::stateChecksum() const {
+    return authoritativeStateChecksum(world_, players_, terrainSeed_, tick_);
+}
+
+GameSession::GameSession(std::uint32_t terrainSeed,
+                         std::string playerOneCountry,
+                         std::string playerTwoCountry,
+                         std::string playerOneSpecialization,
                          std::string playerTwoSpecialization)
-    : players_(std::move(playerOneCountry),std::move(playerTwoCountry),
-               std::move(playerOneSpecialization),std::move(playerTwoSpecialization)),terrainSeed_(terrainSeed),terrain_(terrainSeed),navigation_(terrain_) {
-    Entity& playerOneBase = world_.createEntity(
-        Text::get("entity.player_one_base"), "town_center", 1);
+    : players_(std::move(playerOneCountry),
+               std::move(playerTwoCountry),
+               std::move(playerOneSpecialization),
+               std::move(playerTwoSpecialization))
+    , terrainSeed_(terrainSeed)
+    , terrain_(terrainSeed)
+    , navigation_(terrain_) {
+    Entity& playerOneBase =
+        world_.createEntity(Text::get("entity.player_one_base"), "town_center", 1);
     initializeEntity(playerOneBase);
     playerOneBase.transform.position = {-28.0F, 0.0F, -28.0F};
-    Entity& playerTwoBase = world_.createEntity(
-        Text::get("entity.player_two_base"), "town_center", 2);
+    Entity& playerTwoBase =
+        world_.createEntity(Text::get("entity.player_two_base"), "town_center", 2);
     initializeEntity(playerTwoBase);
     playerTwoBase.transform.position = {28.0F, 0.0F, 28.0F};
     playerTwoBase.transform.rotationDegrees.y = 180.0F;
@@ -43,8 +55,36 @@ GameSession::GameSession(std::uint32_t terrainSeed,std::string playerOneCountry,
     updateExploration();
 }
 
-float GameSession::stat(const Entity& entity,GameplayStat requested)const {const Player* player=players_.find(entity.authority.owner);if(!player)return 0.0F;return gameplay_.resolve(requested,player->countryId,player->specializationId,entity.modelKey);}
-void GameSession::initializeEntity(Entity& entity){gameplay_.initializeEntity(entity);if(entity.health)if(const float value=stat(entity,GameplayStat::health);value>0){entity.health.maximum=value;entity.health.current=value;}if(entity.unitControl)if(const float value=stat(entity,GameplayStat::movementSpeed);value>0)entity.unitControl.movementSpeed=value;if(entity.vision)if(const float value=stat(entity,GameplayStat::sightRange);value>0){entity.vision.sightRange=value;entity.unitControl.sightRange=value;}if(entity.gatherer){if(const float value=stat(entity,GameplayStat::gatherRate);value>0){entity.gatherer.gatherPerSecond=value;entity.unitControl.gatherPerSecond=value;}if(const float value=stat(entity,GameplayStat::carryCapacity);value>0){entity.gatherer.carryCapacity=value;entity.unitControl.carryCapacity=value;}}}
+float GameSession::stat(const Entity& entity, GameplayStat requested) const {
+    const Player* player = players_.find(entity.authority.owner);
+    if (!player)
+        return 0.0F;
+    return gameplay_.resolve(
+        requested, player->countryId, player->specializationId, entity.modelKey);
+}
+void GameSession::initializeEntity(Entity& entity) {
+    gameplay_.initializeEntity(entity);
+    if (entity.health)
+        if (const float value = stat(entity, GameplayStat::health); value > 0) {
+            entity.health.maximum = value;
+            entity.health.current = value;
+        }
+    if (entity.unitControl)
+        if (const float value = stat(entity, GameplayStat::movementSpeed); value > 0)
+            entity.unitControl.movementSpeed = value;
+    if (entity.vision)
+        if (const float value = stat(entity, GameplayStat::sightRange); value > 0) {
+            entity.vision.sightRange = value;
+        }
+    if (entity.gatherer) {
+        if (const float value = stat(entity, GameplayStat::gatherRate); value > 0) {
+            entity.gatherer.gatherPerSecond = value;
+        }
+        if (const float value = stat(entity, GameplayStat::carryCapacity); value > 0) {
+            entity.gatherer.carryCapacity = value;
+        }
+    }
+}
 
 bool GameSession::submit(PlayerCommand command) {
     if (players_.find(command.player) == nullptr) {
@@ -62,78 +102,132 @@ bool GameSession::submit(PlayerCommand command) {
 void GameSession::update(double elapsedSeconds) {
     accumulator_ += std::min(elapsedSeconds, 0.25);
     while (accumulator_ >= fixedTickSeconds) {
-        simulateTick();
+        advanceTicks();
         accumulator_ -= fixedTickSeconds;
     }
 }
 
+void GameSession::advanceTicks(std::uint32_t count) {
+    for (std::uint32_t index = 0; index < count; ++index)
+        simulateTick();
+}
+
 void GameSession::apply(const PlayerCommand& command) {
-    std::visit([this, &command](const auto& payload) {
-        Entity* entity = world_.findEntity(payload.entity);
-        if (entity == nullptr || entity->authority.owner != command.player) {
-            return;
-        }
-        using Type = std::decay_t<decltype(payload)>;
-        if constexpr (std::is_same_v<Type, PossessUnitCommand>) {
-            if (entity->unitControl && entity->unitControl.directlyControllable
-                && (entity->authority.directController == 0
-                || entity->authority.directController == command.player)) {
-                entity->authority.directController = command.player;
+    std::visit(
+        [this, &command](const auto& payload) {
+            Entity* entity = world_.findEntity(payload.entity);
+            if (entity == nullptr || entity->authority.owner != command.player) {
+                return;
             }
-        } else if constexpr (std::is_same_v<Type, ReleaseUnitCommand>) {
-            if (entity->unitControl && entity->authority.directController == command.player) {
-                entity->authority.directController = 0;
-                entity->unitControl.directInput = {0.0F, 0.0F};
-                entity->unitControl.running = false;
-            }
-        } else if constexpr (std::is_same_v<Type, DirectUnitInputCommand>) {
-            if (entity->unitControl && entity->authority.directController == command.player) {
-                entity->unitControl.directInput = payload.movement;
-                entity->unitControl.running = payload.running;
-                entity->transform.rotationDegrees.y = payload.facingDegrees;
-                if (glm::length(entity->unitControl.directInput) > 1.0F) {
-                    entity->unitControl.directInput =
-                        glm::normalize(entity->unitControl.directInput);
+            using Type = std::decay_t<decltype(payload)>;
+            if constexpr (std::is_same_v<Type, PossessUnitCommand>) {
+                if (entity->unitControl && entity->unitControl.directlyControllable &&
+                    (entity->authority.directController == 0 ||
+                     entity->authority.directController == command.player)) {
+                    entity->authority.directController = command.player;
+                }
+            } else if constexpr (std::is_same_v<Type, ReleaseUnitCommand>) {
+                if (entity->unitControl && entity->authority.directController == command.player) {
+                    entity->authority.directController = 0;
+                    entity->unitControl.directInput = {0.0F, 0.0F};
+                    entity->unitControl.running = false;
+                }
+            } else if constexpr (std::is_same_v<Type, DirectUnitInputCommand>) {
+                if (entity->unitControl && entity->authority.directController == command.player) {
+                    entity->unitControl.directInput = payload.movement;
+                    entity->unitControl.running = payload.running;
+                    entity->transform.rotationDegrees.y = payload.facingDegrees;
+                    if (glm::length(entity->unitControl.directInput) > 1.0F) {
+                        entity->unitControl.directInput =
+                            glm::normalize(entity->unitControl.directInput);
+                    }
+                }
+            } else if constexpr (std::is_same_v<Type, MoveUnitCommand>) {
+                if (!entity->unitControl)
+                    return;
+                entity->unitControl.order = UnitOrderKind::move;
+                entity->unitControl.orderTarget = 0;
+                entity->unitControl.strategicDestination = payload.destination;
+                entity->unitControl.hasStrategicDestination = true;
+                entity->transient.navigationPath =
+                    navigation_.findPath(world_,
+                                         entity->transform.position,
+                                         payload.destination,
+                                         collisionRadius(entity->modelKey),
+                                         entity->id);
+                entity->transient.navigationWaypoint = 0;
+                entity->transient.navigationRetrySeconds =
+                    entity->transient.navigationPath.empty() ? 0.5F : 0.0F;
+            } else if constexpr (std::is_same_v<Type, GatherResourceCommand>) {
+                Entity* resource = world_.findEntity(payload.resource);
+                if (entity->unitControl && entity->gatherer &&
+                    entity->unitControl.directlyControllable && resource && resource->resource &&
+                    resource->resource.remaining > 0) {
+                    entity->unitControl.order = UnitOrderKind::gather;
+                    entity->unitControl.orderTarget = resource->id;
+                    entity->unitControl.strategicDestination = resource->transform.position;
+                    entity->unitControl.hasStrategicDestination = true;
+                    entity->transient.navigationPath.clear();
+                }
+            } else if constexpr (std::is_same_v<Type, AttackEntityCommand>) {
+                Entity* target = world_.findEntity(payload.target);
+                if (entity->unitControl && entity->combat &&
+                    entity->unitControl.directlyControllable && target && target->health &&
+                    target->authority.owner != 0 && target->authority.owner != command.player) {
+                    entity->unitControl.order = UnitOrderKind::attack;
+                    entity->unitControl.orderTarget = target->id;
+                    entity->transient.navigationPath.clear();
+                }
+            } else if constexpr (std::is_same_v<Type, UpgradeTownHallCommand>) {
+                if (!entity->production || !entity->buildingUpgrades)
+                    return;
+                const auto pending = static_cast<std::uint32_t>(
+                    std::count_if(entity->production.queue.begin(),
+                                  entity->production.queue.end(),
+                                  [](const ProductionOrder& order) {
+                                      return order.kind == ProductionKind::upgradeBuilding;
+                                  }));
+                if (entity->modelKey.rfind("town_center", 0) == 0 &&
+                    entity->buildingUpgrades.level + pending < 3) {
+                    const float duration = stat(*entity, GameplayStat::upgradeTime);
+                    entity->production.queue.push_back(
+                        {ProductionKind::upgradeBuilding, duration, duration});
+                }
+            } else if constexpr (std::is_same_v<Type, ImproveTrainingCommand>) {
+                if (!entity->production)
+                    return;
+                const auto pending = static_cast<std::uint32_t>(
+                    std::count_if(entity->production.queue.begin(),
+                                  entity->production.queue.end(),
+                                  [](const ProductionOrder& order) {
+                                      return order.kind == ProductionKind::improveTraining;
+                                  }));
+                const auto maximum = static_cast<std::uint32_t>(
+                    std::max(0.0F, stat(*entity, GameplayStat::maximumProductionUpgrades)));
+                if (gameplay_.canTrain(entity->modelKey, "worker") &&
+                    entity->production.productionSpeedUpgrades + pending < maximum) {
+                    const float duration = stat(*entity, GameplayStat::researchTime);
+                    entity->production.queue.push_back(
+                        {ProductionKind::improveTraining, duration, duration});
+                }
+            } else if constexpr (std::is_same_v<Type, TrainCharacterCommand>) {
+                if (!entity->production)
+                    return;
+                const Player* player = players_.find(command.player);
+                if (player && gameplay_.canTrain(entity->modelKey, "worker")) {
+                    const float duration =
+                        gameplay_.productionDuration(player->countryId,
+                                                     player->specializationId,
+                                                     entity->modelKey,
+                                                     "worker",
+                                                     entity->production.productionSpeedMultiplier);
+                    entity->production.characterBuildSeconds = duration;
+                    entity->production.queue.push_back(
+                        {ProductionKind::trainCharacter, duration, duration});
                 }
             }
-        } else if constexpr (std::is_same_v<Type, MoveUnitCommand>) {
-            if(!entity->unitControl)return;
-            entity->unitControl.order=UnitOrderKind::move;entity->unitControl.orderTarget=0;
-            entity->unitControl.strategicDestination = payload.destination;
-            entity->unitControl.hasStrategicDestination = true;
-            entity->unitControl.navigationPath=navigation_.findPath(world_,entity->transform.position,payload.destination,collisionRadius(entity->modelKey),entity->id);
-            entity->unitControl.navigationWaypoint=0;
-            entity->unitControl.navigationRetrySeconds=entity->unitControl.navigationPath.empty()?0.5F:0.0F;
-        } else if constexpr(std::is_same_v<Type,GatherResourceCommand>) {
-            Entity* resource=world_.findEntity(payload.resource);
-            if(entity->unitControl&&entity->gatherer&&entity->unitControl.directlyControllable&&resource&&resource->resource&&resource->resource.remaining>0) {
-                entity->unitControl.order=UnitOrderKind::gather;entity->unitControl.orderTarget=resource->id;
-                entity->unitControl.strategicDestination=resource->transform.position;entity->unitControl.hasStrategicDestination=true;entity->unitControl.navigationPath.clear();
-            }
-        } else if constexpr(std::is_same_v<Type,AttackEntityCommand>) {
-            Entity* target=world_.findEntity(payload.target);
-            if(entity->unitControl&&entity->combat&&entity->unitControl.directlyControllable&&target&&target->health&&target->authority.owner!=0&&target->authority.owner!=command.player) {
-                entity->unitControl.order=UnitOrderKind::attack;entity->unitControl.orderTarget=target->id;entity->unitControl.navigationPath.clear();
-            }
-        } else if constexpr (std::is_same_v<Type, UpgradeTownHallCommand>) {
-            if(!entity->production||!entity->buildingUpgrades)return;
-            const auto pending=static_cast<std::uint32_t>(std::count_if(entity->production.queue.begin(),entity->production.queue.end(),[](const ProductionOrder& order){return order.kind==ProductionKind::upgradeBuilding;}));
-            if (entity->modelKey.rfind("town_center",0)==0 && entity->production.level+pending<3)
-                {const float duration=stat(*entity,GameplayStat::upgradeTime);entity->production.queue.push_back({ProductionKind::upgradeBuilding,duration,duration});}
-        } else if constexpr (std::is_same_v<Type, ImproveTrainingCommand>) {
-            if(!entity->production)return;
-            const auto pending=static_cast<std::uint32_t>(std::count_if(entity->production.queue.begin(),entity->production.queue.end(),[](const ProductionOrder& order){return order.kind==ProductionKind::improveTraining;}));
-            const auto maximum=static_cast<std::uint32_t>(std::max(0.0F,stat(*entity,GameplayStat::maximumProductionUpgrades)));
-            if (gameplay_.canTrain(entity->modelKey,"worker") && entity->production.productionSpeedUpgrades+pending<maximum) {
-                const float duration=stat(*entity,GameplayStat::researchTime);
-                entity->production.queue.push_back({ProductionKind::improveTraining,duration,duration});
-            }
-        } else if constexpr (std::is_same_v<Type, TrainCharacterCommand>) {
-            if(!entity->production)return;
-            const Player* player=players_.find(command.player);
-            if (player&&gameplay_.canTrain(entity->modelKey,"worker")) {const float duration=gameplay_.productionDuration(player->countryId,player->specializationId,entity->modelKey,"worker",entity->production.productionSpeedMultiplier);entity->production.characterBuildSeconds=duration;entity->production.queue.push_back({ProductionKind::trainCharacter,duration,duration});}
-        }
-    }, command.payload);
+        },
+        command.payload);
 }
 
 void GameSession::simulateTick() {
@@ -142,161 +236,367 @@ void GameSession::simulateTick() {
         commands_.pop_front();
     }
 
-    struct CompletedCharacter {PlayerId owner;glm::vec3 townPosition;};
+    struct CompletedCharacter {
+        PlayerId owner;
+        glm::vec3 townPosition;
+    };
     std::vector<CompletedCharacter> completed;
     std::vector<EntityId> destroyed;
     for (Entity& entity : world_.entities()) {
-        entity.unitControl.navigationRetrySeconds=std::max(0.0F,entity.unitControl.navigationRetrySeconds-static_cast<float>(fixedTickSeconds));
-        if(entity.production&&!entity.production.queue.empty()) {
-            ProductionOrder& order=entity.production.queue.front();
-            order.remainingSeconds-=static_cast<float>(fixedTickSeconds);
-            if(order.remainingSeconds<=0.0F) {
-                if(order.kind==ProductionKind::trainCharacter)completed.push_back({entity.authority.owner,entity.transform.position});
-                else if(order.kind==ProductionKind::upgradeBuilding) {
-                    ++entity.production.level;
-                    if(entity.buildingUpgrades)entity.buildingUpgrades.level=entity.production.level;
-                    entity.modelKey=entity.production.level==2?"town_center_level_2":"town_center_level_3";
-                    const float previousRatio=entity.health&&entity.health.maximum>0?entity.health.current/entity.health.maximum:1.0F;const float maximum=stat(entity,GameplayStat::health);if(entity.health&&maximum>0){entity.health.maximum=maximum;entity.health.current=maximum*previousRatio;}
-                } else if(order.kind==ProductionKind::improveTraining) {
-                    entity.production.productionSpeedMultiplier+=stat(entity,GameplayStat::productionUpgradeAmount);
+        if (entity.production && !entity.production.queue.empty()) {
+            ProductionOrder& order = entity.production.queue.front();
+            order.remainingSeconds -= static_cast<float>(fixedTickSeconds);
+            if (order.remainingSeconds <= 0.0F) {
+                if (order.kind == ProductionKind::trainCharacter)
+                    completed.push_back({entity.authority.owner, entity.transform.position});
+                else if (order.kind == ProductionKind::upgradeBuilding) {
+                    ++entity.buildingUpgrades.level;
+                    entity.modelKey = entity.buildingUpgrades.level == 2
+                                          ? "town_center_level_2"
+                                          : "town_center_level_3";
+                    const float previousRatio = entity.health && entity.health.maximum > 0
+                                                    ? entity.health.current / entity.health.maximum
+                                                    : 1.0F;
+                    const float maximum = stat(entity, GameplayStat::health);
+                    if (entity.health && maximum > 0) {
+                        entity.health.maximum = maximum;
+                        entity.health.current = maximum * previousRatio;
+                    }
+                } else if (order.kind == ProductionKind::improveTraining) {
+                    entity.production.productionSpeedMultiplier +=
+                        stat(entity, GameplayStat::productionUpgradeAmount);
                     ++entity.production.productionSpeedUpgrades;
                 }
                 entity.production.queue.pop_front();
             }
         }
-        if(!entity.unitControl)continue;
-        const auto routeTo=[this,&entity](glm::vec3 destination){const glm::vec2 change{destination.x-entity.unitControl.strategicDestination.x,destination.z-entity.unitControl.strategicDestination.z};if(!entity.unitControl.hasStrategicDestination||glm::dot(change,change)>1.0F){entity.unitControl.strategicDestination=destination;entity.unitControl.hasStrategicDestination=true;entity.unitControl.navigationPath.clear();entity.unitControl.navigationWaypoint=0;}};
-        if(entity.authority.directController==0&&entity.unitControl.directlyControllable) {
-            if(entity.unitControl.order==UnitOrderKind::gather) {
-                Entity* node=world_.findEntity(entity.unitControl.orderTarget);
-                if(!node||node->resource.remaining<=0.0F)entity.unitControl.order=entity.unitControl.carriedAmount>0?UnitOrderKind::returnResources:UnitOrderKind::idle;
-                else if(entity.unitControl.carriedAmount>=stat(entity,GameplayStat::carryCapacity))entity.unitControl.order=UnitOrderKind::returnResources;
-                else {const float reach=collisionRadius(entity.modelKey)+collisionRadius(node->modelKey)+0.9F;const glm::vec2 delta{node->transform.position.x-entity.transform.position.x,node->transform.position.z-entity.transform.position.z};if(glm::dot(delta,delta)<=reach*reach){entity.unitControl.hasStrategicDestination=false;entity.unitControl.carriedKind=node->resource.kind;const float capacity=stat(entity,GameplayStat::carryCapacity),rate=stat(entity,GameplayStat::gatherRate);const float amount=std::min({node->resource.remaining,rate*static_cast<float>(fixedTickSeconds),capacity-entity.unitControl.carriedAmount});node->resource.remaining-=amount;entity.unitControl.carriedAmount+=amount;if(entity.unitControl.carriedAmount>=capacity||node->resource.remaining<=0)entity.unitControl.order=UnitOrderKind::returnResources;}else routeTo(node->transform.position);}
+        if (!entity.unitControl)
+            continue;
+        entity.transient.navigationRetrySeconds = std::max(
+            0.0F, entity.transient.navigationRetrySeconds - static_cast<float>(fixedTickSeconds));
+        const auto routeTo = [this, &entity](glm::vec3 destination) {
+            const glm::vec2 change{destination.x - entity.unitControl.strategicDestination.x,
+                                   destination.z - entity.unitControl.strategicDestination.z};
+            if (!entity.unitControl.hasStrategicDestination || glm::dot(change, change) > 1.0F) {
+                entity.unitControl.strategicDestination = destination;
+                entity.unitControl.hasStrategicDestination = true;
+                entity.transient.navigationPath.clear();
+                entity.transient.navigationWaypoint = 0;
             }
-            if(entity.unitControl.order==UnitOrderKind::returnResources) {
-                Entity* hall=nullptr;float nearest=std::numeric_limits<float>::max();for(Entity& candidate:world_.entities())if(candidate.authority.owner==entity.authority.owner&&candidate.modelKey.rfind("town_center",0)==0){const glm::vec2 d{candidate.transform.position.x-entity.transform.position.x,candidate.transform.position.z-entity.transform.position.z};const float distance=glm::dot(d,d);if(distance<nearest){nearest=distance;hall=&candidate;}}
-                if(!hall)entity.unitControl.order=UnitOrderKind::idle;else {const float reach=collisionRadius(entity.modelKey)+collisionRadius(hall->modelKey)+0.9F;if(nearest<=reach*reach){if(Player* player=players_.find(entity.authority.owner)){if(entity.unitControl.carriedKind==ResourceKind::wood)player->wood+=entity.unitControl.carriedAmount;else if(entity.unitControl.carriedKind==ResourceKind::stone)player->stone+=entity.unitControl.carriedAmount;else if(entity.unitControl.carriedKind==ResourceKind::gold)player->gold+=entity.unitControl.carriedAmount;}entity.unitControl.carriedAmount=0;entity.unitControl.carriedKind=ResourceKind::none;Entity* node=world_.findEntity(entity.unitControl.orderTarget);entity.unitControl.order=node&&node->resource.remaining>0?UnitOrderKind::gather:UnitOrderKind::idle;entity.unitControl.hasStrategicDestination=false;}else routeTo(hall->transform.position);}
+        };
+        if (entity.authority.directController == 0 && entity.unitControl.directlyControllable) {
+            if (entity.unitControl.order == UnitOrderKind::gather) {
+                Entity* node = world_.findEntity(entity.unitControl.orderTarget);
+                if (!node || node->resource.remaining <= 0.0F)
+                    entity.unitControl.order = entity.gatherer.carriedAmount > 0
+                                                   ? UnitOrderKind::returnResources
+                                                   : UnitOrderKind::idle;
+                else if (entity.gatherer.carriedAmount >= stat(entity, GameplayStat::carryCapacity))
+                    entity.unitControl.order = UnitOrderKind::returnResources;
+                else {
+                    const float reach =
+                        collisionRadius(entity.modelKey) + collisionRadius(node->modelKey) + 0.9F;
+                    const glm::vec2 delta{node->transform.position.x - entity.transform.position.x,
+                                          node->transform.position.z - entity.transform.position.z};
+                    if (glm::dot(delta, delta) <= reach * reach) {
+                        entity.unitControl.hasStrategicDestination = false;
+                        entity.gatherer.carriedKind = node->resource.kind;
+                        const float capacity = stat(entity, GameplayStat::carryCapacity),
+                                    rate = stat(entity, GameplayStat::gatherRate);
+                        const float amount =
+                            std::min({node->resource.remaining,
+                                      rate * static_cast<float>(fixedTickSeconds),
+                                      capacity - entity.gatherer.carriedAmount});
+                        node->resource.remaining -= amount;
+                        entity.gatherer.carriedAmount += amount;
+                        if (entity.gatherer.carriedAmount >= capacity ||
+                            node->resource.remaining <= 0)
+                            entity.unitControl.order = UnitOrderKind::returnResources;
+                    } else
+                        routeTo(node->transform.position);
+                }
             }
-            if(entity.unitControl.order==UnitOrderKind::attack) {
-                Entity* target=world_.findEntity(entity.unitControl.orderTarget);if(!target||!target->health||target->health.current<=0||target->authority.owner==entity.authority.owner)entity.unitControl.order=UnitOrderKind::idle;else {const glm::vec2 d{target->transform.position.x-entity.transform.position.x,target->transform.position.z-entity.transform.position.z};const float range=collisionRadius(entity.modelKey)+collisionRadius(target->modelKey)+stat(entity,GameplayStat::attackRange);if(glm::dot(d,d)<=range*range){entity.unitControl.hasStrategicDestination=false;target->health.current-=stat(entity,GameplayStat::attackDamage)*static_cast<float>(fixedTickSeconds);if(target->health.current<=0)destroyed.push_back(target->id);}else routeTo(target->transform.position);}
+            if (entity.unitControl.order == UnitOrderKind::returnResources) {
+                Entity* hall = nullptr;
+                float nearest = std::numeric_limits<float>::max();
+                for (Entity& candidate : world_.entities())
+                    if (candidate.authority.owner == entity.authority.owner &&
+                        candidate.modelKey.rfind("town_center", 0) == 0) {
+                        const glm::vec2 d{
+                            candidate.transform.position.x - entity.transform.position.x,
+                            candidate.transform.position.z - entity.transform.position.z};
+                        const float distance = glm::dot(d, d);
+                        if (distance < nearest) {
+                            nearest = distance;
+                            hall = &candidate;
+                        }
+                    }
+                if (!hall)
+                    entity.unitControl.order = UnitOrderKind::idle;
+                else {
+                    const float reach =
+                        collisionRadius(entity.modelKey) + collisionRadius(hall->modelKey) + 0.9F;
+                    if (nearest <= reach * reach) {
+                        if (Player* player = players_.find(entity.authority.owner)) {
+                            if (entity.gatherer.carriedKind == ResourceKind::wood)
+                                player->wood += entity.gatherer.carriedAmount;
+                            else if (entity.gatherer.carriedKind == ResourceKind::stone)
+                                player->stone += entity.gatherer.carriedAmount;
+                            else if (entity.gatherer.carriedKind == ResourceKind::gold)
+                                player->gold += entity.gatherer.carriedAmount;
+                        }
+                        entity.gatherer.carriedAmount = 0;
+                        entity.gatherer.carriedKind = ResourceKind::none;
+                        Entity* node = world_.findEntity(entity.unitControl.orderTarget);
+                        entity.unitControl.order = node && node->resource.remaining > 0
+                                                       ? UnitOrderKind::gather
+                                                       : UnitOrderKind::idle;
+                        entity.unitControl.hasStrategicDestination = false;
+                    } else
+                        routeTo(hall->transform.position);
+                }
+            }
+            if (entity.unitControl.order == UnitOrderKind::attack) {
+                Entity* target = world_.findEntity(entity.unitControl.orderTarget);
+                if (!target || !target->health || target->health.current <= 0 ||
+                    target->authority.owner == entity.authority.owner)
+                    entity.unitControl.order = UnitOrderKind::idle;
+                else {
+                    const glm::vec2 d{target->transform.position.x - entity.transform.position.x,
+                                      target->transform.position.z - entity.transform.position.z};
+                    const float range = collisionRadius(entity.modelKey) +
+                                        collisionRadius(target->modelKey) +
+                                        stat(entity, GameplayStat::attackRange);
+                    if (glm::dot(d, d) <= range * range) {
+                        entity.unitControl.hasStrategicDestination = false;
+                        target->health.current -= stat(entity, GameplayStat::attackDamage) *
+                                                  static_cast<float>(fixedTickSeconds);
+                        if (target->health.current <= 0)
+                            destroyed.push_back(target->id);
+                    } else
+                        routeTo(target->transform.position);
+                }
             }
         }
         glm::vec2 movement{0.0F};
         if (entity.authority.directController != 0) {
             movement = entity.unitControl.directInput;
         } else if (entity.unitControl.hasStrategicDestination) {
-            if(entity.unitControl.navigationWaypoint>=entity.unitControl.navigationPath.size()) {
-                if(entity.unitControl.navigationRetrySeconds>0.0F)continue;
-                entity.unitControl.navigationPath=navigation_.findPath(world_,entity.transform.position,entity.unitControl.strategicDestination,collisionRadius(entity.modelKey),entity.id);
-                entity.unitControl.navigationWaypoint=0;
-                if(entity.unitControl.navigationPath.empty()){entity.unitControl.hasStrategicDestination=false;entity.unitControl.navigationRetrySeconds=0.5F;if(entity.unitControl.order==UnitOrderKind::move)entity.unitControl.order=UnitOrderKind::idle;continue;}
+            if (entity.transient.navigationWaypoint >= entity.transient.navigationPath.size()) {
+                if (entity.transient.navigationRetrySeconds > 0.0F)
+                    continue;
+                entity.transient.navigationPath =
+                    navigation_.findPath(world_,
+                                         entity.transform.position,
+                                         entity.unitControl.strategicDestination,
+                                         collisionRadius(entity.modelKey),
+                                         entity.id);
+                entity.transient.navigationWaypoint = 0;
+                if (entity.transient.navigationPath.empty()) {
+                    entity.unitControl.hasStrategicDestination = false;
+                    entity.transient.navigationRetrySeconds = 0.5F;
+                    if (entity.unitControl.order == UnitOrderKind::move)
+                        entity.unitControl.order = UnitOrderKind::idle;
+                    continue;
+                }
             }
-            const glm::vec3 waypoint=entity.unitControl.navigationPath[entity.unitControl.navigationWaypoint];
-            const glm::vec2 delta{
-                waypoint.x - entity.transform.position.x,
-                waypoint.z - entity.transform.position.z};
+            const glm::vec3 waypoint =
+                entity.transient.navigationPath[entity.transient.navigationWaypoint];
+            const glm::vec2 delta{waypoint.x - entity.transform.position.x,
+                                  waypoint.z - entity.transform.position.z};
             if (glm::length(delta) < 0.35F) {
-                ++entity.unitControl.navigationWaypoint;
-                if(entity.unitControl.navigationWaypoint>=entity.unitControl.navigationPath.size()){entity.unitControl.hasStrategicDestination=false;if(entity.unitControl.order==UnitOrderKind::move)entity.unitControl.order=UnitOrderKind::idle;}
+                ++entity.transient.navigationWaypoint;
+                if (entity.transient.navigationWaypoint >= entity.transient.navigationPath.size()) {
+                    entity.unitControl.hasStrategicDestination = false;
+                    if (entity.unitControl.order == UnitOrderKind::move)
+                        entity.unitControl.order = UnitOrderKind::idle;
+                }
             } else {
                 movement = glm::normalize(delta);
             }
         }
-        if(glm::length(movement)>0.001F&&entity.unitControl.directlyControllable) {
+        if (glm::length(movement) > 0.001F && entity.unitControl.directlyControllable) {
             glm::vec2 separation{0};
-            for(const Entity& other:world_.entities())if(other.id!=entity.id&&other.unitControl.directlyControllable) {
-                const glm::vec2 away{entity.transform.position.x-other.transform.position.x,entity.transform.position.z-other.transform.position.z};
-                const float distance=glm::length(away),desired=collisionRadius(entity.modelKey)+collisionRadius(other.modelKey)+0.45F;
-                if(distance>0.001F&&distance<desired)separation+=(away/distance)*(desired-distance)/desired;
-            }
-            movement+=separation*0.8F;if(glm::length(movement)>1.0F)movement=glm::normalize(movement);
+            for (const Entity& other : world_.entities())
+                if (other.id != entity.id && other.unitControl.directlyControllable) {
+                    const glm::vec2 away{entity.transform.position.x - other.transform.position.x,
+                                         entity.transform.position.z - other.transform.position.z};
+                    const float distance = glm::length(away),
+                                desired = collisionRadius(entity.modelKey) +
+                                          collisionRadius(other.modelKey) + 0.45F;
+                    if (distance > 0.001F && distance < desired)
+                        separation += (away / distance) * (desired - distance) / desired;
+                }
+            movement += separation * 0.8F;
+            if (glm::length(movement) > 1.0F)
+                movement = glm::normalize(movement);
         }
         if (glm::length(movement) > 0.001F && entity.authority.directController == 0) {
             entity.transform.rotationDegrees.y = glm::degrees(std::atan2(movement.x, movement.y));
         }
         const float speedMultiplier = entity.unitControl.running ? 1.65F : 1.0F;
-        const glm::vec2 current{entity.transform.position.x,entity.transform.position.z};
-        const float resolvedMovementSpeed=entity.authority.owner?stat(entity,GameplayStat::movementSpeed):entity.unitControl.movementSpeed;
-        const glm::vec2 delta=movement*resolvedMovementSpeed*speedMultiplier
-                             *static_cast<float>(fixedTickSeconds);
-        const float radius=collisionRadius(entity.modelKey);
-        const float boundary=static_cast<float>(Terrain::cellCount)*Terrain::spacing*0.5F-radius;
-        const auto validPosition=[this,&entity,radius,boundary](glm::vec2 candidate) {
-            return std::abs(candidate.x)<=boundary&&std::abs(candidate.y)<=boundary
-                && !overlapsObject(world_,candidate,radius,entity.id);
+        const glm::vec2 current{entity.transform.position.x, entity.transform.position.z};
+        const float resolvedMovementSpeed = entity.authority.owner
+                                                ? stat(entity, GameplayStat::movementSpeed)
+                                                : entity.unitControl.movementSpeed;
+        const glm::vec2 delta = movement * resolvedMovementSpeed * speedMultiplier *
+                                static_cast<float>(fixedTickSeconds);
+        const float radius = collisionRadius(entity.modelKey);
+        const float boundary =
+            static_cast<float>(Terrain::cellCount) * Terrain::spacing * 0.5F - radius;
+        const auto validPosition = [this, &entity, radius, boundary](glm::vec2 candidate) {
+            return std::abs(candidate.x) <= boundary && std::abs(candidate.y) <= boundary &&
+                   !overlapsObject(world_, candidate, radius, entity.id);
         };
-        if(validPosition(current+delta)) {
-            entity.transform.position.x=current.x+delta.x;
-            entity.transform.position.z=current.y+delta.y;
-        } else if(validPosition(current+glm::vec2{delta.x,0.0F})) {
-            entity.transform.position.x=current.x+delta.x;
-        } else if(validPosition(current+glm::vec2{0.0F,delta.y})) {
-            entity.transform.position.z=current.y+delta.y;
-        } else if(entity.unitControl.hasStrategicDestination) {
-            entity.unitControl.navigationPath.clear();entity.unitControl.navigationWaypoint=0;entity.unitControl.navigationRetrySeconds=0.25F;
+        if (validPosition(current + delta)) {
+            entity.transform.position.x = current.x + delta.x;
+            entity.transform.position.z = current.y + delta.y;
+        } else if (validPosition(current + glm::vec2{delta.x, 0.0F})) {
+            entity.transform.position.x = current.x + delta.x;
+        } else if (validPosition(current + glm::vec2{0.0F, delta.y})) {
+            entity.transform.position.z = current.y + delta.y;
+        } else if (entity.unitControl.hasStrategicDestination) {
+            entity.transient.navigationPath.clear();
+            entity.transient.navigationWaypoint = 0;
+            entity.transient.navigationRetrySeconds = 0.25F;
         }
     }
-    std::sort(destroyed.begin(),destroyed.end());destroyed.erase(std::unique(destroyed.begin(),destroyed.end()),destroyed.end());for(EntityId id:destroyed)world_.destroyEntity(id);
-    for(const CompletedCharacter& character:completed) {
-        const float spawnDistance=collisionRadius("town_center")+collisionRadius("worker")+0.6F;
-        for(int candidate=0;candidate<16;++candidate) {
-            const float angle=static_cast<float>(candidate)*glm::two_pi<float>()/16.0F;
-            const glm::vec2 position{character.townPosition.x+std::cos(angle)*spawnDistance,
-                                     character.townPosition.z+std::sin(angle)*spawnDistance};
-            if(overlapsObject(world_,position,collisionRadius("worker")))continue;
-            Entity& unit=world_.createEntity(Text::get("entity.worker"),"worker",character.owner);
+    std::sort(destroyed.begin(), destroyed.end());
+    destroyed.erase(std::unique(destroyed.begin(), destroyed.end()), destroyed.end());
+    for (EntityId id : destroyed)
+        world_.destroyEntity(id);
+    for (const CompletedCharacter& character : completed) {
+        const float spawnDistance =
+            collisionRadius("town_center") + collisionRadius("worker") + 0.6F;
+        for (int candidate = 0; candidate < 16; ++candidate) {
+            const float angle = static_cast<float>(candidate) * glm::two_pi<float>() / 16.0F;
+            const glm::vec2 position{character.townPosition.x + std::cos(angle) * spawnDistance,
+                                     character.townPosition.z + std::sin(angle) * spawnDistance};
+            if (overlapsObject(world_, position, collisionRadius("worker")))
+                continue;
+            Entity& unit =
+                world_.createEntity(Text::get("entity.worker"), "worker", character.owner);
             initializeEntity(unit);
-            unit.transform.position={position.x,0.0F,position.y};
-            unit.unitControl.directlyControllable=true;
+            unit.transform.position = {position.x, 0.0F, position.y};
+            unit.unitControl.directlyControllable = true;
             break;
         }
     }
-    updateExploration();++tick_;
+    updateExploration();
+    ++tick_;
 }
 
 void GameSession::updateExploration() {
-    constexpr float extent=Terrain::cellCount*Terrain::spacing;
-    for(Player& player:players_.players()) {
-        std::fill(player.visible.begin(),player.visible.end(),0);
-        for(const Entity& entity:world_.entities()) {
-            if(entity.authority.owner!=player.id||!entity.vision)continue;
-            const float elevation=terrain_.heightAt(entity.transform.position.x,entity.transform.position.z);
-            const float radius=effectiveSightRange(stat(entity,GameplayStat::sightRange),elevation);
-            const int centerX=static_cast<int>((entity.transform.position.x/extent+0.5F)*Player::explorationCells);
-            const int centerZ=static_cast<int>((entity.transform.position.z/extent+0.5F)*Player::explorationCells);
-            const int cells=static_cast<int>(radius/extent*Player::explorationCells)+1;
-            for(int z=std::max(0,centerZ-cells);z<=std::min(Player::explorationCells-1,centerZ+cells);++z)
-                for(int x=std::max(0,centerX-cells);x<=std::min(Player::explorationCells-1,centerX+cells);++x) {
-                    const float wx=(static_cast<float>(x)+0.5F)/Player::explorationCells*extent-extent*0.5F;
-                    const float wz=(static_cast<float>(z)+0.5F)/Player::explorationCells*extent-extent*0.5F;
-                    if((wx-entity.transform.position.x)*(wx-entity.transform.position.x)+(wz-entity.transform.position.z)*(wz-entity.transform.position.z)<=radius*radius) {
-                        const auto index=static_cast<std::size_t>(z*Player::explorationCells+x);player.visible[index]=255;player.discovered[index]=255;
+    constexpr float extent = Terrain::cellCount * Terrain::spacing;
+    for (Player& player : players_.players()) {
+        std::fill(player.visible.begin(), player.visible.end(), 0);
+        for (const Entity& entity : world_.entities()) {
+            if (entity.authority.owner != player.id || !entity.vision)
+                continue;
+            const float elevation =
+                terrain_.heightAt(entity.transform.position.x, entity.transform.position.z);
+            const float radius =
+                effectiveSightRange(stat(entity, GameplayStat::sightRange), elevation);
+            const int centerX = static_cast<int>((entity.transform.position.x / extent + 0.5F) *
+                                                 Player::explorationCells);
+            const int centerZ = static_cast<int>((entity.transform.position.z / extent + 0.5F) *
+                                                 Player::explorationCells);
+            const int cells = static_cast<int>(radius / extent * Player::explorationCells) + 1;
+            for (int z = std::max(0, centerZ - cells);
+                 z <= std::min(Player::explorationCells - 1, centerZ + cells);
+                 ++z)
+                for (int x = std::max(0, centerX - cells);
+                     x <= std::min(Player::explorationCells - 1, centerX + cells);
+                     ++x) {
+                    const float wx =
+                        (static_cast<float>(x) + 0.5F) / Player::explorationCells * extent -
+                        extent * 0.5F;
+                    const float wz =
+                        (static_cast<float>(z) + 0.5F) / Player::explorationCells * extent -
+                        extent * 0.5F;
+                    if ((wx - entity.transform.position.x) * (wx - entity.transform.position.x) +
+                            (wz - entity.transform.position.z) *
+                                (wz - entity.transform.position.z) <=
+                        radius * radius) {
+                        const auto index =
+                            static_cast<std::size_t>(z * Player::explorationCells + x);
+                        player.visible[index] = 255;
+                        player.discovered[index] = 255;
                     }
                 }
         }
-        const auto cellVisible=[&](glm::vec3 position){const int x=std::clamp(static_cast<int>((position.x/extent+0.5F)*Player::explorationCells),0,Player::explorationCells-1),z=std::clamp(static_cast<int>((position.z/extent+0.5F)*Player::explorationCells),0,Player::explorationCells-1);return player.visible[static_cast<std::size_t>(z*Player::explorationCells+x)]!=0;};
-        for(const Entity& entity:world_.entities())if(entity.authority.owner!=player.id&&cellVisible(entity.transform.position)) {
-            const bool depleted=entity.resource&&entity.resource.remaining<=0.0F;
-            auto known=std::find_if(player.intelligence.begin(),player.intelligence.end(),[&](const LastKnownEntity& item){return item.id==entity.id;});
-            if(depleted){if(known!=player.intelligence.end())player.intelligence.erase(known);continue;}
-            LastKnownEntity snapshot{entity.id,entity.modelKey,entity.transform.position,entity.transform.rotationDegrees,entity.transform.scale,entity.kind==EntityKind::building};
-            if(known==player.intelligence.end())player.intelligence.push_back(std::move(snapshot));else *known=std::move(snapshot);
-        }
-        player.intelligence.erase(std::remove_if(player.intelligence.begin(),player.intelligence.end(),[&](const LastKnownEntity& known){if(!cellVisible(known.position))return false;const Entity* entity=world_.findEntity(known.id);return !entity||(entity->resource&&entity->resource.remaining<=0.0F);}),player.intelligence.end());
+        const auto cellVisible = [&](glm::vec3 position) {
+            const int x = std::clamp(
+                          static_cast<int>((position.x / extent + 0.5F) * Player::explorationCells),
+                          0,
+                          Player::explorationCells - 1),
+                      z = std::clamp(
+                          static_cast<int>((position.z / extent + 0.5F) * Player::explorationCells),
+                          0,
+                          Player::explorationCells - 1);
+            return player.visible[static_cast<std::size_t>(z * Player::explorationCells + x)] != 0;
+        };
+        for (const Entity& entity : world_.entities())
+            if (entity.authority.owner != player.id && cellVisible(entity.transform.position)) {
+                const bool depleted = entity.resource && entity.resource.remaining <= 0.0F;
+                auto known =
+                    std::find_if(player.intelligence.begin(),
+                                 player.intelligence.end(),
+                                 [&](const LastKnownEntity& item) { return item.id == entity.id; });
+                if (depleted) {
+                    if (known != player.intelligence.end())
+                        player.intelligence.erase(known);
+                    continue;
+                }
+                LastKnownEntity snapshot{entity.id,
+                                         entity.modelKey,
+                                         entity.transform.position,
+                                         entity.transform.rotationDegrees,
+                                         entity.transform.scale,
+                                         entity.kind == EntityKind::building};
+                if (known == player.intelligence.end())
+                    player.intelligence.push_back(std::move(snapshot));
+                else
+                    *known = std::move(snapshot);
+            }
+        player.intelligence.erase(
+            std::remove_if(player.intelligence.begin(),
+                           player.intelligence.end(),
+                           [&](const LastKnownEntity& known) {
+                               if (!cellVisible(known.position))
+                                   return false;
+                               const Entity* entity = world_.findEntity(known.id);
+                               return !entity ||
+                                      (entity->resource && entity->resource.remaining <= 0.0F);
+                           }),
+            player.intelligence.end());
     }
 }
 
 void GameSession::replaceWorld(std::vector<Entity> entities, std::uint32_t terrainSeed) {
     world_.replaceEntities(std::move(entities));
     terrainSeed_ = terrainSeed;
-    terrain_=Terrain{terrainSeed};navigation_.rebuildTerrain(terrain_);
+    terrain_ = Terrain{terrainSeed};
+    navigation_.rebuildTerrain(terrain_);
     commands_.clear();
     lastSequence_.clear();
     updateExploration();
 }
 
-void GameSession::restorePlayerProgress(PlayerId id,float wood,float stone,float gold,std::vector<std::uint8_t> discovered,std::vector<LastKnownEntity> intelligence) {
-    if(Player* player=players_.find(id)) {player->wood=wood;player->stone=stone;player->gold=gold;if(discovered.size()==player->discovered.size())player->discovered=std::move(discovered);player->intelligence=std::move(intelligence);}
+void GameSession::restorePlayerProgress(PlayerId id,
+                                        float wood,
+                                        float stone,
+                                        float gold,
+                                        std::vector<std::uint8_t> discovered,
+                                        std::vector<LastKnownEntity> intelligence) {
+    if (Player* player = players_.find(id)) {
+        player->wood = wood;
+        player->stone = stone;
+        player->gold = gold;
+        if (discovered.size() == player->discovered.size())
+            player->discovered = std::move(discovered);
+        player->intelligence = std::move(intelligence);
+    }
 }
 
 } // namespace strategy

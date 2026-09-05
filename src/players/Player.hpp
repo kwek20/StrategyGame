@@ -1,9 +1,9 @@
 #pragma once
 
 #include <cstdint>
+#include <glm/vec3.hpp>
 #include <string>
 #include <vector>
-#include <glm/vec3.hpp>
 
 namespace strategy {
 
@@ -20,15 +20,17 @@ struct LastKnownEntity {
 };
 
 struct Player {
-    static constexpr int explorationCells=128;
+    static constexpr int explorationCells = 128;
     PlayerId id{0};
     TeamId team{0};
     std::string name;
     std::string countryId{"unassigned"};
     std::string specializationId{"unassigned"};
-    float wood{0.0F},stone{0.0F},gold{0.0F};
-    std::vector<std::uint8_t> discovered=std::vector<std::uint8_t>(explorationCells*explorationCells,0);
-    std::vector<std::uint8_t> visible=std::vector<std::uint8_t>(explorationCells*explorationCells,0);
+    float wood{0.0F}, stone{0.0F}, gold{0.0F};
+    std::vector<std::uint8_t> discovered =
+        std::vector<std::uint8_t>(explorationCells * explorationCells, 0);
+    std::vector<std::uint8_t> visible =
+        std::vector<std::uint8_t>(explorationCells * explorationCells, 0);
     std::vector<LastKnownEntity> intelligence;
 };
 

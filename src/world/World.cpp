@@ -16,8 +16,8 @@ Entity& World::createEntity(std::string name, std::string modelKey, PlayerId own
 }
 
 bool World::destroyEntity(EntityId id) {
-    const auto iterator = std::find_if(entities_.begin(), entities_.end(),
-        [id](const Entity& entity) { return entity.id == id; });
+    const auto iterator = std::find_if(
+        entities_.begin(), entities_.end(), [id](const Entity& entity) { return entity.id == id; });
     if (iterator == entities_.end()) {
         return false;
     }
@@ -26,14 +26,14 @@ bool World::destroyEntity(EntityId id) {
 }
 
 Entity* World::findEntity(EntityId id) {
-    const auto iterator = std::find_if(entities_.begin(), entities_.end(),
-        [id](const Entity& entity) { return entity.id == id; });
+    const auto iterator = std::find_if(
+        entities_.begin(), entities_.end(), [id](const Entity& entity) { return entity.id == id; });
     return iterator == entities_.end() ? nullptr : &*iterator;
 }
 
 const Entity* World::findEntity(EntityId id) const {
-    const auto iterator = std::find_if(entities_.begin(), entities_.end(),
-        [id](const Entity& entity) { return entity.id == id; });
+    const auto iterator = std::find_if(
+        entities_.begin(), entities_.end(), [id](const Entity& entity) { return entity.id == id; });
     return iterator == entities_.end() ? nullptr : &*iterator;
 }
 

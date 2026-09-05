@@ -1,23 +1,278 @@
 #include "gameplay/GameplayCatalogue.hpp"
-#include <rapidjson/document.h>
-#include <rapidjson/istreamwrapper.h>
+
 #include <algorithm>
 #include <fstream>
+#include <rapidjson/document.h>
+#include <rapidjson/istreamwrapper.h>
 #include <stdexcept>
-namespace strategy { namespace {
-rapidjson::Document document(const std::filesystem::path& path){std::ifstream stream(path);if(!stream)throw std::runtime_error("Could not open gameplay data: "+path.string());rapidjson::IStreamWrapper input(stream);rapidjson::Document result;result.ParseStream(input);if(result.HasParseError()||!result.IsObject())throw std::runtime_error("Invalid gameplay data: "+path.string());return result;}
-std::vector<std::string> strings(const rapidjson::Value& object,const char* key){std::vector<std::string> result;if(object.HasMember(key)&&object[key].IsArray())for(const auto& value:object[key].GetArray())if(value.IsString())result.emplace_back(value.GetString());return result;}
+namespace strategy {
+namespace {
+rapidjson::Document document(const std::filesystem::path& path) {
+    std::ifstream stream(path);
+    if (!stream)
+        throw std::runtime_error("Could not open gameplay data: " + path.string());
+    rapidjson::IStreamWrapper input(stream);
+    rapidjson::Document result;
+    result.ParseStream(input);
+    if (result.HasParseError() || !result.IsObject())
+        throw std::runtime_error("Invalid gameplay data: " + path.string());
+    return result;
 }
-GameplayStat GameplayCatalogue::parseStat(const std::string& value){static const std::unordered_map<std::string,GameplayStat> values{{"health",GameplayStat::health},{"movementSpeed",GameplayStat::movementSpeed},{"sightRange",GameplayStat::sightRange},{"attackDamage",GameplayStat::attackDamage},{"attackRange",GameplayStat::attackRange},{"attackCooldown",GameplayStat::attackCooldown},{"gatherRate",GameplayStat::gatherRate},{"carryCapacity",GameplayStat::carryCapacity},{"trainingTime",GameplayStat::trainingTime},{"productionSpeed",GameplayStat::productionSpeed},{"upgradeTime",GameplayStat::upgradeTime},{"researchTime",GameplayStat::researchTime},{"productionUpgradeAmount",GameplayStat::productionUpgradeAmount},{"maximumProductionUpgrades",GameplayStat::maximumProductionUpgrades}};const auto found=values.find(value);if(found==values.end())throw std::runtime_error("Unknown gameplay stat: "+value);return found->second;}
-ModifierOperation GameplayCatalogue::parseOperation(const std::string& value){if(value=="add")return ModifierOperation::add;if(value=="multiply")return ModifierOperation::multiply;if(value=="override")return ModifierOperation::overrideValue;if(value=="minimum")return ModifierOperation::minimum;if(value=="maximum")return ModifierOperation::maximum;throw std::runtime_error("Unknown modifier operation: "+value);}
-GameplayCatalogue::GameplayCatalogue(const std::filesystem::path& entityPath,const std::filesystem::path& countryPath,const std::filesystem::path& specializationPath){
-    auto entityDocument=document(entityPath);if(!entityDocument.HasMember("entities")||!entityDocument["entities"].IsObject())throw std::runtime_error("Gameplay entity catalogue has no entities");for(auto item=entityDocument["entities"].MemberBegin();item!=entityDocument["entities"].MemberEnd();++item){EntityArchetype archetype;archetype.id=item->name.GetString();if(!item->value.IsObject())continue;if(item->value.HasMember("kind")&&item->value["kind"].IsString()){const std::string kind=item->value["kind"].GetString();archetype.kind=kind=="unit"?EntityKind::unit:kind=="building"?EntityKind::building:kind=="resource"?EntityKind::resource:EntityKind::decoration;}for(const std::string& tag:strings(item->value,"tags"))archetype.tags.insert(tag);for(const std::string& component:strings(item->value,"components"))archetype.components.insert(component);archetype.canTrain=strings(item->value,"canTrain");archetype.availableUpgrades=strings(item->value,"availableUpgrades");if(item->value.HasMember("stats")&&item->value["stats"].IsObject())for(auto stat=item->value["stats"].MemberBegin();stat!=item->value["stats"].MemberEnd();++stat)if(stat->value.IsNumber())archetype.stats[parseStat(stat->name.GetString())]=stat->value.GetFloat();entities_.emplace(archetype.id,std::move(archetype));}
-    const auto loadModifiers=[this](const std::filesystem::path& path,const char* collection,std::unordered_map<std::string,std::vector<GameplayModifier>>& output){auto data=document(path);if(!data.HasMember(collection)||!data[collection].IsArray())throw std::runtime_error("Missing modifier collection: "+std::string(collection));for(const auto& entry:data[collection].GetArray()){if(!entry.IsObject()||!entry.HasMember("id")||!entry["id"].IsString())continue;auto& list=output[entry["id"].GetString()];if(!entry.HasMember("modifiers")||!entry["modifiers"].IsArray())continue;for(const auto& value:entry["modifiers"].GetArray()){if(!value.IsObject()||!value.HasMember("id")||!value["id"].IsString()||!value.HasMember("stat")||!value["stat"].IsString()||!value.HasMember("operation")||!value["operation"].IsString()||!value.HasMember("value")||!value["value"].IsNumber())throw std::runtime_error("Invalid gameplay modifier");GameplayModifier modifier{value["id"].GetString(),parseStat(value["stat"].GetString()),{},parseOperation(value["operation"].GetString()),value["value"].GetFloat()};if(value.HasMember("target")&&value["target"].IsObject()){const auto& target=value["target"];if(target.HasMember("entity")&&target["entity"].IsString())modifier.target.entity=target["entity"].GetString();if(target.HasMember("producer")&&target["producer"].IsString())modifier.target.producer=target["producer"].GetString();modifier.target.tags=strings(target,"tags");modifier.target.producerTags=strings(target,"producerTags");modifier.target.productTags=strings(target,"productTags");}list.push_back(std::move(modifier));}std::sort(list.begin(),list.end(),[](const auto&a,const auto&b){return a.id<b.id;});}};loadModifiers(countryPath,"countries",countries_);loadModifiers(specializationPath,"specializations",specializations_);
+std::vector<std::string> strings(const rapidjson::Value& object, const char* key) {
+    std::vector<std::string> result;
+    if (object.HasMember(key) && object[key].IsArray())
+        for (const auto& value : object[key].GetArray())
+            if (value.IsString())
+                result.emplace_back(value.GetString());
+    return result;
 }
-bool GameplayCatalogue::matches(const GameplayModifier& modifier,const EntityArchetype& subject,const EntityArchetype* producer)const{if(!modifier.target.entity.empty()&&modifier.target.entity!=subject.id)return false;for(const auto& tag:modifier.target.tags)if(!subject.tags.contains(tag))return false;if(!modifier.target.productTags.empty())for(const auto& tag:modifier.target.productTags)if(!subject.tags.contains(tag))return false;if(!modifier.target.producer.empty()&&(!producer||producer->id!=modifier.target.producer))return false;for(const auto& tag:modifier.target.producerTags)if(!producer||!producer->tags.contains(tag))return false;return true;}
-float GameplayCatalogue::resolve(GameplayStat stat,const std::string& country,const std::string& specialization,const std::string& entity,const std::string& producer)const{const auto subjectIt=entities_.find(entity);if(subjectIt==entities_.end())return 0.0F;const auto base=subjectIt->second.stats.find(stat);float result=base==subjectIt->second.stats.end()?0.0F:base->second;const EntityArchetype* producerType=nullptr;if(!producer.empty()){const auto found=entities_.find(producer);if(found!=entities_.end())producerType=&found->second;}std::vector<const GameplayModifier*> applicable;const auto collect=[&](const auto& source,const std::string& id){if(const auto found=source.find(id);found!=source.end())for(const auto& modifier:found->second)if(modifier.stat==stat&&matches(modifier,subjectIt->second,producerType))applicable.push_back(&modifier);};collect(countries_,country);collect(specializations_,specialization);std::sort(applicable.begin(),applicable.end(),[](auto a,auto b){return a->id<b->id;});for(auto modifier:applicable)if(modifier->operation==ModifierOperation::add)result+=modifier->value;for(auto modifier:applicable)if(modifier->operation==ModifierOperation::multiply)result*=modifier->value;for(auto modifier:applicable)if(modifier->operation==ModifierOperation::overrideValue)result=modifier->value;for(auto modifier:applicable)if(modifier->operation==ModifierOperation::minimum)result=std::max(result,modifier->value);for(auto modifier:applicable)if(modifier->operation==ModifierOperation::maximum)result=std::min(result,modifier->value);return result;}
-float GameplayCatalogue::productionDuration(const std::string& country,const std::string& specialization,const std::string& producer,const std::string& product,float producerMultiplier)const{const float time=resolve(GameplayStat::trainingTime,country,specialization,product,producer);const float speed=resolve(GameplayStat::productionSpeed,country,specialization,producer,producer)*producerMultiplier;return speed>0.0F?time/speed:time;}
-bool GameplayCatalogue::canTrain(const std::string& producer,const std::string& product)const{const auto found=entities_.find(producer);return found!=entities_.end()&&std::find(found->second.canTrain.begin(),found->second.canTrain.end(),product)!=found->second.canTrain.end();}
-const EntityArchetype* GameplayCatalogue::archetype(const std::string& entity)const{const auto found=entities_.find(entity);return found==entities_.end()?nullptr:&found->second;}
-void GameplayCatalogue::initializeEntity(Entity& entity)const{const auto found=entities_.find(entity.modelKey);if(found==entities_.end())return;const EntityArchetype& type=found->second;entity.kind=type.kind;const auto has=[&](const char* name){return type.components.contains(name);};const auto value=[&](GameplayStat stat,float fallback){const auto item=type.stats.find(stat);return item==type.stats.end()?fallback:item->second;};if(has("health")){entity.health.emplace();entity.health.maximum=value(GameplayStat::health,entity.health.maximum);entity.health.current=entity.health.maximum;}if(has("vision")){entity.vision.emplace();entity.vision.sightRange=value(GameplayStat::sightRange,entity.vision.sightRange);entity.unitControl.sightRange=entity.vision.sightRange;}if(has("unit")){entity.unitControl.emplace();entity.unitControl.movementSpeed=value(GameplayStat::movementSpeed,entity.unitControl.movementSpeed);}if(has("gatherer")){entity.gatherer.emplace();entity.gatherer.gatherPerSecond=value(GameplayStat::gatherRate,entity.gatherer.gatherPerSecond);entity.gatherer.carryCapacity=value(GameplayStat::carryCapacity,entity.gatherer.carryCapacity);entity.unitControl.gatherPerSecond=entity.gatherer.gatherPerSecond;entity.unitControl.carryCapacity=entity.gatherer.carryCapacity;}if(has("combat")){entity.combat.emplace();entity.combat.damage=value(GameplayStat::attackDamage,0);entity.combat.range=value(GameplayStat::attackRange,0);entity.combat.cooldownSeconds=value(GameplayStat::attackCooldown,1);}if(has("resource"))entity.resource.emplace();if(has("production")){entity.production.emplace();entity.production.characterBuildSeconds=value(GameplayStat::trainingTime,entity.production.characterBuildSeconds);}if(has("buildingUpgrades")){entity.buildingUpgrades.emplace();entity.production.level=entity.buildingUpgrades.level;}if(has("upgrades"))entity.upgrades.emplace();}
+} // namespace
+GameplayStat GameplayCatalogue::parseStat(const std::string& value) {
+    static const std::unordered_map<std::string, GameplayStat> values{
+        {"health", GameplayStat::health},
+        {"movementSpeed", GameplayStat::movementSpeed},
+        {"sightRange", GameplayStat::sightRange},
+        {"attackDamage", GameplayStat::attackDamage},
+        {"attackRange", GameplayStat::attackRange},
+        {"attackCooldown", GameplayStat::attackCooldown},
+        {"gatherRate", GameplayStat::gatherRate},
+        {"carryCapacity", GameplayStat::carryCapacity},
+        {"trainingTime", GameplayStat::trainingTime},
+        {"productionSpeed", GameplayStat::productionSpeed},
+        {"upgradeTime", GameplayStat::upgradeTime},
+        {"researchTime", GameplayStat::researchTime},
+        {"productionUpgradeAmount", GameplayStat::productionUpgradeAmount},
+        {"maximumProductionUpgrades", GameplayStat::maximumProductionUpgrades}};
+    const auto found = values.find(value);
+    if (found == values.end())
+        throw std::runtime_error("Unknown gameplay stat: " + value);
+    return found->second;
 }
+ModifierOperation GameplayCatalogue::parseOperation(const std::string& value) {
+    if (value == "add")
+        return ModifierOperation::add;
+    if (value == "multiply")
+        return ModifierOperation::multiply;
+    if (value == "override")
+        return ModifierOperation::overrideValue;
+    if (value == "minimum")
+        return ModifierOperation::minimum;
+    if (value == "maximum")
+        return ModifierOperation::maximum;
+    throw std::runtime_error("Unknown modifier operation: " + value);
+}
+GameplayCatalogue::GameplayCatalogue(const std::filesystem::path& entityPath,
+                                     const std::filesystem::path& countryPath,
+                                     const std::filesystem::path& specializationPath) {
+    auto entityDocument = document(entityPath);
+    if (!entityDocument.HasMember("entities") || !entityDocument["entities"].IsObject())
+        throw std::runtime_error("Gameplay entity catalogue has no entities");
+    for (auto item = entityDocument["entities"].MemberBegin();
+         item != entityDocument["entities"].MemberEnd();
+         ++item) {
+        EntityArchetype archetype;
+        archetype.id = item->name.GetString();
+        if (!item->value.IsObject())
+            continue;
+        if (item->value.HasMember("kind") && item->value["kind"].IsString()) {
+            const std::string kind = item->value["kind"].GetString();
+            archetype.kind = kind == "unit"       ? EntityKind::unit
+                             : kind == "building" ? EntityKind::building
+                             : kind == "resource" ? EntityKind::resource
+                                                  : EntityKind::decoration;
+        }
+        for (const std::string& tag : strings(item->value, "tags"))
+            archetype.tags.insert(tag);
+        for (const std::string& component : strings(item->value, "components"))
+            archetype.components.insert(component);
+        archetype.canTrain = strings(item->value, "canTrain");
+        archetype.availableUpgrades = strings(item->value, "availableUpgrades");
+        if (item->value.HasMember("stats") && item->value["stats"].IsObject())
+            for (auto stat = item->value["stats"].MemberBegin();
+                 stat != item->value["stats"].MemberEnd();
+                 ++stat)
+                if (stat->value.IsNumber())
+                    archetype.stats[parseStat(stat->name.GetString())] = stat->value.GetFloat();
+        entities_.emplace(archetype.id, std::move(archetype));
+    }
+    const auto loadModifiers =
+        [this](const std::filesystem::path& path,
+               const char* collection,
+               std::unordered_map<std::string, std::vector<GameplayModifier>>& output) {
+            auto data = document(path);
+            if (!data.HasMember(collection) || !data[collection].IsArray())
+                throw std::runtime_error("Missing modifier collection: " + std::string(collection));
+            for (const auto& entry : data[collection].GetArray()) {
+                if (!entry.IsObject() || !entry.HasMember("id") || !entry["id"].IsString())
+                    continue;
+                auto& list = output[entry["id"].GetString()];
+                if (!entry.HasMember("modifiers") || !entry["modifiers"].IsArray())
+                    continue;
+                for (const auto& value : entry["modifiers"].GetArray()) {
+                    if (!value.IsObject() || !value.HasMember("id") || !value["id"].IsString() ||
+                        !value.HasMember("stat") || !value["stat"].IsString() ||
+                        !value.HasMember("operation") || !value["operation"].IsString() ||
+                        !value.HasMember("value") || !value["value"].IsNumber())
+                        throw std::runtime_error("Invalid gameplay modifier");
+                    GameplayModifier modifier{value["id"].GetString(),
+                                              parseStat(value["stat"].GetString()),
+                                              {},
+                                              parseOperation(value["operation"].GetString()),
+                                              value["value"].GetFloat()};
+                    if (value.HasMember("target") && value["target"].IsObject()) {
+                        const auto& target = value["target"];
+                        if (target.HasMember("entity") && target["entity"].IsString())
+                            modifier.target.entity = target["entity"].GetString();
+                        if (target.HasMember("producer") && target["producer"].IsString())
+                            modifier.target.producer = target["producer"].GetString();
+                        modifier.target.tags = strings(target, "tags");
+                        modifier.target.producerTags = strings(target, "producerTags");
+                        modifier.target.productTags = strings(target, "productTags");
+                    }
+                    list.push_back(std::move(modifier));
+                }
+                std::sort(list.begin(), list.end(), [](const auto& a, const auto& b) {
+                    return a.id < b.id;
+                });
+            }
+        };
+    loadModifiers(countryPath, "countries", countries_);
+    loadModifiers(specializationPath, "specializations", specializations_);
+}
+bool GameplayCatalogue::matches(const GameplayModifier& modifier,
+                                const EntityArchetype& subject,
+                                const EntityArchetype* producer) const {
+    if (!modifier.target.entity.empty() && modifier.target.entity != subject.id)
+        return false;
+    for (const auto& tag : modifier.target.tags)
+        if (!subject.tags.contains(tag))
+            return false;
+    if (!modifier.target.productTags.empty())
+        for (const auto& tag : modifier.target.productTags)
+            if (!subject.tags.contains(tag))
+                return false;
+    if (!modifier.target.producer.empty() &&
+        (!producer || producer->id != modifier.target.producer))
+        return false;
+    for (const auto& tag : modifier.target.producerTags)
+        if (!producer || !producer->tags.contains(tag))
+            return false;
+    return true;
+}
+float GameplayCatalogue::resolve(GameplayStat stat,
+                                 const std::string& country,
+                                 const std::string& specialization,
+                                 const std::string& entity,
+                                 const std::string& producer) const {
+    const auto subjectIt = entities_.find(entity);
+    if (subjectIt == entities_.end())
+        return 0.0F;
+    const auto base = subjectIt->second.stats.find(stat);
+    float result = base == subjectIt->second.stats.end() ? 0.0F : base->second;
+    const EntityArchetype* producerType = nullptr;
+    if (!producer.empty()) {
+        const auto found = entities_.find(producer);
+        if (found != entities_.end())
+            producerType = &found->second;
+    }
+    std::vector<const GameplayModifier*> applicable;
+    const auto collect = [&](const auto& source, const std::string& id) {
+        if (const auto found = source.find(id); found != source.end())
+            for (const auto& modifier : found->second)
+                if (modifier.stat == stat && matches(modifier, subjectIt->second, producerType))
+                    applicable.push_back(&modifier);
+    };
+    collect(countries_, country);
+    collect(specializations_, specialization);
+    std::sort(applicable.begin(), applicable.end(), [](auto a, auto b) { return a->id < b->id; });
+    for (auto modifier : applicable)
+        if (modifier->operation == ModifierOperation::add)
+            result += modifier->value;
+    for (auto modifier : applicable)
+        if (modifier->operation == ModifierOperation::multiply)
+            result *= modifier->value;
+    for (auto modifier : applicable)
+        if (modifier->operation == ModifierOperation::overrideValue)
+            result = modifier->value;
+    for (auto modifier : applicable)
+        if (modifier->operation == ModifierOperation::minimum)
+            result = std::max(result, modifier->value);
+    for (auto modifier : applicable)
+        if (modifier->operation == ModifierOperation::maximum)
+            result = std::min(result, modifier->value);
+    return result;
+}
+float GameplayCatalogue::productionDuration(const std::string& country,
+                                            const std::string& specialization,
+                                            const std::string& producer,
+                                            const std::string& product,
+                                            float producerMultiplier) const {
+    const float time =
+        resolve(GameplayStat::trainingTime, country, specialization, product, producer);
+    const float speed =
+        resolve(GameplayStat::productionSpeed, country, specialization, producer, producer) *
+        producerMultiplier;
+    return speed > 0.0F ? time / speed : time;
+}
+bool GameplayCatalogue::canTrain(const std::string& producer, const std::string& product) const {
+    const auto found = entities_.find(producer);
+    return found != entities_.end() &&
+           std::find(found->second.canTrain.begin(), found->second.canTrain.end(), product) !=
+               found->second.canTrain.end();
+}
+const EntityArchetype* GameplayCatalogue::archetype(const std::string& entity) const {
+    const auto found = entities_.find(entity);
+    return found == entities_.end() ? nullptr : &found->second;
+}
+void GameplayCatalogue::initializeEntity(Entity& entity) const {
+    const auto found = entities_.find(entity.modelKey);
+    if (found == entities_.end())
+        return;
+    const EntityArchetype& type = found->second;
+    entity.kind = type.kind;
+    const auto has = [&](const char* name) { return type.components.contains(name); };
+    const auto value = [&](GameplayStat stat, float fallback) {
+        const auto item = type.stats.find(stat);
+        return item == type.stats.end() ? fallback : item->second;
+    };
+    if (has("health")) {
+        entity.health.emplace();
+        entity.health.maximum = value(GameplayStat::health, entity.health.maximum);
+        entity.health.current = entity.health.maximum;
+    }
+    if (has("vision")) {
+        entity.vision.emplace();
+        entity.vision.sightRange = value(GameplayStat::sightRange, entity.vision.sightRange);
+    }
+    if (has("unit")) {
+        entity.unitControl.emplace();
+        entity.unitControl.movementSpeed =
+            value(GameplayStat::movementSpeed, entity.unitControl.movementSpeed);
+    }
+    if (has("gatherer")) {
+        entity.gatherer.emplace();
+        entity.gatherer.gatherPerSecond =
+            value(GameplayStat::gatherRate, entity.gatherer.gatherPerSecond);
+        entity.gatherer.carryCapacity =
+            value(GameplayStat::carryCapacity, entity.gatherer.carryCapacity);
+    }
+    if (has("combat")) {
+        entity.combat.emplace();
+        entity.combat.damage = value(GameplayStat::attackDamage, 0);
+        entity.combat.range = value(GameplayStat::attackRange, 0);
+        entity.combat.cooldownSeconds = value(GameplayStat::attackCooldown, 1);
+    }
+    if (has("resource"))
+        entity.resource.emplace();
+    if (has("production")) {
+        entity.production.emplace();
+        entity.production.characterBuildSeconds =
+            value(GameplayStat::trainingTime, entity.production.characterBuildSeconds);
+    }
+    if (has("buildingUpgrades")) {
+        entity.buildingUpgrades.emplace();
+    }
+    if (has("upgrades"))
+        entity.upgrades.emplace();
+}
+} // namespace strategy

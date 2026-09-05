@@ -1,78 +1,117 @@
 #include "game/StartMenuState.hpp"
 
-#include "render/Renderer.hpp"
+#include "app/GameEvents.hpp"
+#include "core/EventBus.hpp"
 #include "localization/Text.hpp"
+#include "render/Renderer.hpp"
 
 #include <SDL3/SDL.h>
-
 #include <charconv>
 
 namespace strategy {
 
-StartMenuState::StartMenuState() {
-    const auto& countries=countryCatalogue_.countries();
-    for(std::size_t index=0;index<countries.size();++index) {
-        if(countries[index].id=="spain")playerOneCountryIndex_=index;
-        if(countries[index].id=="japan")playerTwoCountryIndex_=index;
+StartMenuState::StartMenuState(StateContext& context)
+    : GameState(context) {
+    const auto& countries = countryCatalogue_.countries();
+    for (std::size_t index = 0; index < countries.size(); ++index) {
+        if (countries[index].id == "spain")
+            playerOneCountryIndex_ = index;
+        if (countries[index].id == "japan")
+            playerTwoCountryIndex_ = index;
     }
+    ui_.panel("panel", {30, 70, 800, 625}, {0.035F, 0.055F, 0.075F});
+    ui_.label("title", {60, 108, 0, 0}, Text::get("menu.title"), 3.0F);
+    ui_.label("seed_label", {60, 157, 0, 0}, Text::get("menu.seed"), 2.0F);
+    ui_.textField("seed", {60, 185, 300, 230}, seedText_).textScale = 2.0F;
+    ui_.button("start", {60, 250, 300, 310}, Text::get("menu.start"),
+               {0.16F, 0.36F, 0.18F}, {0.28F, 0.62F, 0.24F}).textScale = 3.0F;
+    ui_.button("build", {60, 320, 300, 380}, Text::get("menu.build"),
+               {0.14F, 0.27F, 0.40F}, {0.25F, 0.48F, 0.70F}).textScale = 3.0F;
+    ui_.button("load", {60, 390, 300, 450}, Text::get("menu.load"),
+               {0.31F, 0.27F, 0.13F}, {0.54F, 0.46F, 0.20F}).textScale = 3.0F;
+    ui_.button("settings", {60, 460, 300, 520}, Text::get("menu.settings")).textScale = 3.0F;
+    ui_.button("exit", {60, 530, 300, 590}, Text::get("menu.exit"),
+               {0.40F, 0.16F, 0.14F}, {0.72F, 0.25F, 0.20F}).textScale = 3.0F;
+    ui_.label("team_a_label", {380, 157, 0, 0}, Text::get("menu.team_a_country"), 2.0F);
+    ui_.button("team_a_previous", {380, 185, 570, 230}, "<");
+    ui_.button("team_a_next", {570, 185, 760, 230}, ">");
+    ui_.label("team_b_label", {380, 222, 0, 0}, Text::get("menu.team_b_country"), 2.0F);
+    ui_.button("team_b_previous", {380, 250, 570, 295}, "<");
+    ui_.button("team_b_next", {570, 250, 760, 295}, ">");
+    ui_.label("team_a_value", {425, 192, 0, 0}, "", 2.0F);
+    ui_.label("team_b_value", {425, 257, 0, 0}, "", 2.0F);
+    ui_.label("controls", {380, 312, 0, 0}, Text::get("menu.country_controls"), 1.5F);
+    refreshUiText();
 }
 
-void StartMenuState::cycleCountry(std::size_t& index,int direction) {
-    const std::size_t count=countryCatalogue_.countries().size();
-    index=static_cast<std::size_t>((static_cast<int>(index)+direction+static_cast<int>(count))%static_cast<int>(count));
+void StartMenuState::cycleCountry(std::size_t& index, int direction) {
+    const std::size_t count = countryCatalogue_.countries().size();
+    index = static_cast<std::size_t>(
+        (static_cast<int>(index) + direction + static_cast<int>(count)) % static_cast<int>(count));
+    refreshUiText();
 }
 
-void StartMenuState::updateHover(float mouseX, float mouseY) {
-    const bool insideHorizontal = mouseX >= buttonLeft && mouseX <= buttonRight;
-    startHovered_ = insideHorizontal && mouseY >= startTop && mouseY <= startBottom;
-    buildHovered_ = insideHorizontal && mouseY >= buildTop && mouseY <= buildBottom;
-    loadHovered_ = insideHorizontal && mouseY >= loadTop && mouseY <= loadBottom;
-    settingsHovered_=insideHorizontal&&mouseY>=settingsTop&&mouseY<=settingsBottom;
-    exitHovered_ = insideHorizontal && mouseY >= exitTop && mouseY <= exitBottom;
+void StartMenuState::refreshUiText() {
+    ui_.setText("seed", seedText_.empty() ? "0" : seedText_);
+    ui_.setText("team_a_value", Text::get(countryCatalogue_.countries()[playerOneCountryIndex_].nameKey));
+    ui_.setText("team_b_value", Text::get(countryCatalogue_.countries()[playerTwoCountryIndex_].nameKey));
 }
 
 void StartMenuState::handleEvent(const SDL_Event& event) {
     if (event.type == SDL_EVENT_MOUSE_MOTION) {
-        updateHover(event.motion.x, event.motion.y);
+        ui_.pointerMoved({event.motion.x, event.motion.y});
         return;
     }
-    if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN
-        && event.button.button == SDL_BUTTON_LEFT) {
-        updateHover(event.button.x, event.button.y);
-        seedFocused_ = event.button.x >= 60.0F && event.button.x <= 300.0F
-                    && event.button.y >= 185.0F && event.button.y <= 230.0F;
-        if(event.button.y>=185.0F&&event.button.y<=230.0F&&event.button.x>=380.0F&&event.button.x<=760.0F) {
-            cycleCountry(playerOneCountryIndex_,event.button.x<570.0F?-1:1); return;
-        }
-        if(event.button.y>=250.0F&&event.button.y<=295.0F&&event.button.x>=380.0F&&event.button.x<=760.0F) {
-            cycleCountry(playerTwoCountryIndex_,event.button.x<570.0F?-1:1); return;
-        }
-        if (startHovered_) {
+    if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_LEFT) {
+        context_.events.enqueue(AudioEvent{AudioCue::uiClick});
+        const auto activated = ui_.activate({event.button.x, event.button.y});
+        seedFocused_ = activated && *activated == "seed";
+        ui_.focus(seedFocused_ ? "seed" : "");
+        if (activated && *activated == "team_a_previous") cycleCountry(playerOneCountryIndex_, -1);
+        else if (activated && *activated == "team_a_next") cycleCountry(playerOneCountryIndex_, 1);
+        else if (activated && *activated == "team_b_previous") cycleCountry(playerTwoCountryIndex_, -1);
+        else if (activated && *activated == "team_b_next") cycleCountry(playerTwoCountryIndex_, 1);
+        else if (activated && *activated == "start") {
             request_ = StateRequest::startGame;
-        } else if (buildHovered_) {
+        } else if (activated && *activated == "build") {
             request_ = StateRequest::buildMap;
-        } else if (loadHovered_) {
+        } else if (activated && *activated == "load") {
             request_ = StateRequest::loadGame;
-        } else if(settingsHovered_) {
-            request_=StateRequest::openSettings;
-        } else if (exitHovered_) {
+        } else if (activated && *activated == "settings") {
+            request_ = StateRequest::openSettings;
+        } else if (activated && *activated == "exit") {
             request_ = StateRequest::exitApplication;
         }
+        refreshUiText();
     }
     if (event.type == SDL_EVENT_KEY_DOWN) {
-        if(event.key.key==SDLK_Q){cycleCountry(playerOneCountryIndex_,-1);return;}
-        if(event.key.key==SDLK_E){cycleCountry(playerOneCountryIndex_,1);return;}
-        if(event.key.key==SDLK_Z){cycleCountry(playerTwoCountryIndex_,-1);return;}
-        if(event.key.key==SDLK_C){cycleCountry(playerTwoCountryIndex_,1);return;}
+        if (event.key.key == SDLK_Q) {
+            cycleCountry(playerOneCountryIndex_, -1);
+            return;
+        }
+        if (event.key.key == SDLK_E) {
+            cycleCountry(playerOneCountryIndex_, 1);
+            return;
+        }
+        if (event.key.key == SDLK_Z) {
+            cycleCountry(playerTwoCountryIndex_, -1);
+            return;
+        }
+        if (event.key.key == SDLK_C) {
+            cycleCountry(playerTwoCountryIndex_, 1);
+            return;
+        }
         if (seedFocused_ && event.key.key == SDLK_BACKSPACE) {
             if (!seedText_.empty()) {
                 seedText_.pop_back();
+                refreshUiText();
             }
             return;
         }
         if (seedFocused_ && event.key.key >= SDLK_0 && event.key.key <= SDLK_9) {
             if (seedText_.size() < 10) {
                 seedText_.push_back(static_cast<char>('0' + event.key.key - SDLK_0));
+                refreshUiText();
             }
             return;
         }
@@ -89,19 +128,20 @@ void StartMenuState::update(float deltaSeconds) {
 }
 
 void StartMenuState::render(Renderer& renderer) const {
-    renderer.drawStartMenu(startHovered_, buildHovered_, loadHovered_,settingsHovered_, exitHovered_,
-                           seedFocused_, seedText_,
-                           Text::get(countryCatalogue_.countries()[playerOneCountryIndex_].nameKey),
-                           Text::get(countryCatalogue_.countries()[playerTwoCountryIndex_].nameKey));
+    renderer.drawUi(ui_);
 }
 
-std::string StartMenuState::playerOneCountry() const { return countryCatalogue_.countries()[playerOneCountryIndex_].id; }
-std::string StartMenuState::playerTwoCountry() const { return countryCatalogue_.countries()[playerTwoCountryIndex_].id; }
+std::string StartMenuState::playerOneCountry() const {
+    return countryCatalogue_.countries()[playerOneCountryIndex_].id;
+}
+std::string StartMenuState::playerTwoCountry() const {
+    return countryCatalogue_.countries()[playerTwoCountryIndex_].id;
+}
 
 std::uint32_t StartMenuState::terrainSeed() const {
     std::uint32_t result = 0x5EED1234U;
-    const auto conversion = std::from_chars(seedText_.data(),
-                                             seedText_.data() + seedText_.size(), result);
+    const auto conversion =
+        std::from_chars(seedText_.data(), seedText_.data() + seedText_.size(), result);
     return conversion.ec == std::errc{} ? result : 0x5EED1234U;
 }
 

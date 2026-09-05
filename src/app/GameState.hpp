@@ -2,11 +2,22 @@
 
 #include <SDL3/SDL_events.h>
 #include <cstdint>
+#include <filesystem>
 #include <string>
 
 namespace strategy {
 
 class Renderer;
+class AudioSystem;
+class EventBus;
+class Logger;
+
+struct StateContext {
+    AudioSystem& audio;
+    EventBus& events;
+    Logger& logger;
+    std::filesystem::path configPath;
+};
 
 enum class StateRequest {
     none,
@@ -19,15 +30,28 @@ enum class StateRequest {
 };
 
 class GameState {
-public:
+  public:
+    explicit GameState(StateContext& context)
+        : context_(context) {}
     virtual ~GameState() = default;
     virtual void handleEvent(const SDL_Event& event) = 0;
     virtual void update(float deltaSeconds) = 0;
     virtual void render(Renderer& renderer) const = 0;
-    [[nodiscard]] virtual StateRequest request() const { return StateRequest::none; }
-    [[nodiscard]] virtual std::uint32_t terrainSeed() const { return 0x5EED1234U; }
-    [[nodiscard]] virtual std::string playerOneCountry() const { return "spain"; }
-    [[nodiscard]] virtual std::string playerTwoCountry() const { return "japan"; }
+    virtual StateRequest takeRequest() {
+        return StateRequest::none;
+    }
+    [[nodiscard]] virtual std::uint32_t terrainSeed() const {
+        return 0x5EED1234U;
+    }
+    [[nodiscard]] virtual std::string playerOneCountry() const {
+        return "spain";
+    }
+    [[nodiscard]] virtual std::string playerTwoCountry() const {
+        return "japan";
+    }
+
+  protected:
+    StateContext& context_;
 };
 
 } // namespace strategy

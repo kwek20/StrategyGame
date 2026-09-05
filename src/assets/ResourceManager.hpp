@@ -18,16 +18,20 @@ struct EntityDefinition {
 };
 
 class ResourceManager final {
-public:
+  public:
     explicit ResourceManager(const std::filesystem::path& assetRoot);
 
     [[nodiscard]] const Model* model(const std::string& key) const;
     [[nodiscard]] bool containsModel(const std::string& key) const;
     [[nodiscard]] const EntityDefinition* entityDefinition(const std::string& key) const;
-    [[nodiscard]] std::size_t modelCount() const { return models_.size(); }
-    [[nodiscard]] std::size_t indexedModelCount() const { return modelPaths_.size(); }
+    [[nodiscard]] std::size_t modelCount() const {
+        return models_.size();
+    }
+    [[nodiscard]] std::size_t indexedModelCount() const {
+        return modelPaths_.size();
+    }
 
-private:
+  private:
     mutable std::unordered_map<std::string, std::unique_ptr<Model>> models_;
     std::unordered_map<std::string, std::filesystem::path> modelPaths_;
     std::unordered_map<std::string, EntityDefinition> entityDefinitions_;
