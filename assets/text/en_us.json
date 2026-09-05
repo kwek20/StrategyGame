@@ -11,6 +11,8 @@
   "menu.build": "BUILD",
   "menu.load": "LOAD",
   "menu.exit": "EXIT",
+  "menu.settings": "SETTINGS",
+  "settings.title": "SETTINGS",
   "menu.team_a_country": "TEAM A COUNTRY",
   "menu.team_b_country": "TEAM B COUNTRY",
   "menu.country_controls": "CLICK ARROWS OR Q E / Z C",

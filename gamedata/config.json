@@ -1,6 +1,22 @@
 {
-  "configuration": {
-    "saveDirectory": "gamedata/saves/",
-    "saveFile": "autosave.json"
-  }
+    "configuration": {
+        "saveDirectory": "gamedata/saves/",
+        "saveFile": "autosave.json",
+        "video": {
+            "width": 1280,
+            "height": 720,
+            "fullscreen": false
+        },
+        "audio": {
+            "masterVolume": 1.0
+        },
+        "keybinds": {
+            "backward": 115,
+            "debug": 1073741884,
+            "forward": 119,
+            "left": 97,
+            "pause": 27,
+            "right": 100
+        }
+    }
 }

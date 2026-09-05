@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "cues": {
+    "ui_click": "",
+    "menu_ambient": "",
+    "game_ambient": "",
+    "build_ambient": "",
+    "selection": "",
+    "move_order": "",
+    "building_open": "",
+    "building_upgrade": "",
+    "training_upgrade": "",
+    "train_unit": "",
+    "save_game": "",
+    "load_game": "",
+    "possess_unit": ""
+  }
+}

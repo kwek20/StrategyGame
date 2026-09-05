@@ -1,10 +1,9 @@
 #include "terrain/Terrain.hpp"
 
-#include <cmath>
 #include <algorithm>
-#include <iostream>
-
+#include <cmath>
 #include <glm/geometric.hpp>
+#include <iostream>
 
 namespace {
 
@@ -33,8 +32,9 @@ int main() {
         for (int x : {0, 64, 256, 511, 512}) {
             const float worldX = static_cast<float>(x) * strategy::Terrain::spacing - halfExtent;
             const float worldZ = static_cast<float>(z) * strategy::Terrain::spacing - halfExtent;
-            valid = valid && nearlyEqual(terrain.heightAt(worldX, worldZ),
-                                         terrain.vertexHeight(x, z), 0.002F);
+            valid =
+                valid &&
+                nearlyEqual(terrain.heightAt(worldX, worldZ), terrain.vertexHeight(x, z), 0.002F);
         }
     }
 
@@ -45,18 +45,21 @@ int main() {
     for (int coordinate : {17, 64, 127, 201, 239}) {
         valid = valid && nearlyEqual(terrain.normalizedHeight(coordinate, coordinate),
                                      sameSeed.normalizedHeight(coordinate, coordinate));
-        foundSeedDifference = foundSeedDifference
-            || !nearlyEqual(terrain.normalizedHeight(coordinate, coordinate),
-                            differentSeed.normalizedHeight(coordinate, coordinate), 0.00001F);
+        foundSeedDifference = foundSeedDifference ||
+                              !nearlyEqual(terrain.normalizedHeight(coordinate, coordinate),
+                                           differentSeed.normalizedHeight(coordinate, coordinate),
+                                           0.00001F);
     }
     valid = valid && foundSeedDifference;
     float maximumNeighborStep = 0.0F;
     for (int z = 0; z < strategy::Terrain::cellCount; ++z) {
         for (int x = 0; x < strategy::Terrain::cellCount; ++x) {
-            maximumNeighborStep = std::max(maximumNeighborStep,
-                std::abs(terrain.vertexHeight(x + 1, z) - terrain.vertexHeight(x, z)));
-            maximumNeighborStep = std::max(maximumNeighborStep,
-                std::abs(terrain.vertexHeight(x, z + 1) - terrain.vertexHeight(x, z)));
+            maximumNeighborStep =
+                std::max(maximumNeighborStep,
+                         std::abs(terrain.vertexHeight(x + 1, z) - terrain.vertexHeight(x, z)));
+            maximumNeighborStep =
+                std::max(maximumNeighborStep,
+                         std::abs(terrain.vertexHeight(x, z + 1) - terrain.vertexHeight(x, z)));
         }
     }
     valid = valid && maximumNeighborStep < 1.0F;
