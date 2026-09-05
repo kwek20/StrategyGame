@@ -3,6 +3,7 @@
 #include "gameplay/GameplayCatalogue.hpp"
 #include "players/CountryCatalogue.hpp"
 #include "simulation/GameSession.hpp"
+#include "simulation/CommandCodec.hpp"
 #include "terrain/Terrain.hpp"
 #include "world/Collision.hpp"
 #include "world/Navigation.hpp"
@@ -111,6 +112,27 @@ int main() {
     }
     valid = valid && playerOneUnit != nullptr && playerTwoUnit != nullptr;
     valid = valid && session.players().players().size() == 2;
+
+    strategy::GameSession replayA{123U}, replayB{123U};
+    valid = valid && replayA.stateChecksum() == replayB.stateChecksum();
+    const strategy::PlayerCommand wireCommand{
+        1, 50, strategy::MoveUnitCommand{1, {-12.0F, 0.0F, -10.0F}}};
+    const auto encoded = strategy::CommandCodec::encode(wireCommand);
+    const auto decoded = strategy::CommandCodec::decode(encoded);
+    valid = valid && decoded && decoded->player == wireCommand.player &&
+            decoded->sequence == wireCommand.sequence &&
+            std::holds_alternative<strategy::MoveUnitCommand>(decoded->payload) &&
+            std::get<strategy::MoveUnitCommand>(decoded->payload).destination ==
+                std::get<strategy::MoveUnitCommand>(wireCommand.payload).destination;
+    if (decoded) {
+        valid = valid && replayA.submit(*decoded) && replayB.submit(*decoded);
+        replayA.advanceTicks(12);
+        replayB.advanceTicks(12);
+        valid = valid && replayA.stateChecksum() == replayB.stateChecksum();
+        if (strategy::Entity* cached = replayB.world().findEntity(1))
+            cached->transient.navigationPath.push_back({999.0F, 0.0F, 999.0F});
+        valid = valid && replayA.stateChecksum() == replayB.stateChecksum();
+    }
     std::size_t resourceCount = 0;
     for (const strategy::Entity& resource : session.world().entities()) {
         if (resource.authority.owner != 0)
