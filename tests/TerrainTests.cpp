@@ -64,6 +64,14 @@ int main() {
     }
     valid = valid && maximumNeighborStep < 1.0F;
 
+    strategy::Terrain flattened{0x5EED1234U};
+    const auto before = flattened.fitFootprint(12.0F, -7.0F, 5.0F, 90.0F);
+    const strategy::TerrainFoundation foundation{{12.0F, before.height, -7.0F}, 5.0F, 7.0F};
+    flattened.applyFoundation(foundation);
+    const auto after = flattened.fitFootprint(12.0F, -7.0F, 3.0F, 1.0F);
+    valid = valid && after.valid && nearlyEqual(flattened.heightAt(12.0F, -7.0F), before.height);
+    valid = valid && nearlyEqual(flattened.heightAt(15.0F, -7.0F), before.height, 0.01F);
+
     if (!valid) {
         std::cerr << "Terrain validation failed\n";
         return 1;

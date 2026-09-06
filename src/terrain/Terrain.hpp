@@ -2,9 +2,22 @@
 
 #include <cstdint>
 #include <glm/vec3.hpp>
+#include <glm/vec2.hpp>
 #include <vector>
 
 namespace strategy {
+
+struct TerrainFoundation {
+    glm::vec3 center{0.0F};
+    float innerRadius{0.0F};
+    float outerRadius{0.0F};
+};
+
+struct FootprintFit {
+    float height{0.0F};
+    float slopeDegrees{0.0F};
+    bool valid{false};
+};
 
 class Terrain final {
   public:
@@ -23,6 +36,11 @@ class Terrain final {
     [[nodiscard]] glm::vec3 normalAt(int x, int z) const;
     [[nodiscard]] glm::vec3 colorAt(float normalizedHeight) const;
     [[nodiscard]] float worldExtent() const;
+    [[nodiscard]] FootprintFit fitFootprint(float worldX,
+                                            float worldZ,
+                                            float radius,
+                                            float maximumSlopeDegrees) const;
+    void applyFoundation(const TerrainFoundation& foundation);
 
   private:
     std::vector<float> heights_;

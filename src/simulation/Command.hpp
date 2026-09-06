@@ -9,6 +9,7 @@
 #include <glm/vec3.hpp>
 #include <string>
 #include <variant>
+#include <vector>
 
 namespace strategy {
 
@@ -47,7 +48,12 @@ struct StartUpgradeCommand {
     EntityId entity{0};
     std::string upgradeId;
 };
-struct PlaceBuildingCommand { EntityId entity{0}; std::string buildingId; glm::vec3 position{0.0F}; };
+struct PlaceBuildingCommand {
+    EntityId entity{0};
+    std::string buildingId;
+    glm::vec3 position{0.0F};
+    std::vector<EntityId> builders;
+};
 struct ConstructCommand { EntityId entity{0}; EntityId building{0}; };
 struct StopConstructionCommand { EntityId entity{0}; };
 struct RepairCommand { EntityId entity{0}; EntityId target{0}; };

@@ -112,6 +112,7 @@ class Renderer final {
     }
     void drawPauseMenu(bool resumeHovered, bool settingsHovered, bool exitHovered) const;
     void regenerateTerrain(std::uint32_t seed);
+    void setTerrainFoundations(const std::vector<TerrainFoundation>& foundations);
     void preloadAssetGroup(const std::string& group);
     [[nodiscard]] AssetLoadProgress assetProgress(const std::string& group);
     [[nodiscard]] TextureHandle requestTexture(const std::string& key) const;
@@ -121,6 +122,10 @@ class Renderer final {
         framesPerSecond_ = fps;
     }
     [[nodiscard]] float terrainHeightAt(float worldX, float worldZ) const;
+    [[nodiscard]] FootprintFit fitTerrainFootprint(float worldX, float worldZ, float radius,
+                                                   float maximumSlopeDegrees) const {
+        return terrain_.fitFootprint(worldX, worldZ, radius, maximumSlopeDegrees);
+    }
     [[nodiscard]] std::size_t loadedModelCount() const {
         return resources_.modelCount();
     }
@@ -150,6 +155,8 @@ class Renderer final {
     std::uint32_t hudVbo_{0};
     std::uint32_t explorationTexture_{0};
     Terrain terrain_;
+    std::uint32_t terrainSeed_{0x5EED1234U};
+    std::vector<TerrainFoundation> terrainFoundations_;
     ResourceManager resources_{"assets"};
     FontRenderer font_;
     std::vector<TerrainChunk> terrainChunks_;

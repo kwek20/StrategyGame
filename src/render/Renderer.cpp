@@ -135,6 +135,54 @@ void appendHudText(std::vector<glm::vec2>& vertices,
     (void)height;
 }
 
+float presentationGroundOffset(const EntityDefinition* definition, EntityId entityId) {
+    if (!definition)
+        return 0.0F;
+    float offset = definition->groundOffset;
+    if (definition->sinkVariance > 0.0F) {
+        const std::uint64_t mixed = entityId * 0x9E3779B97F4A7C15ULL;
+        offset -= definition->sinkVariance *
+                  static_cast<float>((mixed >> 40U) & 0xFFFFU) / 65535.0F;
+    }
+    return offset;
+}
+
+glm::mat4 groundedEntityTransform(const Terrain& terrain,
+                                  const Transform& shown,
+                                  const EntityDefinition* definition,
+                                  EntityId entityId,
+                                  float scaleMultiplier = 1.0F) {
+    glm::mat4 transform{1.0F};
+    transform = glm::translate(
+        transform,
+        {shown.position.x,
+         terrain.heightAt(shown.position.x, shown.position.z) + shown.position.y +
+             presentationGroundOffset(definition, entityId),
+         shown.position.z});
+    if (definition && definition->alignToTerrain && definition->maximumTilt > 0.0F) {
+        const float sample = Terrain::spacing * 2.0F;
+        const float pitch = glm::clamp(
+            glm::degrees(std::atan2(terrain.heightAt(shown.position.x, shown.position.z - sample) -
+                                        terrain.heightAt(shown.position.x, shown.position.z + sample),
+                                    sample * 2.0F)),
+            -definition->maximumTilt,
+            definition->maximumTilt);
+        const float roll = glm::clamp(
+            glm::degrees(std::atan2(terrain.heightAt(shown.position.x + sample, shown.position.z) -
+                                        terrain.heightAt(shown.position.x - sample, shown.position.z),
+                                    sample * 2.0F)),
+            -definition->maximumTilt,
+            definition->maximumTilt);
+        transform = glm::rotate(transform, glm::radians(pitch), {1.0F, 0.0F, 0.0F});
+        transform = glm::rotate(transform, glm::radians(roll), {0.0F, 0.0F, 1.0F});
+    }
+    transform = glm::rotate(transform, glm::radians(shown.rotationDegrees.x), {1, 0, 0});
+    transform = glm::rotate(transform, glm::radians(shown.rotationDegrees.y), {0, 1, 0});
+    transform = glm::rotate(transform, glm::radians(shown.rotationDegrees.z), {0, 0, 1});
+    const float catalogueScale = definition ? definition->scale : 1.0F;
+    return glm::scale(transform, shown.scale * catalogueScale * scaleMultiplier);
+}
+
 } // namespace
 
 Renderer::Renderer(Logger* logger)
@@ -556,23 +604,11 @@ void Renderer::drawWorld(const World& world, const CameraView& camera, const Pla
         if (model == nullptr) {
             continue;
         }
-        const float terrainHeight =
-            terrain_.heightAt(entity.transform.position.x, entity.transform.position.z);
-        glm::mat4 transform{1.0F};
-        transform = glm::translate(transform,
-                                   glm::vec3{entity.transform.position.x,
-                                             terrainHeight + entity.transform.position.y,
-                                             entity.transform.position.z});
-        transform = glm::rotate(
-            transform, glm::radians(entity.transform.rotationDegrees.x), {1.0F, 0.0F, 0.0F});
-        transform = glm::rotate(
-            transform, glm::radians(entity.transform.rotationDegrees.y), {0.0F, 1.0F, 0.0F});
-        transform = glm::rotate(
-            transform, glm::radians(entity.transform.rotationDegrees.z), {0.0F, 0.0F, 1.0F});
-        float catalogueScale = 1.0F;
+        const EntityDefinition* definition = resources_.entityDefinition(entity.renderId());
+        const glm::mat4 transform =
+            groundedEntityTransform(terrain_, entity.transform, definition, entity.id);
         std::string animation;
-        if (const EntityDefinition* definition = resources_.entityDefinition(entity.renderId())) {
-            catalogueScale = definition->scale;
+        if (definition) {
             const bool moving = entity.authority.directController != 0
                                     ? glm::length(entity.unitControl.directInput) > 0.01F
                                     : entity.unitControl.hasStrategicDestination;
@@ -582,7 +618,6 @@ void Renderer::drawWorld(const World& world, const CameraView& camera, const Pla
             if (selected != definition->animations.end())
                 animation = selected->second;
         }
-        transform = glm::scale(transform, entity.transform.scale * catalogueScale);
         const double animationSeconds =
             std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch())
                 .count();
@@ -612,19 +647,10 @@ void Renderer::drawWorld(const World& world, const CameraView& camera, const Pla
             const Model* model = resources_.modelOrMarker(modelHandle(known.modelKey));
             if (!model)
                 continue;
-            glm::mat4 transform{1.0F};
-            transform = glm::translate(
-                transform,
-                {known.position.x,
-                 terrain_.heightAt(known.position.x, known.position.z) + known.position.y,
-                 known.position.z});
-            transform = glm::rotate(transform, glm::radians(known.rotationDegrees.x), {1, 0, 0});
-            transform = glm::rotate(transform, glm::radians(known.rotationDegrees.y), {0, 1, 0});
-            transform = glm::rotate(transform, glm::radians(known.rotationDegrees.z), {0, 0, 1});
-            float catalogueScale = 1.0F;
-            if (const EntityDefinition* definition = resources_.entityDefinition(known.modelKey))
-                catalogueScale = definition->scale;
-            transform = glm::scale(transform, known.scale * catalogueScale);
+            const EntityDefinition* definition = resources_.entityDefinition(known.modelKey);
+            const Transform shown{known.position, known.rotationDegrees, known.scale};
+            const glm::mat4 transform =
+                groundedEntityTransform(terrain_, shown, definition, known.id);
             const glm::vec3 tint =
                 known.building ? glm::vec3{0.22F, 0.34F, 0.40F} : glm::vec3{0.27F, 0.29F, 0.31F};
             commandQueue_.submit(
@@ -661,10 +687,14 @@ void Renderer::drawWorld(const World& world, const CameraView& camera, const Pla
     glDepthMask(GL_TRUE);
     glUniform1i(shaders_.uniform(modelProgram_, "rememberedEntity"), 0);
     commandQueue_.clear();
-    std::vector<glm::vec2> healthBack, healthDamage, healthRemaining;
+    std::vector<glm::vec2> healthBack, healthDamage, healthRemaining, constructionProgress;
     for (const Entity& entity : world.entities()) {
-        if (!entity.health || entity.health.current <= 0.0F || entity.health.maximum <= 0.0F ||
-            entity.health.current >= entity.health.maximum - 0.001F)
+        const bool constructing = entity.construction && !entity.construction.complete &&
+                                  entity.construction.powerRequired > 0.0F;
+        const bool damaged = entity.health && entity.health.current > 0.0F &&
+                             entity.health.maximum > 0.0F &&
+                             entity.health.current < entity.health.maximum - 0.001F;
+        if (!constructing && !damaged)
             continue;
         if (player && entity.authority.owner != player->id) {
             constexpr float extent = Terrain::cellCount * Terrain::spacing;
@@ -702,7 +732,14 @@ void Renderer::drawWorld(const World& world, const CameraView& camera, const Pla
             continue;
         const float width = entity.unitControl ? 48.0F : 72.0F, left = screenX - width * 0.5F,
                     top = screenY - 4.0F;
-        const float ratio = std::clamp(entity.health.current / entity.health.maximum, 0.0F, 1.0F);
+        const float ratio = constructing
+                                ? std::clamp(entity.construction.powerProgress /
+                                                 entity.construction.powerRequired,
+                                             0.0F,
+                                             1.0F)
+                                : std::clamp(entity.health.current / entity.health.maximum,
+                                             0.0F,
+                                             1.0F);
         appendHudRectangle(healthBack,
                            left - 2.0F,
                            top - 2.0F,
@@ -710,9 +747,11 @@ void Renderer::drawWorld(const World& world, const CameraView& camera, const Pla
                            top + 8.0F,
                            viewportWidth_,
                            viewportHeight_);
-        appendHudRectangle(
-            healthDamage, left, top, left + width, top + 6.0F, viewportWidth_, viewportHeight_);
-        appendHudRectangle(healthRemaining,
+        if (!constructing)
+            appendHudRectangle(
+                healthDamage, left, top, left + width, top + 6.0F, viewportWidth_, viewportHeight_);
+        auto& progressVertices = constructing ? constructionProgress : healthRemaining;
+        appendHudRectangle(progressVertices,
                            left,
                            top,
                            left + width * ratio,
@@ -739,6 +778,7 @@ void Renderer::drawWorld(const World& world, const CameraView& camera, const Pla
         draw(healthBack, {0.01F, 0.015F, 0.02F});
         draw(healthDamage, {0.55F, 0.07F, 0.05F});
         draw(healthRemaining, {0.16F, 0.78F, 0.20F});
+        draw(constructionProgress, {0.95F, 0.72F, 0.12F});
         glBindVertexArray(0);
         glEnable(GL_CULL_FACE);
         glEnable(GL_DEPTH_TEST);
@@ -1224,7 +1264,10 @@ void Renderer::drawSettings(const GameConfig& config,
 }
 
 void Renderer::regenerateTerrain(std::uint32_t seed) {
+    terrainSeed_ = seed;
     terrain_ = Terrain(seed);
+    for (const TerrainFoundation& foundation : terrainFoundations_)
+        terrain_.applyFoundation(foundation);
     constexpr int chunkSide = Terrain::chunkCellCount + 1;
     constexpr float halfExtent = static_cast<float>(Terrain::cellCount) * Terrain::spacing * 0.5F;
 
@@ -1255,6 +1298,18 @@ void Renderer::regenerateTerrain(std::uint32_t seed) {
         }
     }
     glBindBuffer(GL_ARRAY_BUFFER, 0);
+}
+
+void Renderer::setTerrainFoundations(const std::vector<TerrainFoundation>& foundations) {
+    const auto equal = [](const TerrainFoundation& a, const TerrainFoundation& b) {
+        return a.center == b.center && a.innerRadius == b.innerRadius &&
+               a.outerRadius == b.outerRadius;
+    };
+    if (terrainFoundations_.size() == foundations.size() &&
+        std::equal(terrainFoundations_.begin(), terrainFoundations_.end(), foundations.begin(), equal))
+        return;
+    terrainFoundations_ = foundations;
+    regenerateTerrain(terrainSeed_);
 }
 
 void Renderer::drawPauseMenu(bool resumeHovered, bool settingsHovered, bool exitHovered) const {
@@ -2127,15 +2182,8 @@ void Renderer::drawEntityOutline(const World& world,
     if (!model)
         return;
     const EntityDefinition* definition = resources_.entityDefinition(modelKey);
-    const float scale = definition ? definition->scale : 1.0F;
-    const float ground = terrain_.heightAt(shown.position.x, shown.position.z);
-    glm::mat4 transform{1.0F};
-    transform =
-        glm::translate(transform, {shown.position.x, ground + shown.position.y, shown.position.z});
-    transform = glm::rotate(transform, glm::radians(shown.rotationDegrees.x), {1, 0, 0});
-    transform = glm::rotate(transform, glm::radians(shown.rotationDegrees.y), {0, 1, 0});
-    transform = glm::rotate(transform, glm::radians(shown.rotationDegrees.z), {0, 0, 1});
-    transform = glm::scale(transform, shown.scale * scale * 1.035F);
+    const glm::mat4 transform =
+        groundedEntityTransform(terrain_, shown, definition, id, 1.035F);
     std::string animation;
     if (definition) {
         const bool moving = !remembered && (glm::length(entity->unitControl.directInput) > 0.01F ||

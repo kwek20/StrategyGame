@@ -22,6 +22,12 @@ struct EntityDefinition {
     float scale{1.0F};
     float selectionRadius{0.5F};
     float selectionHeight{1.8F};
+    float groundOffset{0.0F};
+    bool alignToTerrain{false};
+    float maximumTilt{0.0F};
+    float foundationRadius{0.0F};
+    float maximumFoundationSlope{8.0F};
+    float sinkVariance{0.0F};
     std::unordered_map<std::string, std::string> animations;
 };
 

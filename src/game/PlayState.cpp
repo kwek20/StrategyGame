@@ -15,6 +15,20 @@
 #include <iostream>
 
 namespace strategy {
+namespace {
+
+bool isHomogeneousSelection(const World& world,
+                            const std::vector<EntityId>& selected,
+                            const std::string& archetype) {
+    if (selected.empty())
+        return false;
+    return std::all_of(selected.begin(), selected.end(), [&](EntityId id) {
+        const Entity* entity = world.findEntity(id);
+        return entity && entity->archetype.value == archetype;
+    });
+}
+
+} // namespace
 
 void PlayState::setMouseCaptured(bool captured) {
     if (inputWindowId_ == 0)
@@ -44,7 +58,7 @@ PlayState::PlayState(StateContext& context, SaveData data)
                data.playerOneSpecialization,
                data.playerTwoSpecialization)
     , config_(GameConfig::load(context.configPath)) {
-    session_.replaceWorld(std::move(data.entities), data.terrainSeed);
+    session_.replaceWorld(std::move(data.entities), data.terrainSeed, std::move(data.foundations));
     session_.restorePlayerProgress(1,
                                    data.wood[0],
                                    data.stone[0],
@@ -95,7 +109,7 @@ void PlayState::handleEvent(const SDL_Event& event) {
         try {
             SaveData data = SaveGame::read(config_.savePath());
             pendingTerrainSeed_ = data.terrainSeed;
-            session_.replaceWorld(std::move(data.entities), data.terrainSeed);
+            session_.replaceWorld(std::move(data.entities), data.terrainSeed, std::move(data.foundations));
             possessedEntity_ = 0;
             viewMode_ = ViewMode::strategy;
             setMouseCaptured(false);
@@ -158,7 +172,11 @@ void PlayState::handleEvent(const SDL_Event& event) {
         return;
     }
     const Entity* droneForBuildHud = session_.world().findEntity(selectedEntity_);
+    const bool homogeneousSelection =
+        droneForBuildHud && isHomogeneousSelection(session_.world(), selectedUnits_,
+                                                   droneForBuildHud->archetype.value);
     const bool buildHudVisible = viewMode_ == ViewMode::strategy && droneForBuildHud &&
+                                 (selectedUnits_.empty() || homogeneousSelection) &&
                                  droneForBuildHud->authority.owner == localPlayer_ &&
                                  droneForBuildHud->archetype.value == "construction_drone";
     if (buildHudVisible && event.type == SDL_EVENT_MOUSE_MOTION) {
@@ -177,7 +195,8 @@ void PlayState::handleEvent(const SDL_Event& event) {
         return;
     }
     if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_LEFT &&
-        viewMode_ == ViewMode::strategy && !selectedUnits_.empty()) {
+        viewMode_ == ViewMode::strategy && !selectedUnits_.empty() &&
+        !homogeneousSelection) {
         std::vector<std::string> groups;
         for (EntityId id : selectedUnits_)
             if (const Entity* entity = session_.world().findEntity(id))
@@ -216,7 +235,7 @@ void PlayState::handleEvent(const SDL_Event& event) {
     }
     const Entity* selectedHall = session_.world().findEntity(selectedEntity_);
     const bool ownsSelectedHall = selectedHall && selectedHall->authority.owner == localPlayer_ &&
-                                  selectedUnits_.empty();
+                                  (selectedUnits_.empty() || homogeneousSelection);
     if (ownsSelectedHall &&
         (event.type == SDL_EVENT_MOUSE_MOTION ||
          (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_LEFT))) {
@@ -237,11 +256,21 @@ void PlayState::handleEvent(const SDL_Event& event) {
         }
         if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
             if (entityActionHovered_ >= 0 && static_cast<std::size_t>(entityActionHovered_) < recipes.size()) {
-                session_.submit({localPlayer_, nextCommandSequence_++, StartRecipeCommand{selectedHall->id, recipes[entityActionHovered_]->id}});
+                const auto submitRecipe = [&](EntityId id) {
+                    session_.submit({localPlayer_, nextCommandSequence_++, StartRecipeCommand{id, recipes[entityActionHovered_]->id}});
+                };
+                if (selectedUnits_.empty()) submitRecipe(selectedHall->id);
+                else for (EntityId id : selectedUnits_) submitRecipe(id);
                 context_.events.enqueue(AudioEvent{AudioCue::trainUnit});
             } else if (entityActionHovered_ >= 0) {
                 const std::size_t upgradeIndex = static_cast<std::size_t>(entityActionHovered_) - recipes.size();
-                if (upgradeIndex < upgrades.size()) session_.submit({localPlayer_, nextCommandSequence_++, StartUpgradeCommand{selectedHall->id, upgrades[upgradeIndex]->id}});
+                if (upgradeIndex < upgrades.size()) {
+                    const auto submitUpgrade = [&](EntityId id) {
+                        session_.submit({localPlayer_, nextCommandSequence_++, StartUpgradeCommand{id, upgrades[upgradeIndex]->id}});
+                    };
+                    if (selectedUnits_.empty()) submitUpgrade(selectedHall->id);
+                    else for (EntityId id : selectedUnits_) submitUpgrade(id);
+                }
             }
             if (entityActionHovered_ >= 0)
                 return;
@@ -423,6 +452,15 @@ void PlayState::update(float deltaSeconds) {
             selectedUnits_.clear();
         lastWorldClickEntity_ = 0;
     }
+    const Entity* selectionContext = session_.world().findEntity(selectedEntity_);
+    const bool homogeneousDrones = selectionContext &&
+        isHomogeneousSelection(session_.world(), selectedUnits_, "construction_drone");
+    if (!selectionContext || selectionContext->archetype.value != "construction_drone" ||
+        (!selectedUnits_.empty() && !homogeneousDrones)) {
+        constructionPlacementMode_ = false;
+        pendingConstructionScreen_.reset();
+        pendingConstructionPosition_.reset();
+    }
     if (pendingMoveDestination_) {
         const glm::vec3 destination = *pendingMoveDestination_;
         pendingMoveDestination_.reset();
@@ -459,8 +497,19 @@ void PlayState::update(float deltaSeconds) {
         EntityId drone = selectedEntity_;
         if (!selectedUnits_.empty()) drone = selectedUnits_.front();
         if (constructionPreviewValid_)
-        if (const Entity* builder = session_.world().findEntity(drone); builder && builder->flight)
-            session_.submit({localPlayer_, nextCommandSequence_++, PlaceBuildingCommand{drone, "construct.command_hub", *pendingConstructionPosition_}});
+        if (const Entity* builder = session_.world().findEntity(drone); builder && builder->flight) {
+            std::vector<EntityId> builders;
+            if (selectedUnits_.empty()) builders.push_back(drone);
+            else
+                for (EntityId id : selectedUnits_)
+                    if (const Entity* selected = session_.world().findEntity(id);
+                        selected && selected->authority.owner == localPlayer_ && selected->flight)
+                        builders.push_back(id);
+            session_.submit({localPlayer_, nextCommandSequence_++,
+                             PlaceBuildingCommand{drone, "construct.command_hub",
+                                                  *pendingConstructionPosition_,
+                                                  std::move(builders)}});
+        }
         pendingConstructionPosition_.reset();
         if (constructionPreviewValid_)
             constructionPlacementMode_ = false;
@@ -485,6 +534,7 @@ void PlayState::render(Renderer& renderer) const {
         renderer.regenerateTerrain(*pendingTerrainSeed_);
         pendingTerrainSeed_.reset();
     }
+    renderer.setTerrainFoundations(session_.world().foundations());
     const glm::vec3 focus = camera_.focus();
     const Player* local = session_.players().find(localPlayer_);
     CameraView view =
@@ -542,6 +592,9 @@ void PlayState::render(Renderer& renderer) const {
         constructionPreviewValid_ = !overlapsObject(session_.world(), context_.definitions,
                                                      {position.x, position.z},
                                                      collisionRadius(context_.definitions, "command_hub"));
+        const FootprintFit footprint = renderer.fitTerrainFootprint(
+            position.x, position.z, collisionRadius(context_.definitions, "command_hub"), 10.0F);
+        constructionPreviewValid_ = constructionPreviewValid_ && footprint.valid;
         if (local)
             if (const RecipeDefinition* recipe = context_.definitions.recipe(RecipeId{"construct.command_hub"}))
                 for (const auto& [resource, amount] : recipe->cost)
@@ -550,7 +603,7 @@ void PlayState::render(Renderer& renderer) const {
         World preview;
         Entity& ghost = preview.createEntity("Command Hub", "command_hub", localPlayer_);
         context_.definitions.initializeEntity(ghost);
-        ghost.transform.position = position;
+        ghost.transform.position = {position.x, 0.0F, position.z};
         ghost.construction.emplace();
         ghost.construction.complete = false;
         ghost.construction.placementValid = constructionPreviewValid_;
@@ -562,7 +615,11 @@ void PlayState::render(Renderer& renderer) const {
         renderer.drawOrderMarkers(session_.world(), selectedEntity_, selectedUnits_, view);
     if (viewMode_ == ViewMode::strategy) {
         const Entity* selected = session_.world().findEntity(selectedEntity_);
-        if (selected && selected->authority.owner == localPlayer_ && selected->archetype.value == "construction_drone")
+        const bool sameType = selected && isHomogeneousSelection(
+            session_.world(), selectedUnits_, selected->archetype.value);
+        if ((selectedUnits_.empty() || sameType) && selected &&
+            selected->authority.owner == localPlayer_ &&
+            selected->archetype.value == "construction_drone")
             renderer.drawBuildHud(localPlayer_, constructionPlacementMode_ ? "PLACE COMMAND HUB" : "CONSTRUCTION", session_.world().size(), "Select a building, then click a valid location", constructionButtonHovered_, constructionPlacementMode_);
     }
     if (!selectedUnits_.empty())
@@ -589,10 +646,13 @@ void PlayState::render(Renderer& renderer) const {
             renderer.drawUnitHud(*controlled);
     } else {
         renderer.drawStrategyHud(session_.world(), selectedEntity_, local);
-        if (!selectedUnits_.empty())
+        const Entity* selected = session_.world().findEntity(selectedEntity_);
+        const bool sameType = selected && isHomogeneousSelection(
+            session_.world(), selectedUnits_, selected->archetype.value);
+        if (!selectedUnits_.empty() && !sameType)
             renderer.drawUnitSelectionHud(session_.world(), selectedUnits_);
-        if (const Entity* selected = session_.world().findEntity(selectedEntity_);
-            selected && selected->authority.owner == localPlayer_ && selectedUnits_.empty()) {
+        if (selected && selected->authority.owner == localPlayer_ &&
+            (selectedUnits_.empty() || sameType)) {
             std::vector<std::string> labels, costs;
             const auto recipes = context_.definitions.recipesForProducer(selected->archetype.value);
             for (const RecipeDefinition* recipe : recipes) {

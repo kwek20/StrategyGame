@@ -253,6 +253,19 @@ int main() {
     const auto encodedRecipe = strategy::CommandCodec::encode(recipeWireCommand);
     const auto decodedRecipe = strategy::CommandCodec::decode(encodedRecipe);
     (void)decodedRecipe;
+    const strategy::PlayerCommand placementWireCommand{
+        1,
+        52,
+        strategy::PlaceBuildingCommand{7,
+                                       "construct.command_hub",
+                                       {12.0F, 0.0F, -9.0F},
+                                       {7, 11, 15}}};
+    const auto encodedPlacement = strategy::CommandCodec::encode(placementWireCommand);
+    const auto decodedPlacement = strategy::CommandCodec::decode(encodedPlacement);
+    valid = valid && decodedPlacement &&
+            std::holds_alternative<strategy::PlaceBuildingCommand>(decodedPlacement->payload) &&
+            std::get<strategy::PlaceBuildingCommand>(decodedPlacement->payload).builders ==
+                std::vector<strategy::EntityId>{7, 11, 15};
     std::size_t resourceCount = 0;
     for (const strategy::Entity& resource : session.world().entities()) {
         if (resource.authority.owner != 0)

@@ -29,6 +29,12 @@ std::uint64_t authoritativeStateChecksum(const World& world,
                                          std::uint32_t terrainSeed,
                                          std::uint64_t tick) {
     Hash hash; hash.value(terrainSeed); hash.value(tick);
+    hash.value(static_cast<std::uint64_t>(world.foundations().size()));
+    for (const TerrainFoundation& foundation : world.foundations()) {
+        hash.vector(foundation.center);
+        hash.value(foundation.innerRadius);
+        hash.value(foundation.outerRadius);
+    }
     std::vector<const Player*> orderedPlayers;
     for (const Player& player : players.players()) orderedPlayers.push_back(&player);
     std::sort(orderedPlayers.begin(), orderedPlayers.end(), [](auto a, auto b){ return a->id < b->id; });

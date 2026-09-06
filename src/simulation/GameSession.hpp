@@ -27,7 +27,8 @@ class GameSession final {
     void update(double elapsedSeconds);
     void advanceTicks(std::uint32_t count = 1);
     bool submit(PlayerCommand command);
-    void replaceWorld(std::vector<Entity> entities, std::uint32_t terrainSeed);
+    void replaceWorld(std::vector<Entity> entities, std::uint32_t terrainSeed,
+                      std::vector<TerrainFoundation> foundations = {});
     void restorePlayerProgress(PlayerId player,
                                float wood,
                                float stone,

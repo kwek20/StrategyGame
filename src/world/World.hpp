@@ -1,6 +1,7 @@
 #pragma once
 
 #include "world/Entity.hpp"
+#include "terrain/Terrain.hpp"
 
 #include <string>
 #include <vector>
@@ -27,10 +28,16 @@ class World final {
     [[nodiscard]] std::size_t size() const {
         return entities_.size();
     }
+    void replaceFoundations(std::vector<TerrainFoundation> foundations) {
+        foundations_ = std::move(foundations);
+    }
+    [[nodiscard]] std::vector<TerrainFoundation>& foundations() { return foundations_; }
+    [[nodiscard]] const std::vector<TerrainFoundation>& foundations() const { return foundations_; }
 
   private:
     std::vector<Entity> entities_;
     EntityId nextId_{1};
+    std::vector<TerrainFoundation> foundations_;
 };
 
 } // namespace strategy

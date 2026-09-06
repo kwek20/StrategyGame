@@ -51,6 +51,18 @@ void SaveGame::write(const std::filesystem::path& path,
     writer.Uint(1);
     writer.Key("terrainSeed");
     writer.Uint(terrainSeed);
+    writer.Key("foundations");
+    writer.StartArray();
+    for (const TerrainFoundation& foundation : world.foundations()) {
+        writer.StartObject();
+        writeVector(writer, "center", foundation.center);
+        writer.Key("innerRadius");
+        writer.Double(foundation.innerRadius);
+        writer.Key("outerRadius");
+        writer.Double(foundation.outerRadius);
+        writer.EndObject();
+    }
+    writer.EndArray();
     writer.Key("players");
     writer.StartArray();
     if (players)
@@ -266,6 +278,21 @@ SaveData SaveGame::read(const std::filesystem::path& path) {
 
     SaveData result;
     result.terrainSeed = document["terrainSeed"].GetUint();
+    if (!document.HasMember("foundations") || !document["foundations"].IsArray())
+        throw std::runtime_error("Invalid save foundations");
+    for (const auto& item : document["foundations"].GetArray()) {
+        if (!item.IsObject() || !item.HasMember("innerRadius") ||
+            !item["innerRadius"].IsNumber() || !item.HasMember("outerRadius") ||
+            !item["outerRadius"].IsNumber())
+            throw std::runtime_error("Invalid terrain foundation");
+        TerrainFoundation foundation;
+        foundation.center = readVector(item, "center");
+        foundation.innerRadius = item["innerRadius"].GetFloat();
+        foundation.outerRadius = item["outerRadius"].GetFloat();
+        if (foundation.innerRadius <= 0.0F || foundation.outerRadius < foundation.innerRadius)
+            throw std::runtime_error("Invalid terrain foundation radii");
+        result.foundations.push_back(foundation);
+    }
     {
         for (const auto& player : document["players"].GetArray())
             if (player.IsObject() && player.HasMember("id") && player["id"].IsUint64() &&

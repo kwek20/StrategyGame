@@ -60,6 +60,7 @@ int main() {
     production.remainingTicks = 135;
     entity.production.queue.push_back(production);
     const strategy::EntityId originalId = entity.id;
+    world.foundations().push_back({{1.0F, 6.0F, 3.0F}, 5.0F, 7.0F});
     strategy::PlayerRegistry players{"france", "brazil"};
     players.find(1)->resources["materials"] = 125.0F;
     players.find(1)->intelligence.push_back(
@@ -67,6 +68,10 @@ int main() {
     strategy::SaveGame::write(savePath, 424242U, world, &players);
     const strategy::SaveData loaded = strategy::SaveGame::read(savePath);
     valid = valid && loaded.terrainSeed == 424242U && loaded.entities.size() == 1;
+    valid = valid && loaded.foundations.size() == 1 &&
+            loaded.foundations[0].center == glm::vec3{1.0F, 6.0F, 3.0F} &&
+            loaded.foundations[0].innerRadius == 5.0F &&
+            loaded.foundations[0].outerRadius == 7.0F;
     valid = valid && loaded.entities[0].id == originalId;
     valid = valid && loaded.entities[0].archetype.value == "town_center";
     valid = valid && loaded.entities[0].archetype.value == "town_center";

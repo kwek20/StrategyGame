@@ -38,7 +38,7 @@ bool readString(std::span<const std::byte>& input, std::string& value) {
 
 std::vector<std::byte> CommandCodec::encode(const PlayerCommand& command) {
     std::vector<std::byte> result;
-    result.push_back(std::byte{2});
+    result.push_back(std::byte{3});
     write(result, command.player);
     write(result, command.sequence);
     result.push_back(static_cast<std::byte>(command.payload.index()));
@@ -56,7 +56,12 @@ std::vector<std::byte> CommandCodec::encode(const PlayerCommand& command) {
         else if constexpr (std::is_same_v<T, AttackEntityCommand>) write(result, payload.target);
         else if constexpr (std::is_same_v<T, StartRecipeCommand>) writeString(result, payload.recipeId.value);
         else if constexpr (std::is_same_v<T, StartUpgradeCommand>) writeString(result, payload.upgradeId);
-        else if constexpr (std::is_same_v<T, PlaceBuildingCommand>) { writeString(result, payload.buildingId); write(result,payload.position.x); write(result,payload.position.y); write(result,payload.position.z); }
+        else if constexpr (std::is_same_v<T, PlaceBuildingCommand>) {
+            writeString(result, payload.buildingId);
+            write(result,payload.position.x); write(result,payload.position.y); write(result,payload.position.z);
+            write(result, static_cast<std::uint32_t>(payload.builders.size()));
+            for (EntityId builder : payload.builders) write(result, builder);
+        }
         else if constexpr (std::is_same_v<T, ConstructCommand>) write(result, payload.building);
         else if constexpr (std::is_same_v<T, RepairCommand>) write(result, payload.target);
     }, command.payload);
@@ -64,7 +69,7 @@ std::vector<std::byte> CommandCodec::encode(const PlayerCommand& command) {
 }
 
 std::optional<PlayerCommand> CommandCodec::decode(std::span<const std::byte> input) {
-    if (input.empty() || input.front() != std::byte{2}) return std::nullopt;
+    if (input.empty() || input.front() != std::byte{3}) return std::nullopt;
     input = input.subspan(1);
     PlayerCommand result;
     if (!read(input, result.player) || !read(input, result.sequence) || input.empty()) return std::nullopt;
@@ -95,7 +100,20 @@ std::optional<PlayerCommand> CommandCodec::decode(std::span<const std::byte> inp
         result.payload = std::move(value);
         break;
     }
-    case 8: { PlaceBuildingCommand value{entity}; if(!readString(input,value.buildingId)||!read(input,value.position.x)||!read(input,value.position.y)||!read(input,value.position.z)) return std::nullopt; result.payload=std::move(value); break; }
+    case 8: {
+        PlaceBuildingCommand value{entity};
+        std::uint32_t builderCount = 0;
+        if(!readString(input,value.buildingId)||!read(input,value.position.x)||
+           !read(input,value.position.y)||!read(input,value.position.z)||
+           !read(input,builderCount) || builderCount > 1024) return std::nullopt;
+        value.builders.reserve(builderCount);
+        for (std::uint32_t index = 0; index < builderCount; ++index) {
+            EntityId builder = 0;
+            if (!read(input, builder)) return std::nullopt;
+            value.builders.push_back(builder);
+        }
+        result.payload=std::move(value); break;
+    }
     case 9: { EntityId building{}; if(!read(input,building)) return std::nullopt; result.payload=ConstructCommand{entity,building}; break; }
     case 10: result.payload=StopConstructionCommand{entity}; break;
     case 11: { EntityId target{}; if(!read(input,target)) return std::nullopt; result.payload=RepairCommand{entity,target}; break; }

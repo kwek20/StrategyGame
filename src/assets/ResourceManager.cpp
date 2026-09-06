@@ -47,6 +47,21 @@ void ResourceManager::loadEntityDefinitions(const std::filesystem::path& path) {
         if (member.value.HasMember("scale") && member.value["scale"].IsNumber()) {
             definition.scale = member.value["scale"].GetFloat();
         }
+        if (member.value.HasMember("grounding") && member.value["grounding"].IsObject()) {
+            const auto& grounding = member.value["grounding"];
+            if (grounding.HasMember("groundOffset") && grounding["groundOffset"].IsNumber())
+                definition.groundOffset = grounding["groundOffset"].GetFloat();
+            if (grounding.HasMember("alignToTerrain") && grounding["alignToTerrain"].IsBool())
+                definition.alignToTerrain = grounding["alignToTerrain"].GetBool();
+            if (grounding.HasMember("maximumTilt") && grounding["maximumTilt"].IsNumber())
+                definition.maximumTilt = grounding["maximumTilt"].GetFloat();
+            if (grounding.HasMember("foundationRadius") && grounding["foundationRadius"].IsNumber())
+                definition.foundationRadius = grounding["foundationRadius"].GetFloat();
+            if (grounding.HasMember("maximumFoundationSlope") && grounding["maximumFoundationSlope"].IsNumber())
+                definition.maximumFoundationSlope = grounding["maximumFoundationSlope"].GetFloat();
+            if (grounding.HasMember("sinkVariance") && grounding["sinkVariance"].IsNumber())
+                definition.sinkVariance = grounding["sinkVariance"].GetFloat();
+        }
         if (member.value.HasMember("selection") && member.value["selection"].IsObject()) {
             const auto& selection = member.value["selection"];
             if (selection.HasMember("radius") && selection["radius"].IsNumber())

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "world/Entity.hpp"
+#include "terrain/Terrain.hpp"
 
 #include <array>
 #include <cstdint>
@@ -16,6 +17,7 @@ class PlayerRegistry;
 struct SaveData {
     std::uint32_t terrainSeed{0};
     std::vector<Entity> entities;
+    std::vector<TerrainFoundation> foundations;
     std::string playerOneCountry{"spain"};
     std::string playerTwoCountry{"japan"};
     std::string playerOneSpecialization{"unassigned"};

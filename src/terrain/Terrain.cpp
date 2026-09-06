@@ -5,6 +5,7 @@
 #include <cmath>
 #include <glm/common.hpp>
 #include <glm/geometric.hpp>
+#include <glm/trigonometric.hpp>
 #include <limits>
 
 namespace strategy {
@@ -204,6 +205,49 @@ glm::vec3 Terrain::colorAt(float height) const {
 
 float Terrain::worldExtent() const {
     return static_cast<float>(cellCount) * spacing;
+}
+
+FootprintFit Terrain::fitFootprint(float worldX,
+                                   float worldZ,
+                                   float radius,
+                                   float maximumSlopeDegrees) const {
+    const std::array<glm::vec2, 9> offsets{{{0, 0}, {-1, -1}, {0, -1}, {1, -1},
+                                            {-1, 0}, {1, 0}, {-1, 1}, {0, 1}, {1, 1}}};
+    float minimum = std::numeric_limits<float>::max();
+    float maximum = std::numeric_limits<float>::lowest();
+    float total = 0.0F;
+    for (const glm::vec2 offset : offsets) {
+        const float height = heightAt(worldX + offset.x * radius, worldZ + offset.y * radius);
+        minimum = std::min(minimum, height);
+        maximum = std::max(maximum, height);
+        total += height;
+    }
+    const float run = std::max(radius * 2.0F, spacing);
+    const float slope = glm::degrees(std::atan2(maximum - minimum, run));
+    return {total / static_cast<float>(offsets.size()), slope, slope <= maximumSlopeDegrees};
+}
+
+void Terrain::applyFoundation(const TerrainFoundation& foundation) {
+    const float halfExtent = worldExtent() * 0.5F;
+    for (int z = 0; z < vertexCount; ++z) {
+        for (int x = 0; x < vertexCount; ++x) {
+            const float worldX = static_cast<float>(x) * spacing - halfExtent;
+            const float worldZ = static_cast<float>(z) * spacing - halfExtent;
+            const float distance = glm::distance(glm::vec2{worldX, worldZ},
+                                                 glm::vec2{foundation.center.x, foundation.center.z});
+            if (distance >= foundation.outerRadius)
+                continue;
+            const float blend = distance <= foundation.innerRadius
+                                    ? 1.0F
+                                    : 1.0F - smoothstep(foundation.innerRadius,
+                                                        foundation.outerRadius,
+                                                        distance);
+            float& normalized = heights_[static_cast<std::size_t>(z * vertexCount + x)];
+            normalized = glm::mix(normalized,
+                                  foundation.center.y / heightScale,
+                                  blend);
+        }
+    }
 }
 
 } // namespace strategy
