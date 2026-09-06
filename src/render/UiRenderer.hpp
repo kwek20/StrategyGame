@@ -12,7 +12,7 @@ class UiDocument;
 
 class UiRenderer final {
   public:
-    UiRenderer();
+    explicit UiRenderer(ShaderManager& shaders);
     ~UiRenderer();
     UiRenderer(const UiRenderer&) = delete;
     UiRenderer& operator=(const UiRenderer&) = delete;
@@ -34,7 +34,7 @@ class UiRenderer final {
                    int height) const;
 
   private:
-    ShaderManager shaders_;
+    ShaderManager& shaders_;
     ShaderHandle program_;
     std::uint32_t vao_{0}, vbo_{0};
     FontRenderer font_;

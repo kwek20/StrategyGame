@@ -65,6 +65,21 @@ std::shared_ptr<ModelTextureAsset> decodeTexture(const aiScene& scene,
 }
 } // namespace
 
+std::shared_ptr<ModelTextureAsset> importTextureAsset(const std::filesystem::path& path) {
+    int width = 0;
+    int height = 0;
+    int channels = 0;
+    stbi_uc* decoded = stbi_load(path.string().c_str(), &width, &height, &channels, 4);
+    if (!decoded)
+        throw std::runtime_error("Could not decode texture: " + path.string());
+    auto result = std::make_shared<ModelTextureAsset>();
+    result->width = width;
+    result->height = height;
+    result->rgba.assign(decoded, decoded + static_cast<std::size_t>(width * height * 4));
+    stbi_image_free(decoded);
+    return result;
+}
+
 std::shared_ptr<ModelAsset> importModelAsset(const std::filesystem::path& path) {
     Assimp::Importer importer;
     const aiScene* scene = importer.ReadFile(

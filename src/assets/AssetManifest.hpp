@@ -10,6 +10,7 @@ namespace strategy {
 struct AssetGroup {
     std::vector<std::string> models;
     std::vector<std::string> textures;
+    std::vector<std::string> shaders;
     std::vector<std::string> sounds;
     std::vector<std::string> definitions;
 };

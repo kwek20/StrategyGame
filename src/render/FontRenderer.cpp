@@ -28,7 +28,8 @@ std::filesystem::path fontPath() {
     throw std::runtime_error("No UI font found; add assets/fonts/Inter-Bold.ttf");
 }
 } // namespace
-FontRenderer::FontRenderer() {
+FontRenderer::FontRenderer(ShaderManager& shaders)
+    : shaders_(shaders) {
     FT_Library library = nullptr;
     FT_Face face = nullptr;
     if (FT_Init_FreeType(&library))
@@ -75,11 +76,8 @@ FontRenderer::FontRenderer() {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    constexpr const char* vs = R"(#version 450 core
-layout(location=0)in vec2 position;layout(location=1)in vec2 uvIn;layout(location=2)in vec3 colorIn;out vec2 uv;out vec3 color;void main(){gl_Position=vec4(position,0,1);uv=uvIn;color=colorIn;})";
-    constexpr const char* fs = R"(#version 450 core
-in vec2 uv;in vec3 color;uniform sampler2D atlas;out vec4 outColor;void main(){float a=texture(atlas,uv).r;outColor=vec4(color,a);})";
-    program_ = shaders_.load("font", vs, fs);
+    program_ = shaders_.loadFiles(
+        "font", "assets/shaders/font.vert", "assets/shaders/font.frag");
     glGenVertexArrays(1, &vao_);
     glGenBuffers(1, &vbo_);
     glBindVertexArray(vao_);

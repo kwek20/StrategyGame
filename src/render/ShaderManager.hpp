@@ -3,12 +3,20 @@
 #include "assets/ResourceHandle.hpp"
 
 #include <cstdint>
+#include <chrono>
+#include <filesystem>
 #include <string>
 #include <string_view>
 #include <unordered_map>
 #include <vector>
 
 namespace strategy {
+
+struct ShaderReloadResult {
+    std::string name;
+    bool succeeded{false};
+    std::string message;
+};
 
 class ShaderManager final {
   public:
@@ -20,6 +28,10 @@ class ShaderManager final {
     [[nodiscard]] ShaderHandle load(std::string name,
                                     std::string_view vertexSource,
                                     std::string_view fragmentSource);
+    [[nodiscard]] ShaderHandle loadFiles(std::string name,
+                                         const std::filesystem::path& vertexPath,
+                                         const std::filesystem::path& fragmentPath);
+    [[nodiscard]] std::vector<ShaderReloadResult> reloadChanged();
     [[nodiscard]] std::uint32_t program(ShaderHandle handle) const;
     [[nodiscard]] std::int32_t uniform(ShaderHandle handle, std::string_view name) const;
     void use(ShaderHandle handle) const;
@@ -34,9 +46,14 @@ class ShaderManager final {
         ResourceState state{ResourceState::invalid};
         std::string error;
         mutable std::unordered_map<std::string, std::int32_t> uniforms;
+        std::filesystem::path vertexPath;
+        std::filesystem::path fragmentPath;
+        std::filesystem::file_time_type vertexWriteTime{};
+        std::filesystem::file_time_type fragmentWriteTime{};
     };
     std::vector<Slot> slots_;
     std::unordered_map<std::string, ShaderHandle> handles_;
+    std::chrono::steady_clock::time_point nextReloadScan_{};
 };
 
 } // namespace strategy

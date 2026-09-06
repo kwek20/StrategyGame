@@ -15,7 +15,7 @@ struct TextDraw {
 };
 class FontRenderer final {
   public:
-    FontRenderer();
+    explicit FontRenderer(ShaderManager& shaders);
     ~FontRenderer();
     FontRenderer(const FontRenderer&) = delete;
     FontRenderer& operator=(const FontRenderer&) = delete;
@@ -34,7 +34,7 @@ class FontRenderer final {
         float advance{0};
     };
     std::array<Glyph, 128> glyphs_{};
-    ShaderManager shaders_;
+    ShaderManager& shaders_;
     ShaderHandle program_;
     std::uint32_t texture_{0}, vao_{0}, vbo_{0};
 };

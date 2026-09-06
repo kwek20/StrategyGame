@@ -105,6 +105,9 @@ class Renderer final {
     void regenerateTerrain(std::uint32_t seed);
     void preloadAssetGroup(const std::string& group);
     [[nodiscard]] AssetLoadProgress assetProgress(const std::string& group);
+    [[nodiscard]] TextureHandle requestTexture(const std::string& key) const;
+    void bindTexture(TextureHandle handle, std::uint32_t unit = 0) const;
+    [[nodiscard]] ResourceState textureState(TextureHandle handle) const;
     void setFramesPerSecond(float fps) {
         framesPerSecond_ = fps;
     }
@@ -146,8 +149,9 @@ class Renderer final {
     mutable FrameProfiler profiler_;
     std::chrono::steady_clock::time_point lastSlowFrameLog_{};
     mutable std::unordered_map<std::string, ModelHandle> modelHandles_;
-    std::unordered_map<std::string, std::vector<ModelHandle>> preloadGroups_;
+    std::unordered_map<std::string, AssetPreloadSet> preloadGroups_;
     [[nodiscard]] ModelHandle modelHandle(const std::string& archetype) const;
+    void refreshModelShaderBindings();
     void drawText(const std::string& text,
                   float x,
                   float y,

@@ -77,5 +77,7 @@ struct ModelAsset {
 
 [[nodiscard]] std::shared_ptr<ModelAsset> importModelAsset(const std::filesystem::path& path);
 [[nodiscard]] std::shared_ptr<ModelAsset> makeMarkerModelAsset(bool failed);
+[[nodiscard]] std::shared_ptr<ModelTextureAsset>
+importTextureAsset(const std::filesystem::path& path);
 
 } // namespace strategy

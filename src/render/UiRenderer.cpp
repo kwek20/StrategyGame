@@ -39,15 +39,10 @@ void appendRectangle(std::vector<UiVertex>& output,
 
 } // namespace
 
-UiRenderer::UiRenderer() {
-    constexpr const char* vertex = R"(#version 450 core
-layout(location=0) in vec2 position;
-layout(location=1) in vec3 colorIn; out vec3 color;
-void main(){gl_Position=vec4(position,0,1);color=colorIn;})";
-    constexpr const char* fragment = R"(#version 450 core
-in vec3 color; out vec4 outputColor;
-void main(){outputColor=vec4(color,1);})";
-    program_ = shaders_.load("ui", vertex, fragment);
+UiRenderer::UiRenderer(ShaderManager& shaders)
+    : shaders_(shaders), font_(shaders) {
+    program_ =
+        shaders_.loadFiles("ui", "assets/shaders/ui.vert", "assets/shaders/ui.frag");
     glGenVertexArrays(1, &vao_);
     glGenBuffers(1, &vbo_);
     glBindVertexArray(vao_);

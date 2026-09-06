@@ -33,6 +33,7 @@ AssetManifest AssetManifest::load(const std::filesystem::path& path) {
         AssetGroup group;
         strings(member.value, "models", group.models);
         strings(member.value, "textures", group.textures);
+        strings(member.value, "shaders", group.shaders);
         strings(member.value, "sounds", group.sounds);
         strings(member.value, "definitions", group.definitions);
         result.groups_.emplace(member.name.GetString(), std::move(group));

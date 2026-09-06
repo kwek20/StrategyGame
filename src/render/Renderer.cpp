@@ -81,152 +81,23 @@ void GLAPIENTRY openGlDebugMessage(GLenum,
 }
 
 ShaderHandle createTerrainProgram(ShaderManager& shaders) {
-    constexpr const char* vertexSource = R"glsl(
-        #version 450 core
-        layout(location = 0) in vec3 inPosition;
-        layout(location = 1) in vec3 inNormal;
-        layout(location = 2) in vec3 inColor;
-        uniform mat4 viewProjection;
-        out vec3 vertexColor;
-        out vec3 vertexNormal;
-        out vec3 worldPosition;
-
-        void main() {
-            gl_Position = viewProjection * vec4(inPosition, 1.0);
-            vertexColor = inColor;
-            vertexNormal = inNormal;
-            worldPosition = inPosition;
-        }
-    )glsl";
-
-    constexpr const char* fragmentSource = R"glsl(
-        #version 450 core
-        in vec3 vertexColor;
-        in vec3 vertexNormal;
-        in vec3 worldPosition;
-        uniform vec3 cameraPosition;
-        uniform vec2 fogRange;
-        uniform sampler2D explorationMap;
-        uniform bool useExploration;
-        out vec4 outColor;
-
-        void main() {
-            vec3 lightDirection = normalize(vec3(-0.45, 0.82, 0.35));
-            float diffuse = max(dot(normalize(vertexNormal), lightDirection), 0.0);
-            float lighting = 0.28 + diffuse * 0.82;
-            vec3 lit = vertexColor * lighting;
-            float fog = smoothstep(fogRange.x, fogRange.y, distance(cameraPosition, worldPosition));
-            vec3 atmospheric = mix(lit, vec3(0.42, 0.66, 0.88), fog);
-            float explored = useExploration ? texture(explorationMap, worldPosition.xz / 192.0 + 0.5).r : 1.0;
-            vec3 hidden = vec3(0.008,0.012,0.018);
-            vec3 remembered = atmospheric * 0.28;
-            outColor = vec4(explored < 0.12 ? hidden : (explored < 0.75 ? remembered : atmospheric), 1.0);
-        }
-    )glsl";
-
-    return shaders.load("terrain", vertexSource, fragmentSource);
+    return shaders.loadFiles(
+        "terrain", "assets/shaders/terrain.vert", "assets/shaders/terrain.frag");
 }
 
 ShaderHandle createModelProgram(ShaderManager& shaders) {
-    constexpr const char* vertexSource = R"glsl(
-        #version 450 core
-        layout(location = 0) in vec3 inPosition;
-        layout(location = 1) in vec3 inNormal;
-        layout(location = 2) in vec2 inUv;
-        layout(location = 3) in ivec4 inBones;
-        layout(location = 4) in vec4 inWeights;
-        uniform mat4 viewProjection;
-        uniform mat4 model;
-        uniform bool useSkinning;
-        uniform mat4 bones[100];
-        out vec3 worldPosition;
-        out vec3 worldNormal;
-        out vec2 uv;
-        void main() {
-            mat4 skin = mat4(1.0);
-            if (useSkinning) {
-                skin = mat4(0.0);
-                for (int i = 0; i < 4; ++i)
-                    if (inBones[i] >= 0) skin += bones[inBones[i]] * inWeights[i];
-            }
-            vec4 world = model * skin * vec4(inPosition, 1.0);
-            worldPosition = world.xyz;
-            worldNormal = normalize(transpose(inverse(mat3(model * skin))) * inNormal);
-            uv = inUv;
-            gl_Position = viewProjection * world;
-        }
-    )glsl";
-    constexpr const char* fragmentSource = R"glsl(
-        #version 450 core
-        in vec3 worldPosition;
-        in vec3 worldNormal;
-        in vec2 uv;
-        uniform vec3 cameraPosition;
-        uniform vec3 materialDiffuse;
-        uniform float materialOpacity;
-        uniform bool hasBaseColorTexture;
-        uniform sampler2D baseColorTexture;
-        uniform vec2 fogRange;
-        uniform bool rememberedEntity;
-        uniform vec3 rememberedTint;
-        out vec4 outColor;
-        void main() {
-            vec3 lightDirection = normalize(vec3(-0.45, 0.82, 0.35));
-            vec3 normal = normalize(worldNormal);
-            float diffuseAmount = max(dot(normal, lightDirection), 0.0);
-            vec3 viewDirection = normalize(cameraPosition - worldPosition);
-            vec3 reflected = reflect(-lightDirection, normal);
-            float specularAmount = pow(max(dot(viewDirection, reflected), 0.0), 24.0);
-            vec4 base = vec4(materialDiffuse, materialOpacity);
-            if (hasBaseColorTexture) base *= texture(baseColorTexture, uv);
-            if (base.a < 0.05) discard;
-            vec3 color = base.rgb * (0.28 + diffuseAmount * 0.82)
-                       + vec3(0.12) * specularAmount;
-            if(rememberedEntity){color=mix(color,rememberedTint,0.72);base.a*=0.58;}
-            float fog = smoothstep(fogRange.x, fogRange.y, distance(cameraPosition, worldPosition));
-            outColor = vec4(mix(color, vec3(0.42, 0.66, 0.88), fog), base.a);
-        }
-    )glsl";
-    return shaders.load("model", vertexSource, fragmentSource);
+    return shaders.loadFiles(
+        "model", "assets/shaders/model.vert", "assets/shaders/model.frag");
 }
 
 ShaderHandle createOutlineProgram(ShaderManager& shaders) {
-    constexpr const char* vertexSource = R"glsl(
-        #version 450 core
-        layout(location=0) in vec3 inPosition;
-        layout(location=3) in ivec4 inBones;
-        layout(location=4) in vec4 inWeights;
-        uniform mat4 viewProjection;
-        uniform mat4 model;
-        uniform bool useSkinning;
-        uniform mat4 bones[100];
-        void main(){
-            mat4 skin=mat4(1.0);
-            if(useSkinning){skin=mat4(0.0);for(int i=0;i<4;++i)if(inBones[i]>=0)skin+=bones[inBones[i]]*inWeights[i];}
-            gl_Position=viewProjection*model*skin*vec4(inPosition,1.0);
-        }
-    )glsl";
-    constexpr const char* fragmentSource = R"glsl(
-        #version 450 core
-        out vec4 outColor;
-        void main(){outColor=vec4(1.0,0.82,0.05,1.0);}
-    )glsl";
-    return shaders.load("outline", vertexSource, fragmentSource);
+    return shaders.loadFiles(
+        "outline", "assets/shaders/outline.vert", "assets/shaders/outline.frag");
 }
 
 ShaderHandle createHudProgram(ShaderManager& shaders) {
-    constexpr const char* vertexSource = R"glsl(
-        #version 450 core
-        layout(location = 0) in vec2 inPosition;
-        void main() { gl_Position = vec4(inPosition, 0.0, 1.0); }
-    )glsl";
-    constexpr const char* fragmentSource = R"glsl(
-        #version 450 core
-        uniform vec3 hudColor;
-        out vec4 outColor;
-        void main() { outColor = vec4(hudColor, 1.0); }
-    )glsl";
-    return shaders.load("hud", vertexSource, fragmentSource);
+    return shaders.loadFiles(
+        "hud", "assets/shaders/hud.vert", "assets/shaders/hud.frag");
 }
 
 void appendHudRectangle(std::vector<glm::vec2>& vertices,
@@ -267,7 +138,7 @@ void appendHudText(std::vector<glm::vec2>& vertices,
 } // namespace
 
 Renderer::Renderer(Logger* logger)
-    : logger_(logger) {
+    : font_(shaders_), logger_(logger) {
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_CULL_FACE);
     glEnable(GL_MULTISAMPLE);
@@ -280,25 +151,13 @@ Renderer::Renderer(Logger* logger)
         glDebugMessageCallback(openGlDebugMessage, logger_);
         logger_->info("renderer", "OpenGL debug output enabled");
     }
-    uiRenderer_ = std::make_unique<UiRenderer>();
+    uiRenderer_ = std::make_unique<UiRenderer>(shaders_);
 
     program_ = createTerrainProgram(shaders_);
     modelProgram_ = createModelProgram(shaders_);
     outlineProgram_ = createOutlineProgram(shaders_);
     hudProgram_ = createHudProgram(shaders_);
-    const auto bindings = [this](ShaderHandle handle) {
-        return ModelShaderBindings{shaders_.program(handle),
-                                   shaders_.uniform(handle, "viewProjection"),
-                                   shaders_.uniform(handle, "model"),
-                                   shaders_.uniform(handle, "useSkinning"),
-                                   shaders_.uniform(handle, "bones[0]"),
-                                   shaders_.uniform(handle, "baseColorTexture"),
-                                   shaders_.uniform(handle, "materialDiffuse"),
-                                   shaders_.uniform(handle, "materialOpacity"),
-                                   shaders_.uniform(handle, "hasBaseColorTexture")};
-    };
-    modelBindings_ = bindings(modelProgram_);
-    outlineBindings_ = bindings(outlineProgram_);
+    refreshModelShaderBindings();
     glGenVertexArrays(1, &hudVao_);
     glGenBuffers(1, &hudVbo_);
     glGenTextures(1, &explorationTexture_);
@@ -425,8 +284,33 @@ Renderer::~Renderer() {
     glDeleteTextures(1, &explorationTexture_);
 }
 
+void Renderer::refreshModelShaderBindings() {
+    const auto bindings = [this](ShaderHandle handle) {
+        return ModelShaderBindings{shaders_.program(handle),
+                                   shaders_.uniform(handle, "viewProjection"),
+                                   shaders_.uniform(handle, "model"),
+                                   shaders_.uniform(handle, "useSkinning"),
+                                   shaders_.uniform(handle, "bones[0]"),
+                                   shaders_.uniform(handle, "baseColorTexture"),
+                                   shaders_.uniform(handle, "materialDiffuse"),
+                                   shaders_.uniform(handle, "materialOpacity"),
+                                   shaders_.uniform(handle, "hasBaseColorTexture")};
+    };
+    modelBindings_ = bindings(modelProgram_);
+    outlineBindings_ = bindings(outlineProgram_);
+}
+
 void Renderer::beginFrame(int width, int height) {
     ProfileScope profile(profiler_, "render.begin");
+    const std::vector<ShaderReloadResult> reloads = shaders_.reloadChanged();
+    if (!reloads.empty()) {
+        refreshModelShaderBindings();
+        if (logger_)
+            for (const ShaderReloadResult& reload : reloads)
+                logger_->log(reload.succeeded ? LogLevel::info : LogLevel::error,
+                             "shader",
+                             reload.name + ": " + reload.message);
+    }
     {
         ProfileScope uploads(profiler_, "assets.upload");
         resources_.update();
@@ -463,6 +347,18 @@ AssetLoadProgress Renderer::assetProgress(const std::string& group) {
     resources_.update();
     const auto found = preloadGroups_.find(group);
     return found == preloadGroups_.end() ? AssetLoadProgress{} : resources_.progress(found->second);
+}
+
+TextureHandle Renderer::requestTexture(const std::string& key) const {
+    return resources_.requestTexture(key);
+}
+
+void Renderer::bindTexture(TextureHandle handle, std::uint32_t unit) const {
+    resources_.textureOrMarker(handle)->bind(unit);
+}
+
+ResourceState Renderer::textureState(TextureHandle handle) const {
+    return resources_.state(handle);
 }
 
 void Renderer::endFrame() {

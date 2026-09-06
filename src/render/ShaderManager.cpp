@@ -1,6 +1,8 @@
 #include "render/ShaderManager.hpp"
 
 #include <glad/glad.h>
+#include <fstream>
+#include <sstream>
 #include <stdexcept>
 
 namespace strategy {
@@ -22,6 +24,52 @@ std::uint32_t compile(GLenum type, std::string_view source, const std::string& n
     glDeleteShader(shader);
     throw std::runtime_error("Shader '" + name + "' compilation failed: " + log);
 }
+
+std::string readText(const std::filesystem::path& path) {
+    std::ifstream stream(path, std::ios::binary);
+    if (!stream)
+        throw std::runtime_error("Could not open shader file: " + path.string());
+    std::ostringstream contents;
+    contents << stream.rdbuf();
+    return contents.str();
+}
+
+std::uint32_t buildProgram(std::string_view vertexSource,
+                           std::string_view fragmentSource,
+                           const std::string& name) {
+    GLuint vertex = 0;
+    GLuint fragment = 0;
+    GLuint program = 0;
+    try {
+        vertex = compile(GL_VERTEX_SHADER, vertexSource, name + ":vertex");
+        fragment = compile(GL_FRAGMENT_SHADER, fragmentSource, name + ":fragment");
+        program = glCreateProgram();
+        glAttachShader(program, vertex);
+        glAttachShader(program, fragment);
+        glLinkProgram(program);
+        glDeleteShader(vertex);
+        glDeleteShader(fragment);
+        vertex = fragment = 0;
+        GLint linked = GL_FALSE;
+        glGetProgramiv(program, GL_LINK_STATUS, &linked);
+        if (linked != GL_TRUE) {
+            GLint length = 0;
+            glGetProgramiv(program, GL_INFO_LOG_LENGTH, &length);
+            std::string log(static_cast<std::size_t>(length), '\0');
+            glGetProgramInfoLog(program, length, nullptr, log.data());
+            throw std::runtime_error("Shader '" + name + "' linking failed: " + log);
+        }
+        return program;
+    } catch (...) {
+        if (vertex != 0)
+            glDeleteShader(vertex);
+        if (fragment != 0)
+            glDeleteShader(fragment);
+        if (program != 0)
+            glDeleteProgram(program);
+        throw;
+    }
+}
 } // namespace
 
 ShaderManager::~ShaderManager() {
@@ -41,38 +89,10 @@ ShaderHandle ShaderManager::load(std::string name,
     Slot slot;
     slot.name = std::move(name);
     slot.state = ResourceState::importing;
-    GLuint vertex = 0;
-    GLuint fragment = 0;
     try {
-        vertex = compile(GL_VERTEX_SHADER, vertexSource, slot.name + ":vertex");
-        fragment = compile(GL_FRAGMENT_SHADER, fragmentSource, slot.name + ":fragment");
-        slot.program = glCreateProgram();
-        glAttachShader(slot.program, vertex);
-        glAttachShader(slot.program, fragment);
-        glLinkProgram(slot.program);
-        glDeleteShader(vertex);
-        glDeleteShader(fragment);
-        vertex = 0;
-        fragment = 0;
-        GLint linked = GL_FALSE;
-        glGetProgramiv(slot.program, GL_LINK_STATUS, &linked);
-        if (linked != GL_TRUE) {
-            GLint length = 0;
-            glGetProgramiv(slot.program, GL_INFO_LOG_LENGTH, &length);
-            std::string log(static_cast<std::size_t>(length), '\0');
-            glGetProgramInfoLog(slot.program, length, nullptr, log.data());
-            throw std::runtime_error("Shader '" + slot.name + "' linking failed: " + log);
-        }
+        slot.program = buildProgram(vertexSource, fragmentSource, slot.name);
         slot.state = ResourceState::ready;
     } catch (const std::exception& exception) {
-        if (vertex != 0)
-            glDeleteShader(vertex);
-        if (fragment != 0)
-            glDeleteShader(fragment);
-        if (slot.program != 0) {
-            glDeleteProgram(slot.program);
-            slot.program = 0;
-        }
         slot.state = ResourceState::failed;
         slot.error = exception.what();
     }
@@ -83,6 +103,56 @@ ShaderHandle ShaderManager::load(std::string name,
     if (slots_.back().state == ResourceState::failed)
         throw std::runtime_error(slots_.back().error);
     return handle;
+}
+
+ShaderHandle ShaderManager::loadFiles(std::string name,
+                                      const std::filesystem::path& vertexPath,
+                                      const std::filesystem::path& fragmentPath) {
+    const std::string vertex = readText(vertexPath);
+    const std::string fragment = readText(fragmentPath);
+    const ShaderHandle handle = load(std::move(name), vertex, fragment);
+    Slot& slot = slots_[handle.index];
+    slot.vertexPath = vertexPath;
+    slot.fragmentPath = fragmentPath;
+    slot.vertexWriteTime = std::filesystem::last_write_time(vertexPath);
+    slot.fragmentWriteTime = std::filesystem::last_write_time(fragmentPath);
+    return handle;
+}
+
+std::vector<ShaderReloadResult> ShaderManager::reloadChanged() {
+    std::vector<ShaderReloadResult> results;
+#ifdef STRATEGY_SHADER_HOT_RELOAD
+    const auto now = std::chrono::steady_clock::now();
+    if (now < nextReloadScan_)
+        return results;
+    nextReloadScan_ = now + std::chrono::milliseconds(250);
+    for (Slot& slot : slots_) {
+        if (slot.vertexPath.empty() || slot.fragmentPath.empty())
+            continue;
+        try {
+            const auto vertexTime = std::filesystem::last_write_time(slot.vertexPath);
+            const auto fragmentTime = std::filesystem::last_write_time(slot.fragmentPath);
+            if (vertexTime == slot.vertexWriteTime && fragmentTime == slot.fragmentWriteTime)
+                continue;
+            slot.vertexWriteTime = vertexTime;
+            slot.fragmentWriteTime = fragmentTime;
+            const GLuint replacement = buildProgram(
+                readText(slot.vertexPath), readText(slot.fragmentPath), slot.name);
+            glDeleteProgram(slot.program);
+            slot.program = replacement;
+            slot.uniforms.clear();
+            slot.error.clear();
+            slot.state = ResourceState::ready;
+            results.push_back({slot.name, true, "reloaded"});
+        } catch (const std::exception& exception) {
+            const std::string message = exception.what();
+            if (message != slot.error)
+                results.push_back({slot.name, false, message});
+            slot.error = message;
+        }
+    }
+#endif
+    return results;
 }
 
 ResourceState ShaderManager::state(ShaderHandle handle) const {
