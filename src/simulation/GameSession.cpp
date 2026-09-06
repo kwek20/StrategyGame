@@ -189,26 +189,6 @@ void GameSession::apply(const PlayerCommand& command) {
                     entity->unitControl.orderTarget = target->id;
                     entity->transient.navigationPath.clear();
                 }
-            } else if constexpr (std::is_same_v<Type, UpgradeTownHallCommand>) {
-                if (!entity->production || !entity->buildingUpgrades)
-                    return;
-                const auto pending = static_cast<std::uint32_t>(
-                    std::count_if(entity->production.queue.begin(),
-                                  entity->production.queue.end(),
-                                  [](const ProductionOrder& order) {
-                                      return order.kind == ProductionKind::upgradeBuilding;
-                                  }));
-                const EntityArchetype* type = gameplay_.archetype(entity->archetype);
-                if (type && !type->upgradeTo.empty() && pending == 0) {
-                    const float duration = stat(*entity, GameplayStat::upgradeTime);
-                    const auto ticks = static_cast<std::uint32_t>(
-                        std::max(1.0, std::ceil(duration / fixedTickSeconds)));
-                    ProductionOrder order;
-                    order.kind = ProductionKind::upgradeBuilding;
-                    order.durationTicks = ticks;
-                    order.remainingTicks = ticks;
-                    entity->production.queue.push_back(std::move(order));
-                }
             } else if constexpr (std::is_same_v<Type, StartRecipeCommand>) {
                 if (!entity->production)
                     return;
@@ -317,7 +297,6 @@ void GameSession::simulateTick() {
                     if (current && !current->upgradeTo.empty())
                         entity.archetype = EntityArchetypeId{current->upgradeTo};
                         entity.presentation = PresentationId{current->upgradeTo};
-                        entity.modelKey = current->upgradeTo;
                     const float previousRatio = entity.health && entity.health.maximum > 0
                                                     ? entity.health.current / entity.health.maximum
                                                     : 1.0F;
@@ -339,6 +318,12 @@ void GameSession::simulateTick() {
                         if (const UpgradeDefinition* upgrade = gameplay_.upgrade(order.upgradeId);
                             upgrade && level < upgrade->maximumLevel)
                             ++level;
+                        if (order.upgradeId == "building.town_center_level_2") {
+                            entity.archetype = EntityArchetypeId{"town_center_level_2"};
+                            entity.presentation = PresentationId{"town_center_level_2"};
+                            if (entity.buildingUpgrades)
+                                entity.buildingUpgrades.level = 2;
+                        }
                     }
                 }
                 entity.production.queue.pop_front();

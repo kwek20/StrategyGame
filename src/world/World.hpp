@@ -10,7 +10,7 @@ namespace strategy {
 
 class World final {
   public:
-    Entity& createEntity(std::string name, std::string modelKey = {}, PlayerId owner = 0);
+    Entity& createEntity(std::string name, std::string archetypeId = {}, PlayerId owner = 0);
     Entity& createEntity(std::string name, EntityArchetypeId archetype, PlayerId owner = 0) {
         return createEntity(std::move(name), archetype.value, owner);
     }

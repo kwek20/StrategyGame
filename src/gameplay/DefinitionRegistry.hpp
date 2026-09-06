@@ -209,6 +209,7 @@ class DefinitionRegistry final {
                                            const RuntimeModifierLayers& layers = {}) const;
     [[nodiscard]] bool canTrain(const std::string& producer, const std::string& product) const;
     [[nodiscard]] const EntityArchetype* archetype(const std::string& entity) const;
+    [[nodiscard]] const EntityArchetype* archetype(EntityArchetypeId entity) const { return archetype(entity.value); }
     [[nodiscard]] const UnitDefinition* unit(UnitArchetypeId id) const;
     [[nodiscard]] const BuildingDefinition* building(BuildingArchetypeId id) const;
     [[nodiscard]] const ResourceNodeDefinition* resource(ResourceArchetypeId id) const;

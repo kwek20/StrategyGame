@@ -189,7 +189,7 @@ void PlayState::handleEvent(const SDL_Event& event) {
     }
     const Entity* selectedHall = session_.world().findEntity(selectedEntity_);
     const bool ownsSelectedHall = selectedHall && selectedHall->authority.owner == localPlayer_ &&
-                                  selectedHall->modelKey.rfind("town_center", 0) == 0 &&
+                                  selectedHall->archetype.value.rfind("town_center", 0) == 0 &&
                                   (selectedUnits_.empty() || selectedUnits_.size() == 1);
     if (ownsSelectedHall &&
         (event.type == SDL_EVENT_MOUSE_MOTION ||
@@ -210,7 +210,7 @@ void PlayState::handleEvent(const SDL_Event& event) {
                 selectedHall->buildingUpgrades.level < 3) {
                 session_.submit({localPlayer_,
                                  nextCommandSequence_++,
-                                 UpgradeTownHallCommand{selectedHall->id}});
+                                 StartUpgradeCommand{selectedHall->id, "building.town_center_level_2"}});
                 context_.events.enqueue(AudioEvent{AudioCue::buildingUpgrade});
             } else if (townHallButtonHovered_[1]) {
                 session_.submit({localPlayer_,
@@ -220,7 +220,7 @@ void PlayState::handleEvent(const SDL_Event& event) {
                 context_.events.enqueue(AudioEvent{AudioCue::trainingUpgrade});
             } else if (townHallButtonHovered_[2]) {
                 if (const RecipeDefinition* recipe =
-                        context_.definitions.productionRecipe(selectedHall->modelKey, "worker")) {
+                        context_.definitions.productionRecipe(selectedHall->archetype.value, "worker")) {
                     session_.submit({localPlayer_,
                                      nextCommandSequence_++,
                                      StartRecipeCommand{selectedHall->id, recipe->id}});

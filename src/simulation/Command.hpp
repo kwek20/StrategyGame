@@ -36,9 +36,6 @@ struct AttackEntityCommand {
     EntityId entity{0};
     EntityId target{0};
 };
-struct UpgradeTownHallCommand {
-    EntityId entity{0};
-};
 struct StartRecipeCommand {
     EntityId entity{0};
     RecipeId recipeId;
@@ -57,7 +54,6 @@ using CommandPayload = std::variant<PossessUnitCommand,
                                     MoveUnitCommand,
                                     GatherResourceCommand,
                                     AttackEntityCommand,
-                                    UpgradeTownHallCommand,
                                     StartRecipeCommand,
                                     StartUpgradeCommand>;
 

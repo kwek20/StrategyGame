@@ -4,6 +4,7 @@
 #include "assets/Model.hpp"
 #include "assets/ResourceHandle.hpp"
 #include "assets/Texture.hpp"
+#include "world/Entity.hpp"
 
 #include <filesystem>
 #include <deque>

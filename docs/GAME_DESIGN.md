@@ -383,7 +383,7 @@ by the engine:
 
 ## Development roadmap
 
-### Phase 1: formalize definitions
+### Completed foundation: formalize definitions
 
 Create schemas and validated data definitions for resources, units, buildings, weapons, power
 devices, recipes, countries, and specializations. Remove remaining gameplay constants from

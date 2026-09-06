@@ -144,12 +144,10 @@ struct Entity {
     std::string name;
     EntityArchetypeId archetype;
     PresentationId presentation;
-    // Transitional mirror used only by unmigrated systems; never serialized as identity.
-    std::string modelKey;
 
     [[nodiscard]] const std::string& gameplayId() const { return archetype.value; }
     [[nodiscard]] const std::string& renderId() const {
-        return presentation.empty() ? modelKey : presentation.value;
+        return presentation.value;
     }
     EntityKind kind{EntityKind::decoration};
     Transform transform;

@@ -980,7 +980,7 @@ float DefinitionRegistry::collisionRadius(const std::string& entity) const {
 }
 
 void DefinitionRegistry::initializeEntity(Entity& entity) const {
-    const auto found = entities_.find(entity.modelKey);
+    const auto found = entities_.find(entity.archetype.value);
     if (found == entities_.end())
         return;
     const EntityArchetype& type = found->second;

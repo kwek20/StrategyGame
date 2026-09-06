@@ -77,9 +77,9 @@ std::optional<PlayerCommand> CommandCodec::decode(std::span<const std::byte> inp
     case 3: { MoveUnitCommand value{entity}; if(!read(input,value.destination.x)||!read(input,value.destination.y)||!read(input,value.destination.z)) return std::nullopt; result.payload=value; break; }
     case 4: { EntityId target{}; if(!read(input,target)) return std::nullopt; result.payload=GatherResourceCommand{entity,target}; break; }
     case 5: { EntityId target{}; if(!read(input,target)) return std::nullopt; result.payload=AttackEntityCommand{entity,target}; break; }
-    case 6: result.payload=UpgradeTownHallCommand{entity}; break;
     case 8: {
-        StartRecipeCommand value{entity};
+        StartRecipeCommand value;
+        value.entity = entity;
         std::string recipe;
         if (!readString(input, recipe)) return std::nullopt;
         value.recipeId = RecipeId{recipe};

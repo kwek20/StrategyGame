@@ -5,13 +5,12 @@
 
 namespace strategy {
 
-Entity& World::createEntity(std::string name, std::string modelKey, PlayerId owner) {
+Entity& World::createEntity(std::string name, std::string archetypeId, PlayerId owner) {
     Entity entity;
     entity.id = nextId_++;
     entity.name = std::move(name);
-    entity.modelKey = std::move(modelKey);
-    entity.archetype = EntityArchetypeId{entity.modelKey};
-    entity.presentation = PresentationId{entity.modelKey};
+    entity.archetype = EntityArchetypeId{archetypeId};
+    entity.presentation = PresentationId{archetypeId};
     entity.authority.owner = owner;
     entities_.push_back(std::move(entity));
     return entities_.back();

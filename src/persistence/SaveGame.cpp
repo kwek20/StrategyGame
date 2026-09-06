@@ -108,8 +108,8 @@ void SaveGame::write(const std::filesystem::path& path,
         writer.Uint64(entity.id);
         writer.Key("name");
         writer.String(entity.name.c_str());
-        const std::string archetypeId = entity.archetype.empty() ? entity.modelKey : entity.archetype.value;
-        const std::string presentationId = entity.presentation.empty() ? archetypeId : entity.presentation.value;
+        const std::string& archetypeId = entity.archetype.value;
+        const std::string& presentationId = entity.presentation.value;
         writer.Key("archetype");
         writer.String(archetypeId.c_str());
         writer.Key("presentation");
@@ -339,7 +339,6 @@ SaveData SaveGame::read(const std::filesystem::path& path) {
         entity.name = value["name"].GetString();
         entity.archetype = EntityArchetypeId{value["archetype"].GetString()};
         entity.presentation = PresentationId{value["presentation"].GetString()};
-        entity.modelKey = entity.archetype.value;
         entity.transform.position = readVector(value, "position");
         entity.transform.rotationDegrees = readVector(value, "rotation");
         entity.transform.scale = readVector(value, "scale");

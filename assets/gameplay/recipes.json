@@ -1,6 +1,7 @@
 {
   "version": 1,
   "recipes": [
+    { "id": "town_center.research_level_2", "producer": "town_center", "product": { "building": "town_center_level_2", "amount": 1 }, "cost": {}, "durationTicks": 450, "tags": ["research", "upgrade", "transformation"] },
     {
       "id": "outpost.research_efficient_training",
       "producer": "outpost",

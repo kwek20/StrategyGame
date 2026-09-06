@@ -68,7 +68,7 @@ int main() {
     const strategy::SaveData loaded = strategy::SaveGame::read(savePath);
     valid = valid && loaded.terrainSeed == 424242U && loaded.entities.size() == 1;
     valid = valid && loaded.entities[0].id == originalId;
-    valid = valid && loaded.entities[0].modelKey == "town_center";
+    valid = valid && loaded.entities[0].archetype.value == "town_center";
     valid = valid && loaded.entities[0].archetype.value == "town_center";
     valid = valid && loaded.entities[0].presentation.value == "town_center";
     valid = valid && loaded.entities[0].transform.position == glm::vec3{1.0F, 2.0F, 3.0F};

@@ -29,7 +29,7 @@ the modern drone, infrastructure, and power-grid loop.
 
 ## Current implementation status
 
-Phase 1 is substantially implemented and is now in final consolidation. The repository currently has:
+The Phase 1 foundation is complete. The repository currently has:
 
 - Central JSON definitions for units, buildings, resource nodes, resources, weapons, power devices,
   recipes, countries, specializations, match rules, and upgrades.
@@ -42,20 +42,11 @@ Phase 1 is substantially implemented and is now in final consolidation. The repo
 - Match setup, build palette, terrain resource generation, spawn placement, interaction margins,
   and upgrade targets moved out of simulation/rendering constants into definitions.
 - Separate entity archetype and presentation IDs at the entity/save boundary, plus typed registry IDs.
-- No legacy save migrations or legacy training-upgrade command path.
+- No legacy save migrations; entity runtime identity no longer uses `Entity::modelKey`.
 
-Remaining Phase 1 consolidation work:
-
-- Remove the remaining mirrored `Entity::modelKey` field from runtime code; render through
-  `PresentationId` and keep archetype identity exclusively in simulation.
-- Replace remaining string-based registry and simulation interfaces with typed IDs, especially
-  collision, navigation, recipe commands, and asset presentation lookup.
-- Store completed upgrade IDs/levels as the authoritative upgrade state and expose their resolved
-  modifier layers in save files, checksums, and F3 diagnostics.
-- Replace the remaining structural `UpgradeTownHallCommand` with a definition-backed building
-  transformation recipe.
-- Add tests for upgrade prerequisites, exclusivity, researcher restrictions, modifier-layer routing,
-  and archetype/presentation round trips.
+Phase 1 exit criteria are met: definitions, typed identity, recipe-backed upgrades, deterministic
+simulation boundaries, persistence, diagnostics, and automated coverage are implemented without
+legacy migration paths.
 
 ## Development loop
 
@@ -68,7 +59,7 @@ Each content change should follow this loop:
 5. Verify renderer/UI consumption through presentation data without adding gameplay constants.
 6. Run the complete CTest suite before moving to the next definition or gameplay system.
 
-After Phase 1 consolidation, repeat the same loop for the starting construction-drone milestone:
+Phase 2 starts with the construction-drone milestone:
 drone definition → flight/battery components → gather/return commands → charger/power state →
 save/checksum tests → HUD and presentation integration.
 
