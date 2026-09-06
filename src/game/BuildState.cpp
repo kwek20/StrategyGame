@@ -34,13 +34,15 @@ void BuildState::handleEvent(const SDL_Event& event) {
             return;
         }
         if (event.key.key == SDLK_1) {
-            entityType_ = "worker";
-            status_ = Text::format("status.selected", {Text::get("entity.worker")});
+            paletteIndex_ = 0;
+            const auto* type = gameplay_.archetype(gameplay_.matchRules().buildPalette.at(0));
+            status_ = Text::format("status.selected", {Text::get(type->nameKey)});
             return;
         }
-        if (event.key.key == SDLK_2) {
-            entityType_ = "town_center";
-            status_ = Text::format("status.selected", {Text::get("entity.town_center")});
+        if (event.key.key == SDLK_2 && gameplay_.matchRules().buildPalette.size() > 1) {
+            paletteIndex_ = 1;
+            const auto* type = gameplay_.archetype(gameplay_.matchRules().buildPalette.at(1));
+            status_ = Text::format("status.selected", {Text::get(type->nameKey)});
             return;
         }
         if (event.key.key == SDLK_BACKSPACE && !world_.entities().empty()) {
@@ -126,22 +128,23 @@ void BuildState::render(Renderer& renderer) const {
     const CameraView view =
         camera_.view(renderer.aspectRatio(), renderer.terrainHeightAt(focus.x, focus.z));
     if (pendingPlacement_) {
+        const std::string& entityType = gameplay_.matchRules().buildPalette.at(paletteIndex_);
+        const EntityArchetype* type = gameplay_.archetype(entityType);
         const glm::vec3 position =
             renderer.screenToTerrain(pendingPlacement_->x, pendingPlacement_->y, view);
         if (overlapsObject(world_,
                            gameplay_,
                            {position.x, position.z},
-                           collisionRadius(gameplay_, entityType_))) {
+                           collisionRadius(gameplay_, entityType))) {
             status_ = Text::get("status.blocked");
         } else {
-            Entity& entity = world_.createEntity(
-                Text::get(entityType_ == "worker" ? "entity.worker" : "entity.town_center"),
-                entityType_,
-                team_);
+            Entity& entity =
+                world_.createEntity(Text::get(type->nameKey), entityType, team_);
             gameplay_.initializeEntity(entity);
             entity.transform.position = {position.x, 0.0F, position.z};
             entity.transform.rotationDegrees.y = team_ == 2 ? 180.0F : 0.0F;
-            entity.unitControl.directlyControllable = entityType_ == "worker";
+            if (entity.unitControl)
+                entity.unitControl.directlyControllable = true;
             status_ = Text::format("status.placed", {entity.name});
         }
         pendingPlacement_.reset();
@@ -154,6 +157,8 @@ void BuildState::render(Renderer& renderer) const {
     renderer.drawWorld(world_, view);
     if (hoveredEntity_ != 0)
         renderer.drawEntityOutline(world_, hoveredEntity_, view);
-    renderer.drawBuildHud(team_, entityType_, world_.size(), status_);
+    const EntityArchetype* selected =
+        gameplay_.archetype(gameplay_.matchRules().buildPalette.at(paletteIndex_));
+    renderer.drawBuildHud(team_, Text::get(selected->nameKey), world_.size(), status_);
 }
 } // namespace strategy

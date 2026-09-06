@@ -535,8 +535,8 @@ void PlayState::render(Renderer& renderer) const {
         if (!selectedUnits_.empty())
             renderer.drawUnitSelectionHud(session_.world(), selectedUnits_);
         if (const Entity* hall = session_.world().findEntity(selectedEntity_);
-            hall && hall->authority.owner == localPlayer_ &&
-            hall->modelKey.rfind("town_center", 0) == 0 &&
+            hall && hall->authority.owner == localPlayer_ && hall->production &&
+            hall->buildingUpgrades &&
             (selectedUnits_.empty() || selectedUnits_.size() == 1))
             renderer.drawTownHallHud(*hall, townHallButtonHovered_);
     }

@@ -139,6 +139,16 @@ struct EntityArchetype {
     std::string nameKey, presentation;
     EntityKind kind{EntityKind::decoration};
     float collisionRadius{1.0F};
+    float interactionMargin{0.0F}, spawnClearance{0.0F};
+    std::uint32_t spawnCandidateCount{0};
+    std::string resourceType, upgradeTo;
+    float resourceCapacity{0.0F};
+    struct Generation {
+        std::string stream;
+        std::uint32_t clusterPairs{0}, nodesPerCluster{0}, attemptsPerCluster{0};
+        float spread{0.0F}, centerExtent{0.0F};
+    };
+    std::optional<Generation> generation;
     MovementDefinition movement;
     std::optional<BatteryDefinition> battery;
     std::optional<PowerDeviceId> powerDevice;
@@ -146,6 +156,20 @@ struct EntityArchetype {
     std::unordered_set<std::string> tags, components;
     std::unordered_map<GameplayStat, float> stats;
     std::vector<std::string> availableUpgrades;
+};
+
+struct StartingEntityDefinition {
+    std::string archetype, nameKey;
+    glm::vec3 position{0.0F};
+    bool directlyControllable{false};
+};
+
+struct MatchRulesDefinition {
+    std::vector<StartingEntityDefinition> playerOne, playerTwo;
+    std::vector<std::string> buildPalette, generatedResourceNodes;
+    std::string trainingUpgradeProduct;
+    float terrainEdgeMargin{0.0F}, minimumResourceHeight{0.0F}, maximumResourceHeight{1.0F};
+    float maximumResourceSlope{0.0F}, baseExclusionRadius{0.0F};
 };
 
 using UnitDefinition = EntityArchetype;
@@ -166,7 +190,8 @@ class DefinitionRegistry final {
         const std::filesystem::path& specializations = "assets/gameplay/specializations.json",
         const std::filesystem::path& presentations = "assets/entities.json",
         const std::filesystem::path& localization = "assets/text/en_us.json",
-        const std::filesystem::path& textures = "assets/textures");
+        const std::filesystem::path& textures = "assets/textures",
+        const std::filesystem::path& rules = "assets/gameplay/rules.json");
 
     [[nodiscard]] float resolve(GameplayStat stat,
                                 const std::string& country,
@@ -193,6 +218,7 @@ class DefinitionRegistry final {
     [[nodiscard]] const RecipeDefinition*
     productionRecipe(const std::string& producer, const std::string& product) const;
     [[nodiscard]] const std::vector<CountryDefinition>& countries() const { return countryList_; }
+    [[nodiscard]] const MatchRulesDefinition& matchRules() const { return matchRules_; }
     [[nodiscard]] float collisionRadius(const std::string& entity) const;
     void initializeEntity(Entity& entity) const;
 
@@ -208,6 +234,7 @@ class DefinitionRegistry final {
     std::unordered_set<std::string> modifierIds_;
     std::unordered_set<std::string> presentationIds_, localizationKeys_;
     std::filesystem::path textureRoot_;
+    MatchRulesDefinition matchRules_;
 
     void loadArchetypes(const std::filesystem::path&, const char* collection, EntityKind);
     void loadResources(const std::filesystem::path&);
@@ -215,6 +242,7 @@ class DefinitionRegistry final {
     void loadPowerDevices(const std::filesystem::path&);
     void loadRecipes(const std::filesystem::path&);
     void loadReferenceKeys(const std::filesystem::path&, const std::filesystem::path&);
+    void loadRules(const std::filesystem::path&);
     void validateReferences() const;
     static GameplayStat parseStat(const std::string&);
     static ModifierOperation parseOperation(const std::string&);

@@ -101,6 +101,46 @@ void DefinitionRegistry::loadArchetypes(const std::filesystem::path& path,
             throw std::runtime_error("Definition '" + archetype.id +
                                      "' requires a positive collisionRadius in " + path.string());
         archetype.collisionRadius = item->value["collisionRadius"].GetFloat();
+        if (item->value.HasMember("interactionMargin"))
+            archetype.interactionMargin = requiredNumber(
+                item->value, "interactionMargin", "Definition '" + archetype.id + "'");
+        if (item->value.HasMember("spawn")) {
+            const auto& spawn = item->value["spawn"];
+            if (!spawn.IsObject() || !spawn.HasMember("clearance") ||
+                !spawn["clearance"].IsNumber() || !spawn.HasMember("candidateCount") ||
+                !spawn["candidateCount"].IsUint() || spawn["candidateCount"].GetUint() == 0)
+                throw std::runtime_error("Definition '" + archetype.id + "' has invalid spawn");
+            archetype.spawnClearance = spawn["clearance"].GetFloat();
+            archetype.spawnCandidateCount = spawn["candidateCount"].GetUint();
+        }
+        if (item->value.HasMember("upgradeTo") && item->value["upgradeTo"].IsString())
+            archetype.upgradeTo = item->value["upgradeTo"].GetString();
+        if (item->value.HasMember("resourceType") && item->value["resourceType"].IsString())
+            archetype.resourceType = item->value["resourceType"].GetString();
+        if (item->value.HasMember("capacity"))
+            archetype.resourceCapacity = requiredNumber(
+                item->value, "capacity", "Definition '" + archetype.id + "'");
+        if (item->value.HasMember("generation")) {
+            const auto& generation = item->value["generation"];
+            if (!generation.IsObject() || !generation.HasMember("stream") ||
+                !generation["stream"].IsString() || !generation.HasMember("clusterPairs") ||
+                !generation["clusterPairs"].IsUint() ||
+                !generation.HasMember("nodesPerCluster") ||
+                !generation["nodesPerCluster"].IsUint() ||
+                !generation.HasMember("attemptsPerCluster") ||
+                !generation["attemptsPerCluster"].IsUint() || !generation.HasMember("spread") ||
+                !generation["spread"].IsNumber() || !generation.HasMember("centerExtent") ||
+                !generation["centerExtent"].IsNumber())
+                throw std::runtime_error("Definition '" + archetype.id +
+                                         "' has invalid generation settings");
+            archetype.generation = EntityArchetype::Generation{
+                generation["stream"].GetString(),
+                generation["clusterPairs"].GetUint(),
+                generation["nodesPerCluster"].GetUint(),
+                generation["attemptsPerCluster"].GetUint(),
+                generation["spread"].GetFloat(),
+                generation["centerExtent"].GetFloat()};
+        }
         if (item->value.HasMember("nameKey") && item->value["nameKey"].IsString())
             archetype.nameKey = item->value["nameKey"].GetString();
         if (item->value.HasMember("presentation") && item->value["presentation"].IsString())
@@ -382,7 +422,31 @@ void DefinitionRegistry::validateReferences() const {
         if (entity.powerDevice && !powerDevices_.contains(entity.powerDevice->value))
             throw std::runtime_error("Entity '" + id + "' references unknown power device '" +
                                      entity.powerDevice->value + "'");
+        if (!entity.upgradeTo.empty() && !buildingIds_.contains(entity.upgradeTo))
+            throw std::runtime_error("Entity '" + id + "' references unknown upgrade target '" +
+                                     entity.upgradeTo + "'");
+        if (!entity.resourceType.empty() && !resourceTypes_.contains(entity.resourceType))
+            throw std::runtime_error("Entity '" + id + "' references unknown resource type '" +
+                                     entity.resourceType + "'");
     }
+    if (!unitIds_.contains(matchRules_.trainingUpgradeProduct))
+        throw std::runtime_error("Match rules reference unknown training upgrade product '" +
+                                 matchRules_.trainingUpgradeProduct + "'");
+    for (const std::string& id : matchRules_.buildPalette)
+        if (!entities_.contains(id))
+            throw std::runtime_error("Build palette references unknown entity '" + id + "'");
+    for (const std::string& id : matchRules_.generatedResourceNodes)
+        if (!resourceIds_.contains(id) || !entities_.at(id).generation)
+            throw std::runtime_error("Generated resource list references invalid node '" + id + "'");
+    for (const auto* starts : {&matchRules_.playerOne, &matchRules_.playerTwo})
+        for (const StartingEntityDefinition& start : *starts) {
+            if (!entities_.contains(start.archetype))
+                throw std::runtime_error("Starting entity references unknown archetype '" +
+                                         start.archetype + "'");
+            if (!localizationKeys_.contains(start.nameKey))
+                throw std::runtime_error("Starting entity references unknown localization key '" +
+                                         start.nameKey + "'");
+        }
     for (const auto& [id, resource] : resourceTypes_) {
         if (!localizationKeys_.contains(resource.nameKey))
             throw std::runtime_error("Resource '" + id +
@@ -488,6 +552,47 @@ void DefinitionRegistry::validateReferences() const {
                                      country.specializationId + "'");
 }
 
+void DefinitionRegistry::loadRules(const std::filesystem::path& path) {
+    const auto data = document(path);
+    const auto number = [&](const char* key) {
+        return requiredNumber(data, key, "Match rules");
+    };
+    matchRules_.terrainEdgeMargin = number("terrainEdgeMargin");
+    matchRules_.minimumResourceHeight = number("minimumResourceHeight");
+    matchRules_.maximumResourceHeight = number("maximumResourceHeight");
+    matchRules_.maximumResourceSlope = number("maximumResourceSlope");
+    matchRules_.baseExclusionRadius = number("baseExclusionRadius");
+    if (!data.HasMember("trainingUpgradeProduct") ||
+        !data["trainingUpgradeProduct"].IsString())
+        throw std::runtime_error("Match rules require trainingUpgradeProduct");
+    matchRules_.trainingUpgradeProduct = data["trainingUpgradeProduct"].GetString();
+    matchRules_.buildPalette = strings(data, "buildPalette");
+    matchRules_.generatedResourceNodes = strings(data, "generatedResourceNodes");
+    const auto loadStart = [&](const char* key, std::vector<StartingEntityDefinition>& output) {
+        if (!data.HasMember(key) || !data[key].IsArray())
+            throw std::runtime_error("Match rules require array '" + std::string(key) + "'");
+        for (const auto& value : data[key].GetArray()) {
+            if (!value.IsObject() || !value.HasMember("archetype") ||
+                !value["archetype"].IsString() || !value.HasMember("nameKey") ||
+                !value["nameKey"].IsString() || !value.HasMember("position") ||
+                !value["position"].IsArray() || value["position"].Size() != 3)
+                throw std::runtime_error("Invalid starting entity in '" + std::string(key) + "'");
+            StartingEntityDefinition start;
+            start.archetype = value["archetype"].GetString();
+            start.nameKey = value["nameKey"].GetString();
+            start.position = {value["position"][0].GetFloat(),
+                              value["position"][1].GetFloat(),
+                              value["position"][2].GetFloat()};
+            start.directlyControllable = value.HasMember("directlyControllable") &&
+                                         value["directlyControllable"].IsBool() &&
+                                         value["directlyControllable"].GetBool();
+            output.push_back(std::move(start));
+        }
+    };
+    loadStart("playerOneStart", matchRules_.playerOne);
+    loadStart("playerTwoStart", matchRules_.playerTwo);
+}
+
 DefinitionRegistry::DefinitionRegistry(const std::filesystem::path& unitPath,
                                        const std::filesystem::path& buildingPath,
                                        const std::filesystem::path& resourceNodePath,
@@ -499,7 +604,8 @@ DefinitionRegistry::DefinitionRegistry(const std::filesystem::path& unitPath,
                                        const std::filesystem::path& specializationPath,
                                        const std::filesystem::path& presentationPath,
                                        const std::filesystem::path& localizationPath,
-                                       const std::filesystem::path& textureRoot)
+                                       const std::filesystem::path& textureRoot,
+                                       const std::filesystem::path& rulesPath)
     : textureRoot_(textureRoot) {
     loadReferenceKeys(presentationPath, localizationPath);
     loadArchetypes(unitPath, "units", EntityKind::unit);
@@ -509,6 +615,7 @@ DefinitionRegistry::DefinitionRegistry(const std::filesystem::path& unitPath,
     loadWeapons(weaponPath);
     loadPowerDevices(powerDevicePath);
     loadRecipes(recipePath);
+    loadRules(rulesPath);
     const auto loadModifiers =
         [this](const std::filesystem::path& path,
                const char* collection,
@@ -847,8 +954,6 @@ void DefinitionRegistry::initializeEntity(Entity& entity) const {
         entity.resource.emplace();
     if (has("production")) {
         entity.production.emplace();
-        entity.production.characterBuildSeconds =
-            value(GameplayStat::trainingTime, entity.production.characterBuildSeconds);
     }
     if (has("buildingUpgrades")) {
         entity.buildingUpgrades.emplace();

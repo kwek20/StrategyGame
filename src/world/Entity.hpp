@@ -27,13 +27,12 @@ struct Authority {
     PlayerId directController{0};
 };
 
-enum class ResourceKind : std::uint8_t { none, wood, stone, gold };
 enum class UnitOrderKind : std::uint8_t { idle, move, gather, returnResources, attack };
 
 enum class EntityKind : std::uint8_t { decoration, unit, building, resource };
 
 struct VisionComponent {
-    float sightRange{10.0F};
+    float sightRange{0.0F};
 };
 
 inline float effectiveSightRange(float resolvedRange, float terrainHeight) {
@@ -46,30 +45,30 @@ struct UnitComponent {
     bool running{false};
     glm::vec3 strategicDestination{0.0F};
     bool hasStrategicDestination{false};
-    float movementSpeed{7.0F};
+    float movementSpeed{0.0F};
     UnitOrderKind order{UnitOrderKind::idle};
     EntityId orderTarget{0};
 };
 
 struct Health {
-    float current{100.0F};
-    float maximum{100.0F};
+    float current{0.0F};
+    float maximum{0.0F};
 };
 
 struct GathererComponent {
-    ResourceKind carriedKind{ResourceKind::none};
+    std::string carriedResource;
     float carriedAmount{0.0F};
-    float carryCapacity{10.0F};
-    float gatherPerSecond{4.0F};
+    float carryCapacity{0.0F};
+    float gatherPerSecond{0.0F};
 };
 struct CombatComponent {
     float damage{0.0F};
     float range{0.0F};
-    float cooldownSeconds{1.0F};
+    float cooldownSeconds{0.0F};
     float cooldownRemaining{0.0F};
 };
 struct ResourceComponent {
-    ResourceKind kind{ResourceKind::none};
+    std::string type;
     float remaining{0.0F};
 };
 struct UpgradeComponent {
@@ -96,7 +95,6 @@ struct ProductionOrder {
 };
 
 struct ProductionComponent {
-    float characterBuildSeconds{10.0F};
     float productionSpeedMultiplier{1.0F};
     std::uint32_t productionSpeedUpgrades{0};
     std::deque<ProductionOrder> queue;

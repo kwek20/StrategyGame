@@ -24,7 +24,7 @@ struct UnitProducedEvent {
 struct ResourcesDepositedEvent {
     EntityId unit;
     PlayerId player;
-    ResourceKind kind;
+    std::string resourceType;
     float amount;
 };
 

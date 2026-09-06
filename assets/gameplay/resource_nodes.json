@@ -3,18 +3,27 @@
   "resourceNodes": {
     "tree": {
       "collisionRadius": 1.2,
+      "resourceType": "materials",
+      "capacity": 120,
+      "generation": { "stream": "resources.wood", "clusterPairs": 18, "nodesPerCluster": 3, "attemptsPerCluster": 80, "spread": 4.5, "centerExtent": 78 },
       "components": ["resource"],
       "tags": ["resource", "wood"],
       "stats": {}
     },
     "stone": {
       "collisionRadius": 1.5,
+      "resourceType": "materials",
+      "capacity": 180,
+      "generation": { "stream": "resources.stone", "clusterPairs": 6, "nodesPerCluster": 2, "attemptsPerCluster": 80, "spread": 3.0, "centerExtent": 78 },
       "components": ["resource"],
       "tags": ["resource", "stone"],
       "stats": {}
     },
     "gold": {
       "collisionRadius": 1.5,
+      "resourceType": "materials",
+      "capacity": 140,
+      "generation": { "stream": "resources.gold", "clusterPairs": 5, "nodesPerCluster": 2, "attemptsPerCluster": 80, "spread": 2.5, "centerExtent": 78 },
       "components": ["resource"],
       "tags": ["resource", "gold"],
       "stats": {}

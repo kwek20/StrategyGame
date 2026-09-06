@@ -937,8 +937,7 @@ void Renderer::drawDetailedDebugHud(const CameraView& camera,
         }
         if (entity->gatherer) {
             lines.push_back("Gatherer");
-            lines.push_back("  carriedKind [saved]: " +
-                            std::to_string(static_cast<unsigned>(entity->gatherer.carriedKind)));
+            lines.push_back("  carriedResource [saved]: " + entity->gatherer.carriedResource);
             lines.push_back("  carriedAmount [saved]: " +
                             number(entity->gatherer.carriedAmount));
             lines.push_back("  capacity [resolved]: " + number(entity->gatherer.carryCapacity));
@@ -951,8 +950,7 @@ void Renderer::drawDetailedDebugHud(const CameraView& camera,
         }
         if (entity->resource) {
             lines.push_back("Resource");
-            lines.push_back("  kind [saved]: " +
-                            std::to_string(static_cast<unsigned>(entity->resource.kind)));
+            lines.push_back("  type [saved]: " + entity->resource.type);
             lines.push_back("  remaining [saved]: " + number(entity->resource.remaining));
         }
         if (entity->production) {
@@ -1327,7 +1325,7 @@ void Renderer::drawBuildHud(PlayerId team,
     const std::string line =
         Text::format("build.header",
                      {Text::get(team == 1 ? "build.team.a" : "build.team.b"),
-                      Text::get(entityType == "worker" ? "entity.worker" : "entity.town_center"),
+                      entityType,
                       std::to_string(entityCount)});
     appendHudText(text, line, 22.0F, 22.0F, 2.0F, viewportWidth_, viewportHeight_);
     appendHudText(text,
@@ -1685,7 +1683,7 @@ void Renderer::drawTownHallHud(const Entity& hall, const std::array<bool, 3>& ho
     draw(queueIcons, {0.18F, 0.76F, 0.88F});
     draw(progressBack, {0.06F, 0.08F, 0.10F});
     draw(progressFill, {0.18F, 0.76F, 0.88F});
-    drawText(Text::format("town_hall.title", {std::to_string(hall.buildingUpgrades.level)}),
+    drawText(hall.name + " - " + std::to_string(hall.buildingUpgrades.level),
              30.0F,
              top + 14.0F,
              2.4F);
@@ -1721,8 +1719,7 @@ void Renderer::drawTownHallHud(const Entity& hall, const std::array<bool, 3>& ho
              42.0F,
              height - 64.0F,
              1.35F);
-    drawText(hall.production.characterBuildSeconds <= 2.0F ? Text::get("town_hall.minimum_time")
-                                                           : Text::get("town_hall.faster"),
+    drawText(Text::get("town_hall.faster"),
              242.0F,
              height - 64.0F,
              1.35F);

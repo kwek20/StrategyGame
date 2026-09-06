@@ -159,8 +159,8 @@ void SaveGame::write(const std::filesystem::path& path,
         if (entity.gatherer) {
             writer.Key("gatherer");
             writer.StartObject();
-            writer.Key("carriedKind");
-            writer.Uint(static_cast<unsigned>(entity.gatherer.carriedKind));
+            writer.Key("carriedResource");
+            writer.String(entity.gatherer.carriedResource.c_str());
             writer.Key("carriedAmount");
             writer.Double(entity.gatherer.carriedAmount);
             writer.EndObject();
@@ -175,8 +175,8 @@ void SaveGame::write(const std::filesystem::path& path,
         if (entity.resource) {
             writer.Key("resource");
             writer.StartObject();
-            writer.Key("kind");
-            writer.Uint(static_cast<unsigned>(entity.resource.kind));
+            writer.Key("type");
+            writer.String(entity.resource.type.c_str());
             writer.Key("remaining");
             writer.Double(entity.resource.remaining);
             writer.EndObject();
@@ -378,12 +378,11 @@ SaveData SaveGame::read(const std::filesystem::path& path) {
             if (components.HasMember("gatherer")) {
                 const auto& item = components["gatherer"];
                 entity.gatherer.emplace();
-                if (!item.IsObject() || !item.HasMember("carriedKind") ||
-                    !item["carriedKind"].IsUint() || !item.HasMember("carriedAmount") ||
+                if (!item.IsObject() || !item.HasMember("carriedResource") ||
+                    !item["carriedResource"].IsString() || !item.HasMember("carriedAmount") ||
                     !item["carriedAmount"].IsNumber())
                     throw std::runtime_error("Invalid gatherer component");
-                entity.gatherer.carriedKind =
-                    static_cast<ResourceKind>(item["carriedKind"].GetUint());
+                entity.gatherer.carriedResource = item["carriedResource"].GetString();
                 entity.gatherer.carriedAmount = item["carriedAmount"].GetFloat();
             }
             if (components.HasMember("combat")) {
@@ -397,10 +396,10 @@ SaveData SaveGame::read(const std::filesystem::path& path) {
             if (components.HasMember("resource")) {
                 const auto& item = components["resource"];
                 entity.resource.emplace();
-                if (!item.IsObject() || !item.HasMember("kind") || !item["kind"].IsUint() ||
+                if (!item.IsObject() || !item.HasMember("type") || !item["type"].IsString() ||
                     !item.HasMember("remaining") || !item["remaining"].IsNumber())
                     throw std::runtime_error("Invalid resource component");
-                entity.resource.kind = static_cast<ResourceKind>(item["kind"].GetUint());
+                entity.resource.type = item["type"].GetString();
                 entity.resource.remaining = item["remaining"].GetFloat();
             }
             if (components.HasMember("production")) {

@@ -27,7 +27,7 @@ class BuildState final : public GameState {
     GameConfig config_;
     const DefinitionRegistry& gameplay_;
     PlayerId team_{1};
-    std::string entityType_{"worker"};
+    std::size_t paletteIndex_{0};
     mutable std::string status_;
     mutable std::optional<glm::vec2> pendingPlacement_;
     mutable std::optional<glm::vec2> hoverPosition_;

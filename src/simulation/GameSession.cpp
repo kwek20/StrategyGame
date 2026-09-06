@@ -35,24 +35,21 @@ GameSession::GameSession(const DefinitionRegistry& definitions,
     , terrainSeed_(terrainSeed)
     , terrain_(terrainSeed)
     , navigation_(terrain_, gameplay_) {
-    Entity& playerOneBase =
-        world_.createEntity(Text::get("entity.player_one_base"), "town_center", 1);
-    initializeEntity(playerOneBase);
-    playerOneBase.transform.position = {-28.0F, 0.0F, -28.0F};
-    Entity& playerTwoBase =
-        world_.createEntity(Text::get("entity.player_two_base"), "town_center", 2);
-    initializeEntity(playerTwoBase);
-    playerTwoBase.transform.position = {28.0F, 0.0F, 28.0F};
-    playerTwoBase.transform.rotationDegrees.y = 180.0F;
-    Entity& playerOneUnit = world_.createEntity(Text::get("entity.player_one_unit"), "worker", 1);
-    initializeEntity(playerOneUnit);
-    playerOneUnit.transform.position = {-20.0F, 0.0F, -20.0F};
-    playerOneUnit.unitControl.directlyControllable = true;
-    Entity& playerTwoUnit = world_.createEntity(Text::get("entity.player_two_unit"), "worker", 2);
-    initializeEntity(playerTwoUnit);
-    playerTwoUnit.transform.position = {20.0F, 0.0F, 20.0F};
-    playerTwoUnit.transform.rotationDegrees.y = 180.0F;
-    playerTwoUnit.unitControl.directlyControllable = true;
+    const auto createStartingEntities = [this](PlayerId player,
+                                               const auto& starts,
+                                               float rotation) {
+        for (const StartingEntityDefinition& start : starts) {
+            Entity& entity =
+                world_.createEntity(Text::get(start.nameKey), start.archetype, player);
+            initializeEntity(entity);
+            entity.transform.position = start.position;
+            entity.transform.rotationDegrees.y = rotation;
+            if (entity.unitControl)
+                entity.unitControl.directlyControllable = start.directlyControllable;
+        }
+    };
+    createStartingEntities(1, gameplay_.matchRules().playerOne, 0.0F);
+    createStartingEntities(2, gameplay_.matchRules().playerTwo, 180.0F);
     populateResources(world_, terrain_, gameplay_, terrainSeed);
     updateExploration();
 }
@@ -189,8 +186,8 @@ void GameSession::apply(const PlayerCommand& command) {
                                   [](const ProductionOrder& order) {
                                       return order.kind == ProductionKind::upgradeBuilding;
                                   }));
-                if (entity->modelKey.rfind("town_center", 0) == 0 &&
-                    entity->buildingUpgrades.level + pending < 3) {
+                const EntityArchetype* type = gameplay_.archetype(entity->modelKey);
+                if (type && !type->upgradeTo.empty() && pending == 0) {
                     const float duration = stat(*entity, GameplayStat::upgradeTime);
                     const auto ticks = static_cast<std::uint32_t>(
                         std::max(1.0, std::ceil(duration / fixedTickSeconds)));
@@ -211,7 +208,8 @@ void GameSession::apply(const PlayerCommand& command) {
                                   }));
                 const auto maximum = static_cast<std::uint32_t>(
                     std::max(0.0F, stat(*entity, GameplayStat::maximumProductionUpgrades)));
-                if (gameplay_.canTrain(entity->modelKey, "worker") &&
+                if (gameplay_.canTrain(entity->modelKey,
+                                       gameplay_.matchRules().trainingUpgradeProduct) &&
                     entity->production.productionSpeedUpgrades + pending < maximum) {
                     const float duration = stat(*entity, GameplayStat::researchTime);
                     const auto ticks = static_cast<std::uint32_t>(
@@ -240,7 +238,6 @@ void GameSession::apply(const PlayerCommand& command) {
                                                      entity->modelKey,
                                                      recipe->product.id,
                                                      entity->production.productionSpeedMultiplier);
-                    entity->production.characterBuildSeconds = duration;
                     ProductionOrder order;
                     order.kind = ProductionKind::trainCharacter;
                     order.recipeId = recipe->id;
@@ -286,9 +283,9 @@ void GameSession::simulateTick() {
                                          order.amount});
                 else if (order.kind == ProductionKind::upgradeBuilding) {
                     ++entity.buildingUpgrades.level;
-                    entity.modelKey = entity.buildingUpgrades.level == 2
-                                          ? "town_center_level_2"
-                                          : "town_center_level_3";
+                    const EntityArchetype* current = gameplay_.archetype(entity.modelKey);
+                    if (current && !current->upgradeTo.empty())
+                        entity.modelKey = current->upgradeTo;
                     const float previousRatio = entity.health && entity.health.maximum > 0
                                                     ? entity.health.current / entity.health.maximum
                                                     : 1.0F;
@@ -331,12 +328,13 @@ void GameSession::simulateTick() {
                 else {
                     const float reach =
                         collisionRadius(gameplay_, entity.modelKey) +
-                        collisionRadius(gameplay_, node->modelKey) + 0.9F;
+                        collisionRadius(gameplay_, node->modelKey) +
+                        gameplay_.archetype(entity.modelKey)->interactionMargin;
                     const glm::vec2 delta{node->transform.position.x - entity.transform.position.x,
                                           node->transform.position.z - entity.transform.position.z};
                     if (glm::dot(delta, delta) <= reach * reach) {
                         entity.unitControl.hasStrategicDestination = false;
-                        entity.gatherer.carriedKind = node->resource.kind;
+                        entity.gatherer.carriedResource = node->resource.type;
                         const float capacity = stat(entity, GameplayStat::carryCapacity),
                                     rate = stat(entity, GameplayStat::gatherRate);
                         const float amount =
@@ -357,7 +355,8 @@ void GameSession::simulateTick() {
                 float nearest = std::numeric_limits<float>::max();
                 for (Entity& candidate : world_.entities())
                     if (candidate.authority.owner == entity.authority.owner &&
-                        candidate.modelKey.rfind("town_center", 0) == 0) {
+                        gameplay_.archetype(candidate.modelKey) &&
+                        gameplay_.archetype(candidate.modelKey)->tags.contains("resource-dropoff")) {
                         const glm::vec2 d{
                             candidate.transform.position.x - entity.transform.position.x,
                             candidate.transform.position.z - entity.transform.position.z};
@@ -372,18 +371,15 @@ void GameSession::simulateTick() {
                 else {
                     const float reach =
                         collisionRadius(gameplay_, entity.modelKey) +
-                        collisionRadius(gameplay_, hall->modelKey) + 0.9F;
+                        collisionRadius(gameplay_, hall->modelKey) +
+                        gameplay_.archetype(entity.modelKey)->interactionMargin;
                     if (nearest <= reach * reach) {
                         if (Player* player = players_.find(entity.authority.owner)) {
-                            if (entity.gatherer.carriedKind == ResourceKind::wood)
-                                player->wood += entity.gatherer.carriedAmount;
-                            else if (entity.gatherer.carriedKind == ResourceKind::stone)
-                                player->stone += entity.gatherer.carriedAmount;
-                            else if (entity.gatherer.carriedKind == ResourceKind::gold)
-                                player->gold += entity.gatherer.carriedAmount;
+                            player->resources[entity.gatherer.carriedResource] +=
+                                entity.gatherer.carriedAmount;
                         }
                         entity.gatherer.carriedAmount = 0;
-                        entity.gatherer.carriedKind = ResourceKind::none;
+                        entity.gatherer.carriedResource.clear();
                         Entity* node = world_.findEntity(entity.unitControl.orderTarget);
                         entity.unitControl.order = node && node->resource.remaining > 0
                                                        ? UnitOrderKind::gather
@@ -503,12 +499,16 @@ void GameSession::simulateTick() {
     for (EntityId id : destroyed)
         world_.destroyEntity(id);
     for (const CompletedCharacter& character : completed) {
-        const float spawnDistance =
-            collisionRadius(gameplay_, character.producerId) +
-            collisionRadius(gameplay_, character.productId) + 0.6F;
+        const EntityArchetype* producer = gameplay_.archetype(character.producerId);
+        if (!producer)
+            continue;
+        const float spawnDistance = collisionRadius(gameplay_, character.producerId) +
+                                    collisionRadius(gameplay_, character.productId) +
+                                    producer->spawnClearance;
         for (std::uint32_t produced = 0; produced < character.amount; ++produced) {
-          for (int candidate = 0; candidate < 16; ++candidate) {
-            const float angle = static_cast<float>(candidate) * glm::two_pi<float>() / 16.0F;
+          for (std::uint32_t candidate = 0; candidate < producer->spawnCandidateCount; ++candidate) {
+            const float angle = static_cast<float>(candidate) * glm::two_pi<float>() /
+                                static_cast<float>(producer->spawnCandidateCount);
             const glm::vec2 position{character.townPosition.x + std::cos(angle) * spawnDistance,
                                      character.townPosition.z + std::sin(angle) * spawnDistance};
             if (overlapsObject(

@@ -355,7 +355,7 @@ int main() {
         strategy::Entity& tree = gatheringSession.world().createEntity("Test Tree", "tree", 0);
         tree.transform.position = gatherer->transform.position;
         tree.resource.emplace();
-        tree.resource.kind = strategy::ResourceKind::wood;
+        tree.resource.type = "materials";
         tree.resource.remaining = 2.0F;
         valid = valid && gatheringSession.submit(
                              {1, 1, strategy::GatherResourceCommand{gatherer->id, tree.id}});

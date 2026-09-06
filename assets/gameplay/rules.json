@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "playerOneStart": [
+    { "archetype": "town_center", "nameKey": "entity.player_one_base", "position": [-28, 0, -28] },
+    { "archetype": "worker", "nameKey": "entity.player_one_unit", "position": [-20, 0, -20], "directlyControllable": true }
+  ],
+  "playerTwoStart": [
+    { "archetype": "town_center", "nameKey": "entity.player_two_base", "position": [28, 0, 28] },
+    { "archetype": "worker", "nameKey": "entity.player_two_unit", "position": [20, 0, 20], "directlyControllable": true }
+  ],
+  "buildPalette": ["worker", "town_center"],
+  "generatedResourceNodes": ["tree", "stone", "gold"],
+  "trainingUpgradeProduct": "worker",
+  "terrainEdgeMargin": 5,
+  "minimumResourceHeight": 0.16,
+  "maximumResourceHeight": 0.70,
+  "maximumResourceSlope": 1.2,
+  "baseExclusionRadius": 15
+}
