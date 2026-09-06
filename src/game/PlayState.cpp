@@ -27,12 +27,16 @@ PlayState::PlayState(StateContext& context,
                      std::string playerOneCountry,
                      std::string playerTwoCountry)
     : GameState(context)
-    , session_(terrainSeed, std::move(playerOneCountry), std::move(playerTwoCountry))
+    , session_(context.definitions,
+               terrainSeed,
+               std::move(playerOneCountry),
+               std::move(playerTwoCountry))
     , config_(GameConfig::load(context.configPath)) {}
 
 PlayState::PlayState(StateContext& context, SaveData data)
     : GameState(context)
-    , session_(data.terrainSeed,
+    , session_(context.definitions,
+               data.terrainSeed,
                data.playerOneCountry,
                data.playerTwoCountry,
                data.playerOneSpecialization,
@@ -43,12 +47,14 @@ PlayState::PlayState(StateContext& context, SaveData data)
                                    data.wood[0],
                                    data.stone[0],
                                    data.gold[0],
+                                   std::move(data.resources[0]),
                                    std::move(data.discovered[0]),
                                    std::move(data.intelligence[0]));
     session_.restorePlayerProgress(2,
                                    data.wood[1],
                                    data.stone[1],
                                    data.gold[1],
+                                   std::move(data.resources[1]),
                                    std::move(data.discovered[1]),
                                    std::move(data.intelligence[1]));
 }
@@ -212,10 +218,13 @@ void PlayState::handleEvent(const SDL_Event& event) {
                                  ImproveTrainingCommand{selectedHall->id}});
                 context_.events.enqueue(AudioEvent{AudioCue::trainingUpgrade});
             } else if (townHallButtonHovered_[2]) {
-                session_.submit({localPlayer_,
-                                 nextCommandSequence_++,
-                                 TrainCharacterCommand{selectedHall->id}});
-                context_.events.enqueue(AudioEvent{AudioCue::trainUnit});
+                if (const RecipeDefinition* recipe =
+                        context_.definitions.productionRecipe(selectedHall->modelKey, "worker")) {
+                    session_.submit({localPlayer_,
+                                     nextCommandSequence_++,
+                                     StartRecipeCommand{selectedHall->id, recipe->id}});
+                    context_.events.enqueue(AudioEvent{AudioCue::trainUnit});
+                }
             }
             if (townHallButtonHovered_[0] || townHallButtonHovered_[1] || townHallButtonHovered_[2])
                 return;

@@ -17,7 +17,8 @@ class GameSession final {
   public:
     static constexpr double fixedTickSeconds = 1.0 / 30.0;
 
-    explicit GameSession(std::uint32_t terrainSeed,
+    explicit GameSession(const DefinitionRegistry& definitions,
+                         std::uint32_t terrainSeed,
                          std::string playerOneCountry = "spain",
                          std::string playerTwoCountry = "japan",
                          std::string playerOneSpecialization = "unassigned",
@@ -31,6 +32,7 @@ class GameSession final {
                                float wood,
                                float stone,
                                float gold,
+                               std::map<std::string, float> resources,
                                std::vector<std::uint8_t> discovered,
                                std::vector<LastKnownEntity> intelligence = {});
 
@@ -43,6 +45,7 @@ class GameSession final {
     [[nodiscard]] const PlayerRegistry& players() const {
         return players_;
     }
+    [[nodiscard]] PlayerRegistry& players() { return players_; }
     [[nodiscard]] std::uint64_t tick() const {
         return tick_;
     }
@@ -53,7 +56,7 @@ class GameSession final {
 
   private:
     PlayerRegistry players_;
-    GameplayCatalogue gameplay_;
+    const DefinitionRegistry& gameplay_;
     World world_;
     std::deque<PlayerCommand> commands_;
     std::map<PlayerId, std::uint64_t> lastSequence_;

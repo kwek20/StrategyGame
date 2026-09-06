@@ -29,8 +29,14 @@ bool clearOfBases(float x, float z) {
     return glm::distance(p, glm::vec2{-28.0F, -28.0F}) > 15.0F &&
            glm::distance(p, glm::vec2{28.0F, 28.0F}) > 15.0F;
 }
-bool add(World& world, const std::string& type, float x, float z, float rotation) {
-    if (overlapsObject(world, {x, z}, collisionRadius(type)))
+bool add(World& world,
+         const DefinitionRegistry& definitions,
+         const std::string& type,
+         float x,
+         float z,
+         float rotation) {
+    if (overlapsObject(
+            world, definitions, {x, z}, collisionRadius(definitions, type)))
         return false;
     std::string key = "entity." + type;
     Entity& entity = world.createEntity(Text::get(key), type, 0);
@@ -46,6 +52,7 @@ bool add(World& world, const std::string& type, float x, float z, float rotation
 }
 void clusters(World& world,
               const Terrain& terrain,
+              const DefinitionRegistry& definitions,
               std::uint32_t seed,
               std::string_view streamName,
               const std::string& type,
@@ -66,10 +73,12 @@ void clusters(World& world,
                         z = centerZ + random.range(-spread, spread);
             if (suitable(terrain, x, z) && clearOfBases(x, z)) {
                 const float angle = random.range(0.0F, 360.0F);
-                if (!overlapsObject(world, {x, z}, collisionRadius(type)) &&
-                    !overlapsObject(world, {-x, -z}, collisionRadius(type))) {
-                    add(world, type, x, z, angle);
-                    add(world, type, -x, -z, angle + 180.0F);
+                if (!overlapsObject(
+                        world, definitions, {x, z}, collisionRadius(definitions, type)) &&
+                    !overlapsObject(
+                        world, definitions, {-x, -z}, collisionRadius(definitions, type))) {
+                    add(world, definitions, type, x, z, angle);
+                    add(world, definitions, type, -x, -z, angle + 180.0F);
                 }
             }
         }
@@ -77,11 +86,14 @@ void clusters(World& world,
     }
 }
 } // namespace
-void populateResources(World& world, const Terrain& terrain, std::uint32_t terrainSeed) {
+void populateResources(World& world,
+                       const Terrain& terrain,
+                       const DefinitionRegistry& definitions,
+                       std::uint32_t terrainSeed) {
     // Separate salted streams keep resource layouts deterministic and independent
     // from both terrain noise and changes to another resource type.
-    clusters(world, terrain, terrainSeed, "resources.wood", "tree", 18, 3, 4.5F);
-    clusters(world, terrain, terrainSeed, "resources.stone", "stone", 6, 2, 3.0F);
-    clusters(world, terrain, terrainSeed, "resources.gold", "gold", 5, 2, 2.5F);
+    clusters(world, terrain, definitions, terrainSeed, "resources.wood", "tree", 18, 3, 4.5F);
+    clusters(world, terrain, definitions, terrainSeed, "resources.stone", "stone", 6, 2, 3.0F);
+    clusters(world, terrain, definitions, terrainSeed, "resources.gold", "gold", 5, 2, 2.5F);
 }
 } // namespace strategy

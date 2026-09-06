@@ -2,6 +2,7 @@
 #include "audio/AudioSystem.hpp"
 #include "core/EventBus.hpp"
 #include "diagnostics/Logger.hpp"
+#include "gameplay/DefinitionRegistry.hpp"
 #include "ui/UiDocument.hpp"
 
 #include <filesystem>
@@ -28,7 +29,8 @@ int main() {
     strategy::AudioSystem audio;
     strategy::EventBus events;
     strategy::Logger logger{std::filesystem::temp_directory_path() / "strategy-test.log"};
-    strategy::StateContext context{audio, events, logger, "test-config.json"};
+    strategy::DefinitionRegistry definitions;
+    strategy::StateContext context{audio, events, logger, definitions, "test-config.json"};
     strategy::StateStack stack{context};
 
     bool valid = stack.empty();

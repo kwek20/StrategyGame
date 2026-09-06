@@ -15,9 +15,10 @@ BuildState::BuildState(StateContext& context, std::uint32_t terrainSeed)
     : GameState(context)
     , terrainSeed_(terrainSeed)
     , config_(GameConfig::load(context.configPath))
+    , gameplay_(context.definitions)
     , status_(Text::get("status.ready")) {
     const Terrain terrain{terrainSeed};
-    populateResources(world_, terrain, terrainSeed);
+    populateResources(world_, terrain, gameplay_, terrainSeed);
 }
 
 void BuildState::handleEvent(const SDL_Event& event) {
@@ -127,7 +128,10 @@ void BuildState::render(Renderer& renderer) const {
     if (pendingPlacement_) {
         const glm::vec3 position =
             renderer.screenToTerrain(pendingPlacement_->x, pendingPlacement_->y, view);
-        if (overlapsObject(world_, {position.x, position.z}, collisionRadius(entityType_))) {
+        if (overlapsObject(world_,
+                           gameplay_,
+                           {position.x, position.z},
+                           collisionRadius(gameplay_, entityType_))) {
             status_ = Text::get("status.blocked");
         } else {
             Entity& entity = world_.createEntity(

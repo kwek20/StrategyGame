@@ -8,6 +8,7 @@
 #include "game/PlayState.hpp"
 #include "game/SettingsState.hpp"
 #include "game/StartMenuState.hpp"
+#include "gameplay/DefinitionRegistry.hpp"
 #include "localization/Text.hpp"
 #include "persistence/GameConfig.hpp"
 #include "persistence/SaveGame.hpp"
@@ -138,9 +139,10 @@ Application::Application() {
     drawBootstrapLoading(window_);
     SDL_GL_SetSwapInterval(1);
     renderer_ = std::make_unique<Renderer>(logger_.get());
+    definitions_ = std::make_unique<DefinitionRegistry>();
     stateContext_ =
         std::make_unique<StateContext>(
-            StateContext{*audio_, events_, *logger_, "gamedata/config.json"});
+            StateContext{*audio_, events_, *logger_, *definitions_, "gamedata/config.json"});
     states_ = std::make_unique<StateStack>(*stateContext_);
     states_->push<StartMenuState>();
     states_->applyPendingChanges();
@@ -151,6 +153,7 @@ Application::Application() {
 Application::~Application() {
     states_.reset();
     stateContext_.reset();
+    definitions_.reset();
     renderer_.reset();
     audio_.reset();
     logger_->info("lifecycle", "Application shutdown");

@@ -48,7 +48,7 @@ void SaveGame::write(const std::filesystem::path& path,
     rapidjson::PrettyWriter<rapidjson::OStreamWrapper> writer{output};
     writer.StartObject();
     writer.Key("formatVersion");
-    writer.Uint(13);
+    writer.Uint(1);
     writer.Key("terrainSeed");
     writer.Uint(terrainSeed);
     writer.Key("players");
@@ -68,6 +68,13 @@ void SaveGame::write(const std::filesystem::path& path,
             writer.Double(player.stone);
             writer.Key("gold");
             writer.Double(player.gold);
+            writer.Key("resources");
+            writer.StartObject();
+            for (const auto& [id, amount] : player.resources) {
+                writer.Key(id.c_str());
+                writer.Double(amount);
+            }
+            writer.EndObject();
             std::string explored;
             explored.reserve(player.discovered.size());
             for (auto cell : player.discovered)
@@ -187,10 +194,23 @@ void SaveGame::write(const std::filesystem::path& path,
                 writer.StartObject();
                 writer.Key("kind");
                 writer.Uint(static_cast<unsigned>(order.kind));
-                writer.Key("duration");
-                writer.Double(order.durationSeconds);
-                writer.Key("remaining");
-                writer.Double(order.remainingSeconds);
+                writer.Key("recipe");
+                writer.String(order.recipeId.c_str());
+                writer.Key("product");
+                writer.String(order.productId.c_str());
+                writer.Key("amount");
+                writer.Uint(order.amount);
+                writer.Key("durationTicks");
+                writer.Uint(order.durationTicks);
+                writer.Key("remainingTicks");
+                writer.Uint(order.remainingTicks);
+                writer.Key("reservedCosts");
+                writer.StartObject();
+                for (const auto& [id, amount] : order.reservedCosts) {
+                    writer.Key(id.c_str());
+                    writer.Double(amount);
+                }
+                writer.EndObject();
                 writer.EndObject();
             }
             writer.EndArray();
@@ -231,23 +251,16 @@ SaveData SaveGame::read(const std::filesystem::path& path) {
     rapidjson::Document document;
     document.ParseStream(input);
     if (document.HasParseError() || !document.IsObject() || !document.HasMember("formatVersion") ||
-        !document["formatVersion"].IsUint() ||
-        (document["formatVersion"].GetUint() != 1 && document["formatVersion"].GetUint() != 2 &&
-         document["formatVersion"].GetUint() != 3 && document["formatVersion"].GetUint() != 4 &&
-         document["formatVersion"].GetUint() != 5 && document["formatVersion"].GetUint() != 6 &&
-         document["formatVersion"].GetUint() != 7 && document["formatVersion"].GetUint() != 8 &&
-         document["formatVersion"].GetUint() != 9 && document["formatVersion"].GetUint() != 10 &&
-         document["formatVersion"].GetUint() != 11 && document["formatVersion"].GetUint() != 12 &&
-         document["formatVersion"].GetUint() != 13) ||
+        !document["formatVersion"].IsUint() || document["formatVersion"].GetUint() != 1 ||
         !document.HasMember("terrainSeed") || !document["terrainSeed"].IsUint() ||
+        !document.HasMember("players") || !document["players"].IsArray() ||
         !document.HasMember("entities") || !document["entities"].IsArray()) {
         throw std::runtime_error("Invalid or unsupported save file: " + path.string());
     }
 
     SaveData result;
-    const unsigned int version = document["formatVersion"].GetUint();
     result.terrainSeed = document["terrainSeed"].GetUint();
-    if (version >= 5 && document.HasMember("players") && document["players"].IsArray()) {
+    {
         for (const auto& player : document["players"].GetArray())
             if (player.IsObject() && player.HasMember("id") && player["id"].IsUint64() &&
                 player.HasMember("country") && player["country"].IsString()) {
@@ -263,7 +276,7 @@ SaveData SaveGame::read(const std::filesystem::path& path) {
                     result.playerTwoCountry = player["country"].GetString();
                     result.playerTwoSpecialization = specialization;
                 }
-                if (version >= 8 && id >= 1 && id <= 2) {
+                if (id >= 1 && id <= 2) {
                     const std::size_t index = static_cast<std::size_t>(id - 1);
                     if (player.HasMember("wood") && player["wood"].IsNumber())
                         result.wood[index] = player["wood"].GetFloat();
@@ -271,6 +284,17 @@ SaveData SaveGame::read(const std::filesystem::path& path) {
                         result.stone[index] = player["stone"].GetFloat();
                     if (player.HasMember("gold") && player["gold"].IsNumber())
                         result.gold[index] = player["gold"].GetFloat();
+                    if (!player.HasMember("resources") || !player["resources"].IsObject())
+                        throw std::runtime_error("Invalid player resources");
+                    if (player.HasMember("resources") && player["resources"].IsObject())
+                        for (auto resource = player["resources"].MemberBegin();
+                             resource != player["resources"].MemberEnd();
+                             ++resource) {
+                            if (!resource->value.IsNumber() || resource->value.GetFloat() < 0.0F)
+                                throw std::runtime_error("Invalid player resource amount");
+                            result.resources[index][resource->name.GetString()] =
+                                resource->value.GetFloat();
+                        }
                     if (player.HasMember("discovered") && player["discovered"].IsString()) {
                         const std::string cells = player["discovered"].GetString();
                         result.discovered[index].reserve(cells.size());
@@ -278,7 +302,7 @@ SaveData SaveGame::read(const std::filesystem::path& path) {
                             result.discovered[index].push_back(cell == '1' ? 255 : 0);
                     }
                 }
-                if (version >= 10 && id >= 1 && id <= 2 && player.HasMember("intelligence") &&
+                if (id >= 1 && id <= 2 && player.HasMember("intelligence") &&
                     player["intelligence"].IsArray()) {
                     auto& records = result.intelligence[static_cast<std::size_t>(id - 1)];
                     for (const auto& item : player["intelligence"].GetArray()) {
@@ -307,12 +331,10 @@ SaveData SaveGame::read(const std::filesystem::path& path) {
         entity.id = value["id"].GetUint64();
         entity.name = value["name"].GetString();
         entity.modelKey = value["model"].GetString();
-        if (version < 12)
-            gameplayCatalogue.initializeEntity(entity);
         entity.transform.position = readVector(value, "position");
         entity.transform.rotationDegrees = readVector(value, "rotation");
         entity.transform.scale = readVector(value, "scale");
-        if (version >= 12) {
+        {
             if (!value.HasMember("owner") || !value["owner"].IsUint64() ||
                 !value.HasMember("components") || !value["components"].IsObject())
                 throw std::runtime_error("Invalid component entity");
@@ -392,14 +414,45 @@ SaveData SaveGame::read(const std::filesystem::path& path) {
                 entity.production.productionSpeedMultiplier = item["speedMultiplier"].GetFloat();
                 entity.production.productionSpeedUpgrades = item["speedUpgrades"].GetUint();
                 for (const auto& order : item["queue"].GetArray()) {
-                    if (!order.IsObject() || !order.HasMember("kind") || !order["kind"].IsUint() ||
-                        !order.HasMember("duration") || !order["duration"].IsNumber() ||
-                        !order.HasMember("remaining") || !order["remaining"].IsNumber())
+                    if (!order.IsObject() || !order.HasMember("kind") || !order["kind"].IsUint())
                         throw std::runtime_error("Invalid production order");
-                    entity.production.queue.push_back(
-                        {static_cast<ProductionKind>(order["kind"].GetUint()),
-                         order["duration"].GetFloat(),
-                         order["remaining"].GetFloat()});
+                    ProductionOrder parsed;
+                    parsed.kind = static_cast<ProductionKind>(order["kind"].GetUint());
+                    {
+                        if (!order.HasMember("recipe") || !order["recipe"].IsString() ||
+                            !order.HasMember("product") || !order["product"].IsString() ||
+                            !order.HasMember("amount") || !order["amount"].IsUint() ||
+                            !order.HasMember("durationTicks") || !order["durationTicks"].IsUint() ||
+                            !order.HasMember("remainingTicks") ||
+                            !order["remainingTicks"].IsUint() ||
+                            !order.HasMember("reservedCosts") ||
+                            !order["reservedCosts"].IsObject())
+                            throw std::runtime_error("Invalid recipe production order");
+                        parsed.recipeId = order["recipe"].GetString();
+                        parsed.productId = order["product"].GetString();
+                        parsed.amount = order["amount"].GetUint();
+                        parsed.durationTicks = order["durationTicks"].GetUint();
+                        parsed.remainingTicks = order["remainingTicks"].GetUint();
+                        if (parsed.amount == 0 || parsed.durationTicks == 0 ||
+                            parsed.remainingTicks > parsed.durationTicks)
+                            throw std::runtime_error("Invalid recipe production tick state");
+                        for (auto cost = order["reservedCosts"].MemberBegin();
+                             cost != order["reservedCosts"].MemberEnd();
+                             ++cost) {
+                            if (!cost->value.IsNumber() || cost->value.GetFloat() < 0.0F)
+                                throw std::runtime_error("Invalid reserved recipe cost");
+                            parsed.reservedCosts[cost->name.GetString()] = cost->value.GetFloat();
+                        }
+                        if (parsed.kind == ProductionKind::trainCharacter) {
+                            const RecipeDefinition* recipe =
+                                gameplayCatalogue.recipe(RecipeId{parsed.recipeId});
+                            if (!recipe || recipe->product.id != parsed.productId ||
+                                recipe->product.amount != parsed.amount)
+                                throw std::runtime_error(
+                                    "Saved production order does not match its recipe");
+                        }
+                    }
+                    entity.production.queue.push_back(std::move(parsed));
                 }
             }
             if (components.HasMember("buildingUpgrades")) {
@@ -421,136 +474,7 @@ SaveData SaveGame::read(const std::filesystem::path& path) {
                                 upgrade->value.GetUint();
             }
             result.entities.push_back(std::move(entity));
-            continue;
         }
-        if (version >= 2) {
-            if (!value.HasMember("owner") || !value["owner"].IsUint64() ||
-                !value.HasMember("directController") || !value["directController"].IsUint64() ||
-                !value.HasMember("directlyControllable") ||
-                !value["directlyControllable"].IsBool() || !value.HasMember("directInput") ||
-                !value["directInput"].IsArray() || value["directInput"].Size() != 2 ||
-                !value["directInput"][0].IsNumber() || !value["directInput"][1].IsNumber() ||
-                !value.HasMember("hasStrategicDestination") ||
-                !value["hasStrategicDestination"].IsBool() || !value.HasMember("movementSpeed") ||
-                !value["movementSpeed"].IsNumber()) {
-                throw std::runtime_error("Invalid unit authority/control in save file");
-            }
-            entity.authority.owner = value["owner"].GetUint64();
-            entity.authority.directController = value["directController"].GetUint64();
-            entity.unitControl.directlyControllable = value["directlyControllable"].GetBool();
-            entity.unitControl.directInput = {value["directInput"][0].GetFloat(),
-                                              value["directInput"][1].GetFloat()};
-            if (version >= 3) {
-                if (!value.HasMember("running") || !value["running"].IsBool())
-                    throw std::runtime_error("Invalid running state in save file");
-                entity.unitControl.running = value["running"].GetBool();
-            }
-            entity.unitControl.strategicDestination = readVector(value, "strategicDestination");
-            entity.unitControl.hasStrategicDestination = value["hasStrategicDestination"].GetBool();
-            entity.unitControl.movementSpeed = value["movementSpeed"].GetFloat();
-            if (version >= 8) {
-                if (!value.HasMember("sightRange") || !value["sightRange"].IsNumber())
-                    throw std::runtime_error("Invalid unit sight range");
-                entity.vision.emplace();
-                entity.vision.sightRange = value["sightRange"].GetFloat();
-            }
-            if (version >= 9) {
-                if (!value.HasMember("unitOrder") || !value["unitOrder"].IsUint() ||
-                    value["unitOrder"].GetUint() > static_cast<unsigned>(UnitOrderKind::attack) ||
-                    !value.HasMember("orderTarget") || !value["orderTarget"].IsUint64() ||
-                    !value.HasMember("carriedKind") || !value["carriedKind"].IsUint() ||
-                    value["carriedKind"].GetUint() > static_cast<unsigned>(ResourceKind::gold) ||
-                    !value.HasMember("carriedAmount") || !value["carriedAmount"].IsNumber() ||
-                    !value.HasMember("carryCapacity") || !value["carryCapacity"].IsNumber() ||
-                    !value.HasMember("gatherPerSecond") || !value["gatherPerSecond"].IsNumber())
-                    throw std::runtime_error("Invalid unit order state");
-                entity.unitControl.order = static_cast<UnitOrderKind>(value["unitOrder"].GetUint());
-                entity.unitControl.orderTarget = value["orderTarget"].GetUint64();
-                entity.gatherer.emplace();
-                entity.gatherer.carriedKind =
-                    static_cast<ResourceKind>(value["carriedKind"].GetUint());
-                entity.gatherer.carriedAmount = value["carriedAmount"].GetFloat();
-                entity.gatherer.carryCapacity = value["carryCapacity"].GetFloat();
-                entity.gatherer.gatherPerSecond = value["gatherPerSecond"].GetFloat();
-            }
-            if (version >= 4) {
-                if (!value.HasMember("health") || !value["health"].IsNumber() ||
-                    !value.HasMember("maximumHealth") || !value["maximumHealth"].IsNumber())
-                    throw std::runtime_error("Invalid health state in save file");
-                entity.health.current = value["health"].GetFloat();
-                entity.health.maximum = value["maximumHealth"].GetFloat();
-                if (version >= 8) {
-                    if (!value.HasMember("resourceKind") || !value["resourceKind"].IsUint() ||
-                        value["resourceKind"].GetUint() >
-                            static_cast<unsigned>(ResourceKind::gold) ||
-                        !value.HasMember("resourceRemaining") ||
-                        !value["resourceRemaining"].IsNumber())
-                        throw std::runtime_error("Invalid resource node state");
-                    entity.resource.kind =
-                        static_cast<ResourceKind>(value["resourceKind"].GetUint());
-                    entity.resource.remaining = value["resourceRemaining"].GetFloat();
-                } else if (entity.modelKey == "tree" || entity.modelKey == "stone" ||
-                           entity.modelKey == "gold") {
-                    entity.resource.kind = entity.modelKey == "tree"    ? ResourceKind::wood
-                                           : entity.modelKey == "stone" ? ResourceKind::stone
-                                                                        : ResourceKind::gold;
-                    entity.resource.remaining = 100.0F;
-                }
-            }
-            if (version == 6) {
-                if (!value.HasMember("townHallLevel") || !value["townHallLevel"].IsUint() ||
-                    !value.HasMember("queuedCharacters") || !value["queuedCharacters"].IsUint() ||
-                    !value.HasMember("characterBuildSeconds") ||
-                    !value["characterBuildSeconds"].IsNumber() ||
-                    !value.HasMember("remainingBuildSeconds") ||
-                    !value["remainingBuildSeconds"].IsNumber())
-                    throw std::runtime_error("Invalid building production state in save file");
-                entity.buildingUpgrades.emplace();
-                entity.buildingUpgrades.level = value["townHallLevel"].GetUint();
-                entity.production.characterBuildSeconds = value["characterBuildSeconds"].GetFloat();
-                const auto count = value["queuedCharacters"].GetUint();
-                for (unsigned i = 0; i < count; ++i) {
-                    const float remaining = i == 0 ? value["remainingBuildSeconds"].GetFloat()
-                                                   : entity.production.characterBuildSeconds;
-                    entity.production.queue.push_back({ProductionKind::trainCharacter,
-                                                       entity.production.characterBuildSeconds,
-                                                       remaining});
-                }
-            } else if (version >= 7) {
-                if (!value.HasMember("townHallLevel") || !value["townHallLevel"].IsUint() ||
-                    !value.HasMember("characterBuildSeconds") ||
-                    !value["characterBuildSeconds"].IsNumber() ||
-                    !value.HasMember("productionQueue") || !value["productionQueue"].IsArray())
-                    throw std::runtime_error("Invalid building production queue in save file");
-                entity.buildingUpgrades.emplace();
-                entity.buildingUpgrades.level = value["townHallLevel"].GetUint();
-                entity.production.characterBuildSeconds = value["characterBuildSeconds"].GetFloat();
-                if (version >= 11) {
-                    if (!value.HasMember("productionSpeedMultiplier") ||
-                        !value["productionSpeedMultiplier"].IsNumber() ||
-                        !value.HasMember("productionSpeedUpgrades") ||
-                        !value["productionSpeedUpgrades"].IsUint())
-                        throw std::runtime_error("Invalid production speed state in save file");
-                    entity.production.productionSpeedMultiplier =
-                        value["productionSpeedMultiplier"].GetFloat();
-                    entity.production.productionSpeedUpgrades =
-                        value["productionSpeedUpgrades"].GetUint();
-                }
-                for (const auto& item : value["productionQueue"].GetArray()) {
-                    if (!item.IsObject() || !item.HasMember("kind") || !item["kind"].IsUint() ||
-                        item["kind"].GetUint() >
-                            static_cast<unsigned>(ProductionKind::improveTraining) ||
-                        !item.HasMember("durationSeconds") || !item["durationSeconds"].IsNumber() ||
-                        !item.HasMember("remainingSeconds") || !item["remainingSeconds"].IsNumber())
-                        throw std::runtime_error("Invalid production queue entry in save file");
-                    entity.production.queue.push_back(
-                        {static_cast<ProductionKind>(item["kind"].GetUint()),
-                         item["durationSeconds"].GetFloat(),
-                         item["remainingSeconds"].GetFloat()});
-                }
-            }
-        }
-        result.entities.push_back(std::move(entity));
     }
     return result;
 }

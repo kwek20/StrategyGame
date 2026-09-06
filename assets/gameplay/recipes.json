@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "recipes": [
+    {
+      "id": "town_center.train_worker",
+      "producer": "town_center",
+      "product": { "unit": "worker", "amount": 1 },
+      "cost": {},
+      "durationTicks": 300,
+      "tags": ["training", "worker", "legacy"]
+    },
+    {
+      "id": "town_center_level_2.train_worker",
+      "producer": "town_center_level_2",
+      "product": { "unit": "worker", "amount": 1 },
+      "cost": {},
+      "durationTicks": 300,
+      "tags": ["training", "worker", "legacy"]
+    },
+    {
+      "id": "town_center_level_3.train_worker",
+      "producer": "town_center_level_3",
+      "product": { "unit": "worker", "amount": 1 },
+      "cost": {},
+      "durationTicks": 300,
+      "tags": ["training", "worker", "legacy"]
+    },
+    {
+      "id": "outpost.train_worker",
+      "producer": "outpost",
+      "product": { "unit": "worker", "amount": 1 },
+      "cost": {},
+      "durationTicks": 300,
+      "tags": ["training", "worker", "legacy", "forward-production"]
+    },
+    {
+      "id": "command_hub.train_construction_drone",
+      "producer": "command_hub",
+      "product": { "unit": "construction_drone", "amount": 1 },
+      "cost": { "materials": 75 },
+      "durationTicks": 300,
+      "tags": ["training", "drone", "construction"]
+    },
+    {
+      "id": "construct.basic_generator",
+      "product": { "building": "basic_generator", "amount": 1 },
+      "cost": { "materials": 100 },
+      "durationTicks": 450,
+      "tags": ["construction", "power", "generator"]
+    }
+  ]
+}

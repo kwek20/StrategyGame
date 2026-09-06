@@ -1641,10 +1641,12 @@ void Renderer::drawTownHallHud(const Entity& hall, const std::array<bool, 3>& ho
     }
     if (!hall.production.queue.empty()) {
         const ProductionOrder& active = hall.production.queue.front();
-        const float ratio =
-            active.durationSeconds > 0.0F
-                ? std::clamp(1.0F - active.remainingSeconds / active.durationSeconds, 0.0F, 1.0F)
-                : 1.0F;
+        const float ratio = active.durationTicks > 0
+                                ? std::clamp(1.0F - static_cast<float>(active.remainingTicks) /
+                                                           static_cast<float>(active.durationTicks),
+                                             0.0F,
+                                             1.0F)
+                                : 1.0F;
         appendHudRectangle(progressBack,
                            30.0F,
                            top + 137.0F,
@@ -1697,7 +1699,8 @@ void Renderer::drawTownHallHud(const Entity& hall, const std::array<bool, 3>& ho
                                 ? "town_hall.queue.upgrade"
                                 : "town_hall.queue.research");
         remaining.str("");
-        remaining << std::fixed << std::setprecision(1) << std::max(0.0F, active.remainingSeconds);
+        remaining << std::fixed << std::setprecision(1)
+                  << static_cast<float>(active.remainingTicks) / 30.0F;
     }
     if (hall.production.queue.empty())
         drawText(Text::get("town_hall.production.empty"), 30.0F, top + 48.0F, 1.7F);

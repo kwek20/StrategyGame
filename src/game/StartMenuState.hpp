@@ -1,7 +1,6 @@
 #pragma once
 
 #include "app/GameState.hpp"
-#include "players/CountryCatalogue.hpp"
 #include "ui/UiDocument.hpp"
 
 #include <string>
@@ -27,7 +26,6 @@ class StartMenuState final : public GameState {
     bool seedFocused_{false};
     std::string seedText_{"1592594996"};
     StateRequest request_{StateRequest::none};
-    CountryCatalogue countryCatalogue_;
     std::size_t playerOneCountryIndex_{0};
     std::size_t playerTwoCountryIndex_{0};
     UiDocument ui_;

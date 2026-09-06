@@ -11,11 +11,13 @@ class Renderer;
 class AudioSystem;
 class EventBus;
 class Logger;
+class DefinitionRegistry;
 
 struct StateContext {
     AudioSystem& audio;
     EventBus& events;
     Logger& logger;
+    DefinitionRegistry& definitions;
     std::filesystem::path configPath;
 };
 

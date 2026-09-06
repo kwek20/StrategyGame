@@ -13,6 +13,7 @@ namespace strategy {
 class AudioSystem;
 class Logger;
 class Renderer;
+class DefinitionRegistry;
 
 class Application final {
   public:
@@ -31,6 +32,7 @@ class Application final {
     std::unique_ptr<Logger> logger_;
     std::unique_ptr<AudioSystem> audio_;
     std::unique_ptr<Renderer> renderer_;
+    std::unique_ptr<DefinitionRegistry> definitions_;
     std::unique_ptr<StateContext> stateContext_;
     std::unique_ptr<StateStack> states_;
     bool running_{true};

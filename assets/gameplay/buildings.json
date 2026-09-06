@@ -1,0 +1,102 @@
+{
+  "version": 1,
+  "buildings": {
+    "town_center": {
+      "nameKey": "entity.town_center",
+      "presentation": "town_center",
+      "collisionRadius": 10.5,
+      "components": ["health", "vision", "production", "buildingUpgrades", "upgrades"],
+      "availableUpgrades": [],
+      "tags": ["building", "economic", "production"],
+      "stats": {
+        "health": 1000,
+        "sightRange": 18,
+        "productionSpeed": 1,
+        "upgradeTime": 15,
+        "researchTime": 8,
+        "productionUpgradeAmount": 0.1,
+        "maximumProductionUpgrades": 8
+      }
+    },
+    "town_center_level_2": {
+      "nameKey": "entity.town_center",
+      "presentation": "town_center_level_2",
+      "collisionRadius": 10.5,
+      "components": ["health", "vision", "production", "buildingUpgrades", "upgrades"],
+      "availableUpgrades": [],
+      "tags": ["building", "economic", "production"],
+      "stats": {
+        "health": 1250,
+        "sightRange": 20,
+        "productionSpeed": 1.1,
+        "upgradeTime": 18,
+        "researchTime": 7,
+        "productionUpgradeAmount": 0.1,
+        "maximumProductionUpgrades": 8
+      }
+    },
+    "town_center_level_3": {
+      "nameKey": "entity.town_center",
+      "presentation": "town_center_level_3",
+      "collisionRadius": 10.5,
+      "components": ["health", "vision", "production", "buildingUpgrades", "upgrades"],
+      "availableUpgrades": [],
+      "tags": ["building", "economic", "production"],
+      "stats": {
+        "health": 1500,
+        "sightRange": 22,
+        "productionSpeed": 1.2,
+        "upgradeTime": 22,
+        "researchTime": 6,
+        "productionUpgradeAmount": 0.1,
+        "maximumProductionUpgrades": 8
+      }
+    },
+    "outpost": {
+      "nameKey": "building.outpost",
+      "presentation": "town_center",
+      "collisionRadius": 5.0,
+      "components": ["health", "vision", "production", "upgrades"],
+      "availableUpgrades": [],
+      "tags": ["building", "military", "production"],
+      "stats": {
+        "health": 650,
+        "sightRange": 24,
+        "productionSpeed": 0.65,
+        "researchTime": 10,
+        "productionUpgradeAmount": 0.05,
+        "maximumProductionUpgrades": 4
+      }
+    },
+    "command_hub": {
+      "nameKey": "building.command_hub",
+      "presentation": "town_center",
+      "collisionRadius": 10.5,
+      "components": ["health", "vision", "production", "buildingUpgrades", "upgrades"],
+      "availableUpgrades": [],
+      "tags": ["building", "headquarters", "economic", "production", "charger", "power"],
+      "health": 1000,
+      "vision": { "range": 18 },
+      "powerDevice": "command_hub_integrated_grid",
+      "stats": {
+        "productionSpeed": 1,
+        "upgradeTime": 15,
+        "researchTime": 8,
+        "productionUpgradeAmount": 0.1,
+        "maximumProductionUpgrades": 8
+      }
+    },
+    "basic_generator": {
+      "nameKey": "building.basic_generator",
+      "presentation": "town_center",
+      "collisionRadius": 5.0,
+      "components": ["health", "vision"],
+      "availableUpgrades": [],
+      "tags": ["building", "power", "generator"],
+      "health": 500,
+      "vision": { "range": 10 },
+      "powerDevice": "basic_generator",
+      "stats": {}
+    }
+  }
+}

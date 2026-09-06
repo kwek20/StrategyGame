@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "weapons": {
+    "worker_unarmed": {
+      "tags": ["melee", "kinetic", "personnel"],
+      "damage": { "type": "kinetic", "amount": 8 },
+      "range": 0.7,
+      "cooldownTicks": 30,
+      "accuracy": 1.0,
+      "validTargets": ["ground"]
+    },
+    "drone_light_weapon": {
+      "tags": ["ranged", "kinetic", "drone"],
+      "damage": { "type": "kinetic", "amount": 8 },
+      "range": 12,
+      "cooldownTicks": 30,
+      "accuracy": 0.8,
+      "validTargets": ["ground", "air"]
+    }
+  }
+}

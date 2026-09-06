@@ -1,7 +1,6 @@
 #include "game/RtsCamera.hpp"
 #include "game/ThirdPersonCamera.hpp"
 #include "gameplay/GameplayCatalogue.hpp"
-#include "players/CountryCatalogue.hpp"
 #include "simulation/GameSession.hpp"
 #include "simulation/CommandCodec.hpp"
 #include "terrain/Terrain.hpp"
@@ -14,14 +13,39 @@
 #include <unordered_set>
 
 int main() {
-    const strategy::CountryCatalogue countries;
+    const strategy::GameplayCatalogue gameplay;
     std::unordered_set<std::string> countryIds;
-    bool valid = countries.countries().size() >= 2;
-    for (const auto& country : countries.countries()) {
+    bool valid = gameplay.countries().size() >= 2;
+    for (const auto& country : gameplay.countries())
         valid = valid && !country.id.empty() && !country.nameKey.empty() &&
                 country.specializationId == "unassigned" && countryIds.insert(country.id).second;
-    }
-    const strategy::GameplayCatalogue gameplay;
+    valid = valid && gameplay.unit(strategy::UnitArchetypeId{"worker"}) != nullptr &&
+            gameplay.unit(strategy::UnitArchetypeId{"town_center"}) == nullptr &&
+            gameplay.building(strategy::BuildingArchetypeId{"town_center"}) != nullptr &&
+            gameplay.building(strategy::BuildingArchetypeId{"worker"}) == nullptr &&
+            gameplay.resource(strategy::ResourceArchetypeId{"tree"}) != nullptr &&
+            std::abs(gameplay.collisionRadius("worker") - 0.65F) < 0.001F &&
+            std::abs(gameplay.collisionRadius("town_center") - 10.5F) < 0.001F;
+    const auto* materials = gameplay.resourceType(strategy::ResourceId{"materials"});
+    const auto* power = gameplay.resourceType(strategy::ResourceId{"power"});
+    const auto* components = gameplay.resourceType(strategy::ResourceId{"components"});
+    const auto* workerWeapon = gameplay.weapon(strategy::WeaponId{"worker_unarmed"});
+    const auto* constructionDrone =
+        gameplay.unit(strategy::UnitArchetypeId{"construction_drone"});
+    const auto* commandHub = gameplay.building(strategy::BuildingArchetypeId{"command_hub"});
+    const auto* commandHubPower =
+        gameplay.powerDevice(strategy::PowerDeviceId{"command_hub_integrated_grid"});
+    const auto* droneRecipe =
+        gameplay.recipe(strategy::RecipeId{"command_hub.train_construction_drone"});
+    const auto* generatorRecipe = gameplay.recipe(strategy::RecipeId{"construct.basic_generator"});
+    valid = valid && materials && materials->enabled && power && power->enabled && components &&
+            !components->enabled && workerWeapon && workerWeapon->cooldownTicks == 30 &&
+            constructionDrone && constructionDrone->movement.type == "flying" &&
+            constructionDrone->battery && commandHub && commandHub->powerDevice &&
+            commandHubPower && commandHubPower->production == 10.0F && droneRecipe &&
+            droneRecipe->producer == "command_hub" && droneRecipe->cost.at("materials") == 75.0F &&
+            generatorRecipe && generatorRecipe->producer.empty() &&
+            generatorRecipe->product.kind == strategy::RecipeProductKind::building;
     strategy::Entity componentWorker;
     componentWorker.modelKey = "worker";
     gameplay.initializeEntity(componentWorker);
@@ -31,6 +55,9 @@ int main() {
     valid = valid && componentWorker.unitControl && componentWorker.gatherer &&
             componentWorker.upgrades && !componentWorker.production &&
             !componentWorker.buildingUpgrades;
+    valid = valid && componentWorker.combat && workerWeapon &&
+            std::abs(componentWorker.combat.damage - workerWeapon->damage) < 0.001F &&
+            std::abs(componentWorker.combat.range - workerWeapon->range) < 0.001F;
     valid = valid && !componentHall.unitControl && !componentHall.gatherer &&
             componentHall.production && componentHall.buildingUpgrades && componentHall.upgrades;
     valid = valid &&
@@ -47,6 +74,93 @@ int main() {
         gameplay.productionDuration("spain", "unassigned", "outpost", "worker");
     valid = valid && gameplay.canTrain("town_center", "worker") &&
             gameplay.canTrain("outpost", "worker") && outpostTraining > townTraining;
+    const float normalDroneTraining = gameplay.productionDuration(
+        "united_states", "unassigned", "command_hub", "construction_drone");
+    const float specializedDroneTraining = gameplay.productionDuration(
+        "united_states", "rapid_deployment", "command_hub", "construction_drone");
+    valid = valid && std::abs(normalDroneTraining - 10.0F) < 0.001F &&
+            std::abs(specializedDroneTraining - 9.0F) < 0.001F;
+    strategy::RuntimeModifierLayers orderedLayers;
+    orderedLayers.permanentUpgrades.push_back({"test.permanent",
+                                                strategy::GameplayStat::movementSpeed,
+                                                {},
+                                                strategy::ModifierOperation::overrideValue,
+                                                2.0F,
+                                                100});
+    orderedLayers.producingBuildingUpgrades.push_back({"test.producer",
+                                                       strategy::GameplayStat::movementSpeed,
+                                                       {},
+                                                       strategy::ModifierOperation::add,
+                                                       3.0F,
+                                                       100});
+    orderedLayers.temporaryEffects.push_back({"test.temporary",
+                                              strategy::GameplayStat::movementSpeed,
+                                              {},
+                                              strategy::ModifierOperation::multiply,
+                                              2.0F,
+                                              100});
+    orderedLayers.powerState.push_back({"test.power",
+                                        strategy::GameplayStat::movementSpeed,
+                                        {},
+                                        strategy::ModifierOperation::maximum,
+                                        9.0F,
+                                        100});
+    valid = valid &&
+            std::abs(gameplay.resolve(strategy::GameplayStat::movementSpeed,
+                                      "germany",
+                                      "rapid_deployment",
+                                      "worker",
+                                      {},
+                                      orderedLayers) -
+                     9.0F) < 0.001F;
+    strategy::RuntimeModifierLayers domainLayers;
+    strategy::ModifierTarget weaponTarget;
+    weaponTarget.weaponTags = {"melee"};
+    domainLayers.permanentUpgrades.push_back({"test.weapon_target",
+                                              strategy::GameplayStat::attackDamage,
+                                              weaponTarget,
+                                              strategy::ModifierOperation::multiply,
+                                              2.0F,
+                                              100});
+    strategy::ModifierTarget resourceTarget;
+    resourceTarget.resourceTypes = {"materials"};
+    domainLayers.permanentUpgrades.push_back({"test.resource_target",
+                                              strategy::GameplayStat::gatherRate,
+                                              resourceTarget,
+                                              strategy::ModifierOperation::multiply,
+                                              2.0F,
+                                              110});
+    strategy::ModifierTarget powerTarget;
+    powerTarget.powerDeviceTags = {"headquarters"};
+    domainLayers.permanentUpgrades.push_back({"test.power_target",
+                                              strategy::GameplayStat::productionSpeed,
+                                              powerTarget,
+                                              strategy::ModifierOperation::multiply,
+                                              2.0F,
+                                              120});
+    valid = valid && std::abs(gameplay.resolve(strategy::GameplayStat::attackDamage,
+                                               "united_states",
+                                               "unassigned",
+                                               "worker",
+                                               {},
+                                               domainLayers) -
+                                    16.0F) <
+                         0.001F &&
+            std::abs(gameplay.resolve(strategy::GameplayStat::gatherRate,
+                                      "united_states",
+                                      "unassigned",
+                                      "worker",
+                                      {},
+                                      domainLayers,
+                                      strategy::ResourceId{"materials"}) -
+                     8.0F) < 0.001F &&
+            std::abs(gameplay.resolve(strategy::GameplayStat::productionSpeed,
+                                      "united_states",
+                                      "unassigned",
+                                      "command_hub",
+                                      {},
+                                      domainLayers) -
+                     2.0F) < 0.001F;
     strategy::World world;
     const strategy::EntityId first = world.createEntity("First").id;
     const strategy::EntityId second = world.createEntity("Second", "house").id;
@@ -61,16 +175,17 @@ int main() {
         navigationWorld.createEntity("Blocker", "town_center", 0);
     navigationObstacle.transform.position = {0.0F, 0.0F, 0.0F};
     const strategy::Terrain navigationTerrain{123U};
-    strategy::Navigation navigation{navigationTerrain};
+    strategy::Navigation navigation{navigationTerrain, gameplay};
     const auto route = navigation.findPath(navigationWorld,
                                            {-18.0F, 0.0F, 0.0F},
                                            {18.0F, 0.0F, 0.0F},
-                                           strategy::collisionRadius("worker"),
+                                           strategy::collisionRadius(gameplay, "worker"),
                                            999);
     valid = valid && !route.empty();
     for (const glm::vec3& point : route) {
         const float safe =
-            strategy::collisionRadius("town_center") + strategy::collisionRadius("worker");
+            strategy::collisionRadius(gameplay, "town_center") +
+            strategy::collisionRadius(gameplay, "worker");
         valid = valid && (point.x * point.x + point.z * point.z >= safe * safe);
     }
 
@@ -101,7 +216,7 @@ int main() {
     const glm::vec2 thirdPersonForward = thirdPerson.groundMovement(1.0F, 0.0F);
     valid = valid && std::abs(glm::length(thirdPersonForward) - 1.0F) < 0.002F;
 
-    strategy::GameSession session{123U};
+    strategy::GameSession session{gameplay, 123U};
     strategy::Entity* playerOneUnit = nullptr;
     strategy::Entity* playerTwoUnit = nullptr;
     for (strategy::Entity& candidate : session.world().entities()) {
@@ -113,7 +228,7 @@ int main() {
     valid = valid && playerOneUnit != nullptr && playerTwoUnit != nullptr;
     valid = valid && session.players().players().size() == 2;
 
-    strategy::GameSession replayA{123U}, replayB{123U};
+    strategy::GameSession replayA{gameplay, 123U}, replayB{gameplay, 123U};
     valid = valid && replayA.stateChecksum() == replayB.stateChecksum();
     const strategy::PlayerCommand wireCommand{
         1, 50, strategy::MoveUnitCommand{1, {-12.0F, 0.0F, -10.0F}}};
@@ -133,6 +248,14 @@ int main() {
             cached->transient.navigationPath.push_back({999.0F, 0.0F, 999.0F});
         valid = valid && replayA.stateChecksum() == replayB.stateChecksum();
     }
+    const strategy::PlayerCommand recipeWireCommand{
+        1, 51, strategy::StartRecipeCommand{1, "town_center.train_worker"}};
+    const auto encodedRecipe = strategy::CommandCodec::encode(recipeWireCommand);
+    const auto decodedRecipe = strategy::CommandCodec::decode(encodedRecipe);
+    valid = valid && decodedRecipe &&
+            std::holds_alternative<strategy::StartRecipeCommand>(decodedRecipe->payload) &&
+            std::get<strategy::StartRecipeCommand>(decodedRecipe->payload).recipeId ==
+                "town_center.train_worker";
     std::size_t resourceCount = 0;
     for (const strategy::Entity& resource : session.world().entities()) {
         if (resource.authority.owner != 0)
@@ -163,8 +286,9 @@ int main() {
     const strategy::EntityId movingId = playerOneUnit->id;
     const glm::vec3 beforeCollision = playerOneUnit->transform.position;
     strategy::Entity& obstacle = session.world().createEntity("Obstacle", "town_center", 0);
-    obstacle.transform.position = {beforeCollision.x + strategy::collisionRadius("worker") +
-                                       strategy::collisionRadius("town_center") + 0.1F,
+    obstacle.transform.position = {beforeCollision.x +
+                                       strategy::collisionRadius(gameplay, "worker") +
+                                       strategy::collisionRadius(gameplay, "town_center") + 0.1F,
                                    0.0F,
                                    beforeCollision.z};
     valid =
@@ -183,7 +307,10 @@ int main() {
         }
     }
     valid = valid && session.submit({1, 5, strategy::UpgradeTownHallCommand{hallId}});
-    valid = valid && session.submit({1, 6, strategy::TrainCharacterCommand{hallId}});
+    valid = valid && session.submit(
+                         {1,
+                          6,
+                          strategy::StartRecipeCommand{hallId, "town_center.train_worker"}});
     // The building processes one deterministic order at a time: upgrade, then recruit.
     for (int tick = 0; tick < 460; ++tick)
         session.update(strategy::GameSession::fixedTickSeconds);
@@ -195,7 +322,28 @@ int main() {
     valid = valid && upgradedHall && upgradedHall->buildingUpgrades.level == 2 &&
             upgradedHall->modelKey == "town_center_level_2" && workersAfter == workersBefore + 1;
 
-    strategy::GameSession gatheringSession{321U};
+    strategy::GameSession recipeSession{gameplay, 654U};
+    recipeSession.replaceWorld({}, 654U);
+    strategy::Entity& commandHubEntity =
+        recipeSession.world().createEntity("Command Hub", "command_hub", 1);
+    gameplay.initializeEntity(commandHubEntity);
+    commandHubEntity.transform.position = {0.0F, 0.0F, 0.0F};
+    recipeSession.players().find(1)->resources["materials"] = 75.0F;
+    valid = valid && recipeSession.submit(
+                         {1,
+                          1,
+                          strategy::StartRecipeCommand{
+                              commandHubEntity.id,
+                              "command_hub.train_construction_drone"}});
+    recipeSession.advanceTicks(300);
+    std::size_t constructedDrones = 0;
+    for (const strategy::Entity& entity : recipeSession.world().entities())
+        if (entity.modelKey == "construction_drone" && entity.authority.owner == 1)
+            ++constructedDrones;
+    valid = valid && constructedDrones == 1 &&
+            recipeSession.players().find(1)->resources.at("materials") == 0.0F;
+
+    strategy::GameSession gatheringSession{gameplay, 321U};
     strategy::Entity* gatherer = nullptr;
     for (strategy::Entity& entity : gatheringSession.world().entities())
         if (entity.modelKey == "worker" && entity.authority.owner == 1) {
@@ -216,7 +364,7 @@ int main() {
         valid = valid && gatheringSession.players().find(1)->wood > 0.0F;
     }
 
-    strategy::GameSession intelligenceSession{777U};
+    strategy::GameSession intelligenceSession{gameplay, 777U};
     strategy::Entity* scout = nullptr;
     strategy::Entity* observed = nullptr;
     for (strategy::Entity& entity : intelligenceSession.world().entities()) {

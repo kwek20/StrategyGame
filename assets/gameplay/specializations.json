@@ -3,14 +3,15 @@
   "specializations": [
     {"id":"unassigned","modifiers":[]},
     {"id":"logistics","modifiers":[
-      {"id":"specialization.logistics.carry","stat":"carryCapacity","target":{"tags":["worker"]},"operation":"multiply","value":1.25},
-      {"id":"specialization.logistics.gather","stat":"gatherRate","target":{"tags":["worker"]},"operation":"multiply","value":1.10}
+      {"id":"specialization.logistics.carry","priority":100,"stat":"carryCapacity","target":{"tags":["worker"]},"operation":"multiply","value":1.25},
+      {"id":"specialization.logistics.gather","priority":110,"stat":"gatherRate","target":{"tags":["worker"]},"operation":"multiply","value":1.10}
     ]},
     {"id":"rapid_deployment","modifiers":[
-      {"id":"specialization.rapid_deployment.speed","stat":"movementSpeed","target":{"tags":["unit"]},"operation":"multiply","value":1.10}
+      {"id":"specialization.rapid_deployment.speed","priority":100,"stat":"movementSpeed","target":{"tags":["unit"]},"operation":"multiply","value":1.10},
+      {"id":"specialization.rapid_deployment.drone_training","priority":110,"stat":"trainingTime","target":{"recipeTags":["drone"]},"operation":"multiply","value":0.90}
     ]},
     {"id":"ranged_doctrine","modifiers":[
-      {"id":"specialization.ranged_doctrine.speed","stat":"movementSpeed","target":{"tags":["unit","ranged"]},"operation":"multiply","value":1.12}
+      {"id":"specialization.ranged_doctrine.speed","priority":100,"stat":"movementSpeed","target":{"tags":["unit","ranged"]},"operation":"multiply","value":1.12}
     ]}
   ]
 }

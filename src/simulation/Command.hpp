@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
+#include <string>
 #include <variant>
 
 namespace strategy {
@@ -40,8 +41,9 @@ struct UpgradeTownHallCommand {
 struct ImproveTrainingCommand {
     EntityId entity{0};
 };
-struct TrainCharacterCommand {
+struct StartRecipeCommand {
     EntityId entity{0};
+    std::string recipeId;
 };
 
 using CommandPayload = std::variant<PossessUnitCommand,
@@ -52,7 +54,7 @@ using CommandPayload = std::variant<PossessUnitCommand,
                                     AttackEntityCommand,
                                     UpgradeTownHallCommand,
                                     ImproveTrainingCommand,
-                                    TrainCharacterCommand>;
+                                    StartRecipeCommand>;
 
 struct PlayerCommand {
     PlayerId player{0};

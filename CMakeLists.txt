@@ -63,11 +63,10 @@ strategy_target(strategy_localization)
 target_link_libraries(strategy_localization PUBLIC strategy_core RapidJSON)
 
 add_library(strategy_players STATIC
-    src/players/CountryCatalogue.cpp
     src/players/PlayerRegistry.cpp
 )
 strategy_target(strategy_players)
-target_link_libraries(strategy_players PUBLIC strategy_core RapidJSON)
+target_link_libraries(strategy_players PUBLIC strategy_core)
 
 add_library(strategy_terrain STATIC src/terrain/Terrain.cpp)
 strategy_target(strategy_terrain)
@@ -206,6 +205,13 @@ if(STRATEGY_BUILD_TESTS)
     add_test(NAME game_systems COMMAND game_system_tests)
     set_tests_properties(game_systems PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
+    add_executable(definition_registry_tests tests/DefinitionRegistryTests.cpp)
+    strategy_target(definition_registry_tests)
+    target_link_libraries(definition_registry_tests PRIVATE strategy_gameplay)
+    add_test(NAME definition_registry_validation COMMAND definition_registry_tests)
+    set_tests_properties(definition_registry_validation
+        PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
     add_executable(persistence_tests tests/PersistenceTests.cpp)
     strategy_target(persistence_tests)
     target_link_libraries(persistence_tests PRIVATE strategy_persistence)
@@ -222,6 +228,7 @@ if(STRATEGY_BUILD_TESTS)
     strategy_target(state_stack_tests)
     target_link_libraries(state_stack_tests PRIVATE strategy_app)
     add_test(NAME state_stack_transitions COMMAND state_stack_tests)
+    set_tests_properties(state_stack_transitions PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
     add_executable(renderer_integration_tests tests/RendererIntegrationTests.cpp)
     strategy_target(renderer_integration_tests)

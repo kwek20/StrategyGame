@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <glm/vec3.hpp>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -27,6 +28,9 @@ struct Player {
     std::string countryId{"unassigned"};
     std::string specializationId{"unassigned"};
     float wood{0.0F}, stone{0.0F}, gold{0.0F};
+    std::map<std::string, float> resources{{"materials", 0.0F},
+                                           {"components", 0.0F},
+                                           {"fuel", 0.0F}};
     std::vector<std::uint8_t> discovered =
         std::vector<std::uint8_t>(explorationCells * explorationCells, 0);
     std::vector<std::uint8_t> visible =

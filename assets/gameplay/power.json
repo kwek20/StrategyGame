@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "devices": {
+    "command_hub_integrated_grid": {
+      "tags": ["producer", "storage", "relay", "charger", "headquarters"],
+      "production": 10,
+      "consumption": 0,
+      "storage": 200,
+      "connectionRange": 24,
+      "transferLimit": 50,
+      "chargePerTick": 2
+    },
+    "basic_generator": {
+      "tags": ["producer", "generator"],
+      "production": 20
+    },
+    "basic_relay": {
+      "tags": ["relay", "grid"],
+      "connectionRange": 24,
+      "transferLimit": 50
+    },
+    "basic_charger": {
+      "tags": ["consumer", "charger"],
+      "consumption": 5,
+      "chargePerTick": 2
+    }
+  }
+}

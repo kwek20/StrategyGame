@@ -21,11 +21,24 @@ template <class Value> bool read(std::span<const std::byte>& input, Value& value
     input = input.subspan(sizeof(Value));
     return true;
 }
+void writeString(std::vector<std::byte>& output, std::string_view value) {
+    write(output, static_cast<std::uint32_t>(value.size()));
+    for (char character : value)
+        output.push_back(static_cast<std::byte>(character));
+}
+bool readString(std::span<const std::byte>& input, std::string& value) {
+    std::uint32_t size = 0;
+    if (!read(input, size) || input.size() < size)
+        return false;
+    value.assign(reinterpret_cast<const char*>(input.data()), size);
+    input = input.subspan(size);
+    return true;
+}
 } // namespace
 
 std::vector<std::byte> CommandCodec::encode(const PlayerCommand& command) {
     std::vector<std::byte> result;
-    result.push_back(std::byte{1});
+    result.push_back(std::byte{2});
     write(result, command.player);
     write(result, command.sequence);
     result.push_back(static_cast<std::byte>(command.payload.index()));
@@ -41,12 +54,13 @@ std::vector<std::byte> CommandCodec::encode(const PlayerCommand& command) {
             write(result, payload.destination.z);
         } else if constexpr (std::is_same_v<T, GatherResourceCommand>) write(result, payload.resource);
         else if constexpr (std::is_same_v<T, AttackEntityCommand>) write(result, payload.target);
+        else if constexpr (std::is_same_v<T, StartRecipeCommand>) writeString(result, payload.recipeId);
     }, command.payload);
     return result;
 }
 
 std::optional<PlayerCommand> CommandCodec::decode(std::span<const std::byte> input) {
-    if (input.empty() || input.front() != std::byte{1}) return std::nullopt;
+    if (input.empty() || input.front() != std::byte{2}) return std::nullopt;
     input = input.subspan(1);
     PlayerCommand result;
     if (!read(input, result.player) || !read(input, result.sequence) || input.empty()) return std::nullopt;
@@ -64,7 +78,12 @@ std::optional<PlayerCommand> CommandCodec::decode(std::span<const std::byte> inp
     case 5: { EntityId target{}; if(!read(input,target)) return std::nullopt; result.payload=AttackEntityCommand{entity,target}; break; }
     case 6: result.payload=UpgradeTownHallCommand{entity}; break;
     case 7: result.payload=ImproveTrainingCommand{entity}; break;
-    case 8: result.payload=TrainCharacterCommand{entity}; break;
+    case 8: {
+        StartRecipeCommand value{entity};
+        if (!readString(input, value.recipeId)) return std::nullopt;
+        result.payload = std::move(value);
+        break;
+    }
     default: return std::nullopt;
     }
     return input.empty() ? std::optional<PlayerCommand>{std::move(result)} : std::nullopt;

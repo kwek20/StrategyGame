@@ -87,8 +87,12 @@ enum class ProductionKind : std::uint8_t { trainCharacter, upgradeBuilding, impr
 
 struct ProductionOrder {
     ProductionKind kind{ProductionKind::trainCharacter};
-    float durationSeconds{0.0F};
-    float remainingSeconds{0.0F};
+    std::string recipeId;
+    std::string productId;
+    std::uint32_t amount{1};
+    std::uint32_t durationTicks{0};
+    std::uint32_t remainingTicks{0};
+    std::map<std::string, float> reservedCosts;
 };
 
 struct ProductionComponent {

@@ -25,7 +25,7 @@ class BuildState final : public GameState {
     mutable World world_;
     RtsCamera camera_;
     GameConfig config_;
-    GameplayCatalogue gameplay_;
+    const DefinitionRegistry& gameplay_;
     PlayerId team_{1};
     std::string entityType_{"worker"};
     mutable std::string status_;

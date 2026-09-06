@@ -31,7 +31,8 @@ void mix(std::uint64_t& hash, std::uint64_t value) {
 }
 } // namespace
 
-Navigation::Navigation(const Terrain& terrain) {
+Navigation::Navigation(const Terrain& terrain, const DefinitionRegistry& definitions)
+    : definitions_(definitions) {
     rebuildTerrain(terrain);
 }
 
@@ -77,7 +78,7 @@ const std::vector<std::uint8_t>& Navigation::occupancy(const World& world, float
     for (const Entity& entity : world.entities()) {
         if (entity.unitControl || (entity.resource && entity.resource.remaining <= 0.0F))
             continue;
-        const float blockedRadius = radius + collisionRadius(entity.modelKey);
+        const float blockedRadius = radius + collisionRadius(definitions_, entity.modelKey);
         const int minX = gridCoordinate(entity.transform.position.x - blockedRadius),
                   maxX = gridCoordinate(entity.transform.position.x + blockedRadius),
                   minZ = gridCoordinate(entity.transform.position.z - blockedRadius),

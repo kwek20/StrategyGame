@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "resourceNodes": {
+    "tree": {
+      "collisionRadius": 1.2,
+      "components": ["resource"],
+      "tags": ["resource", "wood"],
+      "stats": {}
+    },
+    "stone": {
+      "collisionRadius": 1.5,
+      "components": ["resource"],
+      "tags": ["resource", "stone"],
+      "stats": {}
+    },
+    "gold": {
+      "collisionRadius": 1.5,
+      "components": ["resource"],
+      "tags": ["resource", "gold"],
+      "stats": {}
+    }
+  }
+}

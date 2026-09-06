@@ -2,6 +2,7 @@
 
 #include "app/GameEvents.hpp"
 #include "core/EventBus.hpp"
+#include "gameplay/DefinitionRegistry.hpp"
 #include "localization/Text.hpp"
 #include "render/Renderer.hpp"
 
@@ -12,7 +13,7 @@ namespace strategy {
 
 StartMenuState::StartMenuState(StateContext& context)
     : GameState(context) {
-    const auto& countries = countryCatalogue_.countries();
+    const auto& countries = context_.definitions.countries();
     for (std::size_t index = 0; index < countries.size(); ++index) {
         if (countries[index].id == "spain")
             playerOneCountryIndex_ = index;
@@ -45,7 +46,7 @@ StartMenuState::StartMenuState(StateContext& context)
 }
 
 void StartMenuState::cycleCountry(std::size_t& index, int direction) {
-    const std::size_t count = countryCatalogue_.countries().size();
+    const std::size_t count = context_.definitions.countries().size();
     index = static_cast<std::size_t>(
         (static_cast<int>(index) + direction + static_cast<int>(count)) % static_cast<int>(count));
     refreshUiText();
@@ -53,8 +54,10 @@ void StartMenuState::cycleCountry(std::size_t& index, int direction) {
 
 void StartMenuState::refreshUiText() {
     ui_.setText("seed", seedText_.empty() ? "0" : seedText_);
-    ui_.setText("team_a_value", Text::get(countryCatalogue_.countries()[playerOneCountryIndex_].nameKey));
-    ui_.setText("team_b_value", Text::get(countryCatalogue_.countries()[playerTwoCountryIndex_].nameKey));
+    ui_.setText("team_a_value",
+                Text::get(context_.definitions.countries()[playerOneCountryIndex_].nameKey));
+    ui_.setText("team_b_value",
+                Text::get(context_.definitions.countries()[playerTwoCountryIndex_].nameKey));
 }
 
 void StartMenuState::handleEvent(const SDL_Event& event) {
@@ -132,10 +135,10 @@ void StartMenuState::render(Renderer& renderer) const {
 }
 
 std::string StartMenuState::playerOneCountry() const {
-    return countryCatalogue_.countries()[playerOneCountryIndex_].id;
+    return context_.definitions.countries()[playerOneCountryIndex_].id;
 }
 std::string StartMenuState::playerTwoCountry() const {
-    return countryCatalogue_.countries()[playerTwoCountryIndex_].id;
+    return context_.definitions.countries()[playerTwoCountryIndex_].id;
 }
 
 std::uint32_t StartMenuState::terrainSeed() const {

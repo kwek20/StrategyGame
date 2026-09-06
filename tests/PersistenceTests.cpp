@@ -38,7 +38,7 @@ int main() {
             settingsRoundTrip.effectsVolume == 0.9F && settingsRoundTrip.muted;
 
     strategy::World world;
-    strategy::Entity& entity = world.createEntity("House", "house");
+    strategy::Entity& entity = world.createEntity("Town Center", "town_center");
     entity.kind = strategy::EntityKind::building;
     entity.health.emplace();
     entity.production.emplace();
@@ -53,16 +53,23 @@ int main() {
     entity.production.characterBuildSeconds = 7.0F;
     entity.production.productionSpeedMultiplier = 1.4F;
     entity.production.productionSpeedUpgrades = 4;
-    entity.production.queue.push_back({strategy::ProductionKind::trainCharacter, 7.0F, 4.5F});
+    strategy::ProductionOrder production;
+    production.kind = strategy::ProductionKind::trainCharacter;
+    production.recipeId = "town_center.train_worker";
+    production.productId = "worker";
+    production.durationTicks = 210;
+    production.remainingTicks = 135;
+    entity.production.queue.push_back(production);
     const strategy::EntityId originalId = entity.id;
     strategy::PlayerRegistry players{"france", "brazil"};
+    players.find(1)->resources["materials"] = 125.0F;
     players.find(1)->intelligence.push_back(
         {42, "town_center", {8, 0, 9}, {0, 45, 0}, {1, 1, 1}, true});
     strategy::SaveGame::write(savePath, 424242U, world, &players);
     const strategy::SaveData loaded = strategy::SaveGame::read(savePath);
     valid = valid && loaded.terrainSeed == 424242U && loaded.entities.size() == 1;
     valid = valid && loaded.entities[0].id == originalId;
-    valid = valid && loaded.entities[0].modelKey == "house";
+    valid = valid && loaded.entities[0].modelKey == "town_center";
     valid = valid && loaded.entities[0].transform.position == glm::vec3{1.0F, 2.0F, 3.0F};
     valid = valid && loaded.entities[0].transform.scale == glm::vec3{2.0F};
     valid = valid && !loaded.entities[0].unitControl && loaded.entities[0].production;
@@ -78,7 +85,10 @@ int main() {
     valid = valid && loaded.entities[0].production.productionSpeedMultiplier == 1.4F;
     valid = valid && loaded.entities[0].production.productionSpeedUpgrades == 4;
     valid = valid && loaded.entities[0].production.queue.size() == 1;
-    valid = valid && loaded.entities[0].production.queue.front().remainingSeconds == 4.5F;
+    valid = valid && loaded.entities[0].production.queue.front().remainingTicks == 135 &&
+            loaded.entities[0].production.queue.front().recipeId ==
+                "town_center.train_worker" &&
+            loaded.resources[0].at("materials") == 125.0F;
 
     std::filesystem::remove_all(directory);
     if (!valid) {
