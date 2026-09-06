@@ -171,6 +171,7 @@ struct MatchRulesDefinition {
     std::vector<StartingEntityDefinition> playerOne, playerTwo;
     std::vector<std::string> buildPalette, generatedResourceNodes;
     std::string trainingUpgradeProduct;
+    std::map<std::string, float> startingResources;
     float terrainEdgeMargin{0.0F}, minimumResourceHeight{0.0F}, maximumResourceHeight{1.0F};
     float maximumResourceSlope{0.0F}, baseExclusionRadius{0.0F};
 };
@@ -222,6 +223,8 @@ class DefinitionRegistry final {
     [[nodiscard]] const RecipeDefinition* recipe(RecipeId id) const;
     [[nodiscard]] const RecipeDefinition*
     productionRecipe(const std::string& producer, const std::string& product) const;
+    [[nodiscard]] std::vector<const RecipeDefinition*> recipesForProducer(const std::string& producer) const;
+    [[nodiscard]] std::vector<const UpgradeDefinition*> upgradesForResearcher(const std::string& researcher) const;
     [[nodiscard]] const std::vector<CountryDefinition>& countries() const { return countryList_; }
     [[nodiscard]] const MatchRulesDefinition& matchRules() const { return matchRules_; }
     [[nodiscard]] const UpgradeDefinition* upgrade(const std::string& id) const;

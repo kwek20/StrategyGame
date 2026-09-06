@@ -54,8 +54,8 @@ int main() {
     entity.production.productionSpeedUpgrades = 4;
     strategy::ProductionOrder production;
     production.kind = strategy::ProductionKind::trainCharacter;
-    production.recipeId = "town_center.train_worker";
-    production.productId = "worker";
+    production.recipeId = "town_center.train_construction_drone";
+    production.productId = "construction_drone";
     production.durationTicks = 210;
     production.remainingTicks = 135;
     entity.production.queue.push_back(production);
@@ -88,7 +88,7 @@ int main() {
     valid = valid && loaded.entities[0].production.queue.size() == 1;
     valid = valid && loaded.entities[0].production.queue.front().remainingTicks == 135 &&
             loaded.entities[0].production.queue.front().recipeId ==
-                "town_center.train_worker" &&
+                "town_center.train_construction_drone" &&
             loaded.resources[0].at("materials") == 125.0F;
 
     std::filesystem::remove_all(directory);

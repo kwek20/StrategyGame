@@ -633,6 +633,14 @@ void DefinitionRegistry::loadRules(const std::filesystem::path& path) {
     matchRules_.trainingUpgradeProduct = data["trainingUpgradeProduct"].GetString();
     matchRules_.buildPalette = strings(data, "buildPalette");
     matchRules_.generatedResourceNodes = strings(data, "generatedResourceNodes");
+    if (!data.HasMember("startingResources") || !data["startingResources"].IsObject())
+        throw std::runtime_error("Match rules require startingResources object");
+    for (auto item = data["startingResources"].MemberBegin();
+         item != data["startingResources"].MemberEnd(); ++item) {
+        if (!item->value.IsNumber() || item->value.GetFloat() < 0.0F)
+            throw std::runtime_error("Starting resources must be non-negative numbers");
+        matchRules_.startingResources.emplace(item->name.GetString(), item->value.GetFloat());
+    }
     const auto loadStart = [&](const char* key, std::vector<StartingEntityDefinition>& output) {
         if (!data.HasMember(key) || !data[key].IsArray())
             throw std::runtime_error("Match rules require array '" + std::string(key) + "'");
@@ -972,6 +980,24 @@ DefinitionRegistry::productionRecipe(const std::string& producer,
                                      producer + "'");
         result = &definition;
     }
+    return result;
+}
+
+std::vector<const RecipeDefinition*> DefinitionRegistry::recipesForProducer(const std::string& producer) const {
+    std::vector<const RecipeDefinition*> result;
+    for (const auto& [id, recipe] : recipes_)
+        if (recipe.producer == producer && recipe.product.kind == RecipeProductKind::unit)
+            result.push_back(&recipe);
+    std::sort(result.begin(), result.end(), [](const auto* a, const auto* b) { return a->id < b->id; });
+    return result;
+}
+
+std::vector<const UpgradeDefinition*> DefinitionRegistry::upgradesForResearcher(const std::string& researcher) const {
+    std::vector<const UpgradeDefinition*> result;
+    for (const auto& [id, upgrade] : upgrades_)
+        if (std::find(upgrade.allowedResearchers.begin(), upgrade.allowedResearchers.end(), researcher) != upgrade.allowedResearchers.end())
+            result.push_back(&upgrade);
+    std::sort(result.begin(), result.end(), [](const auto* a, const auto* b) { return a->id < b->id; });
     return result;
 }
 

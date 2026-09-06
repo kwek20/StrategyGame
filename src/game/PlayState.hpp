@@ -78,6 +78,7 @@ class PlayState final : public GameState {
     mutable std::optional<std::vector<EntityId>> pickedEntities_;
     std::uint32_t inputWindowId_{0};
     std::array<bool, 3> townHallButtonHovered_{false, false, false};
+    int entityActionHovered_{-1};
     bool constructionPlacementMode_{false};
     bool constructionButtonHovered_{false};
     mutable std::optional<glm::vec2> pendingConstructionScreen_;

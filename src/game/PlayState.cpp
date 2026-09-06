@@ -3,6 +3,7 @@
 #include "app/GameEvents.hpp"
 #include "core/EventBus.hpp"
 #include "diagnostics/Logger.hpp"
+#include "localization/Text.hpp"
 #include "persistence/SaveGame.hpp"
 #include "render/Renderer.hpp"
 #include "world/Collision.hpp"
@@ -215,45 +216,34 @@ void PlayState::handleEvent(const SDL_Event& event) {
     }
     const Entity* selectedHall = session_.world().findEntity(selectedEntity_);
     const bool ownsSelectedHall = selectedHall && selectedHall->authority.owner == localPlayer_ &&
-                                  selectedHall->archetype.value.rfind("town_center", 0) == 0 &&
-                                  (selectedUnits_.empty() || selectedUnits_.size() == 1);
+                                  selectedUnits_.empty();
     if (ownsSelectedHall &&
         (event.type == SDL_EVENT_MOUSE_MOTION ||
          (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_LEFT))) {
+        const auto recipes = context_.definitions.recipesForProducer(selectedHall->archetype.value);
+        const auto upgrades = context_.definitions.upgradesForResearcher(selectedHall->archetype.value);
+        const std::size_t actionCount = std::min<std::size_t>(6, recipes.size() + upgrades.size());
         int width = 0, height = 0;
         if (SDL_Window* window = SDL_GetWindowFromID(inputWindowId_))
             SDL_GetWindowSize(window, &width, &height);
         (void)width;
         const float x = event.type == SDL_EVENT_MOUSE_MOTION ? event.motion.x : event.button.x;
         const float y = event.type == SDL_EVENT_MOUSE_MOTION ? event.motion.y : event.button.y;
-        constexpr std::array<float, 3> lefts{30.0F, 230.0F, 430.0F};
-        constexpr std::array<float, 3> rights{220.0F, 420.0F, 620.0F};
-        for (std::size_t i = 0; i < 3; ++i)
-            townHallButtonHovered_[i] =
-                x >= lefts[i] && x <= rights[i] && y >= height - 75.0F && y <= height - 30.0F;
+        entityActionHovered_ = -1;
+        for (std::size_t i = 0; i < actionCount; ++i) {
+            const float left = 30.0F + static_cast<float>(i) * 96.0F;
+            if (x >= left && x <= left + 82.0F && y >= height - 86.0F && y <= height - 30.0F)
+                entityActionHovered_ = static_cast<int>(i);
+        }
         if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
-            if (townHallButtonHovered_[0] && selectedHall->buildingUpgrades &&
-                selectedHall->buildingUpgrades.level < 3) {
-                session_.submit({localPlayer_,
-                                 nextCommandSequence_++,
-                                 StartUpgradeCommand{selectedHall->id, "building.town_center_level_2"}});
-                context_.events.enqueue(AudioEvent{AudioCue::buildingUpgrade});
-            } else if (townHallButtonHovered_[1]) {
-                session_.submit({localPlayer_,
-                                 nextCommandSequence_++,
-                                 StartUpgradeCommand{selectedHall->id,
-                                                      "production.efficient_training"}});
-                context_.events.enqueue(AudioEvent{AudioCue::trainingUpgrade});
-            } else if (townHallButtonHovered_[2]) {
-                if (const RecipeDefinition* recipe =
-                        context_.definitions.productionRecipe(selectedHall->archetype.value, "worker")) {
-                    session_.submit({localPlayer_,
-                                     nextCommandSequence_++,
-                                     StartRecipeCommand{selectedHall->id, recipe->id}});
-                    context_.events.enqueue(AudioEvent{AudioCue::trainUnit});
-                }
+            if (entityActionHovered_ >= 0 && static_cast<std::size_t>(entityActionHovered_) < recipes.size()) {
+                session_.submit({localPlayer_, nextCommandSequence_++, StartRecipeCommand{selectedHall->id, recipes[entityActionHovered_]->id}});
+                context_.events.enqueue(AudioEvent{AudioCue::trainUnit});
+            } else if (entityActionHovered_ >= 0) {
+                const std::size_t upgradeIndex = static_cast<std::size_t>(entityActionHovered_) - recipes.size();
+                if (upgradeIndex < upgrades.size()) session_.submit({localPlayer_, nextCommandSequence_++, StartUpgradeCommand{selectedHall->id, upgrades[upgradeIndex]->id}});
             }
-            if (townHallButtonHovered_[0] || townHallButtonHovered_[1] || townHallButtonHovered_[2])
+            if (entityActionHovered_ >= 0)
                 return;
         }
     }
@@ -441,7 +431,7 @@ void PlayState::update(float deltaSeconds) {
         const auto order = [&](EntityId id) {
             if (const Entity* entity = session_.world().findEntity(id);
                 entity && entity->authority.owner == localPlayer_ && entity->unitControl &&
-                entity->unitControl.directlyControllable) {
+                entity->authority.directController == 0) {
                 if (target && target->resource)
                     session_.submit({localPlayer_,
                                      nextCommandSequence_++,
@@ -601,11 +591,29 @@ void PlayState::render(Renderer& renderer) const {
         renderer.drawStrategyHud(session_.world(), selectedEntity_, local);
         if (!selectedUnits_.empty())
             renderer.drawUnitSelectionHud(session_.world(), selectedUnits_);
-        if (const Entity* hall = session_.world().findEntity(selectedEntity_);
-            hall && hall->authority.owner == localPlayer_ && hall->production &&
-            hall->buildingUpgrades &&
-            (selectedUnits_.empty() || selectedUnits_.size() == 1))
-            renderer.drawTownHallHud(*hall, townHallButtonHovered_);
+        if (const Entity* selected = session_.world().findEntity(selectedEntity_);
+            selected && selected->authority.owner == localPlayer_ && selectedUnits_.empty()) {
+            std::vector<std::string> labels, costs;
+            const auto recipes = context_.definitions.recipesForProducer(selected->archetype.value);
+            for (const RecipeDefinition* recipe : recipes) {
+                const EntityArchetype* product = context_.definitions.archetype(recipe->product.id);
+                labels.push_back(product ? Text::get(product->nameKey) : recipe->product.id);
+                std::string cost;
+                for (const auto& [resource, amount] : recipe->cost)
+                    cost += resource + ": " + std::to_string(static_cast<int>(amount)) + " ";
+                if (local) cost += "time: " + std::to_string(static_cast<int>(context_.definitions.productionDuration(local->countryId, local->specializationId, selected->archetype.value, recipe->product.id))) + "s";
+                costs.push_back(cost.empty() ? "free" : cost);
+            }
+            for (const UpgradeDefinition* upgrade : context_.definitions.upgradesForResearcher(selected->archetype.value)) {
+                labels.push_back(Text::get(upgrade->nameKey));
+                std::string cost;
+                if (const RecipeDefinition* recipe = context_.definitions.recipe(RecipeId{upgrade->researchRecipe}))
+                    for (const auto& [resource, amount] : recipe->cost)
+                        cost += resource + ": " + std::to_string(static_cast<int>(amount)) + " ";
+                costs.push_back(cost.empty() ? "free" : cost);
+            }
+            renderer.drawEntityActionHud(*selected, labels, costs, entityActionHovered_);
+        }
     }
     if (paused_) {
         renderer.drawPauseMenu(resumeHovered_, settingsHovered_, exitHovered_);

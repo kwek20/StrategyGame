@@ -69,11 +69,10 @@ int main() {
                               strategy::GameplayStat::gatherRate, "brazil", "logistics", "worker") -
                           4.84F) < 0.001F;
     const float townTraining =
-        gameplay.productionDuration("spain", "unassigned", "town_center", "worker");
-    const float outpostTraining =
-        gameplay.productionDuration("spain", "unassigned", "outpost", "worker");
-    valid = valid && gameplay.canTrain("town_center", "worker") &&
-            gameplay.canTrain("outpost", "worker") && outpostTraining > townTraining;
+        gameplay.productionDuration("spain", "unassigned", "town_center", "construction_drone");
+    valid = valid && gameplay.canTrain("town_center", "construction_drone") &&
+            !gameplay.canTrain("town_center", "worker") &&
+            !gameplay.canTrain("outpost", "worker") && townTraining > 0.0F;
     const float normalDroneTraining = gameplay.productionDuration(
         "united_states", "unassigned", "command_hub", "construction_drone");
     const float specializedDroneTraining = gameplay.productionDuration(
@@ -250,7 +249,7 @@ int main() {
         valid = valid && replayA.stateChecksum() == replayB.stateChecksum();
     }
     const strategy::PlayerCommand recipeWireCommand{
-        1, 51, strategy::StartRecipeCommand{1, "town_center.train_worker"}};
+        1, 51, strategy::StartRecipeCommand{1, "town_center.train_construction_drone"}};
     const auto encodedRecipe = strategy::CommandCodec::encode(recipeWireCommand);
     const auto decodedRecipe = strategy::CommandCodec::decode(encodedRecipe);
     (void)decodedRecipe;
@@ -294,11 +293,11 @@ int main() {
     session.update(strategy::GameSession::fixedTickSeconds);
     playerOneUnit = session.world().findEntity(movingId);
     valid = valid && std::abs(playerOneUnit->transform.position.x - beforeCollision.x) < 0.001F;
-    std::size_t workersBefore = 0;
+    std::size_t dronesBefore = 0;
     strategy::EntityId hallId = 0;
     for (strategy::Entity& entity : session.world().entities()) {
-        if (entity.archetype.value == "worker" && entity.authority.owner == 1)
-            ++workersBefore;
+        if (entity.archetype.value == "construction_drone" && entity.authority.owner == 1)
+            ++dronesBefore;
         if (entity.archetype.value == "town_center" && entity.authority.owner == 1) {
             hallId = entity.id;
             entity.production.productionSpeedMultiplier = 1000.0F;
@@ -307,15 +306,15 @@ int main() {
     valid = session.submit(
                          {1,
                           6,
-                          strategy::StartRecipeCommand{hallId, "town_center.train_worker"}}) && valid;
+                          strategy::StartRecipeCommand{hallId, "town_center.train_construction_drone"}}) && valid;
     for (int tick = 0; tick < 460; ++tick)
         session.update(strategy::GameSession::fixedTickSeconds);
     const strategy::Entity* upgradedHall = session.world().findEntity(hallId);
-    std::size_t workersAfter = 0;
+    std::size_t dronesAfter = 0;
     for (const strategy::Entity& entity : session.world().entities())
-        if (entity.archetype.value == "worker" && entity.authority.owner == 1)
-            ++workersAfter;
-    valid = valid && upgradedHall && workersAfter == workersBefore + 1;
+        if (entity.archetype.value == "construction_drone" && entity.authority.owner == 1)
+            ++dronesAfter;
+    valid = valid && upgradedHall && dronesAfter == dronesBefore + 1;
 
     strategy::GameSession recipeSession{gameplay, 654U};
     recipeSession.replaceWorld({}, 654U);

@@ -1715,6 +1715,50 @@ void Renderer::drawTownHallHud(const Entity& hall, const std::array<bool, 3>& ho
     glEnable(GL_DEPTH_TEST);
 }
 
+void Renderer::drawEntityActionHud(const Entity& entity,
+                                   const std::vector<std::string>& labels,
+                                   const std::vector<std::string>& costs,
+                                   int hovered) const {
+    if (labels.empty()) return;
+    renderGraph_.enter(RenderPassKind::overlay);
+    const float height = static_cast<float>(viewportHeight_), top = height - 235.0F;
+    std::vector<glm::vec2> panel, buttons, hot, actionIcons, queueSlots, queueIcons,
+        progressBack, progressFill;
+    appendHudRectangle(panel, 18, top, 640, height - 18, viewportWidth_, viewportHeight_);
+    const std::size_t count = std::min<std::size_t>(labels.size(), 6);
+    for (std::size_t i=0;i<count;++i) {
+        const float left=30.0F+static_cast<float>(i)*96.0F;
+        appendHudRectangle(i==static_cast<std::size_t>(hovered)?hot:buttons,left,height-86,left+82,height-30,viewportWidth_,viewportHeight_);
+        appendHudRectangle(actionIcons,left+28,height-76,left+54,height-40,viewportWidth_,viewportHeight_);
+        appendHudRectangle(actionIcons,left+20,height-68,left+62,height-48,viewportWidth_,viewportHeight_);
+    }
+    if (entity.production) {
+        const std::size_t visible = std::min<std::size_t>(entity.production.queue.size(), 9);
+        for (std::size_t i=0;i<visible;++i) {
+            const float left=30.0F+static_cast<float>(i)*54.0F;
+            appendHudRectangle(queueSlots,left,top+82,left+44,top+126,viewportWidth_,viewportHeight_);
+            appendHudRectangle(queueIcons,left+10,top+92,left+34,top+116,viewportWidth_,viewportHeight_);
+            appendHudRectangle(queueIcons,left+16,top+86,left+28,top+122,viewportWidth_,viewportHeight_);
+        }
+        if (!entity.production.queue.empty()) {
+            const ProductionOrder& active=entity.production.queue.front();
+            const float ratio=active.durationTicks ? std::clamp(1.0F-static_cast<float>(active.remainingTicks)/static_cast<float>(active.durationTicks),0.0F,1.0F):1.0F;
+            appendHudRectangle(progressBack,30,top+137,620,top+147,viewportWidth_,viewportHeight_);
+            appendHudRectangle(progressFill,30,top+137,30+590*ratio,top+147,viewportWidth_,viewportHeight_);
+        }
+    }
+    glDisable(GL_DEPTH_TEST); glDisable(GL_CULL_FACE); shaders_.use(hudProgram_); glBindVertexArray(hudVao_); glBindBuffer(GL_ARRAY_BUFFER,hudVbo_); glEnableVertexAttribArray(0); glVertexAttribPointer(0,2,GL_FLOAT,GL_FALSE,sizeof(glm::vec2),nullptr);
+    auto draw=[this](const std::vector<glm::vec2>& v,const glm::vec3& c){ glUniform3fv(shaders_.uniform(hudProgram_,"hudColor"),1,glm::value_ptr(c)); glBufferData(GL_ARRAY_BUFFER,static_cast<GLsizeiptr>(v.size()*sizeof(glm::vec2)),v.data(),GL_DYNAMIC_DRAW); glDrawArrays(GL_TRIANGLES,0,static_cast<GLsizei>(v.size())); };
+    draw(panel,{0.025F,0.04F,0.06F}); draw(buttons,{0.14F,0.27F,0.20F}); draw(hot,{0.32F,0.56F,0.22F});
+    draw(actionIcons,{0.18F,0.76F,0.88F}); draw(queueSlots,{0.08F,0.12F,0.15F});
+    draw(queueIcons,{0.18F,0.76F,0.88F}); draw(progressBack,{0.06F,0.08F,0.10F}); draw(progressFill,{0.18F,0.76F,0.88F});
+    drawText(entity.name,30,top+14,2.0F);
+    if(hovered>=0 && static_cast<std::size_t>(hovered)<count) drawText(labels[hovered]+"  "+costs[hovered],30,top+48,1.45F);
+    if (entity.production && entity.production.queue.size() > 9)
+        drawText("+ " + std::to_string(entity.production.queue.size()-9),526,top+96,1.35F);
+    glBindVertexArray(0); glEnable(GL_CULL_FACE); glEnable(GL_DEPTH_TEST);
+}
+
 void Renderer::drawSelectionBox(const glm::vec2& start, const glm::vec2& end) const {
     renderGraph_.enter(RenderPassKind::overlay);
     const float left = std::min(start.x, end.x), right = std::max(start.x, end.x);

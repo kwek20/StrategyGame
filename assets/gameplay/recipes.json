@@ -11,36 +11,28 @@
       "tags": ["research", "upgrade"]
     },
     {
-      "id": "town_center.train_worker",
+      "id": "town_center.train_construction_drone",
       "producer": "town_center",
-      "product": { "unit": "worker", "amount": 1 },
+      "product": { "unit": "construction_drone", "amount": 1 },
       "cost": {},
       "durationTicks": 300,
-      "tags": ["training", "worker"]
+      "tags": ["training", "drone", "construction"]
     },
     {
-      "id": "town_center_level_2.train_worker",
+      "id": "town_center_level_2.train_construction_drone",
       "producer": "town_center_level_2",
-      "product": { "unit": "worker", "amount": 1 },
+      "product": { "unit": "construction_drone", "amount": 1 },
       "cost": {},
       "durationTicks": 300,
-      "tags": ["training", "worker"]
+      "tags": ["training", "drone", "construction"]
     },
     {
-      "id": "town_center_level_3.train_worker",
+      "id": "town_center_level_3.train_construction_drone",
       "producer": "town_center_level_3",
-      "product": { "unit": "worker", "amount": 1 },
+      "product": { "unit": "construction_drone", "amount": 1 },
       "cost": {},
       "durationTicks": 300,
-      "tags": ["training", "worker"]
-    },
-    {
-      "id": "outpost.train_worker",
-      "producer": "outpost",
-      "product": { "unit": "worker", "amount": 1 },
-      "cost": {},
-      "durationTicks": 300,
-      "tags": ["training", "worker", "forward-production"]
+      "tags": ["training", "drone", "construction"]
     },
     {
       "id": "command_hub.train_construction_drone",

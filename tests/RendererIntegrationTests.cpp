@@ -142,8 +142,8 @@ out vec4 color;void main(){color=vec4(1);})";
         }
         const strategy::TextureHandle texture = renderer.requestTexture("ui/placeholder");
         renderer.bindTexture(texture, 0);
-        valid = loadProgress.total == 10 && loadProgress.completed == 10 &&
-                loadProgress.failed == 0 && renderer.loadedModelCount() == 5 && valid;
+        valid = loadProgress.total == 11 && loadProgress.completed == 11 &&
+                loadProgress.failed == 0 && renderer.loadedModelCount() == 6 && valid;
         valid = renderer.textureState(texture) == strategy::ResourceState::ready &&
                 noGlErrors("standalone texture") && valid;
         renderer.beginProfileFrame();

@@ -77,6 +77,10 @@ class Renderer final {
     drawStrategyHud(const World& world, EntityId selected, const Player* player = nullptr) const;
     void drawUnitHud(const Entity& controlled) const;
     void drawTownHallHud(const Entity& townHall, const std::array<bool, 3>& hovered) const;
+    void drawEntityActionHud(const Entity& entity,
+                             const std::vector<std::string>& labels,
+                             const std::vector<std::string>& costs,
+                             int hovered) const;
     void drawSelectionBox(const glm::vec2& start, const glm::vec2& end) const;
     [[nodiscard]] std::vector<EntityId> unitsInScreenRectangle(const glm::vec2& start,
                                                                const glm::vec2& end,

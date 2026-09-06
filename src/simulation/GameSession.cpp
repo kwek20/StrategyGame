@@ -36,6 +36,8 @@ GameSession::GameSession(const DefinitionRegistry& definitions,
     , terrainSeed_(terrainSeed)
     , terrain_(terrainSeed)
     , navigation_(terrain_, gameplay_) {
+    for (Player& player : players_.players())
+        player.resources = gameplay_.matchRules().startingResources;
     const auto createStartingEntities = [this](PlayerId player,
                                                const auto& starts,
                                                float rotation) {
@@ -171,8 +173,7 @@ void GameSession::apply(const PlayerCommand& command) {
                     entity->transient.navigationPath.empty() ? 0.5F : 0.0F;
             } else if constexpr (std::is_same_v<Type, GatherResourceCommand>) {
                 Entity* resource = world_.findEntity(payload.resource);
-                if (entity->unitControl && entity->gatherer &&
-                    entity->unitControl.directlyControllable && resource && resource->resource &&
+                if (entity->unitControl && entity->gatherer && resource && resource->resource &&
                     resource->resource.remaining > 0) {
                     entity->unitControl.order = UnitOrderKind::gather;
                     entity->unitControl.orderTarget = resource->id;
@@ -666,7 +667,7 @@ void GameSession::simulateTick() {
                                                character.owner);
             initializeEntity(unit);
             unit.transform.position = {position.x, 0.0F, position.y};
-            unit.unitControl.directlyControllable = true;
+            unit.unitControl.directlyControllable = unit.archetype.value != "construction_drone";
             break;
           }
         }
