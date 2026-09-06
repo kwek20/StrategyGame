@@ -59,7 +59,7 @@ void Navigation::synchronizeObstacles(const World& world) {
             mix(fingerprint, entity.id);
             mix(fingerprint, std::bit_cast<std::uint32_t>(entity.transform.position.x));
             mix(fingerprint, std::bit_cast<std::uint32_t>(entity.transform.position.z));
-            mix(fingerprint, std::hash<std::string_view>{}(entity.modelKey));
+            mix(fingerprint, std::hash<std::string_view>{}(entity.archetype.value));
             mix(fingerprint, !entity.resource || entity.resource.remaining > 0.0F ? 1 : 0);
         }
     if (fingerprint != obstacleFingerprint_) {
@@ -78,7 +78,7 @@ const std::vector<std::uint8_t>& Navigation::occupancy(const World& world, float
     for (const Entity& entity : world.entities()) {
         if (entity.unitControl || (entity.resource && entity.resource.remaining <= 0.0F))
             continue;
-        const float blockedRadius = radius + collisionRadius(definitions_, entity.modelKey);
+        const float blockedRadius = radius + collisionRadius(definitions_, entity.archetype);
         const int minX = gridCoordinate(entity.transform.position.x - blockedRadius),
                   maxX = gridCoordinate(entity.transform.position.x + blockedRadius),
                   minZ = gridCoordinate(entity.transform.position.z - blockedRadius),

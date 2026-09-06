@@ -16,7 +16,7 @@ bool overlapsObject(const World& world,
     for (const Entity& entity : world.entities()) {
         if (entity.id == ignored)
             continue;
-        const float combined = radius + collisionRadius(definitions, entity.modelKey);
+        const float combined = radius + collisionRadius(definitions, entity.archetype);
         const glm::vec2 delta =
             position - glm::vec2{entity.transform.position.x, entity.transform.position.z};
         if (glm::dot(delta, delta) < combined * combined)

@@ -45,7 +45,7 @@ std::uint64_t authoritativeStateChecksum(const World& world,
     std::sort(entities.begin(), entities.end(), [](auto a, auto b){ return a->id < b->id; });
     hash.value(static_cast<std::uint64_t>(entities.size()));
     for (const Entity* entity : entities) {
-        hash.value(entity->id); hash.text(entity->modelKey);
+        hash.value(entity->id); hash.text(entity->archetype.value);
         hash.value(entity->kind); hash.vector(entity->transform.position);
         hash.vector(entity->transform.rotationDegrees); hash.vector(entity->transform.scale);
         hash.value(entity->authority.owner); hash.value(entity->authority.directController);
@@ -58,7 +58,7 @@ std::uint64_t authoritativeStateChecksum(const World& world,
         hash.value(static_cast<bool>(entity->gatherer)); if(entity->gatherer){hash.text(entity->gatherer.carriedResource);hash.value(entity->gatherer.carriedAmount);hash.value(entity->gatherer.carryCapacity);hash.value(entity->gatherer.gatherPerSecond);}
         hash.value(static_cast<bool>(entity->combat)); if(entity->combat){hash.value(entity->combat.damage);hash.value(entity->combat.range);hash.value(entity->combat.cooldownSeconds);hash.value(entity->combat.cooldownRemaining);}
         hash.value(static_cast<bool>(entity->resource)); if(entity->resource){hash.text(entity->resource.type);hash.value(entity->resource.remaining);}
-        hash.value(static_cast<bool>(entity->production)); if(entity->production){hash.value(entity->production.characterBuildSeconds);hash.value(entity->production.productionSpeedMultiplier);hash.value(entity->production.productionSpeedUpgrades);hash.value(static_cast<std::uint64_t>(entity->production.queue.size()));for(const auto& order:entity->production.queue){hash.value(order.kind);hash.text(order.recipeId);hash.text(order.productId);hash.value(order.amount);hash.value(order.durationTicks);hash.value(order.remainingTicks);hash.value(static_cast<std::uint64_t>(order.reservedCosts.size()));for(const auto& [id,amount]:order.reservedCosts){hash.text(id);hash.value(amount);}}}
+        hash.value(static_cast<bool>(entity->production)); if(entity->production){hash.value(entity->production.productionSpeedMultiplier);hash.value(entity->production.productionSpeedUpgrades);hash.value(static_cast<std::uint64_t>(entity->production.queue.size()));for(const auto& order:entity->production.queue){hash.value(order.kind);hash.text(order.recipeId);hash.text(order.productId);hash.text(order.upgradeId);hash.value(order.amount);hash.value(order.durationTicks);hash.value(order.remainingTicks);hash.value(static_cast<std::uint64_t>(order.reservedCosts.size()));for(const auto& [id,amount]:order.reservedCosts){hash.text(id);hash.value(amount);}}}
         hash.value(static_cast<bool>(entity->buildingUpgrades)); if(entity->buildingUpgrades) hash.value(entity->buildingUpgrades.level);
         hash.value(static_cast<bool>(entity->upgrades)); if(entity->upgrades){hash.value(static_cast<std::uint64_t>(entity->upgrades.levels.size()));for(const auto& [id,level]:entity->upgrades.levels){hash.text(id);hash.value(level);}}
     }

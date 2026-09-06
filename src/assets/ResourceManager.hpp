@@ -34,6 +34,9 @@ class ResourceManager final {
     explicit ResourceManager(const std::filesystem::path& assetRoot);
 
     [[nodiscard]] ModelHandle requestModel(const std::string& key) const;
+    [[nodiscard]] ModelHandle requestModel(PresentationId key) const {
+        return requestModel(key.value);
+    }
     [[nodiscard]] const Model* model(ModelHandle handle) const;
     [[nodiscard]] const Model* modelOrMarker(ModelHandle handle) const;
     [[nodiscard]] ResourceState state(ModelHandle handle) const;
@@ -49,6 +52,9 @@ class ResourceManager final {
     void update() const;
     [[nodiscard]] bool containsModel(const std::string& key) const;
     [[nodiscard]] const EntityDefinition* entityDefinition(const std::string& key) const;
+    [[nodiscard]] const EntityDefinition* entityDefinition(PresentationId key) const {
+        return entityDefinition(key.value);
+    }
     [[nodiscard]] std::size_t modelCount() const {
         return readyModelCount_;
     }

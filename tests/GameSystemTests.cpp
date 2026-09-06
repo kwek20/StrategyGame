@@ -240,7 +240,8 @@ int main() {
             std::get<strategy::MoveUnitCommand>(decoded->payload).destination ==
                 std::get<strategy::MoveUnitCommand>(wireCommand.payload).destination;
     if (decoded) {
-        valid = valid && replayA.submit(*decoded) && replayB.submit(*decoded);
+        const bool replaySubmitted = replayA.submit(*decoded) && replayB.submit(*decoded);
+        valid = replaySubmitted && valid;
         replayA.advanceTicks(12);
         replayB.advanceTicks(12);
         valid = valid && replayA.stateChecksum() == replayB.stateChecksum();
@@ -254,7 +255,7 @@ int main() {
     const auto decodedRecipe = strategy::CommandCodec::decode(encodedRecipe);
     valid = valid && decodedRecipe &&
             std::holds_alternative<strategy::StartRecipeCommand>(decodedRecipe->payload) &&
-            std::get<strategy::StartRecipeCommand>(decodedRecipe->payload).recipeId ==
+            std::get<strategy::StartRecipeCommand>(decodedRecipe->payload).recipeId.value ==
                 "town_center.train_worker";
     std::size_t resourceCount = 0;
     for (const strategy::Entity& resource : session.world().entities()) {
@@ -274,11 +275,11 @@ int main() {
     }
     valid = valid && resourceCount >= 20;
     const auto playerOneStart = playerOneUnit->transform.position;
-    valid = valid && session.submit({1, 1, strategy::PossessUnitCommand{playerTwoUnit->id}});
-    valid = valid && session.submit({1, 2, strategy::PossessUnitCommand{playerOneUnit->id}});
-    valid = valid && session.submit(
-                         {1, 3, strategy::DirectUnitInputCommand{playerOneUnit->id, {1.0F, 0.0F}}});
-    valid = valid && !session.submit({1, 3, strategy::ReleaseUnitCommand{playerOneUnit->id}});
+    valid = session.submit({1, 1, strategy::PossessUnitCommand{playerTwoUnit->id}}) && valid;
+    valid = session.submit({1, 2, strategy::PossessUnitCommand{playerOneUnit->id}}) && valid;
+    valid = session.submit(
+                         {1, 3, strategy::DirectUnitInputCommand{playerOneUnit->id, {1.0F, 0.0F}}}) && valid;
+    valid = !session.submit({1, 3, strategy::ReleaseUnitCommand{playerOneUnit->id}}) && valid;
     session.update(strategy::GameSession::fixedTickSeconds);
     valid = valid && playerTwoUnit->authority.directController == 0;
     valid = valid && playerOneUnit->authority.directController == 1;
@@ -292,7 +293,7 @@ int main() {
                                    0.0F,
                                    beforeCollision.z};
     valid =
-        valid && session.submit({1, 4, strategy::DirectUnitInputCommand{movingId, {1.0F, 0.0F}}});
+        session.submit({1, 4, strategy::DirectUnitInputCommand{movingId, {1.0F, 0.0F}}}) && valid;
     session.update(strategy::GameSession::fixedTickSeconds);
     playerOneUnit = session.world().findEntity(movingId);
     valid = valid && std::abs(playerOneUnit->transform.position.x - beforeCollision.x) < 0.001F;
@@ -306,11 +307,11 @@ int main() {
             entity.production.productionSpeedMultiplier = 1000.0F;
         }
     }
-    valid = valid && session.submit({1, 5, strategy::UpgradeTownHallCommand{hallId}});
-    valid = valid && session.submit(
+    valid = session.submit({1, 5, strategy::UpgradeTownHallCommand{hallId}}) && valid;
+    valid = session.submit(
                          {1,
                           6,
-                          strategy::StartRecipeCommand{hallId, "town_center.train_worker"}});
+                          strategy::StartRecipeCommand{hallId, "town_center.train_worker"}}) && valid;
     // The building processes one deterministic order at a time: upgrade, then recruit.
     for (int tick = 0; tick < 460; ++tick)
         session.update(strategy::GameSession::fixedTickSeconds);
@@ -329,12 +330,12 @@ int main() {
     gameplay.initializeEntity(commandHubEntity);
     commandHubEntity.transform.position = {0.0F, 0.0F, 0.0F};
     recipeSession.players().find(1)->resources["materials"] = 75.0F;
-    valid = valid && recipeSession.submit(
+    valid = recipeSession.submit(
                          {1,
                           1,
                           strategy::StartRecipeCommand{
                               commandHubEntity.id,
-                              "command_hub.train_construction_drone"}});
+                              "command_hub.train_construction_drone"}}) && valid;
     recipeSession.advanceTicks(300);
     std::size_t constructedDrones = 0;
     for (const strategy::Entity& entity : recipeSession.world().entities())
@@ -342,6 +343,15 @@ int main() {
             ++constructedDrones;
     valid = valid && constructedDrones == 1 &&
             recipeSession.players().find(1)->resources.at("materials") == 0.0F;
+
+    strategy::Entity& researcher =
+        recipeSession.world().createEntity("Outpost", "outpost", 1);
+    gameplay.initializeEntity(researcher);
+    valid = recipeSession.submit(
+                {1, 2, strategy::StartUpgradeCommand{researcher.id, "production.efficient_training"}}) && valid;
+    recipeSession.advanceTicks(300);
+    valid = valid && researcher.upgrades &&
+            researcher.upgrades.levels["production.efficient_training"] == 1;
 
     strategy::GameSession gatheringSession{gameplay, 321U};
     strategy::Entity* gatherer = nullptr;
@@ -357,8 +367,8 @@ int main() {
         tree.resource.emplace();
         tree.resource.type = "materials";
         tree.resource.remaining = 2.0F;
-        valid = valid && gatheringSession.submit(
-                             {1, 1, strategy::GatherResourceCommand{gatherer->id, tree.id}});
+        valid = gatheringSession.submit(
+                             {1, 1, strategy::GatherResourceCommand{gatherer->id, tree.id}}) && valid;
         for (int tick = 0; tick < 100; ++tick)
             gatheringSession.update(strategy::GameSession::fixedTickSeconds);
         valid = valid && gatheringSession.players().find(1)->wood > 0.0F;

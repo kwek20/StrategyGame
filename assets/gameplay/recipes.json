@@ -2,12 +2,20 @@
   "version": 1,
   "recipes": [
     {
+      "id": "outpost.research_efficient_training",
+      "producer": "outpost",
+      "product": { "building": "basic_generator", "amount": 1 },
+      "cost": {},
+      "durationTicks": 300,
+      "tags": ["research", "upgrade"]
+    },
+    {
       "id": "town_center.train_worker",
       "producer": "town_center",
       "product": { "unit": "worker", "amount": 1 },
       "cost": {},
       "durationTicks": 300,
-      "tags": ["training", "worker", "legacy"]
+      "tags": ["training", "worker"]
     },
     {
       "id": "town_center_level_2.train_worker",
@@ -15,7 +23,7 @@
       "product": { "unit": "worker", "amount": 1 },
       "cost": {},
       "durationTicks": 300,
-      "tags": ["training", "worker", "legacy"]
+      "tags": ["training", "worker"]
     },
     {
       "id": "town_center_level_3.train_worker",
@@ -23,7 +31,7 @@
       "product": { "unit": "worker", "amount": 1 },
       "cost": {},
       "durationTicks": 300,
-      "tags": ["training", "worker", "legacy"]
+      "tags": ["training", "worker"]
     },
     {
       "id": "outpost.train_worker",
@@ -31,7 +39,7 @@
       "product": { "unit": "worker", "amount": 1 },
       "cost": {},
       "durationTicks": 300,
-      "tags": ["training", "worker", "legacy", "forward-production"]
+      "tags": ["training", "worker", "forward-production"]
     },
     {
       "id": "command_hub.train_construction_drone",

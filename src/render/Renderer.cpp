@@ -551,7 +551,7 @@ void Renderer::drawWorld(const World& world, const CameraView& camera, const Pla
             if (!player->visible[static_cast<std::size_t>(z * Player::explorationCells + x)])
                 continue;
         }
-        const ModelHandle handle = modelHandle(entity.modelKey);
+        const ModelHandle handle = modelHandle(entity.renderId());
         const Model* model = resources_.modelOrMarker(handle);
         if (model == nullptr) {
             continue;
@@ -571,7 +571,7 @@ void Renderer::drawWorld(const World& world, const CameraView& camera, const Pla
             transform, glm::radians(entity.transform.rotationDegrees.z), {0.0F, 0.0F, 1.0F});
         float catalogueScale = 1.0F;
         std::string animation;
-        if (const EntityDefinition* definition = resources_.entityDefinition(entity.modelKey)) {
+        if (const EntityDefinition* definition = resources_.entityDefinition(entity.renderId())) {
             catalogueScale = definition->scale;
             const bool moving = entity.authority.directController != 0
                                     ? glm::length(entity.unitControl.directInput) > 0.01F
@@ -679,7 +679,7 @@ void Renderer::drawWorld(const World& world, const CameraView& camera, const Pla
             if (!player->visible[static_cast<std::size_t>(z * Player::explorationCells + x)])
                 continue;
         }
-        const EntityDefinition* definition = resources_.entityDefinition(entity.modelKey);
+    const EntityDefinition* definition = resources_.entityDefinition(entity.renderId());
         const float height = definition ? definition->selectionHeight : 2.0F;
         const float ground =
             terrain_.heightAt(entity.transform.position.x, entity.transform.position.z);
@@ -908,7 +908,8 @@ void Renderer::drawDetailedDebugHud(const CameraView& camera,
         lines.push_back("ENTITY (saved component state)");
         lines.push_back("Identity");
         lines.push_back("  id: " + std::to_string(entity->id));
-        lines.push_back("  archetype: " + entity->modelKey);
+        lines.push_back("  archetype: " + entity->archetype.value);
+        lines.push_back("  presentation: " + entity->presentation.value);
         lines.push_back("  kind: " + std::string(kinds[static_cast<unsigned>(entity->kind)]));
         lines.push_back("  owner: " + std::to_string(entity->authority.owner));
         lines.push_back("Transform");
@@ -1768,7 +1769,7 @@ std::vector<EntityId> Renderer::unitsInScreenRectangle(const glm::vec2& start,
     for (const Entity& entity : world.entities()) {
         if (entity.authority.owner != owner || entity.resource)
             continue;
-        const EntityDefinition* definition = resources_.entityDefinition(entity.modelKey);
+        const EntityDefinition* definition = resources_.entityDefinition(entity.renderId());
         const float height = definition ? definition->selectionHeight : 1.8F;
         const float radius = definition ? definition->selectionRadius : 0.6F;
         const float ground =
@@ -1815,10 +1816,10 @@ void Renderer::drawUnitSelectionHud(const World& world,
     for (EntityId id : selected)
         if (const Entity* entity = world.findEntity(id)) {
             auto found = std::find_if(groups.begin(), groups.end(), [&](const Group& group) {
-                return group.model == entity->modelKey;
+                return group.model == entity->archetype.value;
             });
             if (found == groups.end())
-                groups.push_back({entity->modelKey, entity->name, 1});
+                groups.push_back({entity->archetype.value, entity->name, 1});
             else
                 ++found->count;
         }
@@ -2028,7 +2029,7 @@ EntityId Renderer::pickEntity(float pixelX,
                 pickPosition = known->position;
             }
         }
-        const EntityDefinition* definition = resources_.entityDefinition(entity.modelKey);
+        const EntityDefinition* definition = resources_.entityDefinition(entity.renderId());
         if (!definition)
             continue;
         const float groundHeight = terrain_.heightAt(pickPosition.x, pickPosition.z);
@@ -2066,7 +2067,7 @@ void Renderer::drawEntityOutline(const World& world,
     const Entity* entity = world.findEntity(id);
     if (!entity)
         return;
-    std::string modelKey = entity->modelKey;
+    std::string modelKey = entity->renderId();
     Transform shown = entity->transform;
     bool remembered = false;
     if (player && entity->authority.owner != player->id) {
@@ -2148,7 +2149,7 @@ CameraView Renderer::constrainThirdPersonCamera(const CameraView& desired,
     for (const Entity& entity : world.entities()) {
         if (entity.id == followed)
             continue;
-        const EntityDefinition* definition = resources_.entityDefinition(entity.modelKey);
+    const EntityDefinition* definition = resources_.entityDefinition(entity.renderId());
         if (!definition || definition->selectionRadius < 1.0F)
             continue;
         const float ground =

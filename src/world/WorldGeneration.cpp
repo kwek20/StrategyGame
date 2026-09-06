@@ -29,6 +29,7 @@ bool clearOfStarts(const MatchRulesDefinition& rules, float x, float z) {
     const glm::vec2 point{x, z};
     for (const auto* starts : {&rules.playerOne, &rules.playerTwo})
         for (const StartingEntityDefinition& start : *starts)
+            if (start.archetype.find("town_center") != std::string::npos)
             if (glm::distance(point, glm::vec2{start.position.x, start.position.z}) <=
                 rules.baseExclusionRadius)
                 return false;

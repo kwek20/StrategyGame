@@ -13,30 +13,22 @@
 
 namespace strategy {
 
-template <typename Tag> struct DefinitionId {
-    std::string value;
-
-    DefinitionId() = default;
-    explicit DefinitionId(std::string_view identifier) : value(identifier) {}
-
-    [[nodiscard]] bool empty() const { return value.empty(); }
-    friend bool operator==(const DefinitionId&, const DefinitionId&) = default;
-};
-
-struct UnitArchetypeTag;
+struct EntityArchetypeTag;
 struct BuildingArchetypeTag;
 struct ResourceArchetypeTag;
 struct ResourceTag;
 struct WeaponTag;
 struct PowerDeviceTag;
 struct RecipeTag;
-using UnitArchetypeId = DefinitionId<UnitArchetypeTag>;
-using BuildingArchetypeId = DefinitionId<BuildingArchetypeTag>;
-using ResourceArchetypeId = DefinitionId<ResourceArchetypeTag>;
+using UnitArchetypeId = DefinitionId<EntityArchetypeTag>;
+using BuildingArchetypeId = DefinitionId<EntityArchetypeTag>;
+using ResourceArchetypeId = DefinitionId<EntityArchetypeTag>;
 using ResourceId = DefinitionId<ResourceTag>;
 using WeaponId = DefinitionId<WeaponTag>;
 using PowerDeviceId = DefinitionId<PowerDeviceTag>;
 using RecipeId = DefinitionId<RecipeTag>;
+struct PresentationTag;
+using PresentationId = DefinitionId<PresentationTag>;
 
 enum class GameplayStat {
     health,
@@ -77,6 +69,14 @@ struct RuntimeModifierLayers {
     std::vector<GameplayModifier> producingBuildingUpgrades;
     std::vector<GameplayModifier> temporaryEffects;
     std::vector<GameplayModifier> powerState;
+};
+
+struct UpgradeDefinition {
+    std::string id, researchRecipe, nameKey, icon, exclusiveGroup;
+    std::uint32_t maximumLevel{1};
+    bool affectsProducer{false};
+    std::vector<std::string> prerequisites, allowedResearchers;
+    std::vector<GameplayModifier> modifiers;
 };
 
 enum class ResourceStorageKind { stockpile, network };
@@ -191,7 +191,8 @@ class DefinitionRegistry final {
         const std::filesystem::path& presentations = "assets/entities.json",
         const std::filesystem::path& localization = "assets/text/en_us.json",
         const std::filesystem::path& textures = "assets/textures",
-        const std::filesystem::path& rules = "assets/gameplay/rules.json");
+        const std::filesystem::path& rules = "assets/gameplay/rules.json",
+        const std::filesystem::path& upgrades = "assets/gameplay/upgrades.json");
 
     [[nodiscard]] float resolve(GameplayStat stat,
                                 const std::string& country,
@@ -219,6 +220,8 @@ class DefinitionRegistry final {
     productionRecipe(const std::string& producer, const std::string& product) const;
     [[nodiscard]] const std::vector<CountryDefinition>& countries() const { return countryList_; }
     [[nodiscard]] const MatchRulesDefinition& matchRules() const { return matchRules_; }
+    [[nodiscard]] const UpgradeDefinition* upgrade(const std::string& id) const;
+    [[nodiscard]] const std::unordered_map<std::string, UpgradeDefinition>& upgrades() const { return upgrades_; }
     [[nodiscard]] float collisionRadius(const std::string& entity) const;
     void initializeEntity(Entity& entity) const;
 
@@ -235,6 +238,7 @@ class DefinitionRegistry final {
     std::unordered_set<std::string> presentationIds_, localizationKeys_;
     std::filesystem::path textureRoot_;
     MatchRulesDefinition matchRules_;
+    std::unordered_map<std::string, UpgradeDefinition> upgrades_;
 
     void loadArchetypes(const std::filesystem::path&, const char* collection, EntityKind);
     void loadResources(const std::filesystem::path&);
@@ -243,6 +247,7 @@ class DefinitionRegistry final {
     void loadRecipes(const std::filesystem::path&);
     void loadReferenceKeys(const std::filesystem::path&, const std::filesystem::path&);
     void loadRules(const std::filesystem::path&);
+    void loadUpgrades(const std::filesystem::path&);
     void validateReferences() const;
     static GameplayStat parseStat(const std::string&);
     static ModifierOperation parseOperation(const std::string&);

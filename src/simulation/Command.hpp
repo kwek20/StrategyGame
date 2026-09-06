@@ -1,6 +1,7 @@
 #pragma once
 
 #include "players/Player.hpp"
+#include "gameplay/DefinitionRegistry.hpp"
 #include "world/Entity.hpp"
 
 #include <cstdint>
@@ -38,12 +39,16 @@ struct AttackEntityCommand {
 struct UpgradeTownHallCommand {
     EntityId entity{0};
 };
-struct ImproveTrainingCommand {
-    EntityId entity{0};
-};
 struct StartRecipeCommand {
     EntityId entity{0};
-    std::string recipeId;
+    RecipeId recipeId;
+    StartRecipeCommand() = default;
+    StartRecipeCommand(EntityId id, RecipeId recipe) : entity(id), recipeId(std::move(recipe)) {}
+    StartRecipeCommand(EntityId id, std::string recipe) : entity(id), recipeId(std::move(recipe)) {}
+};
+struct StartUpgradeCommand {
+    EntityId entity{0};
+    std::string upgradeId;
 };
 
 using CommandPayload = std::variant<PossessUnitCommand,
@@ -53,8 +58,8 @@ using CommandPayload = std::variant<PossessUnitCommand,
                                     GatherResourceCommand,
                                     AttackEntityCommand,
                                     UpgradeTownHallCommand,
-                                    ImproveTrainingCommand,
-                                    StartRecipeCommand>;
+                                    StartRecipeCommand,
+                                    StartUpgradeCommand>;
 
 struct PlayerCommand {
     PlayerId player{0};

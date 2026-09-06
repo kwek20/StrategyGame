@@ -10,7 +10,7 @@
       "upgradeTo": "town_center_level_2",
       "components": ["health", "vision", "production", "buildingUpgrades", "upgrades"],
       "availableUpgrades": [],
-      "tags": ["building", "economic", "production"],
+      "tags": ["building", "economic", "production", "resource-dropoff"],
       "stats": {
         "health": 1000,
         "sightRange": 18,
@@ -30,7 +30,7 @@
       "upgradeTo": "town_center_level_3",
       "components": ["health", "vision", "production", "buildingUpgrades", "upgrades"],
       "availableUpgrades": [],
-      "tags": ["building", "economic", "production"],
+      "tags": ["building", "economic", "production", "resource-dropoff"],
       "stats": {
         "health": 1250,
         "sightRange": 20,
@@ -49,7 +49,7 @@
       "spawn": { "clearance": 0.6, "candidateCount": 16 },
       "components": ["health", "vision", "production", "buildingUpgrades", "upgrades"],
       "availableUpgrades": [],
-      "tags": ["building", "economic", "production"],
+      "tags": ["building", "economic", "production", "resource-dropoff"],
       "stats": {
         "health": 1500,
         "sightRange": 22,
@@ -86,7 +86,7 @@
       "spawn": { "clearance": 0.6, "candidateCount": 16 },
       "components": ["health", "vision", "production", "buildingUpgrades", "upgrades"],
       "availableUpgrades": [],
-      "tags": ["building", "headquarters", "economic", "production", "charger", "power"],
+      "tags": ["building", "headquarters", "economic", "production", "charger", "power", "resource-dropoff"],
       "health": 1000,
       "vision": { "range": 18 },
       "powerDevice": "command_hub_integrated_grid",

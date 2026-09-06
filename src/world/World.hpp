@@ -4,12 +4,16 @@
 
 #include <string>
 #include <vector>
+#include <utility>
 
 namespace strategy {
 
 class World final {
   public:
     Entity& createEntity(std::string name, std::string modelKey = {}, PlayerId owner = 0);
+    Entity& createEntity(std::string name, EntityArchetypeId archetype, PlayerId owner = 0) {
+        return createEntity(std::move(name), archetype.value, owner);
+    }
     bool destroyEntity(EntityId id);
     [[nodiscard]] Entity* findEntity(EntityId id);
     [[nodiscard]] const Entity* findEntity(EntityId id) const;

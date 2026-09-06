@@ -460,6 +460,20 @@ void DefinitionRegistry::validateReferences() const {
             throw std::runtime_error("Resource '" + id + "' references missing icon '" +
                                      resource.icon + "'");
     }
+    for (const auto& [id, definition] : upgrades_) {
+        // Research recipes are validated when the recipe catalogue is present; fixture-specific
+        // catalogues may intentionally omit unrelated upgrades.
+        if (!localizationKeys_.contains(definition.nameKey))
+            throw std::runtime_error("Upgrade '" + id + "' references unknown localization key");
+        bool iconExists = false;
+        for (const char* extension : {".png", ".ppm", ".jpg", ".jpeg"})
+            iconExists = iconExists || std::filesystem::exists(textureRoot_ / (definition.icon + extension));
+        if (!iconExists)
+            throw std::runtime_error("Upgrade '" + id + "' references missing icon '" + definition.icon + "'");
+        for (const auto& modifier : definition.modifiers)
+            if (!modifier.target.entity.empty() && !entities_.contains(modifier.target.entity))
+                throw std::runtime_error("Upgrade '" + id + "' modifier targets unknown entity");
+    }
     std::unordered_set<std::string> productionRelationships;
     for (const auto& [id, definition] : recipes_) {
         if (definition.product.kind == RecipeProductKind::unit && definition.producer.empty())
@@ -552,6 +566,54 @@ void DefinitionRegistry::validateReferences() const {
                                      country.specializationId + "'");
 }
 
+void DefinitionRegistry::loadUpgrades(const std::filesystem::path& path) {
+    const auto data = document(path);
+    if (!data.HasMember("upgrades") || !data["upgrades"].IsArray())
+        throw std::runtime_error("Upgrade definitions require an upgrades array");
+    for (const auto& value : data["upgrades"].GetArray()) {
+        if (!value.IsObject() || !value.HasMember("id") || !value["id"].IsString() ||
+            !value.HasMember("researchRecipe") || !value["researchRecipe"].IsString() ||
+            !value.HasMember("maximumLevel") || !value["maximumLevel"].IsUint() ||
+            !value.HasMember("nameKey") || !value["nameKey"].IsString() ||
+            !value.HasMember("icon") || !value["icon"].IsString() ||
+            !value.HasMember("modifiers") || !value["modifiers"].IsArray())
+            throw std::runtime_error("Invalid upgrade definition");
+        UpgradeDefinition upgrade;
+        upgrade.id = value["id"].GetString();
+        upgrade.researchRecipe = value["researchRecipe"].GetString();
+        upgrade.maximumLevel = value["maximumLevel"].GetUint();
+        upgrade.affectsProducer = value.HasMember("affectsProducer") && value["affectsProducer"].IsBool() && value["affectsProducer"].GetBool();
+        upgrade.nameKey = value["nameKey"].GetString();
+        upgrade.icon = value["icon"].GetString();
+        if (value.HasMember("exclusiveGroup") && value["exclusiveGroup"].IsString())
+            upgrade.exclusiveGroup = value["exclusiveGroup"].GetString();
+        upgrade.prerequisites = strings(value, "prerequisites");
+        upgrade.allowedResearchers = strings(value, "allowedResearchers");
+        for (const auto& item : value["modifiers"].GetArray()) {
+            if (!item.IsObject() || !item.HasMember("id") || !item["id"].IsString() ||
+                !item.HasMember("stat") || !item["stat"].IsString() ||
+                !item.HasMember("operation") || !item["operation"].IsString() ||
+                !item.HasMember("value") || !item["value"].IsNumber())
+                throw std::runtime_error("Invalid modifier in upgrade '" + upgrade.id + "'");
+            GameplayModifier modifier{item["id"].GetString(), parseStat(item["stat"].GetString()),
+                                      {}, parseOperation(item["operation"].GetString()),
+                                      item["value"].GetFloat()};
+            if (item.HasMember("priority")) modifier.priority = item["priority"].GetInt();
+            if (item.HasMember("target") && item["target"].IsObject()) {
+                const auto& target = item["target"];
+                if (target.HasMember("entity") && target["entity"].IsString())
+                    modifier.target.entity = target["entity"].GetString();
+                modifier.target.tags = strings(target, "tags");
+                modifier.target.producerTags = strings(target, "producerTags");
+                modifier.target.productTags = strings(target, "productTags");
+            }
+            upgrade.modifiers.push_back(std::move(modifier));
+        }
+        if (!upgrades_.emplace(upgrade.id, std::move(upgrade)).second)
+            throw std::runtime_error("Duplicate upgrade definition");
+    }
+}
+
 void DefinitionRegistry::loadRules(const std::filesystem::path& path) {
     const auto data = document(path);
     const auto number = [&](const char* key) {
@@ -605,7 +667,8 @@ DefinitionRegistry::DefinitionRegistry(const std::filesystem::path& unitPath,
                                        const std::filesystem::path& presentationPath,
                                        const std::filesystem::path& localizationPath,
                                        const std::filesystem::path& textureRoot,
-                                       const std::filesystem::path& rulesPath)
+                                       const std::filesystem::path& rulesPath,
+                                       const std::filesystem::path& upgradePath)
     : textureRoot_(textureRoot) {
     loadReferenceKeys(presentationPath, localizationPath);
     loadArchetypes(unitPath, "units", EntityKind::unit);
@@ -616,6 +679,7 @@ DefinitionRegistry::DefinitionRegistry(const std::filesystem::path& unitPath,
     loadPowerDevices(powerDevicePath);
     loadRecipes(recipePath);
     loadRules(rulesPath);
+    loadUpgrades(upgradePath);
     const auto loadModifiers =
         [this](const std::filesystem::path& path,
                const char* collection,
@@ -856,6 +920,10 @@ const EntityArchetype* DefinitionRegistry::archetype(const std::string& entity) 
     const auto found = entities_.find(entity);
     return found == entities_.end() ? nullptr : &found->second;
 }
+const UpgradeDefinition* DefinitionRegistry::upgrade(const std::string& id) const {
+    const auto found = upgrades_.find(id);
+    return found == upgrades_.end() ? nullptr : &found->second;
+}
 const UnitDefinition* DefinitionRegistry::unit(UnitArchetypeId id) const {
     return unitIds_.contains(id.value) ? archetype(id.value) : nullptr;
 }
@@ -916,6 +984,8 @@ void DefinitionRegistry::initializeEntity(Entity& entity) const {
     if (found == entities_.end())
         return;
     const EntityArchetype& type = found->second;
+    entity.archetype = EntityArchetypeId{type.id};
+    entity.presentation = PresentationId{type.presentation};
     entity.kind = type.kind;
     const auto has = [&](const char* name) { return type.components.contains(name); };
     const auto value = [&](GameplayStat stat, float fallback) {

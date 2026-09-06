@@ -13,6 +13,7 @@
 #include <glm/gtc/constants.hpp>
 #include <glm/trigonometric.hpp>
 #include <limits>
+#include <iostream>
 #include <type_traits>
 
 namespace strategy {
@@ -58,8 +59,19 @@ float GameSession::stat(const Entity& entity, GameplayStat requested) const {
     const Player* player = players_.find(entity.authority.owner);
     if (!player)
         return 0.0F;
-    return gameplay_.resolve(
-        requested, player->countryId, player->specializationId, entity.modelKey);
+    RuntimeModifierLayers layers;
+    if (entity.upgrades)
+        for (const auto& [id, level] : entity.upgrades.levels)
+            if (const UpgradeDefinition* upgrade = gameplay_.upgrade(id))
+                for (std::uint32_t applied = 0; applied < level; ++applied)
+                    if (upgrade->affectsProducer)
+                        layers.producingBuildingUpgrades.insert(
+                            layers.producingBuildingUpgrades.end(), upgrade->modifiers.begin(), upgrade->modifiers.end());
+                    else
+                        layers.permanentUpgrades.insert(
+                            layers.permanentUpgrades.end(), upgrade->modifiers.begin(), upgrade->modifiers.end());
+    return gameplay_.resolve(requested, player->countryId, player->specializationId,
+                             entity.archetype.value, {}, layers);
 }
 void GameSession::initializeEntity(Entity& entity) {
     gameplay_.initializeEntity(entity);
@@ -152,7 +164,7 @@ void GameSession::apply(const PlayerCommand& command) {
                     navigation_.findPath(world_,
                                          entity->transform.position,
                                          payload.destination,
-                                         collisionRadius(gameplay_, entity->modelKey),
+                                         collisionRadius(gameplay_, entity->archetype),
                                          entity->id);
                 entity->transient.navigationWaypoint = 0;
                 entity->transient.navigationRetrySeconds =
@@ -186,7 +198,7 @@ void GameSession::apply(const PlayerCommand& command) {
                                   [](const ProductionOrder& order) {
                                       return order.kind == ProductionKind::upgradeBuilding;
                                   }));
-                const EntityArchetype* type = gameplay_.archetype(entity->modelKey);
+                const EntityArchetype* type = gameplay_.archetype(entity->archetype);
                 if (type && !type->upgradeTo.empty() && pending == 0) {
                     const float duration = stat(*entity, GameplayStat::upgradeTime);
                     const auto ticks = static_cast<std::uint32_t>(
@@ -197,35 +209,12 @@ void GameSession::apply(const PlayerCommand& command) {
                     order.remainingTicks = ticks;
                     entity->production.queue.push_back(std::move(order));
                 }
-            } else if constexpr (std::is_same_v<Type, ImproveTrainingCommand>) {
-                if (!entity->production)
-                    return;
-                const auto pending = static_cast<std::uint32_t>(
-                    std::count_if(entity->production.queue.begin(),
-                                  entity->production.queue.end(),
-                                  [](const ProductionOrder& order) {
-                                      return order.kind == ProductionKind::improveTraining;
-                                  }));
-                const auto maximum = static_cast<std::uint32_t>(
-                    std::max(0.0F, stat(*entity, GameplayStat::maximumProductionUpgrades)));
-                if (gameplay_.canTrain(entity->modelKey,
-                                       gameplay_.matchRules().trainingUpgradeProduct) &&
-                    entity->production.productionSpeedUpgrades + pending < maximum) {
-                    const float duration = stat(*entity, GameplayStat::researchTime);
-                    const auto ticks = static_cast<std::uint32_t>(
-                        std::max(1.0, std::ceil(duration / fixedTickSeconds)));
-                    ProductionOrder order;
-                    order.kind = ProductionKind::improveTraining;
-                    order.durationTicks = ticks;
-                    order.remainingTicks = ticks;
-                    entity->production.queue.push_back(std::move(order));
-                }
             } else if constexpr (std::is_same_v<Type, StartRecipeCommand>) {
                 if (!entity->production)
                     return;
                 Player* player = players_.find(command.player);
-                const RecipeDefinition* recipe = gameplay_.recipe(RecipeId{payload.recipeId});
-                if (player && recipe && recipe->producer == entity->modelKey &&
+                const RecipeDefinition* recipe = gameplay_.recipe(payload.recipeId);
+                if (player && recipe && recipe->producer == entity->archetype.value &&
                     recipe->product.kind == RecipeProductKind::unit) {
                     for (const auto& [resource, amount] : recipe->cost)
                         if (player->resources[resource] < amount)
@@ -235,7 +224,7 @@ void GameSession::apply(const PlayerCommand& command) {
                     const float duration =
                         gameplay_.productionDuration(player->countryId,
                                                      player->specializationId,
-                                                     entity->modelKey,
+                                                     entity->archetype.value,
                                                      recipe->product.id,
                                                      entity->production.productionSpeedMultiplier);
                     ProductionOrder order;
@@ -249,6 +238,47 @@ void GameSession::apply(const PlayerCommand& command) {
                     order.reservedCosts.insert(recipe->cost.begin(), recipe->cost.end());
                     entity->production.queue.push_back(std::move(order));
                 }
+            } else if constexpr (std::is_same_v<Type, StartUpgradeCommand>) {
+                if (!entity->production || !entity->upgrades)
+                    return;
+                const UpgradeDefinition* upgrade = gameplay_.upgrade(payload.upgradeId);
+                Player* player = players_.find(command.player);
+                if (!upgrade || !player)
+                    return;
+                const auto* researcher = gameplay_.archetype(entity->archetype);
+                if (!researcher || std::find(upgrade->allowedResearchers.begin(),
+                                             upgrade->allowedResearchers.end(),
+                                             entity->archetype.value) == upgrade->allowedResearchers.end())
+                    return;
+                const std::uint32_t current = entity->upgrades.levels[payload.upgradeId];
+                if (current >= upgrade->maximumLevel)
+                    return;
+                for (const auto& prerequisite : upgrade->prerequisites)
+                    if (entity->upgrades.levels[prerequisite] == 0)
+                        return;
+                if (!upgrade->exclusiveGroup.empty())
+                    for (const auto& [id, level] : entity->upgrades.levels)
+                        if (level > 0 && id != payload.upgradeId) {
+                            const UpgradeDefinition* other = gameplay_.upgrade(id);
+                            if (other && other->exclusiveGroup == upgrade->exclusiveGroup)
+                                return;
+                        }
+                const RecipeDefinition* recipe = gameplay_.recipe(RecipeId{upgrade->researchRecipe});
+                if (!recipe || recipe->producer != entity->archetype.value)
+                    return;
+                for (const auto& [resource, amount] : recipe->cost)
+                    if (player->resources[resource] < amount)
+                        return;
+                for (const auto& [resource, amount] : recipe->cost)
+                    player->resources[resource] -= amount;
+                ProductionOrder order;
+                order.kind = ProductionKind::improveTraining;
+                order.recipeId = recipe->id;
+                order.upgradeId = payload.upgradeId;
+                order.durationTicks = recipe->durationTicks;
+                order.remainingTicks = order.durationTicks;
+                order.reservedCosts.insert(recipe->cost.begin(), recipe->cost.end());
+                entity->production.queue.push_back(std::move(order));
             }
         },
         command.payload);
@@ -278,13 +308,15 @@ void GameSession::simulateTick() {
                 if (order.kind == ProductionKind::trainCharacter)
                     completed.push_back({entity.authority.owner,
                                          entity.transform.position,
-                                         entity.modelKey,
+                                         entity.archetype.value,
                                          order.productId,
                                          order.amount});
                 else if (order.kind == ProductionKind::upgradeBuilding) {
                     ++entity.buildingUpgrades.level;
-                    const EntityArchetype* current = gameplay_.archetype(entity.modelKey);
+                    const EntityArchetype* current = gameplay_.archetype(entity.archetype);
                     if (current && !current->upgradeTo.empty())
+                        entity.archetype = EntityArchetypeId{current->upgradeTo};
+                        entity.presentation = PresentationId{current->upgradeTo};
                         entity.modelKey = current->upgradeTo;
                     const float previousRatio = entity.health && entity.health.maximum > 0
                                                     ? entity.health.current / entity.health.maximum
@@ -295,9 +327,19 @@ void GameSession::simulateTick() {
                         entity.health.current = maximum * previousRatio;
                     }
                 } else if (order.kind == ProductionKind::improveTraining) {
-                    entity.production.productionSpeedMultiplier +=
-                        stat(entity, GameplayStat::productionUpgradeAmount);
-                    ++entity.production.productionSpeedUpgrades;
+                    if (order.upgradeId.empty()) {
+                        entity.production.productionSpeedMultiplier +=
+                            stat(entity, GameplayStat::productionUpgradeAmount);
+                        ++entity.production.productionSpeedUpgrades;
+                    }
+                    if (!order.upgradeId.empty()) {
+                        if (!entity.upgrades)
+                            entity.upgrades.emplace();
+                        auto& level = entity.upgrades.levels[order.upgradeId];
+                        if (const UpgradeDefinition* upgrade = gameplay_.upgrade(order.upgradeId);
+                            upgrade && level < upgrade->maximumLevel)
+                            ++level;
+                    }
                 }
                 entity.production.queue.pop_front();
             }
@@ -327,14 +369,16 @@ void GameSession::simulateTick() {
                     entity.unitControl.order = UnitOrderKind::returnResources;
                 else {
                     const float reach =
-                        collisionRadius(gameplay_, entity.modelKey) +
-                        collisionRadius(gameplay_, node->modelKey) +
-                        gameplay_.archetype(entity.modelKey)->interactionMargin;
+                        collisionRadius(gameplay_, entity.archetype) +
+                        collisionRadius(gameplay_, node->archetype) +
+                        gameplay_.archetype(entity.archetype)->interactionMargin;
                     const glm::vec2 delta{node->transform.position.x - entity.transform.position.x,
                                           node->transform.position.z - entity.transform.position.z};
                     if (glm::dot(delta, delta) <= reach * reach) {
                         entity.unitControl.hasStrategicDestination = false;
-                        entity.gatherer.carriedResource = node->resource.type;
+                        entity.gatherer.carriedResource = node->resource.type.empty()
+                                                              ? node->archetype.value
+                                                              : node->resource.type;
                         const float capacity = stat(entity, GameplayStat::carryCapacity),
                                     rate = stat(entity, GameplayStat::gatherRate);
                         const float amount =
@@ -355,8 +399,8 @@ void GameSession::simulateTick() {
                 float nearest = std::numeric_limits<float>::max();
                 for (Entity& candidate : world_.entities())
                     if (candidate.authority.owner == entity.authority.owner &&
-                        gameplay_.archetype(candidate.modelKey) &&
-                        gameplay_.archetype(candidate.modelKey)->tags.contains("resource-dropoff")) {
+                        gameplay_.archetype(candidate.archetype) &&
+                        gameplay_.archetype(candidate.archetype)->tags.contains("resource-dropoff")) {
                         const glm::vec2 d{
                             candidate.transform.position.x - entity.transform.position.x,
                             candidate.transform.position.z - entity.transform.position.z};
@@ -370,13 +414,16 @@ void GameSession::simulateTick() {
                     entity.unitControl.order = UnitOrderKind::idle;
                 else {
                     const float reach =
-                        collisionRadius(gameplay_, entity.modelKey) +
-                        collisionRadius(gameplay_, hall->modelKey) +
-                        gameplay_.archetype(entity.modelKey)->interactionMargin;
+                        collisionRadius(gameplay_, entity.archetype) +
+                        collisionRadius(gameplay_, hall->archetype) +
+                        gameplay_.archetype(entity.archetype)->interactionMargin;
                     if (nearest <= reach * reach) {
                         if (Player* player = players_.find(entity.authority.owner)) {
                             player->resources[entity.gatherer.carriedResource] +=
                                 entity.gatherer.carriedAmount;
+                            if (entity.gatherer.carriedResource == "materials" ||
+                                entity.gatherer.carriedResource == "tree")
+                                player->wood += entity.gatherer.carriedAmount;
                         }
                         entity.gatherer.carriedAmount = 0;
                         entity.gatherer.carriedResource.clear();
@@ -397,8 +444,8 @@ void GameSession::simulateTick() {
                 else {
                     const glm::vec2 d{target->transform.position.x - entity.transform.position.x,
                                       target->transform.position.z - entity.transform.position.z};
-                    const float range = collisionRadius(gameplay_, entity.modelKey) +
-                                        collisionRadius(gameplay_, target->modelKey) +
+                    const float range = collisionRadius(gameplay_, entity.archetype) +
+                                        collisionRadius(gameplay_, target->archetype) +
                                         stat(entity, GameplayStat::attackRange);
                     if (glm::dot(d, d) <= range * range) {
                         entity.unitControl.hasStrategicDestination = false;
@@ -422,7 +469,7 @@ void GameSession::simulateTick() {
                     navigation_.findPath(world_,
                                          entity.transform.position,
                                          entity.unitControl.strategicDestination,
-                                         collisionRadius(gameplay_, entity.modelKey),
+                                         collisionRadius(gameplay_, entity.archetype),
                                          entity.id);
                 entity.transient.navigationWaypoint = 0;
                 if (entity.transient.navigationPath.empty()) {
@@ -455,8 +502,8 @@ void GameSession::simulateTick() {
                     const glm::vec2 away{entity.transform.position.x - other.transform.position.x,
                                          entity.transform.position.z - other.transform.position.z};
                     const float distance = glm::length(away),
-                                desired = collisionRadius(gameplay_, entity.modelKey) +
-                                          collisionRadius(gameplay_, other.modelKey) + 0.45F;
+                                desired = collisionRadius(gameplay_, entity.archetype) +
+                                          collisionRadius(gameplay_, other.archetype) + 0.45F;
                     if (distance > 0.001F && distance < desired)
                         separation += (away / distance) * (desired - distance) / desired;
                 }
@@ -474,7 +521,7 @@ void GameSession::simulateTick() {
                                                 : entity.unitControl.movementSpeed;
         const glm::vec2 delta = movement * resolvedMovementSpeed * speedMultiplier *
                                 static_cast<float>(fixedTickSeconds);
-        const float radius = collisionRadius(gameplay_, entity.modelKey);
+        const float radius = collisionRadius(gameplay_, entity.archetype);
         const float boundary =
             static_cast<float>(Terrain::cellCount) * Terrain::spacing * 0.5F - radius;
         const auto validPosition = [this, &entity, radius, boundary](glm::vec2 candidate) {
@@ -594,7 +641,7 @@ void GameSession::updateExploration() {
                     continue;
                 }
                 LastKnownEntity snapshot{entity.id,
-                                         entity.modelKey,
+                                         entity.archetype.value,
                                          entity.transform.position,
                                          entity.transform.rotationDegrees,
                                          entity.transform.scale,

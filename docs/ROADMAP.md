@@ -27,6 +27,51 @@ The prototype already provides:
 This foundation should be preserved while the placeholder medieval gameplay is replaced with
 the modern drone, infrastructure, and power-grid loop.
 
+## Current implementation status
+
+Phase 1 is substantially implemented and is now in final consolidation. The repository currently has:
+
+- Central JSON definitions for units, buildings, resource nodes, resources, weapons, power devices,
+  recipes, countries, specializations, match rules, and upgrades.
+- Strict startup validation for IDs, references, tags, modifiers, localization keys, icons, recipes,
+  generation settings, and upgrade metadata.
+- Deterministic recipe-driven production with integer tick queues, typed player resources, and
+  authoritative costs.
+- Upgrade definitions with prerequisites, researcher lists, exclusive groups, and modifier data;
+  completed levels resolve into permanent or producing-building modifier layers.
+- Match setup, build palette, terrain resource generation, spawn placement, interaction margins,
+  and upgrade targets moved out of simulation/rendering constants into definitions.
+- Separate entity archetype and presentation IDs at the entity/save boundary, plus typed registry IDs.
+- No legacy save migrations or legacy training-upgrade command path.
+
+Remaining Phase 1 consolidation work:
+
+- Remove the remaining mirrored `Entity::modelKey` field from runtime code; render through
+  `PresentationId` and keep archetype identity exclusively in simulation.
+- Replace remaining string-based registry and simulation interfaces with typed IDs, especially
+  collision, navigation, recipe commands, and asset presentation lookup.
+- Store completed upgrade IDs/levels as the authoritative upgrade state and expose their resolved
+  modifier layers in save files, checksums, and F3 diagnostics.
+- Replace the remaining structural `UpgradeTownHallCommand` with a definition-backed building
+  transformation recipe.
+- Add tests for upgrade prerequisites, exclusivity, researcher restrictions, modifier-layer routing,
+  and archetype/presentation round trips.
+
+## Development loop
+
+Each content change should follow this loop:
+
+1. Add or change a definition JSON entry.
+2. Start the game or run definition tests; invalid references must fail with context.
+3. Exercise the authoritative command in a fixed-tick simulation test.
+4. Verify save/load and checksum behavior for the new authoritative state.
+5. Verify renderer/UI consumption through presentation data without adding gameplay constants.
+6. Run the complete CTest suite before moving to the next definition or gameplay system.
+
+After Phase 1 consolidation, repeat the same loop for the starting construction-drone milestone:
+drone definition → flight/battery components → gather/return commands → charger/power state →
+save/checksum tests → HUD and presentation integration.
+
 ## Working rules
 
 Every gameplay milestone follows these rules:
@@ -82,7 +127,7 @@ Make modern gameplay content configurable without adding entity-specific branche
 - The game refuses invalid definitions with actionable diagnostics.
 - Simulation entities retain stable definition identifiers across save/load.
 - Country, specialization, producer, upgrade, and power modifiers resolve in deterministic order.
-- Tests cover successful loading, invalid references, modifier order, and save compatibility.
+- Tests cover successful loading, invalid references, modifier order, and current-schema save/load.
 
 ## Milestone 2: starting construction drone
 
@@ -245,7 +290,8 @@ Validate the modular faction system with a small but strategically distinct sele
 - Each country supports a distinct strategy without a universally stronger economy.
 - A unit produced in different buildings receives the correct production time.
 - Modifier resolution is inspectable, deterministic, and covered by tests.
-- Existing saves either migrate safely or fail with a clear version message.
+- Current-schema saves fail clearly when their version or authoritative fields are invalid; no legacy
+  save migration is planned before public release.
 
 ## Milestone 9: logistics expansion
 

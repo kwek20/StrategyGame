@@ -154,8 +154,8 @@ void PlayState::handleEvent(const SDL_Event& event) {
         std::vector<std::string> groups;
         for (EntityId id : selectedUnits_)
             if (const Entity* entity = session_.world().findEntity(id))
-                if (std::find(groups.begin(), groups.end(), entity->modelKey) == groups.end())
-                    groups.push_back(entity->modelKey);
+                if (std::find(groups.begin(), groups.end(), entity->archetype.value) == groups.end())
+                    groups.push_back(entity->archetype.value);
         const std::size_t visible = std::min<std::size_t>(groups.size(), 6);
         const float panelHeight = 58.0F + static_cast<float>(visible) * 24.0F;
         int windowHeight = 0, width = 0;
@@ -174,8 +174,8 @@ void PlayState::handleEvent(const SDL_Event& event) {
                                selectedUnits_.end(),
                                [&](EntityId id) {
                                    const Entity* entity = session_.world().findEntity(id);
-                                   return !entity || (removeType ? entity->modelKey == chosen
-                                                                 : entity->modelKey != chosen);
+                                   return !entity || (removeType ? entity->archetype.value == chosen
+                                                                 : entity->archetype.value != chosen);
                                }),
                 selectedUnits_.end());
             selectedEntity_ = selectedUnits_.empty() ? 0 : selectedUnits_.front();
@@ -215,7 +215,8 @@ void PlayState::handleEvent(const SDL_Event& event) {
             } else if (townHallButtonHovered_[1]) {
                 session_.submit({localPlayer_,
                                  nextCommandSequence_++,
-                                 ImproveTrainingCommand{selectedHall->id}});
+                                 StartUpgradeCommand{selectedHall->id,
+                                                      "production.efficient_training"}});
                 context_.events.enqueue(AudioEvent{AudioCue::trainingUpgrade});
             } else if (townHallButtonHovered_[2]) {
                 if (const RecipeDefinition* recipe =

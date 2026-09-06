@@ -54,7 +54,8 @@ std::vector<std::byte> CommandCodec::encode(const PlayerCommand& command) {
             write(result, payload.destination.z);
         } else if constexpr (std::is_same_v<T, GatherResourceCommand>) write(result, payload.resource);
         else if constexpr (std::is_same_v<T, AttackEntityCommand>) write(result, payload.target);
-        else if constexpr (std::is_same_v<T, StartRecipeCommand>) writeString(result, payload.recipeId);
+        else if constexpr (std::is_same_v<T, StartRecipeCommand>) writeString(result, payload.recipeId.value);
+        else if constexpr (std::is_same_v<T, StartUpgradeCommand>) writeString(result, payload.upgradeId);
     }, command.payload);
     return result;
 }
@@ -77,10 +78,17 @@ std::optional<PlayerCommand> CommandCodec::decode(std::span<const std::byte> inp
     case 4: { EntityId target{}; if(!read(input,target)) return std::nullopt; result.payload=GatherResourceCommand{entity,target}; break; }
     case 5: { EntityId target{}; if(!read(input,target)) return std::nullopt; result.payload=AttackEntityCommand{entity,target}; break; }
     case 6: result.payload=UpgradeTownHallCommand{entity}; break;
-    case 7: result.payload=ImproveTrainingCommand{entity}; break;
     case 8: {
         StartRecipeCommand value{entity};
-        if (!readString(input, value.recipeId)) return std::nullopt;
+        std::string recipe;
+        if (!readString(input, recipe)) return std::nullopt;
+        value.recipeId = RecipeId{recipe};
+        result.payload = std::move(value);
+        break;
+    }
+    case 9: {
+        StartUpgradeCommand value{entity};
+        if (!readString(input, value.upgradeId)) return std::nullopt;
         result.payload = std::move(value);
         break;
     }

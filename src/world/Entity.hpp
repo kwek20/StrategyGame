@@ -9,10 +9,23 @@
 #include <glm/vec3.hpp>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <map>
 #include <vector>
 
 namespace strategy {
+
+struct EntityArchetypeTag;
+struct PresentationTag;
+template <typename Tag> struct DefinitionId {
+    std::string value;
+    DefinitionId() = default;
+    explicit DefinitionId(std::string_view identifier) : value(identifier) {}
+    [[nodiscard]] bool empty() const { return value.empty(); }
+    friend bool operator==(const DefinitionId&, const DefinitionId&) = default;
+};
+using EntityArchetypeId = DefinitionId<EntityArchetypeTag>;
+using PresentationId = DefinitionId<PresentationTag>;
 
 using EntityId = std::uint64_t;
 
@@ -88,6 +101,7 @@ struct ProductionOrder {
     ProductionKind kind{ProductionKind::trainCharacter};
     std::string recipeId;
     std::string productId;
+    std::string upgradeId;
     std::uint32_t amount{1};
     std::uint32_t durationTicks{0};
     std::uint32_t remainingTicks{0};
@@ -128,7 +142,15 @@ template <class Data> struct Component : Data {
 struct Entity {
     EntityId id{0};
     std::string name;
+    EntityArchetypeId archetype;
+    PresentationId presentation;
+    // Transitional mirror used only by unmigrated systems; never serialized as identity.
     std::string modelKey;
+
+    [[nodiscard]] const std::string& gameplayId() const { return archetype.value; }
+    [[nodiscard]] const std::string& renderId() const {
+        return presentation.empty() ? modelKey : presentation.value;
+    }
     EntityKind kind{EntityKind::decoration};
     Transform transform;
     Authority authority;

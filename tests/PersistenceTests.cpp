@@ -50,7 +50,6 @@ int main() {
     entity.health.current = 72.0F;
     entity.health.maximum = 125.0F;
     entity.buildingUpgrades.level = 2;
-    entity.production.characterBuildSeconds = 7.0F;
     entity.production.productionSpeedMultiplier = 1.4F;
     entity.production.productionSpeedUpgrades = 4;
     strategy::ProductionOrder production;
@@ -70,6 +69,8 @@ int main() {
     valid = valid && loaded.terrainSeed == 424242U && loaded.entities.size() == 1;
     valid = valid && loaded.entities[0].id == originalId;
     valid = valid && loaded.entities[0].modelKey == "town_center";
+    valid = valid && loaded.entities[0].archetype.value == "town_center";
+    valid = valid && loaded.entities[0].presentation.value == "town_center";
     valid = valid && loaded.entities[0].transform.position == glm::vec3{1.0F, 2.0F, 3.0F};
     valid = valid && loaded.entities[0].transform.scale == glm::vec3{2.0F};
     valid = valid && !loaded.entities[0].unitControl && loaded.entities[0].production;

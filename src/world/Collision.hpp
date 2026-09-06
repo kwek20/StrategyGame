@@ -8,6 +8,10 @@ class DefinitionRegistry;
 class World;
 [[nodiscard]] float collisionRadius(const DefinitionRegistry& definitions,
                                     const std::string& archetypeId);
+[[nodiscard]] inline float collisionRadius(const DefinitionRegistry& definitions,
+                                           EntityArchetypeId archetypeId) {
+    return collisionRadius(definitions, archetypeId.value);
+}
 [[nodiscard]] bool
 overlapsObject(const World& world,
                const DefinitionRegistry& definitions,

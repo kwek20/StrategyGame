@@ -108,8 +108,12 @@ void SaveGame::write(const std::filesystem::path& path,
         writer.Uint64(entity.id);
         writer.Key("name");
         writer.String(entity.name.c_str());
-        writer.Key("model");
-        writer.String(entity.modelKey.c_str());
+        const std::string archetypeId = entity.archetype.empty() ? entity.modelKey : entity.archetype.value;
+        const std::string presentationId = entity.presentation.empty() ? archetypeId : entity.presentation.value;
+        writer.Key("archetype");
+        writer.String(archetypeId.c_str());
+        writer.Key("presentation");
+        writer.String(presentationId.c_str());
         writer.Key("owner");
         writer.Uint64(entity.authority.owner);
         writer.Key("directController");
@@ -198,6 +202,8 @@ void SaveGame::write(const std::filesystem::path& path,
                 writer.String(order.recipeId.c_str());
                 writer.Key("product");
                 writer.String(order.productId.c_str());
+                writer.Key("upgrade");
+                writer.String(order.upgradeId.c_str());
                 writer.Key("amount");
                 writer.Uint(order.amount);
                 writer.Key("durationTicks");
@@ -323,14 +329,17 @@ SaveData SaveGame::read(const std::filesystem::path& path) {
     const GameplayCatalogue gameplayCatalogue;
     for (const auto& value : document["entities"].GetArray()) {
         if (!value.IsObject() || !value.HasMember("id") || !value["id"].IsUint64() ||
-            !value.HasMember("name") || !value["name"].IsString() || !value.HasMember("model") ||
-            !value["model"].IsString()) {
+            !value.HasMember("name") || !value["name"].IsString() ||
+            !value.HasMember("archetype") || !value["archetype"].IsString() ||
+            !value.HasMember("presentation") || !value["presentation"].IsString()) {
             throw std::runtime_error("Invalid entity in save file");
         }
         Entity entity;
         entity.id = value["id"].GetUint64();
         entity.name = value["name"].GetString();
-        entity.modelKey = value["model"].GetString();
+        entity.archetype = EntityArchetypeId{value["archetype"].GetString()};
+        entity.presentation = PresentationId{value["presentation"].GetString()};
+        entity.modelKey = entity.archetype.value;
         entity.transform.position = readVector(value, "position");
         entity.transform.rotationDegrees = readVector(value, "rotation");
         entity.transform.scale = readVector(value, "scale");
@@ -420,6 +429,7 @@ SaveData SaveGame::read(const std::filesystem::path& path) {
                     {
                         if (!order.HasMember("recipe") || !order["recipe"].IsString() ||
                             !order.HasMember("product") || !order["product"].IsString() ||
+                            !order.HasMember("upgrade") || !order["upgrade"].IsString() ||
                             !order.HasMember("amount") || !order["amount"].IsUint() ||
                             !order.HasMember("durationTicks") || !order["durationTicks"].IsUint() ||
                             !order.HasMember("remainingTicks") ||
@@ -429,6 +439,7 @@ SaveData SaveGame::read(const std::filesystem::path& path) {
                             throw std::runtime_error("Invalid recipe production order");
                         parsed.recipeId = order["recipe"].GetString();
                         parsed.productId = order["product"].GetString();
+                        parsed.upgradeId = order["upgrade"].GetString();
                         parsed.amount = order["amount"].GetUint();
                         parsed.durationTicks = order["durationTicks"].GetUint();
                         parsed.remainingTicks = order["remainingTicks"].GetUint();

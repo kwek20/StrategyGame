@@ -10,6 +10,8 @@ Entity& World::createEntity(std::string name, std::string modelKey, PlayerId own
     entity.id = nextId_++;
     entity.name = std::move(name);
     entity.modelKey = std::move(modelKey);
+    entity.archetype = EntityArchetypeId{entity.modelKey};
+    entity.presentation = PresentationId{entity.modelKey};
     entity.authority.owner = owner;
     entities_.push_back(std::move(entity));
     return entities_.back();
