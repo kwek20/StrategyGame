@@ -21,8 +21,8 @@
     },
     "construction_drone": {
       "nameKey": "unit.construction_drone",
-      "presentation": "worker",
-      "collisionRadius": 0.65,
+      "presentation": "construction_drone",
+      "collisionRadius": 0.0,
       "interactionMargin": 0.9,
       "components": ["health", "vision", "unit", "gatherer", "upgrades"],
       "availableUpgrades": [],

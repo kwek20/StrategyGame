@@ -47,6 +47,10 @@ struct StartUpgradeCommand {
     EntityId entity{0};
     std::string upgradeId;
 };
+struct PlaceBuildingCommand { EntityId entity{0}; std::string buildingId; glm::vec3 position{0.0F}; };
+struct ConstructCommand { EntityId entity{0}; EntityId building{0}; };
+struct StopConstructionCommand { EntityId entity{0}; };
+struct RepairCommand { EntityId entity{0}; EntityId target{0}; };
 
 using CommandPayload = std::variant<PossessUnitCommand,
                                     ReleaseUnitCommand,
@@ -55,7 +59,11 @@ using CommandPayload = std::variant<PossessUnitCommand,
                                     GatherResourceCommand,
                                     AttackEntityCommand,
                                     StartRecipeCommand,
-                                    StartUpgradeCommand>;
+                                    StartUpgradeCommand,
+                                    PlaceBuildingCommand,
+                                    ConstructCommand,
+                                    StopConstructionCommand,
+                                    RepairCommand>;
 
 struct PlayerCommand {
     PlayerId player{0};

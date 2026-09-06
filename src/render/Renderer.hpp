@@ -70,7 +70,9 @@ class Renderer final {
     void drawBuildHud(PlayerId team,
                       const std::string& entityType,
                       std::size_t entityCount,
-                      const std::string& status) const;
+                      const std::string& status,
+                      bool hovered = false,
+                      bool active = false) const;
     void
     drawStrategyHud(const World& world, EntityId selected, const Player* player = nullptr) const;
     void drawUnitHud(const Entity& controlled) const;

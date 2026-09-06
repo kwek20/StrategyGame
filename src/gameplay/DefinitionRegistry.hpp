@@ -119,6 +119,9 @@ struct RecipeDefinition {
     std::unordered_map<std::string, float> cost;
     std::unordered_set<std::string> tags;
     std::uint32_t durationTicks{1};
+    float constructionPower{0.0F};
+    float workStep{1.0F};
+    float dronePowerPerStep{1.0F};
 };
 
 struct CountryDefinition {

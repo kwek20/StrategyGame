@@ -2,11 +2,13 @@
   "version": 1,
   "playerOneStart": [
     { "archetype": "town_center", "nameKey": "entity.player_one_base", "position": [-28, 0, -28] },
-    { "archetype": "worker", "nameKey": "entity.player_one_unit", "position": [-20, 0, -20], "directlyControllable": true }
+    { "archetype": "worker", "nameKey": "entity.player_one_unit", "position": [-20, 0, -20], "directlyControllable": true },
+    { "archetype": "construction_drone", "nameKey": "unit.construction_drone", "position": [-24, 6, -20], "directlyControllable": true }
   ],
   "playerTwoStart": [
     { "archetype": "town_center", "nameKey": "entity.player_two_base", "position": [28, 0, 28] },
-    { "archetype": "worker", "nameKey": "entity.player_two_unit", "position": [20, 0, 20], "directlyControllable": true }
+    { "archetype": "worker", "nameKey": "entity.player_two_unit", "position": [20, 0, 20], "directlyControllable": true },
+    { "archetype": "construction_drone", "nameKey": "unit.construction_drone", "position": [24, 6, 20], "directlyControllable": true }
   ],
   "buildPalette": ["worker", "town_center"],
   "generatedResourceNodes": ["tree", "stone", "gold"],

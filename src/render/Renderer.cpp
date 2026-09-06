@@ -592,7 +592,9 @@ void Renderer::drawWorld(const World& world, const CameraView& camera, const Pla
              transform,
              std::move(animation),
              animationSeconds,
-             glm::vec3{1.0F}});
+             entity.construction && !entity.construction.complete
+                 ? (entity.construction.placementValid ? glm::vec3{0.45F} : glm::vec3{0.85F, 0.12F, 0.10F})
+                 : glm::vec3{1.0F}});
     }
     if (player)
         for (const LastKnownEntity& known : player->intelligence) {
@@ -640,9 +642,9 @@ void Renderer::drawWorld(const World& world, const CameraView& camera, const Pla
                      1,
                      glm::value_ptr(material.tint));
         glUniform1f(shaders_.uniform(material.shader, "materialRoughness"), material.roughness);
-        glUniform1i(shaders_.uniform(material.shader, "rememberedEntity"),
-                    material.rememberedEntity ? 1 : 0);
-        if (material.rememberedEntity)
+        const bool tinted = material.rememberedEntity || command.tint != glm::vec3{1.0F};
+        glUniform1i(shaders_.uniform(material.shader, "rememberedEntity"), tinted ? 1 : 0);
+        if (tinted)
             glUniform3fv(shaders_.uniform(material.shader, "rememberedTint"),
                          1,
                          glm::value_ptr(command.tint));
@@ -1318,31 +1320,16 @@ void Renderer::drawPauseMenu(bool resumeHovered, bool settingsHovered, bool exit
 void Renderer::drawBuildHud(PlayerId team,
                             const std::string& entityType,
                             std::size_t entityCount,
-                            const std::string& status) const {
+                            const std::string& status,
+                            bool hovered,
+                            bool active) const {
     renderGraph_.enter(RenderPassKind::overlay);
-    std::vector<glm::vec2> panel;
-    appendHudRectangle(panel, 10.0F, 10.0F, 520.0F, 112.0F, viewportWidth_, viewportHeight_);
-    std::vector<glm::vec2> text;
-    const std::string line =
-        Text::format("build.header",
-                     {Text::get(team == 1 ? "build.team.a" : "build.team.b"),
-                      entityType,
-                      std::to_string(entityCount)});
-    appendHudText(text, line, 22.0F, 22.0F, 2.0F, viewportWidth_, viewportHeight_);
-    appendHudText(text,
-                  Text::get("build.controls.select"),
-                  22.0F,
-                  48.0F,
-                  1.5F,
-                  viewportWidth_,
-                  viewportHeight_);
-    appendHudText(text,
-                  Text::format("build.controls.camera", {status}),
-                  22.0F,
-                  74.0F,
-                  1.5F,
-                  viewportWidth_,
-                  viewportHeight_);
+    std::vector<glm::vec2> panel, button, icon;
+    const float panelTop = static_cast<float>(viewportHeight_) - 235.0F;
+    appendHudRectangle(panel, 18.0F, panelTop, 640.0F, static_cast<float>(viewportHeight_) - 18.0F, viewportWidth_, viewportHeight_);
+    appendHudRectangle(button, 30.0F, static_cast<float>(viewportHeight_) - 75.0F, 220.0F, static_cast<float>(viewportHeight_) - 30.0F, viewportWidth_, viewportHeight_);
+    appendHudRectangle(icon, 42.0F, static_cast<float>(viewportHeight_) - 67.0F, 70.0F, static_cast<float>(viewportHeight_) - 38.0F, viewportWidth_, viewportHeight_);
+    (void)team; (void)entityType; (void)entityCount; (void)status;
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
     shaders_.use(hudProgram_);
@@ -1359,10 +1346,8 @@ void Renderer::drawBuildHud(PlayerId team,
         glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(vertices.size()));
     };
     draw(panel, {0.025F, 0.04F, 0.06F});
-    draw(text, {0.92F, 0.96F, 0.82F});
-    drawText(line, 22.0F, 18.0F, 2.0F);
-    drawText(Text::get("build.controls.select"), 22.0F, 44.0F, 1.5F);
-    drawText(Text::format("build.controls.camera", {status}), 22.0F, 70.0F, 1.5F);
+    draw(button, active ? glm::vec3{0.38F, 0.58F, 0.24F} : hovered ? glm::vec3{0.32F, 0.56F, 0.22F} : glm::vec3{0.14F, 0.27F, 0.20F});
+    draw(icon, {0.18F, 0.76F, 0.88F});
     glBindVertexArray(0);
     glEnable(GL_CULL_FACE);
     glEnable(GL_DEPTH_TEST);

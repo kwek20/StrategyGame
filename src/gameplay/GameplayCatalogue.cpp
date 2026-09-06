@@ -97,9 +97,9 @@ void DefinitionRegistry::loadArchetypes(const std::filesystem::path& path,
                                      path.string());
         if (!item->value.HasMember("collisionRadius") ||
             !item->value["collisionRadius"].IsNumber() ||
-            item->value["collisionRadius"].GetFloat() <= 0.0F)
+            item->value["collisionRadius"].GetFloat() < 0.0F)
             throw std::runtime_error("Definition '" + archetype.id +
-                                     "' requires a positive collisionRadius in " + path.string());
+                                     "' requires a non-negative collisionRadius in " + path.string());
         archetype.collisionRadius = item->value["collisionRadius"].GetFloat();
         if (item->value.HasMember("interactionMargin"))
             archetype.interactionMargin = requiredNumber(
@@ -361,6 +361,9 @@ void DefinitionRegistry::loadRecipes(const std::filesystem::path& path) {
             definition.producer = value["producer"].GetString();
         }
         definition.durationTicks = value["durationTicks"].GetUint();
+        if (value.HasMember("constructionPower")) definition.constructionPower = requiredNumber(value, "constructionPower", "Recipe '" + definition.id + "'");
+        if (value.HasMember("workStep")) definition.workStep = requiredNumber(value, "workStep", "Recipe '" + definition.id + "'");
+        if (value.HasMember("dronePowerPerStep")) definition.dronePowerPerStep = requiredNumber(value, "dronePowerPerStep", "Recipe '" + definition.id + "'");
         for (const std::string& tag : strings(value, "tags"))
             definition.tags.insert(tag);
         const auto& product = value["product"];
@@ -1012,6 +1015,18 @@ void DefinitionRegistry::initializeEntity(Entity& entity) const {
             value(GameplayStat::gatherRate, entity.gatherer.gatherPerSecond);
         entity.gatherer.carryCapacity =
             value(GameplayStat::carryCapacity, entity.gatherer.carryCapacity);
+    }
+    if (type.movement.type == "flying") {
+        entity.flight.emplace();
+        entity.flight.altitude = std::max(entity.transform.position.y, entity.flight.minimumAltitude);
+        entity.transform.position.y = entity.flight.altitude;
+    }
+    if (type.battery) {
+        entity.battery.emplace();
+        entity.battery.capacity = type.battery->capacity;
+        entity.battery.charge = type.battery->capacity;
+        entity.battery.movementDrainPerSecond = type.battery->movementDrainPerSecond;
+        entity.battery.reserveThreshold = type.battery->reserveThreshold;
     }
     if (has("combat")) {
         entity.combat.emplace();

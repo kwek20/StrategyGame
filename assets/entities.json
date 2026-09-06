@@ -31,6 +31,12 @@
         "death": "Death"
       }
     },
+    "construction_drone": {
+      "model": "units/drone",
+      "scale": 0.8,
+      "selection": { "radius": 0.75, "height": 1.0 },
+      "animations": {}
+    },
     "tree": {
       "model": "buildings/Resource_PineTree",
       "scale": 8.0,

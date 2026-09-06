@@ -5,6 +5,7 @@
 #include "diagnostics/Logger.hpp"
 #include "persistence/SaveGame.hpp"
 #include "render/Renderer.hpp"
+#include "world/Collision.hpp"
 
 #include <SDL3/SDL.h>
 #include <algorithm>
@@ -130,6 +131,12 @@ void PlayState::handleEvent(const SDL_Event& event) {
     }
     if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == bound("pause", SDLK_ESCAPE) &&
         !event.key.repeat) {
+        if (constructionPlacementMode_) {
+            constructionPlacementMode_ = false;
+            pendingConstructionScreen_.reset();
+            pendingConstructionPosition_.reset();
+            return;
+        }
         if (viewMode_ == ViewMode::unitControl && possessedEntity_ != 0) {
             session_.submit(
                 {localPlayer_, nextCommandSequence_++, ReleaseUnitCommand{possessedEntity_}});
@@ -147,6 +154,25 @@ void PlayState::handleEvent(const SDL_Event& event) {
     }
     if (paused_) {
         handlePauseEvent(event);
+        return;
+    }
+    const Entity* droneForBuildHud = session_.world().findEntity(selectedEntity_);
+    const bool buildHudVisible = viewMode_ == ViewMode::strategy && droneForBuildHud &&
+                                 droneForBuildHud->authority.owner == localPlayer_ &&
+                                 droneForBuildHud->archetype.value == "construction_drone";
+    if (buildHudVisible && event.type == SDL_EVENT_MOUSE_MOTION) {
+        int windowHeight = 0, windowWidth = 0;
+        if (SDL_Window* window = SDL_GetWindowFromID(inputWindowId_)) SDL_GetWindowSize(window, &windowWidth, &windowHeight);
+        constructionButtonHovered_ = event.motion.x >= 30.0F && event.motion.x <= 220.0F &&
+                                     event.motion.y >= windowHeight - 75.0F && event.motion.y <= windowHeight - 30.0F;
+        constructionCursorScreen_ = glm::vec2{event.motion.x, event.motion.y};
+    }
+    if (buildHudVisible && event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_LEFT && constructionButtonHovered_) {
+        constructionPlacementMode_ = !constructionPlacementMode_;
+        return;
+    }
+    if (constructionPlacementMode_ && event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_LEFT) {
+        pendingConstructionScreen_ = glm::vec2{event.button.x, event.button.y};
         return;
     }
     if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_LEFT &&
@@ -420,6 +446,8 @@ void PlayState::update(float deltaSeconds) {
                     session_.submit({localPlayer_,
                                      nextCommandSequence_++,
                                      GatherResourceCommand{id, target->id}});
+                else if (target && target->construction && !target->construction.complete)
+                    session_.submit({localPlayer_, nextCommandSequence_++, ConstructCommand{id, target->id}});
                 else if (target && target->health && target->authority.owner != 0 &&
                          target->authority.owner != localPlayer_)
                     session_.submit({localPlayer_,
@@ -436,6 +464,16 @@ void PlayState::update(float deltaSeconds) {
         else if (selectedEntity_ != 0)
             order(selectedEntity_);
         pendingOrderTarget_ = 0;
+    }
+    if (pendingConstructionPosition_) {
+        EntityId drone = selectedEntity_;
+        if (!selectedUnits_.empty()) drone = selectedUnits_.front();
+        if (constructionPreviewValid_)
+        if (const Entity* builder = session_.world().findEntity(drone); builder && builder->flight)
+            session_.submit({localPlayer_, nextCommandSequence_++, PlaceBuildingCommand{drone, "construct.command_hub", *pendingConstructionPosition_}});
+        pendingConstructionPosition_.reset();
+        if (constructionPreviewValid_)
+            constructionPlacementMode_ = false;
     }
     const float forward = static_cast<float>(forward_) - static_cast<float>(backward_);
     const float right = static_cast<float>(right_) - static_cast<float>(left_);
@@ -479,6 +517,10 @@ void PlayState::render(Renderer& renderer) const {
             renderer.screenToTerrain(pendingMoveScreen_->x, pendingMoveScreen_->y, view);
         pendingMoveScreen_.reset();
     }
+    if (pendingConstructionScreen_) {
+        pendingConstructionPosition_ = renderer.screenToTerrain(pendingConstructionScreen_->x, pendingConstructionScreen_->y, view);
+        pendingConstructionScreen_.reset();
+    }
     if (pendingSelection_) {
         const EntityId selected = renderer.pickEntity(
             pendingSelection_->x, pendingSelection_->y, session_.world(), view, local, true);
@@ -505,10 +547,34 @@ void PlayState::render(Renderer& renderer) const {
     }
     renderer.drawTerrain(view, local);
     renderer.drawWorld(session_.world(), view, local);
+    if (constructionPlacementMode_ && constructionCursorScreen_) {
+        const glm::vec3 position = renderer.screenToTerrain(constructionCursorScreen_->x, constructionCursorScreen_->y, view);
+        constructionPreviewValid_ = !overlapsObject(session_.world(), context_.definitions,
+                                                     {position.x, position.z},
+                                                     collisionRadius(context_.definitions, "command_hub"));
+        if (local)
+            if (const RecipeDefinition* recipe = context_.definitions.recipe(RecipeId{"construct.command_hub"}))
+                for (const auto& [resource, amount] : recipe->cost)
+                    if (!local->resources.contains(resource) || local->resources.at(resource) < amount)
+                        constructionPreviewValid_ = false;
+        World preview;
+        Entity& ghost = preview.createEntity("Command Hub", "command_hub", localPlayer_);
+        context_.definitions.initializeEntity(ghost);
+        ghost.transform.position = position;
+        ghost.construction.emplace();
+        ghost.construction.complete = false;
+        ghost.construction.placementValid = constructionPreviewValid_;
+        renderer.drawWorld(preview, view, nullptr);
+    }
     if (local)
         renderer.drawResourceHud(*local);
     if (viewMode_ == ViewMode::strategy)
         renderer.drawOrderMarkers(session_.world(), selectedEntity_, selectedUnits_, view);
+    if (viewMode_ == ViewMode::strategy) {
+        const Entity* selected = session_.world().findEntity(selectedEntity_);
+        if (selected && selected->authority.owner == localPlayer_ && selected->archetype.value == "construction_drone")
+            renderer.drawBuildHud(localPlayer_, constructionPlacementMode_ ? "PLACE COMMAND HUB" : "CONSTRUCTION", session_.world().size(), "Select a building, then click a valid location", constructionButtonHovered_, constructionPlacementMode_);
+    }
     if (!selectedUnits_.empty())
         for (EntityId selected : selectedUnits_)
             renderer.drawEntityOutline(session_.world(), selected, view, local);

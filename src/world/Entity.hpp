@@ -40,7 +40,7 @@ struct Authority {
     PlayerId directController{0};
 };
 
-enum class UnitOrderKind : std::uint8_t { idle, move, gather, returnResources, attack };
+enum class UnitOrderKind : std::uint8_t { idle, move, gather, returnResources, attack, construct, repair };
 
 enum class EntityKind : std::uint8_t { decoration, unit, building, resource };
 
@@ -73,6 +73,26 @@ struct GathererComponent {
     float carriedAmount{0.0F};
     float carryCapacity{0.0F};
     float gatherPerSecond{0.0F};
+};
+struct FlightComponent {
+    float altitude{6.0F};
+    float verticalSpeed{4.0F};
+    float minimumAltitude{2.0F};
+    float maximumAltitude{24.0F};
+};
+struct BatteryComponent {
+    float charge{0.0F};
+    float capacity{0.0F};
+    float movementDrainPerSecond{0.0F};
+    float reserveThreshold{0.0F};
+    bool returningToCharge{false};
+};
+struct ConstructionComponent {
+    std::string recipeId;
+    float powerRequired{0.0F};
+    float powerProgress{0.0F};
+    bool complete{false};
+    bool placementValid{true};
 };
 struct CombatComponent {
     float damage{0.0F};
@@ -156,6 +176,9 @@ struct Entity {
     Component<VisionComponent> vision;
     Component<UnitComponent> unitControl;
     Component<GathererComponent> gatherer;
+    Component<FlightComponent> flight;
+    Component<BatteryComponent> battery;
+    Component<ConstructionComponent> construction;
     Component<CombatComponent> combat;
     Component<ResourceComponent> resource;
     Component<ProductionComponent> production;

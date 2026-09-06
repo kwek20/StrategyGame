@@ -218,6 +218,37 @@ void GameSession::apply(const PlayerCommand& command) {
                     order.reservedCosts.insert(recipe->cost.begin(), recipe->cost.end());
                     entity->production.queue.push_back(std::move(order));
                 }
+            } else if constexpr (std::is_same_v<Type, PlaceBuildingCommand>) {
+                Player* player = players_.find(command.player);
+                const RecipeDefinition* recipe = gameplay_.recipe(RecipeId{payload.buildingId});
+                if (!player || !entity->flight || !recipe || recipe->product.kind != RecipeProductKind::building)
+                    return;
+                if (overlapsObject(world_, gameplay_, {payload.position.x, payload.position.z},
+                                   collisionRadius(gameplay_, recipe->product.id))) return;
+                for (const auto& [resource, amount] : recipe->cost)
+                    if (player->resources[resource] < amount) return;
+                for (const auto& [resource, amount] : recipe->cost) player->resources[resource] -= amount;
+                Entity& building = world_.createEntity(recipe->product.id, recipe->product.id, command.player);
+                gameplay_.initializeEntity(building);
+                building.transform.position = payload.position;
+                building.construction.emplace();
+                building.construction.recipeId = recipe->id;
+                building.construction.powerRequired = recipe->constructionPower;
+                building.construction.complete = false;
+                if (building.health) building.health.current = 1.0F;
+            } else if constexpr (std::is_same_v<Type, ConstructCommand>) {
+                Entity* building = world_.findEntity(payload.building);
+                if (entity->flight && entity->battery && building && building->construction && !building->construction.complete) {
+                    entity->unitControl.order = UnitOrderKind::construct;
+                    entity->unitControl.orderTarget = building->id;
+                    entity->unitControl.strategicDestination = building->transform.position;
+                    entity->unitControl.hasStrategicDestination = true;
+                }
+            } else if constexpr (std::is_same_v<Type, StopConstructionCommand>) {
+                if (entity->unitControl) { entity->unitControl.order=UnitOrderKind::idle; entity->unitControl.orderTarget=0; entity->unitControl.hasStrategicDestination=false; }
+            } else if constexpr (std::is_same_v<Type, RepairCommand>) {
+                Entity* target = world_.findEntity(payload.target);
+                if (entity->flight && target && target->health) { entity->unitControl.order=UnitOrderKind::repair; entity->unitControl.orderTarget=target->id; entity->unitControl.strategicDestination=target->transform.position; entity->unitControl.hasStrategicDestination=true; }
             } else if constexpr (std::is_same_v<Type, StartUpgradeCommand>) {
                 if (!entity->production || !entity->upgrades)
                     return;
@@ -280,6 +311,34 @@ void GameSession::simulateTick() {
     std::vector<CompletedCharacter> completed;
     std::vector<EntityId> destroyed;
     for (Entity& entity : world_.entities()) {
+        if (entity.flight && entity.battery && entity.battery.returningToCharge) {
+            {
+                    for (const Entity& hub : world_.entities()) {
+                        if (hub.authority.owner != entity.authority.owner)
+                            continue;
+                        if (hub.archetype.value != "command_hub" && hub.archetype.value != "town_center")
+                            continue;
+                        const EntityArchetype* hubType = gameplay_.archetype(hub.archetype);
+                        if (!hubType || !hubType->powerDevice)
+                            continue;
+                        const PowerDeviceDefinition* charger = gameplay_.powerDevice(*hubType->powerDevice);
+                        if (!charger || !charger->tags.contains("charger"))
+                            continue;
+                        const glm::vec3 offset = hub.transform.position - entity.transform.position;
+                        if (glm::dot(offset, offset) <= 4.0F) {
+                            entity.battery.charge = std::min(
+                                entity.battery.capacity,
+                                entity.battery.charge + charger->chargePerTick);
+                            if (entity.battery.charge >= entity.battery.capacity) {
+                                entity.battery.returningToCharge = false;
+                                entity.unitControl.hasStrategicDestination = false;
+                                entity.unitControl.order = UnitOrderKind::idle;
+                            }
+                            break;
+                        }
+                    }
+            }
+        }
         if (entity.production && !entity.production.queue.empty()) {
             ProductionOrder& order = entity.production.queue.front();
             if (order.remainingTicks > 0)
@@ -331,6 +390,28 @@ void GameSession::simulateTick() {
         }
         if (!entity.unitControl)
             continue;
+        if ((entity.unitControl.order == UnitOrderKind::construct || entity.unitControl.order == UnitOrderKind::repair) && entity.battery) {
+            Entity* target = world_.findEntity(entity.unitControl.orderTarget);
+            if (target) {
+                const glm::vec2 d{target->transform.position.x-entity.transform.position.x,target->transform.position.z-entity.transform.position.z};
+                if (glm::dot(d,d) <= 4.0F) {
+                    if (entity.unitControl.order == UnitOrderKind::construct && target->construction) {
+                        const RecipeDefinition* recipe = gameplay_.recipe(RecipeId{target->construction.recipeId});
+                        if (recipe && entity.battery.charge >= recipe->dronePowerPerStep) {
+                            entity.battery.charge -= recipe->dronePowerPerStep;
+                            target->construction.powerProgress = std::min(target->construction.powerRequired, target->construction.powerProgress + recipe->workStep);
+                            if (target->construction.powerProgress >= target->construction.powerRequired) {
+                                target->construction.complete = true;
+                                if (target->health) target->health.current = target->health.maximum;
+                                entity.unitControl.order=UnitOrderKind::idle; entity.unitControl.orderTarget=0; entity.unitControl.hasStrategicDestination=false;
+                            }
+                        }
+                    } else if (entity.unitControl.order == UnitOrderKind::repair && target->health && target->health.current < target->health.maximum && entity.battery.charge >= 1.0F) {
+                        entity.battery.charge -= 1.0F; target->health.current = std::min(target->health.maximum,target->health.current+2.0F);
+                    }
+                }
+            }
+        }
         entity.transient.navigationRetrySeconds = std::max(
             0.0F, entity.transient.navigationRetrySeconds - static_cast<float>(fixedTickSeconds));
         const auto routeTo = [this, &entity](glm::vec3 destination) {
@@ -506,12 +587,19 @@ void GameSession::simulateTick() {
                                                 : entity.unitControl.movementSpeed;
         const glm::vec2 delta = movement * resolvedMovementSpeed * speedMultiplier *
                                 static_cast<float>(fixedTickSeconds);
-        const float radius = collisionRadius(gameplay_, entity.archetype);
+        const bool flying = entity.flight.present;
+        if (flying && entity.battery && glm::length(delta) > 0.001F) {
+            entity.battery.charge = std::max(0.0F, entity.battery.charge -
+                entity.battery.movementDrainPerSecond * static_cast<float>(fixedTickSeconds));
+            if (entity.battery.charge <= entity.battery.reserveThreshold)
+                entity.battery.returningToCharge = true;
+        }
+        const float radius = flying ? 0.0F : collisionRadius(gameplay_, entity.archetype);
         const float boundary =
             static_cast<float>(Terrain::cellCount) * Terrain::spacing * 0.5F - radius;
-        const auto validPosition = [this, &entity, radius, boundary](glm::vec2 candidate) {
+        const auto validPosition = [this, &entity, radius, boundary, flying](glm::vec2 candidate) {
             return std::abs(candidate.x) <= boundary && std::abs(candidate.y) <= boundary &&
-                   !overlapsObject(world_, gameplay_, candidate, radius, entity.id);
+                   (flying || !overlapsObject(world_, gameplay_, candidate, radius, entity.id));
         };
         if (validPosition(current + delta)) {
             entity.transform.position.x = current.x + delta.x;
@@ -524,6 +612,30 @@ void GameSession::simulateTick() {
             entity.transient.navigationPath.clear();
             entity.transient.navigationWaypoint = 0;
             entity.transient.navigationRetrySeconds = 0.25F;
+        }
+        if (flying) {
+            entity.flight.altitude = std::clamp(entity.flight.altitude,
+                                                entity.flight.minimumAltitude,
+                                                entity.flight.maximumAltitude);
+            entity.transform.position.y = entity.flight.altitude;
+            if (entity.battery && entity.battery.returningToCharge && !entity.unitControl.hasStrategicDestination) {
+                const Entity* nearest = nullptr;
+                float best = std::numeric_limits<float>::max();
+                for (const Entity& candidate : world_.entities()) {
+                    const auto* candidateType = gameplay_.archetype(candidate.archetype);
+                    if (!candidateType || candidate.authority.owner != entity.authority.owner || !candidateType->powerDevice) continue;
+                    const auto* device = gameplay_.powerDevice(*candidateType->powerDevice);
+                    if (!device || !device->tags.contains("charger")) continue;
+                    const glm::vec3 d = candidate.transform.position - entity.transform.position;
+                    const float distance = glm::dot(d, d);
+                    if (distance < best) { best = distance; nearest = &candidate; }
+                }
+                if (nearest) {
+                    entity.unitControl.strategicDestination = nearest->transform.position;
+                    entity.unitControl.hasStrategicDestination = true;
+                    entity.unitControl.order = UnitOrderKind::returnResources;
+                }
+            }
         }
     }
     std::sort(destroyed.begin(), destroyed.end());

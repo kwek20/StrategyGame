@@ -56,6 +56,16 @@
       "cost": { "materials": 100 },
       "durationTicks": 450,
       "tags": ["construction", "power", "generator"]
+    },
+    {
+      "id": "construct.command_hub",
+      "product": { "building": "command_hub", "amount": 1 },
+      "cost": { "materials": 150 },
+      "durationTicks": 600,
+      "constructionPower": 120,
+      "workStep": 2,
+      "dronePowerPerStep": 1,
+      "tags": ["construction", "headquarters"]
     }
   ]
 }

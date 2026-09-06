@@ -129,18 +129,22 @@ Replace the ground worker with the defining starting unit of the game.
 ### Work
 
 - Add a flight-capable navigation mode with altitude and valid operating bounds.
-- Add authoritative battery, cargo, gathering, construction, and repair components.
+- Add authoritative battery, cargo/gathering, construction, and repair components.
 - Add commands for gather, construct, repair, recharge, stop, and direct control.
 - Implement automatic return to an available charger at a configurable reserve level.
 - Handle unreachable, destroyed, occupied, or disconnected charging destinations.
 - Implement direct-control flight and a drone-specific HUD.
-- Add readable battery, cargo, task, and route indicators.
+- Add readable battery, task, route, construction-power, and work-step indicators.
 
 ### Exit criteria
 
 - Each player starts with exactly one command hub and one construction drone.
-- The drone can gather materials, return cargo, recharge, and resume work.
-- Identical command streams produce identical battery, cargo, movement, and resource results.
+- The drone can gather materials into cargo, deposit them into the player's stockpile, construct
+  after an upfront material cost, recharge, and resume work.
+- Each construction recipe defines an upfront material cost, a power budget, and deterministic work
+  steps; power is consumed per step while gathering continues to use drone cargo.
+- Identical command streams produce identical battery, cargo, construction-power, movement, and
+  resource results.
 - Drone state survives save/load at every point in its work cycle.
 - A drone cannot become permanently stranded without an explicit visible reason.
 

@@ -140,7 +140,7 @@ the identity of the game and replaces the traditional starting worker.
 
 - Fly across rough terrain and low obstacles
 - Discover terrain and enemy activity
-- Gather and carry loose resources
+- Gather and carry loose resources, then deposit them into the player's resource stockpile
 - Construct foundational buildings
 - Repair damaged structures using materials
 - Recharge at a command hub or charging facility
@@ -149,7 +149,8 @@ the identity of the game and replaces the traditional starting worker.
 ### Constraints
 
 - Limited battery capacity
-- Limited cargo capacity
+- Construction uses an upfront material cost from the player's stockpile, followed by powered
+  drone work; gathered resources still use the drone's normal cargo inventory
 - Vulnerability to weapons and interception
 - Dependence on charging infrastructure
 - Reduced effectiveness when operating far from the grid
@@ -165,12 +166,16 @@ and destroyed states as applicable.
 Construction requires:
 
 - A valid placement location
-- Resource payment or reservation
-- Construction time
+- Upfront resource payment or reservation from the owning player's stockpile
+- A construction power budget defined by the building recipe
+- Construction time expressed as deterministic power-work steps
 - Assistance from a construction-capable drone or unit
 
 Placement previews must communicate collision, terrain suitability, grid connectivity, cost,
-and expected power state. Cancellation and refund rules must be deterministic and explicit.
+construction power budget, work steps, and expected power state. Cancellation and refund rules
+must be deterministic and explicit. Materials are deducted from the player's resources when
+construction begins (or reserved according to the recipe), while construction power is consumed
+as each drone work step runs. Resource gathering remains a separate cargo-and-deposit loop.
 
 ## Power grid
 
@@ -392,7 +397,8 @@ rendering and interface code.
 ### Phase 2: implement the starting drone
 
 Replace the current worker as the starting entity. Add flying navigation, battery charge,
-cargo, gathering, construction, charging, automatic return, and direct-control flight.
+gathering with cargo and deposit, upfront-cost construction with power-budgeted drone work,
+charging, automatic return, and direct-control flight.
 
 ### Phase 3: complete construction
 

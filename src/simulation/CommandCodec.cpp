@@ -56,6 +56,9 @@ std::vector<std::byte> CommandCodec::encode(const PlayerCommand& command) {
         else if constexpr (std::is_same_v<T, AttackEntityCommand>) write(result, payload.target);
         else if constexpr (std::is_same_v<T, StartRecipeCommand>) writeString(result, payload.recipeId.value);
         else if constexpr (std::is_same_v<T, StartUpgradeCommand>) writeString(result, payload.upgradeId);
+        else if constexpr (std::is_same_v<T, PlaceBuildingCommand>) { writeString(result, payload.buildingId); write(result,payload.position.x); write(result,payload.position.y); write(result,payload.position.z); }
+        else if constexpr (std::is_same_v<T, ConstructCommand>) write(result, payload.building);
+        else if constexpr (std::is_same_v<T, RepairCommand>) write(result, payload.target);
     }, command.payload);
     return result;
 }
@@ -77,7 +80,7 @@ std::optional<PlayerCommand> CommandCodec::decode(std::span<const std::byte> inp
     case 3: { MoveUnitCommand value{entity}; if(!read(input,value.destination.x)||!read(input,value.destination.y)||!read(input,value.destination.z)) return std::nullopt; result.payload=value; break; }
     case 4: { EntityId target{}; if(!read(input,target)) return std::nullopt; result.payload=GatherResourceCommand{entity,target}; break; }
     case 5: { EntityId target{}; if(!read(input,target)) return std::nullopt; result.payload=AttackEntityCommand{entity,target}; break; }
-    case 8: {
+    case 6: {
         StartRecipeCommand value;
         value.entity = entity;
         std::string recipe;
@@ -86,12 +89,16 @@ std::optional<PlayerCommand> CommandCodec::decode(std::span<const std::byte> inp
         result.payload = std::move(value);
         break;
     }
-    case 9: {
+    case 7: {
         StartUpgradeCommand value{entity};
         if (!readString(input, value.upgradeId)) return std::nullopt;
         result.payload = std::move(value);
         break;
     }
+    case 8: { PlaceBuildingCommand value{entity}; if(!readString(input,value.buildingId)||!read(input,value.position.x)||!read(input,value.position.y)||!read(input,value.position.z)) return std::nullopt; result.payload=std::move(value); break; }
+    case 9: { EntityId building{}; if(!read(input,building)) return std::nullopt; result.payload=ConstructCommand{entity,building}; break; }
+    case 10: result.payload=StopConstructionCommand{entity}; break;
+    case 11: { EntityId target{}; if(!read(input,target)) return std::nullopt; result.payload=RepairCommand{entity,target}; break; }
     default: return std::nullopt;
     }
     return input.empty() ? std::optional<PlayerCommand>{std::move(result)} : std::nullopt;
