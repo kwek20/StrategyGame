@@ -3,8 +3,7 @@
   "recipes": [
     { "id": "town_center.research_level_2", "producer": "town_center", "product": { "building": "town_center_level_2", "amount": 1 }, "cost": {}, "durationTicks": 450, "tags": ["research", "upgrade", "transformation"] },
     {
-      "id": "outpost.research_efficient_training",
-      "producer": "outpost",
+      "id": "research.efficient_training",
       "product": { "building": "basic_generator", "amount": 1 },
       "cost": {},
       "durationTicks": 300,
@@ -41,6 +40,22 @@
       "cost": { "materials": 75 },
       "durationTicks": 300,
       "tags": ["training", "drone", "construction"]
+    },
+    {
+      "id": "material_processor.process_materials",
+      "producer": "material_processor",
+      "product": { "resource": "materials", "amount": 1 },
+      "cost": { "wood": 2, "stone": 1 },
+      "durationTicks": 30,
+      "tags": ["processing", "materials"]
+    },
+    {
+      "id": "command_hub.process_materials",
+      "producer": "command_hub",
+      "product": { "resource": "materials", "amount": 1 },
+      "cost": { "wood": 2, "stone": 1 },
+      "durationTicks": 30,
+      "tags": ["processing", "materials"]
     },
     {
       "id": "construct.basic_generator",

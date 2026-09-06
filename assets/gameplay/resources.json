@@ -1,6 +1,9 @@
 {
   "version": 1,
   "resources": {
+    "wood": { "nameKey": "resource.wood", "icon": "ui/placeholder", "tags": ["stockpile", "raw"], "storage": "stockpile", "enabled": true },
+    "stone": { "nameKey": "resource.stone", "icon": "ui/placeholder", "tags": ["stockpile", "raw"], "storage": "stockpile", "enabled": true },
+    "gold": { "nameKey": "resource.gold", "icon": "ui/placeholder", "tags": ["stockpile", "raw"], "storage": "stockpile", "enabled": true },
     "materials": {
       "nameKey": "resource.materials",
       "icon": "ui/placeholder",

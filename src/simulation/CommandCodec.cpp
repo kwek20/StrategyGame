@@ -38,7 +38,7 @@ bool readString(std::span<const std::byte>& input, std::string& value) {
 
 std::vector<std::byte> CommandCodec::encode(const PlayerCommand& command) {
     std::vector<std::byte> result;
-    result.push_back(std::byte{3});
+    result.push_back(std::byte{4});
     write(result, command.player);
     write(result, command.sequence);
     result.push_back(static_cast<std::byte>(command.payload.index()));
@@ -64,12 +64,13 @@ std::vector<std::byte> CommandCodec::encode(const PlayerCommand& command) {
         }
         else if constexpr (std::is_same_v<T, ConstructCommand>) write(result, payload.building);
         else if constexpr (std::is_same_v<T, RepairCommand>) write(result, payload.target);
+        else if constexpr (std::is_same_v<T, CancelProductionCommand>) write(result, payload.queueIndex);
     }, command.payload);
     return result;
 }
 
 std::optional<PlayerCommand> CommandCodec::decode(std::span<const std::byte> input) {
-    if (input.empty() || input.front() != std::byte{3}) return std::nullopt;
+    if (input.empty() || input.front() != std::byte{4}) return std::nullopt;
     input = input.subspan(1);
     PlayerCommand result;
     if (!read(input, result.player) || !read(input, result.sequence) || input.empty()) return std::nullopt;
@@ -117,6 +118,7 @@ std::optional<PlayerCommand> CommandCodec::decode(std::span<const std::byte> inp
     case 9: { EntityId building{}; if(!read(input,building)) return std::nullopt; result.payload=ConstructCommand{entity,building}; break; }
     case 10: result.payload=StopConstructionCommand{entity}; break;
     case 11: { EntityId target{}; if(!read(input,target)) return std::nullopt; result.payload=RepairCommand{entity,target}; break; }
+    case 12: { std::uint32_t index{}; if(!read(input,index)) return std::nullopt; result.payload=CancelProductionCommand{entity,index}; break; }
     default: return std::nullopt;
     }
     return input.empty() ? std::optional<PlayerCommand>{std::move(result)} : std::nullopt;

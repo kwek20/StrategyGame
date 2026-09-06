@@ -373,6 +373,9 @@ void DefinitionRegistry::loadRecipes(const std::filesystem::path& path) {
         } else if (product.HasMember("building") && product["building"].IsString()) {
             definition.product.kind = RecipeProductKind::building;
             definition.product.id = product["building"].GetString();
+        } else if (product.HasMember("resource") && product["resource"].IsString()) {
+            definition.product.kind = RecipeProductKind::resource;
+            definition.product.id = product["resource"].GetString();
         } else
             throw std::runtime_error("Recipe '" + definition.id + "' has an invalid product");
         if (product.HasMember("amount")) {
@@ -486,7 +489,9 @@ void DefinitionRegistry::validateReferences() const {
                                      definition.producer + "'");
         const bool validProduct = definition.product.kind == RecipeProductKind::unit
                                       ? unitIds_.contains(definition.product.id)
-                                      : buildingIds_.contains(definition.product.id);
+                                      : definition.product.kind == RecipeProductKind::building
+                                            ? buildingIds_.contains(definition.product.id)
+                                            : resourceTypes_.contains(definition.product.id);
         if (!validProduct)
             throw std::runtime_error("Recipe '" + id + "' references unknown product '" +
                                      definition.product.id + "'");
@@ -627,6 +632,10 @@ void DefinitionRegistry::loadRules(const std::filesystem::path& path) {
     matchRules_.maximumResourceHeight = number("maximumResourceHeight");
     matchRules_.maximumResourceSlope = number("maximumResourceSlope");
     matchRules_.baseExclusionRadius = number("baseExclusionRadius");
+    if (!data.HasMember("unitLimit") || !data["unitLimit"].IsUint() ||
+        data["unitLimit"].GetUint() == 0)
+        throw std::runtime_error("Match rules require a positive unitLimit");
+    matchRules_.unitLimit = data["unitLimit"].GetUint();
     if (!data.HasMember("trainingUpgradeProduct") ||
         !data["trainingUpgradeProduct"].IsString())
         throw std::runtime_error("Match rules require trainingUpgradeProduct");
@@ -986,7 +995,9 @@ DefinitionRegistry::productionRecipe(const std::string& producer,
 std::vector<const RecipeDefinition*> DefinitionRegistry::recipesForProducer(const std::string& producer) const {
     std::vector<const RecipeDefinition*> result;
     for (const auto& [id, recipe] : recipes_)
-        if (recipe.producer == producer && recipe.product.kind == RecipeProductKind::unit)
+        if (recipe.producer == producer &&
+            (recipe.product.kind == RecipeProductKind::unit ||
+             recipe.product.kind == RecipeProductKind::resource))
             result.push_back(&recipe);
     std::sort(result.begin(), result.end(), [](const auto* a, const auto* b) { return a->id < b->id; });
     return result;

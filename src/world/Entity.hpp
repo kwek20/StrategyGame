@@ -115,7 +115,7 @@ struct EntityTransientState {
     float navigationRetrySeconds{0.0F};
 };
 
-enum class ProductionKind : std::uint8_t { trainCharacter, upgradeBuilding, improveTraining };
+enum class ProductionKind : std::uint8_t { trainCharacter, upgradeBuilding, improveTraining, processResource };
 
 struct ProductionOrder {
     ProductionKind kind{ProductionKind::trainCharacter};

@@ -80,7 +80,10 @@ class Renderer final {
     void drawEntityActionHud(const Entity& entity,
                              const std::vector<std::string>& labels,
                              const std::vector<std::string>& costs,
-                             int hovered) const;
+                             const std::vector<bool>& enabled,
+                             int hovered,
+                             const std::vector<std::string>& queueLabels,
+                             int queueHovered) const;
     void drawSelectionBox(const glm::vec2& start, const glm::vec2& end) const;
     [[nodiscard]] std::vector<EntityId> unitsInScreenRectangle(const glm::vec2& start,
                                                                const glm::vec2& end,

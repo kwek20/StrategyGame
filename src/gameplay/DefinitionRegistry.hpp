@@ -105,7 +105,7 @@ struct PowerDeviceDefinition {
     float connectionRange{0.0F}, transferLimit{0.0F}, chargePerTick{0.0F};
 };
 
-enum class RecipeProductKind { unit, building };
+enum class RecipeProductKind { unit, building, resource };
 
 struct RecipeProduct {
     RecipeProductKind kind{RecipeProductKind::unit};
@@ -171,6 +171,7 @@ struct MatchRulesDefinition {
     std::vector<StartingEntityDefinition> playerOne, playerTwo;
     std::vector<std::string> buildPalette, generatedResourceNodes;
     std::string trainingUpgradeProduct;
+    std::uint32_t unitLimit{100};
     std::map<std::string, float> startingResources;
     float terrainEdgeMargin{0.0F}, minimumResourceHeight{0.0F}, maximumResourceHeight{1.0F};
     float maximumResourceSlope{0.0F}, baseExclusionRadius{0.0F};

@@ -98,6 +98,16 @@
         "maximumProductionUpgrades": 8
       }
     },
+    "material_processor": {
+      "nameKey": "building.material_processor",
+      "presentation": "town_center",
+      "collisionRadius": 5.0,
+      "components": ["health", "production"],
+      "availableUpgrades": [],
+      "tags": ["building", "processor", "production"],
+      "health": 600,
+      "stats": { "productionSpeed": 1 }
+    },
     "basic_generator": {
       "nameKey": "building.basic_generator",
       "presentation": "town_center",

@@ -713,8 +713,9 @@ void Renderer::drawWorld(const World& world, const CameraView& camera, const Pla
         }
     const EntityDefinition* definition = resources_.entityDefinition(entity.renderId());
         const float height = definition ? definition->selectionHeight : 2.0F;
-        const float ground =
-            terrain_.heightAt(entity.transform.position.x, entity.transform.position.z);
+        const float ground = terrain_.heightAt(entity.transform.position.x,
+                                               entity.transform.position.z) +
+                             (entity.flight ? entity.transform.position.y : 0.0F);
         const glm::vec4 clip =
             viewProjection * glm::vec4{entity.transform.position.x,
                                        ground + entity.transform.position.y + height + 0.65F,
@@ -1059,7 +1060,7 @@ void Renderer::drawDetailedDebugHud(const CameraView& camera,
 void Renderer::drawResourceHud(const Player& player) const {
     renderGraph_.enter(RenderPassKind::overlay);
     std::vector<glm::vec2> panel;
-    appendHudRectangle(panel, 10.0F, 10.0F, 430.0F, 44.0F, viewportWidth_, viewportHeight_);
+    appendHudRectangle(panel, 10.0F, 10.0F, 560.0F, 44.0F, viewportWidth_, viewportHeight_);
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
     shaders_.use(hudProgram_);
@@ -1073,10 +1074,15 @@ void Renderer::drawResourceHud(const Player& player) const {
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(glm::vec2), nullptr);
     glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(panel.size()));
+    const auto amount = [&player](const char* id) {
+        const auto found = player.resources.find(id);
+        return found == player.resources.end() ? 0.0F : found->second;
+    };
     drawText(Text::format("strategy.resources",
-                          {std::to_string(static_cast<unsigned>(player.wood)),
-                           std::to_string(static_cast<unsigned>(player.stone)),
-                           std::to_string(static_cast<unsigned>(player.gold))}),
+                          {std::to_string(static_cast<unsigned>(amount("wood"))),
+                           std::to_string(static_cast<unsigned>(amount("stone"))),
+                           std::to_string(static_cast<unsigned>(amount("gold"))),
+                           std::to_string(static_cast<unsigned>(amount("materials")))}),
              20.0F,
              17.0F,
              1.45F);
@@ -1384,7 +1390,7 @@ void Renderer::drawBuildHud(PlayerId team,
     appendHudRectangle(panel, 18.0F, panelTop, 640.0F, static_cast<float>(viewportHeight_) - 18.0F, viewportWidth_, viewportHeight_);
     appendHudRectangle(button, 30.0F, static_cast<float>(viewportHeight_) - 75.0F, 220.0F, static_cast<float>(viewportHeight_) - 30.0F, viewportWidth_, viewportHeight_);
     appendHudRectangle(icon, 42.0F, static_cast<float>(viewportHeight_) - 67.0F, 70.0F, static_cast<float>(viewportHeight_) - 38.0F, viewportWidth_, viewportHeight_);
-    (void)team; (void)entityType; (void)entityCount; (void)status;
+    (void)team;
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
     shaders_.use(hudProgram_);
@@ -1403,6 +1409,10 @@ void Renderer::drawBuildHud(PlayerId team,
     draw(panel, {0.025F, 0.04F, 0.06F});
     draw(button, active ? glm::vec3{0.38F, 0.58F, 0.24F} : hovered ? glm::vec3{0.32F, 0.56F, 0.22F} : glm::vec3{0.14F, 0.27F, 0.20F});
     draw(icon, {0.18F, 0.76F, 0.88F});
+    // Keep the build palette icon-first, while exposing a readable tooltip on hover.
+    drawText(entityType, 122.0F, static_cast<float>(viewportHeight_) - 63.0F, 1.25F);
+    if (hovered)
+        drawText(status, 30.0F, panelTop + 18.0F, 1.15F);
     glBindVertexArray(0);
     glEnable(GL_CULL_FACE);
     glEnable(GL_DEPTH_TEST);
@@ -1773,17 +1783,23 @@ void Renderer::drawTownHallHud(const Entity& hall, const std::array<bool, 3>& ho
 void Renderer::drawEntityActionHud(const Entity& entity,
                                    const std::vector<std::string>& labels,
                                    const std::vector<std::string>& costs,
-                                   int hovered) const {
+                                   const std::vector<bool>& enabled,
+                                   int hovered,
+                                   const std::vector<std::string>& queueLabels,
+                                   int queueHovered) const {
     if (labels.empty()) return;
     renderGraph_.enter(RenderPassKind::overlay);
     const float height = static_cast<float>(viewportHeight_), top = height - 235.0F;
-    std::vector<glm::vec2> panel, buttons, hot, actionIcons, queueSlots, queueIcons,
+    std::vector<glm::vec2> panel, buttons, hot, disabled, actionIcons, queueSlots, queueIcons,
         progressBack, progressFill;
     appendHudRectangle(panel, 18, top, 640, height - 18, viewportWidth_, viewportHeight_);
     const std::size_t count = std::min<std::size_t>(labels.size(), 6);
     for (std::size_t i=0;i<count;++i) {
         const float left=30.0F+static_cast<float>(i)*96.0F;
-        appendHudRectangle(i==static_cast<std::size_t>(hovered)?hot:buttons,left,height-86,left+82,height-30,viewportWidth_,viewportHeight_);
+        auto& buttonLayer = i >= enabled.size() || !enabled[i]
+                                ? disabled
+                                : (i == static_cast<std::size_t>(hovered) ? hot : buttons);
+        appendHudRectangle(buttonLayer,left,height-86,left+82,height-30,viewportWidth_,viewportHeight_);
         appendHudRectangle(actionIcons,left+28,height-76,left+54,height-40,viewportWidth_,viewportHeight_);
         appendHudRectangle(actionIcons,left+20,height-68,left+62,height-48,viewportWidth_,viewportHeight_);
     }
@@ -1805,10 +1821,14 @@ void Renderer::drawEntityActionHud(const Entity& entity,
     glDisable(GL_DEPTH_TEST); glDisable(GL_CULL_FACE); shaders_.use(hudProgram_); glBindVertexArray(hudVao_); glBindBuffer(GL_ARRAY_BUFFER,hudVbo_); glEnableVertexAttribArray(0); glVertexAttribPointer(0,2,GL_FLOAT,GL_FALSE,sizeof(glm::vec2),nullptr);
     auto draw=[this](const std::vector<glm::vec2>& v,const glm::vec3& c){ glUniform3fv(shaders_.uniform(hudProgram_,"hudColor"),1,glm::value_ptr(c)); glBufferData(GL_ARRAY_BUFFER,static_cast<GLsizeiptr>(v.size()*sizeof(glm::vec2)),v.data(),GL_DYNAMIC_DRAW); glDrawArrays(GL_TRIANGLES,0,static_cast<GLsizei>(v.size())); };
     draw(panel,{0.025F,0.04F,0.06F}); draw(buttons,{0.14F,0.27F,0.20F}); draw(hot,{0.32F,0.56F,0.22F});
+    draw(disabled,{0.16F,0.17F,0.18F});
     draw(actionIcons,{0.18F,0.76F,0.88F}); draw(queueSlots,{0.08F,0.12F,0.15F});
     draw(queueIcons,{0.18F,0.76F,0.88F}); draw(progressBack,{0.06F,0.08F,0.10F}); draw(progressFill,{0.18F,0.76F,0.88F});
     drawText(entity.name,30,top+14,2.0F);
     if(hovered>=0 && static_cast<std::size_t>(hovered)<count) drawText(labels[hovered]+"  "+costs[hovered],30,top+48,1.45F);
+    if (queueHovered >= 0 && static_cast<std::size_t>(queueHovered) < queueLabels.size())
+        drawText(queueLabels[queueHovered] + "  (click to cancel and refund)",
+                 30, top + 48, 1.45F, {1.0F, 0.82F, 0.24F});
     if (entity.production && entity.production.queue.size() > 9)
         drawText("+ " + std::to_string(entity.production.queue.size()-9),526,top+96,1.35F);
     glBindVertexArray(0); glEnable(GL_CULL_FACE); glEnable(GL_DEPTH_TEST);
@@ -1856,8 +1876,9 @@ std::vector<EntityId> Renderer::unitsInScreenRectangle(const glm::vec2& start,
         const EntityDefinition* definition = resources_.entityDefinition(entity.renderId());
         const float height = definition ? definition->selectionHeight : 1.8F;
         const float radius = definition ? definition->selectionRadius : 0.6F;
-        const float ground =
-            terrain_.heightAt(entity.transform.position.x, entity.transform.position.z);
+        const float ground = terrain_.heightAt(entity.transform.position.x,
+                                               entity.transform.position.z) +
+                             (entity.flight ? entity.transform.position.y : 0.0F);
         const glm::vec3 center{
             entity.transform.position.x, ground + height * 0.5F, entity.transform.position.z};
         const std::array<glm::vec3, 6> points{center + glm::vec3{-radius, 0, 0},
@@ -2116,7 +2137,11 @@ EntityId Renderer::pickEntity(float pixelX,
         const EntityDefinition* definition = resources_.entityDefinition(entity.renderId());
         if (!definition)
             continue;
-        const float groundHeight = terrain_.heightAt(pickPosition.x, pickPosition.z);
+        const bool airborne = entity.flight ||
+                              (player && pickPosition.y > 0.5F &&
+                               entity.renderId().find("drone") != std::string::npos);
+        const float groundHeight = terrain_.heightAt(pickPosition.x, pickPosition.z) +
+                                   (airborne ? pickPosition.y : 0.0F);
         const glm::vec3 center{
             pickPosition.x, groundHeight + definition->selectionHeight * 0.5F, pickPosition.z};
         // Ray/ellipsoid intersection keeps tall buildings from acquiring a huge
@@ -2229,8 +2254,9 @@ CameraView Renderer::constrainThirdPersonCamera(const CameraView& desired,
     const EntityDefinition* definition = resources_.entityDefinition(entity.renderId());
         if (!definition || definition->selectionRadius < 1.0F)
             continue;
-        const float ground =
-            terrain_.heightAt(entity.transform.position.x, entity.transform.position.z);
+        const float ground = terrain_.heightAt(entity.transform.position.x,
+                                               entity.transform.position.z) +
+                             (entity.flight ? entity.transform.position.y : 0.0F);
         const glm::vec3 center{entity.transform.position.x,
                                ground + definition->selectionHeight * 0.5F,
                                entity.transform.position.z};

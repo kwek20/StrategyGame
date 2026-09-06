@@ -123,6 +123,7 @@ target_link_libraries(strategy_asset_data PUBLIC strategy_core assimp::assimp)
 # Render-thread ownership of uploaded model resources.
 add_library(strategy_assets STATIC
     src/assets/AssetManifest.cpp
+    src/assets/IconAtlas.cpp
     src/assets/Model.cpp
     src/assets/ResourceManager.cpp
     src/assets/Texture.cpp

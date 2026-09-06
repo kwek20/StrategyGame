@@ -55,7 +55,7 @@ void Navigation::rebuildTerrain(const Terrain& terrain) {
 void Navigation::synchronizeObstacles(const World& world) {
     std::uint64_t fingerprint = 1469598103934665603ULL;
     for (const Entity& entity : world.entities())
-        if (!entity.unitControl) {
+        if (!entity.unitControl && !entity.flight) {
             mix(fingerprint, entity.id);
             mix(fingerprint, std::bit_cast<std::uint32_t>(entity.transform.position.x));
             mix(fingerprint, std::bit_cast<std::uint32_t>(entity.transform.position.z));
@@ -76,7 +76,8 @@ const std::vector<std::uint8_t>& Navigation::occupancy(const World& world, float
         return found->second;
     std::vector<std::uint8_t> result = terrainPassable_;
     for (const Entity& entity : world.entities()) {
-        if (entity.unitControl || (entity.resource && entity.resource.remaining <= 0.0F))
+        if (entity.flight || entity.unitControl ||
+            (entity.resource && entity.resource.remaining <= 0.0F))
             continue;
         const float blockedRadius = radius + collisionRadius(definitions_, entity.archetype);
         const int minX = gridCoordinate(entity.transform.position.x - blockedRadius),

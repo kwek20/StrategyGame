@@ -6,6 +6,7 @@
 #include "localization/Text.hpp"
 #include "persistence/SaveGame.hpp"
 #include "render/Renderer.hpp"
+#include "terrain/Terrain.hpp"
 #include "world/Collision.hpp"
 
 #include <SDL3/SDL.h>
@@ -26,6 +27,25 @@ bool isHomogeneousSelection(const World& world,
         const Entity* entity = world.findEntity(id);
         return entity && entity->archetype.value == archetype;
     });
+}
+
+std::vector<EntityId> actionTargets(EntityId selectedEntity,
+                                    const std::vector<EntityId>& selectedUnits) {
+    return selectedUnits.empty() ? std::vector<EntityId>{selectedEntity} : selectedUnits;
+}
+
+bool canAffordForAll(const Player* player,
+                     const RecipeDefinition* recipe,
+                     std::size_t targetCount) {
+    if (!player || !recipe)
+        return false;
+    for (const auto& [resource, amount] : recipe->cost) {
+        const auto available = player->resources.find(resource);
+        if (available == player->resources.end() ||
+            available->second < amount * static_cast<float>(targetCount))
+            return false;
+    }
+    return true;
 }
 
 } // namespace
@@ -190,6 +210,15 @@ void PlayState::handleEvent(const SDL_Event& event) {
         constructionPlacementMode_ = !constructionPlacementMode_;
         return;
     }
+    // Right-click always cancels an active placement preview, including invalid (red) previews.
+    if (constructionPlacementMode_ && event.type == SDL_EVENT_MOUSE_BUTTON_DOWN &&
+        event.button.button == SDL_BUTTON_RIGHT) {
+        constructionPlacementMode_ = false;
+        pendingConstructionScreen_.reset();
+        pendingConstructionPosition_.reset();
+        constructionCursorScreen_.reset();
+        return;
+    }
     if (constructionPlacementMode_ && event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_LEFT) {
         pendingConstructionScreen_ = glm::vec2{event.button.x, event.button.y};
         return;
@@ -241,6 +270,23 @@ void PlayState::handleEvent(const SDL_Event& event) {
          (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_LEFT))) {
         const auto recipes = context_.definitions.recipesForProducer(selectedHall->archetype.value);
         const auto upgrades = context_.definitions.upgradesForResearcher(selectedHall->archetype.value);
+        const std::vector<EntityId> targets = actionTargets(selectedEntity_, selectedUnits_);
+        const Player* local = session_.players().find(localPlayer_);
+        const auto recipeEnabled = [&](std::size_t index) {
+            return index < recipes.size() && canAffordForAll(local, recipes[index], targets.size()) &&
+                   std::all_of(targets.begin(), targets.end(), [&](EntityId id) {
+                       return session_.canStartRecipe(localPlayer_, id, RecipeId{recipes[index]->id});
+                   });
+        };
+        const auto upgradeEnabled = [&](std::size_t index) {
+            if (index >= upgrades.size()) return false;
+            const RecipeDefinition* research = context_.definitions.recipe(
+                RecipeId{upgrades[index]->researchRecipe});
+            return canAffordForAll(local, research, targets.size()) &&
+                   std::all_of(targets.begin(), targets.end(), [&](EntityId id) {
+                       return session_.canStartUpgrade(localPlayer_, id, upgrades[index]->id);
+                   });
+        };
         const std::size_t actionCount = std::min<std::size_t>(6, recipes.size() + upgrades.size());
         int width = 0, height = 0;
         if (SDL_Window* window = SDL_GetWindowFromID(inputWindowId_))
@@ -249,13 +295,34 @@ void PlayState::handleEvent(const SDL_Event& event) {
         const float x = event.type == SDL_EVENT_MOUSE_MOTION ? event.motion.x : event.button.x;
         const float y = event.type == SDL_EVENT_MOUSE_MOTION ? event.motion.y : event.button.y;
         entityActionHovered_ = -1;
+        productionQueueHovered_ = -1;
+        if (selectedHall->production) {
+            const std::size_t visibleQueue =
+                std::min<std::size_t>(selectedHall->production.queue.size(), 9);
+            const float queueTop = static_cast<float>(height) - 153.0F;
+            for (std::size_t i = 0; i < visibleQueue; ++i) {
+                const float left = 30.0F + static_cast<float>(i) * 54.0F;
+                if (selectedHall->production.queue[i].kind == ProductionKind::improveTraining &&
+                    x >= left && x <= left + 44.0F &&
+                    y >= queueTop && y <= queueTop + 44.0F)
+                    productionQueueHovered_ = static_cast<int>(i);
+            }
+        }
         for (std::size_t i = 0; i < actionCount; ++i) {
             const float left = 30.0F + static_cast<float>(i) * 96.0F;
             if (x >= left && x <= left + 82.0F && y >= height - 86.0F && y <= height - 30.0F)
                 entityActionHovered_ = static_cast<int>(i);
         }
         if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
-            if (entityActionHovered_ >= 0 && static_cast<std::size_t>(entityActionHovered_) < recipes.size()) {
+            if (productionQueueHovered_ >= 0) {
+                session_.submit({localPlayer_, nextCommandSequence_++,
+                                 CancelProductionCommand{
+                                     selectedHall->id,
+                                     static_cast<std::uint32_t>(productionQueueHovered_)}});
+                return;
+            }
+            if (entityActionHovered_ >= 0 && static_cast<std::size_t>(entityActionHovered_) < recipes.size() &&
+                recipeEnabled(static_cast<std::size_t>(entityActionHovered_))) {
                 const auto submitRecipe = [&](EntityId id) {
                     session_.submit({localPlayer_, nextCommandSequence_++, StartRecipeCommand{id, recipes[entityActionHovered_]->id}});
                 };
@@ -264,7 +331,7 @@ void PlayState::handleEvent(const SDL_Event& event) {
                 context_.events.enqueue(AudioEvent{AudioCue::trainUnit});
             } else if (entityActionHovered_ >= 0) {
                 const std::size_t upgradeIndex = static_cast<std::size_t>(entityActionHovered_) - recipes.size();
-                if (upgradeIndex < upgrades.size()) {
+                if (upgradeEnabled(upgradeIndex)) {
                     const auto submitUpgrade = [&](EntityId id) {
                         session_.submit({localPlayer_, nextCommandSequence_++, StartUpgradeCommand{id, upgrades[upgradeIndex]->id}});
                     };
@@ -595,6 +662,18 @@ void PlayState::render(Renderer& renderer) const {
         const FootprintFit footprint = renderer.fitTerrainFootprint(
             position.x, position.z, collisionRadius(context_.definitions, "command_hub"), 10.0F);
         constructionPreviewValid_ = constructionPreviewValid_ && footprint.valid;
+        // Fog of war is a placement rule: construction requires currently visible terrain,
+        // not merely terrain that was discovered previously.
+        if (local) {
+            constexpr float extent = Terrain::cellCount * Terrain::spacing;
+            const int gx = std::clamp(static_cast<int>((position.x / extent + 0.5F) * Player::explorationCells),
+                                      0, Player::explorationCells - 1);
+            const int gz = std::clamp(static_cast<int>((position.z / extent + 0.5F) * Player::explorationCells),
+                                      0, Player::explorationCells - 1);
+            const auto index = static_cast<std::size_t>(gz * Player::explorationCells + gx);
+            if (index >= local->visible.size() || local->visible[index] == 0)
+                constructionPreviewValid_ = false;
+        }
         if (local)
             if (const RecipeDefinition* recipe = context_.definitions.recipe(RecipeId{"construct.command_hub"}))
                 for (const auto& [resource, amount] : recipe->cost)
@@ -620,7 +699,7 @@ void PlayState::render(Renderer& renderer) const {
         if ((selectedUnits_.empty() || sameType) && selected &&
             selected->authority.owner == localPlayer_ &&
             selected->archetype.value == "construction_drone")
-            renderer.drawBuildHud(localPlayer_, constructionPlacementMode_ ? "PLACE COMMAND HUB" : "CONSTRUCTION", session_.world().size(), "Select a building, then click a valid location", constructionButtonHovered_, constructionPlacementMode_);
+            renderer.drawBuildHud(localPlayer_, constructionPlacementMode_ ? "PLACE COMMAND HUB" : "CONSTRUCTION", session_.world().size(), "COMMAND HUB  |  COST: 100 MATERIALS", constructionButtonHovered_, constructionPlacementMode_);
     }
     if (!selectedUnits_.empty())
         for (EntityId selected : selectedUnits_)
@@ -654,6 +733,8 @@ void PlayState::render(Renderer& renderer) const {
         if (selected && selected->authority.owner == localPlayer_ &&
             (selectedUnits_.empty() || sameType)) {
             std::vector<std::string> labels, costs;
+            std::vector<bool> enabled;
+            const std::vector<EntityId> targets = actionTargets(selectedEntity_, selectedUnits_);
             const auto recipes = context_.definitions.recipesForProducer(selected->archetype.value);
             for (const RecipeDefinition* recipe : recipes) {
                 const EntityArchetype* product = context_.definitions.archetype(recipe->product.id);
@@ -663,6 +744,11 @@ void PlayState::render(Renderer& renderer) const {
                     cost += resource + ": " + std::to_string(static_cast<int>(amount)) + " ";
                 if (local) cost += "time: " + std::to_string(static_cast<int>(context_.definitions.productionDuration(local->countryId, local->specializationId, selected->archetype.value, recipe->product.id))) + "s";
                 costs.push_back(cost.empty() ? "free" : cost);
+                enabled.push_back(canAffordForAll(local, recipe, targets.size()) &&
+                                  std::all_of(targets.begin(), targets.end(), [&](EntityId id) {
+                                      return session_.canStartRecipe(
+                                          localPlayer_, id, RecipeId{recipe->id});
+                                  }));
             }
             for (const UpgradeDefinition* upgrade : context_.definitions.upgradesForResearcher(selected->archetype.value)) {
                 labels.push_back(Text::get(upgrade->nameKey));
@@ -671,8 +757,33 @@ void PlayState::render(Renderer& renderer) const {
                     for (const auto& [resource, amount] : recipe->cost)
                         cost += resource + ": " + std::to_string(static_cast<int>(amount)) + " ";
                 costs.push_back(cost.empty() ? "free" : cost);
+                const RecipeDefinition* research =
+                    context_.definitions.recipe(RecipeId{upgrade->researchRecipe});
+                enabled.push_back(canAffordForAll(local, research, targets.size()) &&
+                                  std::all_of(targets.begin(), targets.end(), [&](EntityId id) {
+                                      return session_.canStartUpgrade(localPlayer_, id, upgrade->id);
+                                  }));
             }
-            renderer.drawEntityActionHud(*selected, labels, costs, entityActionHovered_);
+            std::vector<std::string> queueLabels;
+            if (selected->production)
+                for (const ProductionOrder& order : selected->production.queue) {
+                    std::string label;
+                    if (order.kind == ProductionKind::improveTraining) {
+                        if (const UpgradeDefinition* upgrade =
+                                context_.definitions.upgrade(order.upgradeId))
+                            label = Text::get(upgrade->nameKey);
+                        else
+                            label = order.upgradeId;
+                    }
+                    queueLabels.push_back(std::move(label));
+                }
+            renderer.drawEntityActionHud(*selected,
+                                         labels,
+                                         costs,
+                                         enabled,
+                                         entityActionHovered_,
+                                         queueLabels,
+                                         productionQueueHovered_);
         }
     }
     if (paused_) {

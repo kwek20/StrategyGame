@@ -3,7 +3,7 @@
   "resourceNodes": {
     "tree": {
       "collisionRadius": 1.2,
-      "resourceType": "materials",
+      "resourceType": "wood",
       "capacity": 120,
       "generation": { "stream": "resources.wood", "clusterPairs": 18, "nodesPerCluster": 3, "attemptsPerCluster": 80, "spread": 4.5, "centerExtent": 78 },
       "components": ["resource"],
@@ -12,7 +12,7 @@
     },
     "stone": {
       "collisionRadius": 1.5,
-      "resourceType": "materials",
+      "resourceType": "stone",
       "capacity": 180,
       "generation": { "stream": "resources.stone", "clusterPairs": 6, "nodesPerCluster": 2, "attemptsPerCluster": 80, "spread": 3.0, "centerExtent": 78 },
       "components": ["resource"],
@@ -21,7 +21,7 @@
     },
     "gold": {
       "collisionRadius": 1.5,
-      "resourceType": "materials",
+      "resourceType": "gold",
       "capacity": 140,
       "generation": { "stream": "resources.gold", "clusterPairs": 5, "nodesPerCluster": 2, "attemptsPerCluster": 80, "spread": 2.5, "centerExtent": 78 },
       "components": ["resource"],

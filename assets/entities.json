@@ -39,7 +39,7 @@
       "model": "units/drone",
       "scale": 0.8,
       "grounding": { "groundOffset": 0.0, "alignToTerrain": false, "maximumTilt": 0.0, "foundationRadius": 0.0 },
-      "selection": { "radius": 0.75, "height": 1.0 },
+      "selection": { "radius": 1.2, "height": 2.4 },
       "animations": {}
     },
     "tree": {

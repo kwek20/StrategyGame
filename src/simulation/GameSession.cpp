@@ -141,6 +141,75 @@ void GameSession::advanceTicks(std::uint32_t count) {
         simulateTick();
 }
 
+bool GameSession::canStartRecipe(PlayerId playerId, EntityId producerId, RecipeId recipeId) const {
+    const Player* player = players_.find(playerId);
+    const Entity* producer = world_.findEntity(producerId);
+    const RecipeDefinition* recipe = gameplay_.recipe(recipeId);
+    if (!player || !producer || producer->authority.owner != playerId || !producer->production ||
+        !recipe || recipe->producer != producer->archetype.value)
+        return false;
+    for (const auto& [resource, amount] : recipe->cost) {
+        const auto available = player->resources.find(resource);
+        if (available == player->resources.end() || available->second < amount)
+            return false;
+    }
+    if (recipe->product.kind == RecipeProductKind::unit) {
+        std::uint32_t population = 0;
+        for (const Entity& entity : world_.entities()) {
+            if (entity.authority.owner == playerId && entity.kind == EntityKind::unit)
+                ++population;
+            if (entity.authority.owner == playerId && entity.production)
+                for (const ProductionOrder& queued : entity.production.queue)
+                    if (queued.kind == ProductionKind::trainCharacter)
+                        population += queued.amount;
+        }
+        if (population + recipe->product.amount > gameplay_.matchRules().unitLimit)
+            return false;
+    }
+    return true;
+}
+
+bool GameSession::canStartUpgrade(PlayerId playerId,
+                                  EntityId researcherId,
+                                  const std::string& upgradeId) const {
+    const Player* player = players_.find(playerId);
+    const Entity* entity = world_.findEntity(researcherId);
+    const UpgradeDefinition* upgrade = gameplay_.upgrade(upgradeId);
+    if (!player || !entity || entity->authority.owner != playerId || !entity->production ||
+        !entity->upgrades || !upgrade ||
+        std::find(upgrade->allowedResearchers.begin(), upgrade->allowedResearchers.end(),
+                  entity->archetype.value) == upgrade->allowedResearchers.end())
+        return false;
+    std::uint32_t scheduledLevel = entity->upgrades.levels.contains(upgradeId)
+                                       ? entity->upgrades.levels.at(upgradeId)
+                                       : 0;
+    for (const ProductionOrder& order : entity->production.queue)
+        if (order.upgradeId == upgradeId)
+            ++scheduledLevel;
+    if (scheduledLevel >= upgrade->maximumLevel)
+        return false;
+    for (const std::string& prerequisite : upgrade->prerequisites)
+        if (!entity->upgrades.levels.contains(prerequisite) ||
+            entity->upgrades.levels.at(prerequisite) == 0)
+            return false;
+    if (!upgrade->exclusiveGroup.empty())
+        for (const auto& [id, level] : entity->upgrades.levels)
+            if (level > 0 && id != upgradeId) {
+                const UpgradeDefinition* other = gameplay_.upgrade(id);
+                if (other && other->exclusiveGroup == upgrade->exclusiveGroup)
+                    return false;
+            }
+    const RecipeDefinition* recipe = gameplay_.recipe(RecipeId{upgrade->researchRecipe});
+    if (!recipe || (!recipe->producer.empty() && recipe->producer != entity->archetype.value))
+        return false;
+    for (const auto& [resource, amount] : recipe->cost) {
+        const auto available = player->resources.find(resource);
+        if (available == player->resources.end() || available->second < amount)
+            return false;
+    }
+    return true;
+}
+
 void GameSession::apply(const PlayerCommand& command) {
     std::visit(
         [this, &command](const auto& payload) {
@@ -207,15 +276,12 @@ void GameSession::apply(const PlayerCommand& command) {
                     entity->transient.navigationPath.clear();
                 }
             } else if constexpr (std::is_same_v<Type, StartRecipeCommand>) {
-                if (!entity->production)
+                if (!canStartRecipe(command.player, entity->id, payload.recipeId))
                     return;
                 Player* player = players_.find(command.player);
                 const RecipeDefinition* recipe = gameplay_.recipe(payload.recipeId);
-                if (player && recipe && recipe->producer == entity->archetype.value &&
-                    recipe->product.kind == RecipeProductKind::unit) {
-                    for (const auto& [resource, amount] : recipe->cost)
-                        if (player->resources[resource] < amount)
-                            return;
+                if (player && recipe && (recipe->product.kind == RecipeProductKind::unit ||
+                                         recipe->product.kind == RecipeProductKind::resource)) {
                     for (const auto& [resource, amount] : recipe->cost)
                         player->resources[resource] -= amount;
                     const float duration =
@@ -225,7 +291,9 @@ void GameSession::apply(const PlayerCommand& command) {
                                                      recipe->product.id,
                                                      entity->production.productionSpeedMultiplier);
                     ProductionOrder order;
-                    order.kind = ProductionKind::trainCharacter;
+                    order.kind = recipe->product.kind == RecipeProductKind::resource
+                                     ? ProductionKind::processResource
+                                     : ProductionKind::trainCharacter;
                     order.recipeId = recipe->id;
                     order.productId = recipe->product.id;
                     order.amount = recipe->product.amount;
@@ -294,36 +362,11 @@ void GameSession::apply(const PlayerCommand& command) {
                 Entity* target = world_.findEntity(payload.target);
                 if (entity->flight && target && target->health) { entity->unitControl.order=UnitOrderKind::repair; entity->unitControl.orderTarget=target->id; entity->unitControl.strategicDestination=target->transform.position; entity->unitControl.hasStrategicDestination=true; }
             } else if constexpr (std::is_same_v<Type, StartUpgradeCommand>) {
-                if (!entity->production || !entity->upgrades)
+                if (!canStartUpgrade(command.player, entity->id, payload.upgradeId))
                     return;
                 const UpgradeDefinition* upgrade = gameplay_.upgrade(payload.upgradeId);
                 Player* player = players_.find(command.player);
-                if (!upgrade || !player)
-                    return;
-                const auto* researcher = gameplay_.archetype(entity->archetype);
-                if (!researcher || std::find(upgrade->allowedResearchers.begin(),
-                                             upgrade->allowedResearchers.end(),
-                                             entity->archetype.value) == upgrade->allowedResearchers.end())
-                    return;
-                const std::uint32_t current = entity->upgrades.levels[payload.upgradeId];
-                if (current >= upgrade->maximumLevel)
-                    return;
-                for (const auto& prerequisite : upgrade->prerequisites)
-                    if (entity->upgrades.levels[prerequisite] == 0)
-                        return;
-                if (!upgrade->exclusiveGroup.empty())
-                    for (const auto& [id, level] : entity->upgrades.levels)
-                        if (level > 0 && id != payload.upgradeId) {
-                            const UpgradeDefinition* other = gameplay_.upgrade(id);
-                            if (other && other->exclusiveGroup == upgrade->exclusiveGroup)
-                                return;
-                        }
                 const RecipeDefinition* recipe = gameplay_.recipe(RecipeId{upgrade->researchRecipe});
-                if (!recipe || recipe->producer != entity->archetype.value)
-                    return;
-                for (const auto& [resource, amount] : recipe->cost)
-                    if (player->resources[resource] < amount)
-                        return;
                 for (const auto& [resource, amount] : recipe->cost)
                     player->resources[resource] -= amount;
                 ProductionOrder order;
@@ -334,6 +377,16 @@ void GameSession::apply(const PlayerCommand& command) {
                 order.remainingTicks = order.durationTicks;
                 order.reservedCosts.insert(recipe->cost.begin(), recipe->cost.end());
                 entity->production.queue.push_back(std::move(order));
+            } else if constexpr (std::is_same_v<Type, CancelProductionCommand>) {
+                if (!entity->production || payload.queueIndex >= entity->production.queue.size())
+                    return;
+                auto order = entity->production.queue.begin() + payload.queueIndex;
+                if (order->kind != ProductionKind::improveTraining)
+                    return;
+                if (Player* player = players_.find(command.player))
+                    for (const auto& [resource, amount] : order->reservedCosts)
+                        player->resources[resource] += amount;
+                entity->production.queue.erase(order);
             }
         },
         command.payload);
@@ -394,6 +447,10 @@ void GameSession::simulateTick() {
                                          entity.archetype.value,
                                          order.productId,
                                          order.amount});
+                else if (order.kind == ProductionKind::processResource) {
+                    if (Player* player = players_.find(entity.authority.owner))
+                        player->resources[order.productId] += static_cast<float>(order.amount);
+                }
                 else if (order.kind == ProductionKind::upgradeBuilding) {
                     ++entity.buildingUpgrades.level;
                     const EntityArchetype* current = gameplay_.archetype(entity.archetype);
@@ -531,9 +588,14 @@ void GameSession::simulateTick() {
                         if (Player* player = players_.find(entity.authority.owner)) {
                             player->resources[entity.gatherer.carriedResource] +=
                                 entity.gatherer.carriedAmount;
-                            if (entity.gatherer.carriedResource == "materials" ||
-                                entity.gatherer.carriedResource == "tree")
+                            if (entity.gatherer.carriedResource == "wood")
                                 player->wood += entity.gatherer.carriedAmount;
+                            else if (entity.gatherer.carriedResource == "materials")
+                                player->wood += entity.gatherer.carriedAmount;
+                            else if (entity.gatherer.carriedResource == "stone")
+                                player->stone += entity.gatherer.carriedAmount;
+                            else if (entity.gatherer.carriedResource == "gold")
+                                player->gold += entity.gatherer.carriedAmount;
                         }
                         entity.gatherer.carriedAmount = 0;
                         entity.gatherer.carriedResource.clear();
@@ -572,7 +634,18 @@ void GameSession::simulateTick() {
         if (entity.authority.directController != 0) {
             movement = entity.unitControl.directInput;
         } else if (entity.unitControl.hasStrategicDestination) {
-            if (entity.transient.navigationWaypoint >= entity.transient.navigationPath.size()) {
+            if (entity.flight) {
+                const glm::vec2 delta{
+                    entity.unitControl.strategicDestination.x - entity.transform.position.x,
+                    entity.unitControl.strategicDestination.z - entity.transform.position.z};
+                if (glm::length(delta) < 0.35F) {
+                    entity.unitControl.hasStrategicDestination = false;
+                    if (entity.unitControl.order == UnitOrderKind::move)
+                        entity.unitControl.order = UnitOrderKind::idle;
+                } else {
+                    movement = glm::normalize(delta);
+                }
+            } else if (entity.transient.navigationWaypoint >= entity.transient.navigationPath.size()) {
                 if (entity.transient.navigationRetrySeconds > 0.0F)
                     continue;
                 entity.transient.navigationPath =
@@ -590,25 +663,28 @@ void GameSession::simulateTick() {
                     continue;
                 }
             }
-            const glm::vec3 waypoint =
-                entity.transient.navigationPath[entity.transient.navigationWaypoint];
-            const glm::vec2 delta{waypoint.x - entity.transform.position.x,
-                                  waypoint.z - entity.transform.position.z};
-            if (glm::length(delta) < 0.35F) {
-                ++entity.transient.navigationWaypoint;
-                if (entity.transient.navigationWaypoint >= entity.transient.navigationPath.size()) {
-                    entity.unitControl.hasStrategicDestination = false;
-                    if (entity.unitControl.order == UnitOrderKind::move)
-                        entity.unitControl.order = UnitOrderKind::idle;
+            if (!entity.flight) {
+                const glm::vec3 waypoint =
+                    entity.transient.navigationPath[entity.transient.navigationWaypoint];
+                const glm::vec2 delta{waypoint.x - entity.transform.position.x,
+                                      waypoint.z - entity.transform.position.z};
+                if (glm::length(delta) < 0.35F) {
+                    ++entity.transient.navigationWaypoint;
+                    if (entity.transient.navigationWaypoint >= entity.transient.navigationPath.size()) {
+                        entity.unitControl.hasStrategicDestination = false;
+                        if (entity.unitControl.order == UnitOrderKind::move)
+                            entity.unitControl.order = UnitOrderKind::idle;
+                    }
+                } else {
+                    movement = glm::normalize(delta);
                 }
-            } else {
-                movement = glm::normalize(delta);
             }
         }
-        if (glm::length(movement) > 0.001F && entity.unitControl.directlyControllable) {
+        if (!entity.flight && glm::length(movement) > 0.001F &&
+            entity.unitControl.directlyControllable) {
             glm::vec2 separation{0};
             for (const Entity& other : world_.entities())
-                if (other.id != entity.id && other.unitControl.directlyControllable) {
+                if (other.id != entity.id && !other.flight && other.unitControl.directlyControllable) {
                     const glm::vec2 away{entity.transform.position.x - other.transform.position.x,
                                          entity.transform.position.z - other.transform.position.z};
                     const float distance = glm::length(away),

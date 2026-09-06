@@ -4,7 +4,7 @@
     { "id": "building.town_center_level_2", "researchRecipe": "town_center.research_level_2", "maximumLevel": 1, "prerequisites": [], "allowedResearchers": ["town_center"], "nameKey": "upgrade.town_center_level_2", "icon": "ui/placeholder", "modifiers": [] },
     {
       "id": "production.efficient_training",
-      "researchRecipe": "outpost.research_efficient_training",
+      "researchRecipe": "research.efficient_training",
       "maximumLevel": 1,
       "prerequisites": [],
       "allowedResearchers": ["town_center", "outpost", "command_hub"],

@@ -60,6 +60,18 @@ int main() {
             std::abs(componentWorker.combat.range - workerWeapon->range) < 0.001F;
     valid = valid && !componentHall.unitControl && !componentHall.gatherer &&
             componentHall.production && componentHall.buildingUpgrades && componentHall.upgrades;
+    strategy::World airborneOccupancy;
+    strategy::Entity& airborneDrone =
+        airborneOccupancy.createEntity("Drone", "construction_drone", 1);
+    gameplay.initializeEntity(airborneDrone);
+    airborneDrone.transform.position = {4.0F, 6.0F, 4.0F};
+    valid = valid && !strategy::overlapsObject(
+                         airborneOccupancy, gameplay, {4.0F, 4.0F}, 10.5F);
+    strategy::Entity& groundWorker = airborneOccupancy.createEntity("Worker", "worker", 1);
+    gameplay.initializeEntity(groundWorker);
+    groundWorker.transform.position = {4.0F, 0.0F, 4.0F};
+    valid = valid && strategy::overlapsObject(
+                         airborneOccupancy, gameplay, {4.0F, 4.0F}, 10.5F);
     valid = valid &&
             std::abs(gameplay.resolve(
                          strategy::GameplayStat::movementSpeed, "germany", "unassigned", "worker") -
@@ -266,6 +278,13 @@ int main() {
             std::holds_alternative<strategy::PlaceBuildingCommand>(decodedPlacement->payload) &&
             std::get<strategy::PlaceBuildingCommand>(decodedPlacement->payload).builders ==
                 std::vector<strategy::EntityId>{7, 11, 15};
+    const strategy::PlayerCommand cancelWireCommand{
+        1, 53, strategy::CancelProductionCommand{7, 3}};
+    const auto decodedCancel =
+        strategy::CommandCodec::decode(strategy::CommandCodec::encode(cancelWireCommand));
+    valid = valid && decodedCancel &&
+            std::holds_alternative<strategy::CancelProductionCommand>(decodedCancel->payload) &&
+            std::get<strategy::CancelProductionCommand>(decodedCancel->payload).queueIndex == 3;
     std::size_t resourceCount = 0;
     for (const strategy::Entity& resource : session.world().entities()) {
         if (resource.authority.owner != 0)
@@ -358,6 +377,21 @@ int main() {
     recipeSession.advanceTicks(300);
     valid = valid && researcher.upgrades &&
             researcher.upgrades.levels["production.efficient_training"] == 1;
+    strategy::ProductionOrder cancellableUpgrade;
+    cancellableUpgrade.kind = strategy::ProductionKind::improveTraining;
+    cancellableUpgrade.upgradeId = "production.efficient_training";
+    cancellableUpgrade.durationTicks = 300;
+    cancellableUpgrade.remainingTicks = 200;
+    cancellableUpgrade.reservedCosts["materials"] = 12.0F;
+    researcher.production.queue.push_back(cancellableUpgrade);
+    const float materialsBeforeRefund =
+        recipeSession.players().find(1)->resources["materials"];
+    valid = recipeSession.submit(
+                {1, 3, strategy::CancelProductionCommand{researcher.id, 0}}) && valid;
+    recipeSession.advanceTicks();
+    valid = valid && researcher.production.queue.empty() &&
+            recipeSession.players().find(1)->resources["materials"] ==
+                materialsBeforeRefund + 12.0F;
 
     strategy::GameSession gatheringSession{gameplay, 321U};
     strategy::Entity* gatherer = nullptr;

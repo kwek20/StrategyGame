@@ -54,6 +54,9 @@ class GameSession final {
         return terrainSeed_;
     }
     [[nodiscard]] std::uint64_t stateChecksum() const;
+    [[nodiscard]] bool canStartRecipe(PlayerId player, EntityId producer, RecipeId recipe) const;
+    [[nodiscard]] bool canStartUpgrade(PlayerId player, EntityId researcher,
+                                       const std::string& upgrade) const;
 
   private:
     PlayerRegistry players_;
