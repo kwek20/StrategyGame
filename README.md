@@ -4,9 +4,13 @@ A modern C++20 rebuild of the original Visual Studio strategy-game prototype. It
 currently a playable architecture prototype for a deterministic 1v1 RTS with optional
 third-person control of individual units.
 
+The intended gameplay and scope are defined in [the game design document](docs/GAME_DESIGN.md).
+Implementation order and milestone criteria are tracked in [the roadmap](docs/ROADMAP.md).
+
 ## Current features
 
 - Seeded, chunked terrain with distance-based level of detail
+- Height-, slope-, and noise-blended tiled terrain materials with distance detail fading
 - Deterministically generated wood, stone, and gold resources
 - Two players with independent countries, resources, and fog of war
 - Unit selection, movement, gathering, combat, and direct control
@@ -133,11 +137,38 @@ events without owning the audio backend. Render passes explicitly establish and 
 their OpenGL state. UI documents batch panels and labels, while legacy HUD text is queued
 and rendered once at the end of each frame.
 
+World entities now submit `ModelRenderCommand` values instead of issuing model draws
+inside entity traversal. The command queue stably sorts by material and model handles,
+which groups compatible work without changing deterministic world order. Execution
+resolves handles through the resource and material managers on the render thread.
+
+`MaterialManager` owns typed, generational `MaterialHandle` values. A render material
+selects its shader, optional standalone albedo texture, tint, roughness, blending,
+culling, depth testing, depth writes, and pass classification. Normal entities,
+remembered fog-of-war entities, and selection outlines use separate materials.
+
+The lightweight frame graph records and enforces the pass sequence `terrain -> world ->
+overlay -> UI`. Passes may be skipped or repeated at their current stage, but a later UI
+or overlay cannot accidentally be followed by an earlier world pass in the same frame.
+The existing state-facing renderer API remains unchanged.
+
 `ShaderManager` owns every OpenGL shader program used by terrain, models, outlines, HUD,
 UI, and font rendering. Callers retain typed, generational `ShaderHandle` values rather
 than raw program IDs. Programs are compiled and linked through one diagnostic path,
 lookups by name are cached, uniform locations are resolved once, and all programs are
 released by the manager while the OpenGL context is still active.
+
+Shader source lives in `assets/shaders/` rather than C++. Debug builds check those files
+four times per second. A valid edit is swapped in without restarting the game; a compile
+or link failure is logged and the previous valid program remains active. Release builds
+do not poll the filesystem.
+
+The terrain shader blends grass, dirt, rock, and dry-ground diffuse layers using world
+height, surface slope, and deterministic low-frequency noise. Each layer combines two
+rotated sampling scales to reduce visible repetition. Texture contribution increases at
+close camera distances and fades toward the generated terrain color at long distances to
+reduce shimmer. Terrain textures use repeating mipmapped sampling and are preloaded by
+the match and build asset groups.
 
 ## Deterministic multiplayer boundary
 
@@ -161,25 +192,29 @@ require fixed-point simulation or authoritative server correction.
 - English text: `assets/text/en_us.json`
 - Audio cues: `assets/audio/audio.json`
 - Match asset groups: `assets/asset_manifest.json`
+- Standalone textures: `assets/textures/`
+- GLSL shaders: `assets/shaders/`
 
 Each menu, match, or build-mode asset group explicitly declares its required models,
-textures, sounds, and definitions in `asset_manifest.json`. Starting or loading a map
-preloads its declared model set and reports queued/importing/uploading progress on the
-loading screen. Models requested later remain non-blocking: a yellow marker is rendered
-while loading and a magenta marker identifies an import failure.
+textures, shaders, sounds, and definitions in `asset_manifest.json`. Starting or loading
+a map preloads its declared model and standalone-texture set and reports
+queued/importing/uploading progress on the loading screen. Assets requested later remain
+non-blocking: yellow checker markers are used while loading and magenta checker markers
+identify an import failure.
 
 The resource manager recursively indexes models. `strategy_asset_data` imports Assimp
 meshes, materials, animations, and decoded texture pixels without OpenGL. Up to two CPU
 imports run concurrently; completed assets enter a render-thread queue that creates the
 GPU buffers and textures.
 
-Rendering retains typed, generational `ModelHandle` values instead of repeatedly looking
-up model paths by string. The audio service similarly exposes `AudioHandle`; distinct
-`TextureHandle` support is reserved for standalone UI/environment textures, while model
-material textures remain owned by their model asset. Handles carry both a slot index and
-generation so stale handles are rejected, and model slots expose queued, importing,
-uploading, ready, and failed states. Entity `modelKey` strings remain authoritative
-archetype IDs for saves and deterministic gameplay rather than GPU resource references.
+Rendering retains typed, generational `ModelHandle` and `TextureHandle` values instead of
+repeatedly looking up paths by string. Standalone texture pixels are decoded on asset
+workers and uploaded on the render thread; model material textures remain owned by their
+model asset. The audio service similarly exposes `AudioHandle`. Handles carry both a slot
+index and generation so stale handles are rejected, and resource slots expose queued,
+importing, uploading, ready, and failed states. Entity `modelKey` strings remain
+authoritative archetype IDs for saves and deterministic gameplay rather than GPU resource
+references.
 
 Runtime UI text belongs in the language JSON rather than gameplay or renderer code.
 

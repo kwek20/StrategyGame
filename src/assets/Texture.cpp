@@ -45,9 +45,12 @@ Texture::~Texture() {
         glDeleteTextures(1, &id_);
 }
 
-void Texture::bind(std::uint32_t unit) const {
+void Texture::bind(std::uint32_t unit, bool repeat) const {
     glActiveTexture(GL_TEXTURE0 + unit);
     glBindTexture(GL_TEXTURE_2D, id_);
+    const GLint wrapping = repeat ? GL_REPEAT : GL_CLAMP_TO_EDGE;
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, wrapping);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wrapping);
 }
 
 } // namespace strategy

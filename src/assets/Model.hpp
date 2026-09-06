@@ -32,7 +32,8 @@ class Model final {
               const glm::mat4& viewProjection,
               const glm::mat4& worldTransform,
               const std::string& animation = {},
-              double animationSeconds = 0.0) const;
+              double animationSeconds = 0.0,
+              std::uint32_t overrideTexture = 0) const;
     [[nodiscard]] std::size_t meshCount() const {
         return meshes_.size();
     }

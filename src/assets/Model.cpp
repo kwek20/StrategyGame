@@ -174,7 +174,8 @@ void Model::draw(const ModelShaderBindings& shader,
                  const glm::mat4& vp,
                  const glm::mat4& world,
                  const std::string& animation,
-                 double seconds) const {
+                 double seconds,
+                 std::uint32_t overrideTexture) const {
     std::array<glm::mat4, maxBones> bones;
     bones.fill(glm::mat4(1));
     bool animated = false;
@@ -202,8 +203,10 @@ void Model::draw(const ModelShaderBindings& shader,
         glUniform1i(shader.useSkinning, animated && m.skinned);
         glUniform3fv(shader.materialDiffuse, 1, glm::value_ptr(m.material.diffuse));
         glUniform1f(shader.materialOpacity, m.material.opacity);
-        glUniform1i(shader.hasBaseColorTexture, m.material.baseColorTexture != 0);
-        glBindTexture(GL_TEXTURE_2D, m.material.baseColorTexture);
+        const std::uint32_t texture = overrideTexture != 0 ? overrideTexture
+                                                           : m.material.baseColorTexture;
+        glUniform1i(shader.hasBaseColorTexture, texture != 0);
+        glBindTexture(GL_TEXTURE_2D, texture);
         glBindVertexArray(m.vao);
         glDrawElements(GL_TRIANGLES, GLsizei(m.indexCount), GL_UNSIGNED_INT, nullptr);
     }

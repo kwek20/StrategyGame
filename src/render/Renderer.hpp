@@ -6,6 +6,9 @@
 #include "players/Player.hpp"
 #include "render/CameraView.hpp"
 #include "render/FontRenderer.hpp"
+#include "render/MaterialManager.hpp"
+#include "render/RenderCommandQueue.hpp"
+#include "render/RenderGraph.hpp"
 #include "render/ShaderManager.hpp"
 #include "terrain/Terrain.hpp"
 #include "world/Entity.hpp"
@@ -127,12 +130,16 @@ class Renderer final {
     };
 
     ShaderManager shaders_;
+    MaterialManager materials_;
     ShaderHandle program_;
     ShaderHandle modelProgram_;
     ShaderHandle outlineProgram_;
     ShaderHandle hudProgram_;
     ModelShaderBindings modelBindings_;
     ModelShaderBindings outlineBindings_;
+    MaterialHandle worldMaterial_;
+    MaterialHandle rememberedMaterial_;
+    MaterialHandle outlineMaterial_;
     std::uint32_t hudVao_{0};
     std::uint32_t hudVbo_{0};
     std::uint32_t explorationTexture_{0};
@@ -147,10 +154,14 @@ class Renderer final {
     Logger* logger_{nullptr};
     mutable std::vector<TextDraw> pendingText_;
     mutable FrameProfiler profiler_;
+    mutable RenderCommandQueue commandQueue_;
+    mutable RenderGraph renderGraph_;
     std::chrono::steady_clock::time_point lastSlowFrameLog_{};
     mutable std::unordered_map<std::string, ModelHandle> modelHandles_;
+    mutable std::array<TextureHandle, 4> terrainTextures_{};
     std::unordered_map<std::string, AssetPreloadSet> preloadGroups_;
     [[nodiscard]] ModelHandle modelHandle(const std::string& archetype) const;
+    void bindTerrainTextures() const;
     void refreshModelShaderBindings();
     void drawText(const std::string& text,
                   float x,

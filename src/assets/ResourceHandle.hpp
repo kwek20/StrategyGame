@@ -18,10 +18,12 @@ struct ModelResourceTag;
 struct TextureResourceTag;
 struct AudioResourceTag;
 struct ShaderResourceTag;
+struct MaterialResourceTag;
 using ModelHandle = ResourceHandle<ModelResourceTag>;
 using TextureHandle = ResourceHandle<TextureResourceTag>;
 using AudioHandle = ResourceHandle<AudioResourceTag>;
 using ShaderHandle = ResourceHandle<ShaderResourceTag>;
+using MaterialHandle = ResourceHandle<MaterialResourceTag>;
 
 enum class ResourceState : std::uint8_t { invalid, queued, importing, uploading, ready, failed };
 

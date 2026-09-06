@@ -126,6 +126,7 @@ add_library(strategy_assets STATIC
     src/assets/AssetManifest.cpp
     src/assets/Model.cpp
     src/assets/ResourceManager.cpp
+    src/assets/Texture.cpp
 )
 strategy_target(strategy_assets)
 target_link_libraries(strategy_assets PUBLIC strategy_asset_data strategy_core glad::glad RapidJSON)
@@ -139,6 +140,9 @@ target_link_libraries(strategy_camera PUBLIC strategy_core)
 
 add_library(strategy_render STATIC
     src/render/FontRenderer.cpp
+    src/render/MaterialManager.cpp
+    src/render/RenderCommandQueue.cpp
+    src/render/RenderGraph.cpp
     src/render/RenderPass.cpp
     src/render/Renderer.cpp
     src/render/ShaderManager.cpp
@@ -146,6 +150,9 @@ add_library(strategy_render STATIC
     src/ui/UiDocument.cpp
 )
 strategy_target(strategy_render)
+target_compile_definitions(strategy_render PRIVATE
+    $<$<CONFIG:Debug>:STRATEGY_SHADER_HOT_RELOAD=1>
+)
 target_link_libraries(strategy_render
     PUBLIC strategy_assets strategy_camera strategy_diagnostics strategy_persistence strategy_players
            strategy_terrain strategy_world SDL3::SDL3 glad::glad Freetype::Freetype
@@ -221,4 +228,9 @@ if(STRATEGY_BUILD_TESTS)
     target_link_libraries(renderer_integration_tests PRIVATE strategy_render)
     add_test(NAME renderer_integration COMMAND renderer_integration_tests)
     set_tests_properties(renderer_integration PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
+    add_executable(render_architecture_tests tests/RenderArchitectureTests.cpp)
+    strategy_target(render_architecture_tests)
+    target_link_libraries(render_architecture_tests PRIVATE strategy_render)
+    add_test(NAME render_architecture COMMAND render_architecture_tests)
 endif()

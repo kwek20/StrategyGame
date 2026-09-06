@@ -14,7 +14,7 @@ class Texture final {
     ~Texture();
     Texture(const Texture&) = delete;
     Texture& operator=(const Texture&) = delete;
-    void bind(std::uint32_t unit = 0) const;
+    void bind(std::uint32_t unit = 0, bool repeat = false) const;
     [[nodiscard]] std::uint32_t id() const { return id_; }
 
   private:

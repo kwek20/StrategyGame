@@ -157,6 +157,15 @@ Renderer::Renderer(Logger* logger)
     modelProgram_ = createModelProgram(shaders_);
     outlineProgram_ = createOutlineProgram(shaders_);
     hudProgram_ = createHudProgram(shaders_);
+    worldMaterial_ = materials_.create({"world", modelProgram_});
+    RenderMaterial remembered{"remembered", modelProgram_};
+    remembered.blending = true;
+    remembered.rememberedEntity = true;
+    rememberedMaterial_ = materials_.create(std::move(remembered));
+    RenderMaterial outline{"selection-outline", outlineProgram_};
+    outline.pass = MaterialPass::overlay;
+    outline.depthWrite = false;
+    outlineMaterial_ = materials_.create(std::move(outline));
     refreshModelShaderBindings();
     glGenVertexArrays(1, &hudVao_);
     glGenBuffers(1, &hudVbo_);
@@ -269,6 +278,7 @@ Renderer::Renderer(Logger* logger)
 }
 
 void Renderer::drawUi(const UiDocument& document) const {
+    renderGraph_.enter(RenderPassKind::userInterface);
     ProfileScope profile(profiler_, "render.ui");
     uiRenderer_->draw(document, viewportWidth_, viewportHeight_);
 }
@@ -302,6 +312,8 @@ void Renderer::refreshModelShaderBindings() {
 
 void Renderer::beginFrame(int width, int height) {
     ProfileScope profile(profiler_, "render.begin");
+    renderGraph_.beginFrame();
+    commandQueue_.clear();
     const std::vector<ShaderReloadResult> reloads = shaders_.reloadChanged();
     if (!reloads.empty()) {
         refreshModelShaderBindings();
@@ -361,6 +373,18 @@ ResourceState Renderer::textureState(TextureHandle handle) const {
     return resources_.state(handle);
 }
 
+void Renderer::bindTerrainTextures() const {
+    static constexpr std::array<const char*, 4> keys{
+        "terrain/grass", "terrain/dirt", "terrain/rock", "terrain/dry_ground"};
+    for (std::size_t index = 0; index < terrainTextures_.size(); ++index) {
+        if (!terrainTextures_[index])
+            terrainTextures_[index] = resources_.requestTexture(keys[index]);
+        resources_.textureOrMarker(terrainTextures_[index])
+            ->bind(static_cast<std::uint32_t>(index), true);
+    }
+    glActiveTexture(GL_TEXTURE0);
+}
+
 void Renderer::endFrame() {
     {
         ProfileScope profile(profiler_, "render.text");
@@ -378,6 +402,7 @@ void Renderer::endFrame() {
 }
 
 void Renderer::drawLoadingScreen(float progress, const std::string& status) const {
+    renderGraph_.enter(RenderPassKind::userInterface);
     glClearColor(0.0F, 0.0F, 0.0F, 1.0F);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     const float centerX = viewportWidth_ * 0.5F, centerY = viewportHeight_ * 0.5F;
@@ -428,20 +453,24 @@ void Renderer::drawText(
 }
 
 void Renderer::drawTerrain(const CameraView& camera, const Player* player) const {
+    renderGraph_.enter(RenderPassKind::terrain);
     ProfileScope profile(profiler_, "render.terrain");
     RenderPass pass(RenderPassKind::terrain);
     const glm::vec3 focus = camera.target;
     const glm::mat4 viewProjection = camera.viewProjection();
 
     shaders_.use(program_);
+    bindTerrainTextures();
+    glUniform1i(shaders_.uniform(program_, "grassTexture"), 0);
+    glUniform1i(shaders_.uniform(program_, "dirtTexture"), 1);
+    glUniform1i(shaders_.uniform(program_, "rockTexture"), 2);
+    glUniform1i(shaders_.uniform(program_, "dryGroundTexture"), 3);
     const GLint location = shaders_.uniform(program_, "viewProjection");
     glUniformMatrix4fv(location, 1, GL_FALSE, glm::value_ptr(viewProjection));
     glUniform3fv(
         shaders_.uniform(program_, "cameraPosition"), 1, glm::value_ptr(camera.position));
     const bool closeView = camera.detailDistance < 20.0F;
-    glUniform2f(shaders_.uniform(program_, "fogRange"),
-                closeView ? 75.0F : 125.0F,
-                closeView ? 175.0F : 260.0F);
+    glUniform2f(shaders_.uniform(program_, "fogRange"), 140.0F, 280.0F);
     glUniform1i(shaders_.uniform(program_, "useExploration"), player ? 1 : 0);
     if (player) {
         std::vector<std::uint8_t> map(player->discovered.size());
@@ -494,16 +523,14 @@ void Renderer::drawTerrain(const CameraView& camera, const Player* player) const
 }
 
 void Renderer::drawWorld(const World& world, const CameraView& camera, const Player* player) const {
+    renderGraph_.enter(RenderPassKind::world);
     ProfileScope profile(profiler_, "render.world");
     RenderPass pass(RenderPassKind::world);
     const glm::mat4 viewProjection = camera.viewProjection();
     shaders_.use(modelProgram_);
     glUniform3fv(
         shaders_.uniform(modelProgram_, "cameraPosition"), 1, glm::value_ptr(camera.position));
-    const bool closeView = camera.detailDistance < 20.0F;
-    glUniform2f(shaders_.uniform(modelProgram_, "fogRange"),
-                closeView ? 75.0F : 125.0F,
-                closeView ? 175.0F : 260.0F);
+    glUniform2f(shaders_.uniform(modelProgram_, "fogRange"), 140.0F, 280.0F);
     glUniform1i(shaders_.uniform(modelProgram_, "rememberedEntity"), 0);
 
     for (const Entity& entity : world.entities()) {
@@ -559,7 +586,13 @@ void Renderer::drawWorld(const World& world, const CameraView& camera, const Pla
         const double animationSeconds =
             std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch())
                 .count();
-        model->draw(modelBindings_, viewProjection, transform, animation, animationSeconds);
+        commandQueue_.submit(
+            {handle,
+             worldMaterial_,
+             transform,
+             std::move(animation),
+             animationSeconds,
+             glm::vec3{1.0F}});
     }
     if (player)
         for (const LastKnownEntity& known : player->intelligence) {
@@ -590,15 +623,42 @@ void Renderer::drawWorld(const World& world, const CameraView& camera, const Pla
             if (const EntityDefinition* definition = resources_.entityDefinition(known.modelKey))
                 catalogueScale = definition->scale;
             transform = glm::scale(transform, known.scale * catalogueScale);
-            shaders_.use(modelProgram_);
-            glUniform1i(shaders_.uniform(modelProgram_, "rememberedEntity"), 1);
             const glm::vec3 tint =
                 known.building ? glm::vec3{0.22F, 0.34F, 0.40F} : glm::vec3{0.27F, 0.29F, 0.31F};
-            glUniform3fv(
-                shaders_.uniform(modelProgram_, "rememberedTint"), 1, glm::value_ptr(tint));
-            model->draw(modelBindings_, viewProjection, transform, "", 0.0);
-            glUniform1i(shaders_.uniform(modelProgram_, "rememberedEntity"), 0);
+            commandQueue_.submit(
+                {modelHandle(known.modelKey), rememberedMaterial_, transform, {}, 0.0, tint});
         }
+    commandQueue_.sort();
+    for (const ModelRenderCommand& command : commandQueue_.commands()) {
+        const RenderMaterial& material = materials_.get(command.material);
+        material.depthTest ? glEnable(GL_DEPTH_TEST) : glDisable(GL_DEPTH_TEST);
+        material.cullFace ? glEnable(GL_CULL_FACE) : glDisable(GL_CULL_FACE);
+        material.blending ? glEnable(GL_BLEND) : glDisable(GL_BLEND);
+        glDepthMask(material.depthWrite ? GL_TRUE : GL_FALSE);
+        shaders_.use(material.shader);
+        glUniform4fv(shaders_.uniform(material.shader, "materialTint"),
+                     1,
+                     glm::value_ptr(material.tint));
+        glUniform1f(shaders_.uniform(material.shader, "materialRoughness"), material.roughness);
+        glUniform1i(shaders_.uniform(material.shader, "rememberedEntity"),
+                    material.rememberedEntity ? 1 : 0);
+        if (material.rememberedEntity)
+            glUniform3fv(shaders_.uniform(material.shader, "rememberedTint"),
+                         1,
+                         glm::value_ptr(command.tint));
+        const Texture* albedo = material.albedo ? resources_.textureOrMarker(material.albedo)
+                                                 : nullptr;
+        if (const Model* model = resources_.modelOrMarker(command.model))
+            model->draw(modelBindings_,
+                        viewProjection,
+                        command.transform,
+                        command.animation,
+                        command.animationSeconds,
+                        albedo ? albedo->id() : 0);
+    }
+    glDepthMask(GL_TRUE);
+    glUniform1i(shaders_.uniform(modelProgram_, "rememberedEntity"), 0);
+    commandQueue_.clear();
     std::vector<glm::vec2> healthBack, healthDamage, healthRemaining;
     for (const Entity& entity : world.entities()) {
         if (!entity.health || entity.health.current <= 0.0F || entity.health.maximum <= 0.0F ||
@@ -684,6 +744,7 @@ void Renderer::drawWorld(const World& world, const CameraView& camera, const Pla
 }
 
 void Renderer::drawDebugHud(const RtsCamera& camera, std::size_t entityCount) const {
+    renderGraph_.enter(RenderPassKind::overlay);
     std::vector<glm::vec2> vertices;
     std::ostringstream fps;
     fps << std::fixed << std::setprecision(1) << framesPerSecond_;
@@ -741,6 +802,7 @@ void Renderer::drawDebugHud(const RtsCamera& camera, std::size_t entityCount) co
 }
 
 void Renderer::drawVisionRanges(const CameraView& camera, const Entity* entity) const {
+    renderGraph_.enter(RenderPassKind::overlay);
     if (!entity || !entity->unitControl || !entity->vision)
         return;
     const float elevation =
@@ -811,6 +873,7 @@ void Renderer::drawDetailedDebugHud(const CameraView& camera,
                                     std::uint32_t seed,
                                     std::uint64_t tick,
                                     std::size_t entityCount) const {
+    renderGraph_.enter(RenderPassKind::overlay);
     (void)player;
     const auto number = [](float value) {
         std::ostringstream stream;
@@ -953,6 +1016,7 @@ void Renderer::drawDetailedDebugHud(const CameraView& camera,
 }
 
 void Renderer::drawResourceHud(const Player& player) const {
+    renderGraph_.enter(RenderPassKind::overlay);
     std::vector<glm::vec2> panel;
     appendHudRectangle(panel, 10.0F, 10.0F, 430.0F, 44.0F, viewportWidth_, viewportHeight_);
     glDisable(GL_DEPTH_TEST);
@@ -989,6 +1053,7 @@ void Renderer::drawStartMenu(bool startHovered,
                              const std::string& seedText,
                              const std::string& playerOneCountry,
                              const std::string& playerTwoCountry) const {
+    renderGraph_.enter(RenderPassKind::userInterface);
     const auto drawVertices = [this](const std::vector<glm::vec2>& vertices,
                                      const glm::vec3& color) {
         glUniform3fv(shaders_.uniform(hudProgram_, "hudColor"), 1, glm::value_ptr(color));
@@ -1093,6 +1158,7 @@ void Renderer::drawSettings(const GameConfig& config,
                             std::size_t resolution,
                             int hovered,
                             int binding) const {
+    renderGraph_.enter(RenderPassKind::userInterface);
     static constexpr std::array<std::pair<int, int>, 4> sizes{
         {{1280, 720}, {1600, 900}, {1920, 1080}, {2560, 1440}}};
     static constexpr const char* actions[] = {"settings.action.forward",
@@ -1191,6 +1257,7 @@ void Renderer::regenerateTerrain(std::uint32_t seed) {
 }
 
 void Renderer::drawPauseMenu(bool resumeHovered, bool settingsHovered, bool exitHovered) const {
+    renderGraph_.enter(RenderPassKind::overlay);
     const auto drawVertices = [this](const std::vector<glm::vec2>& vertices,
                                      const glm::vec3& color) {
         glUniform3fv(shaders_.uniform(hudProgram_, "hudColor"), 1, glm::value_ptr(color));
@@ -1253,6 +1320,7 @@ void Renderer::drawBuildHud(PlayerId team,
                             const std::string& entityType,
                             std::size_t entityCount,
                             const std::string& status) const {
+    renderGraph_.enter(RenderPassKind::overlay);
     std::vector<glm::vec2> panel;
     appendHudRectangle(panel, 10.0F, 10.0F, 520.0F, 112.0F, viewportWidth_, viewportHeight_);
     std::vector<glm::vec2> text;
@@ -1302,6 +1370,7 @@ void Renderer::drawBuildHud(PlayerId team,
 }
 
 void Renderer::drawStrategyHud(const World& world, EntityId selected, const Player* player) const {
+    renderGraph_.enter(RenderPassKind::overlay);
     (void)selected;
     std::vector<glm::vec2> map, dots, rememberedFog, visibleFog, rememberedDots;
     const float mapLeft = static_cast<float>(viewportWidth_) - 210.0F, mapTop = 20.0F,
@@ -1439,6 +1508,7 @@ void Renderer::drawStrategyHud(const World& world, EntityId selected, const Play
 }
 
 void Renderer::drawUnitHud(const Entity& controlled) const {
+    renderGraph_.enter(RenderPassKind::overlay);
     std::vector<glm::vec2> panel, text, healthBack, healthFill, crosshair;
     const float top = static_cast<float>(viewportHeight_) - 125.0F;
     appendHudRectangle(panel,
@@ -1529,6 +1599,7 @@ void Renderer::drawUnitHud(const Entity& controlled) const {
 }
 
 void Renderer::drawTownHallHud(const Entity& hall, const std::array<bool, 3>& hovered) const {
+    renderGraph_.enter(RenderPassKind::overlay);
     const float height = static_cast<float>(viewportHeight_), top = height - 235.0F;
     std::vector<glm::vec2> panel, buttons[3], queueSlots, queueIcons, progressBack, progressFill;
     appendHudRectangle(panel, 18.0F, top, 640.0F, height - 18.0F, viewportWidth_, viewportHeight_);
@@ -1659,6 +1730,7 @@ void Renderer::drawTownHallHud(const Entity& hall, const std::array<bool, 3>& ho
 }
 
 void Renderer::drawSelectionBox(const glm::vec2& start, const glm::vec2& end) const {
+    renderGraph_.enter(RenderPassKind::overlay);
     const float left = std::min(start.x, end.x), right = std::max(start.x, end.x);
     const float top = std::min(start.y, end.y), bottom = std::max(start.y, end.y);
     std::vector<glm::vec2> border;
@@ -1734,6 +1806,7 @@ std::vector<EntityId> Renderer::unitsInScreenRectangle(const glm::vec2& start,
 
 void Renderer::drawUnitSelectionHud(const World& world,
                                     const std::vector<EntityId>& selected) const {
+    renderGraph_.enter(RenderPassKind::overlay);
     struct Group {
         std::string model, name;
         std::size_t count;
@@ -1797,6 +1870,7 @@ void Renderer::drawOrderMarkers(const World& world,
                                 EntityId selected,
                                 const std::vector<EntityId>& selection,
                                 const CameraView& camera) const {
+    renderGraph_.enter(RenderPassKind::overlay);
     std::vector<glm::vec2> destinations;
     const auto add = [&](EntityId id) {
         const Entity* entity = world.findEntity(id);
@@ -1987,6 +2061,7 @@ void Renderer::drawEntityOutline(const World& world,
                                  EntityId id,
                                   const CameraView& camera,
                                   const Player* player) const {
+    renderGraph_.enter(RenderPassKind::overlay);
     RenderPass pass(RenderPassKind::overlay);
     const Entity* entity = world.findEntity(id);
     if (!entity)
@@ -2042,8 +2117,13 @@ void Renderer::drawEntityOutline(const World& world,
     }
     const double seconds =
         std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    const RenderMaterial& outlineMaterial = materials_.get(outlineMaterial_);
+    outlineMaterial.depthTest ? glEnable(GL_DEPTH_TEST) : glDisable(GL_DEPTH_TEST);
+    outlineMaterial.blending ? glEnable(GL_BLEND) : glDisable(GL_BLEND);
+    glDepthMask(outlineMaterial.depthWrite ? GL_TRUE : GL_FALSE);
     glCullFace(GL_FRONT);
     model->draw(outlineBindings_, camera.viewProjection(), transform, animation, seconds);
+    glDepthMask(GL_TRUE);
     glCullFace(GL_BACK);
 }
 

@@ -7,6 +7,7 @@
 #include <SDL3/SDL.h>
 #include <chrono>
 #include <filesystem>
+#include <fstream>
 #include <glad/glad.h>
 #include <glm/gtc/matrix_transform.hpp>
 #include <iostream>
@@ -65,6 +66,40 @@ out vec4 color;void main(){color=vec4(1);})";
         valid = firstLocation == -1 && cachedLocation == firstLocation &&
                 noGlErrors("shader manager") && valid;
 
+        const std::filesystem::path shaderDirectory =
+            std::filesystem::temp_directory_path() / "strategy-shader-reload-test";
+        std::filesystem::create_directories(shaderDirectory);
+        const std::filesystem::path vertexPath = shaderDirectory / "test.vert";
+        const std::filesystem::path fragmentPath = shaderDirectory / "test.frag";
+        const auto write = [](const std::filesystem::path& path, std::string_view source) {
+            std::ofstream stream(path, std::ios::binary | std::ios::trunc);
+            stream << source;
+        };
+        write(vertexPath, vertex);
+        write(fragmentPath, fragment);
+        const strategy::ShaderHandle fileShader =
+            shaders.loadFiles("reload-test", vertexPath, fragmentPath);
+        const std::uint32_t originalProgram = shaders.program(fileShader);
+        write(fragmentPath,
+              "#version 450 core\nout vec4 color;void main(){color=vec4(0,1,0,1);}");
+        std::filesystem::last_write_time(
+            fragmentPath, std::filesystem::file_time_type::clock::now() + std::chrono::seconds(1));
+        std::this_thread::sleep_for(std::chrono::milliseconds(260));
+        const auto successfulReload = shaders.reloadChanged();
+        valid = successfulReload.size() == 1 && successfulReload.front().succeeded &&
+                shaders.program(fileShader) != originalProgram && valid;
+        const std::uint32_t validReplacement = shaders.program(fileShader);
+        write(fragmentPath, "this is not valid GLSL");
+        std::filesystem::last_write_time(
+            fragmentPath, std::filesystem::file_time_type::clock::now() + std::chrono::seconds(2));
+        std::this_thread::sleep_for(std::chrono::milliseconds(260));
+        const auto failedReload = shaders.reloadChanged();
+        valid = failedReload.size() == 1 && !failedReload.front().succeeded &&
+                shaders.program(fileShader) == validReplacement && valid;
+        std::filesystem::remove(vertexPath);
+        std::filesystem::remove(fragmentPath);
+        std::filesystem::remove(shaderDirectory);
+
         strategy::Logger logger{std::filesystem::temp_directory_path() /
                                 "strategy-renderer-test.log"};
         strategy::Renderer renderer{&logger};
@@ -105,8 +140,12 @@ out vec4 color;void main(){color=vec4(1);})";
             loadProgress = renderer.assetProgress("match");
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
         }
-        valid = loadProgress.total == 5 && loadProgress.completed == 5 &&
+        const strategy::TextureHandle texture = renderer.requestTexture("ui/placeholder");
+        renderer.bindTexture(texture, 0);
+        valid = loadProgress.total == 10 && loadProgress.completed == 10 &&
                 loadProgress.failed == 0 && renderer.loadedModelCount() == 5 && valid;
+        valid = renderer.textureState(texture) == strategy::ResourceState::ready &&
+                noGlErrors("standalone texture") && valid;
         renderer.beginProfileFrame();
         renderer.beginFrame(640, 360);
         renderer.drawTerrain(camera);
