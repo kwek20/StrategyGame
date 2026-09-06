@@ -1,11 +1,18 @@
 #pragma once
+#include "render/ShaderManager.hpp"
 #include <array>
 #include <cstdint>
 #include <filesystem>
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 #include <string>
+#include <vector>
 namespace strategy {
+struct TextDraw {
+    std::string text;
+    float x{0}, top{0}, pixelHeight{13};
+    glm::vec3 color{1};
+};
 class FontRenderer final {
   public:
     FontRenderer();
@@ -19,6 +26,7 @@ class FontRenderer final {
               glm::vec3 color,
               int viewportWidth,
               int viewportHeight) const;
+    void drawBatch(const std::vector<TextDraw>& draws, int viewportWidth, int viewportHeight) const;
 
   private:
     struct Glyph {
@@ -26,6 +34,8 @@ class FontRenderer final {
         float advance{0};
     };
     std::array<Glyph, 128> glyphs_{};
-    std::uint32_t texture_{0}, program_{0}, vao_{0}, vbo_{0};
+    ShaderManager shaders_;
+    ShaderHandle program_;
+    std::uint32_t texture_{0}, vao_{0}, vbo_{0};
 };
 } // namespace strategy

@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "groups": {
+    "main_menu": {
+      "models": [],
+      "textures": [],
+      "sounds": ["ui_click", "menu_ambient"],
+      "definitions": ["entities", "gameplay", "countries", "text"]
+    },
+    "match": {
+      "models": ["town_center", "worker", "tree", "stone", "gold"],
+      "textures": [],
+      "sounds": ["game_ambient", "selection", "move_order", "building_open", "building_upgrade", "training_upgrade", "train_unit", "save_game", "load_game", "possess_unit"],
+      "definitions": ["entities", "gameplay", "countries", "text"]
+    },
+    "build": {
+      "models": ["town_center", "worker", "tree", "stone", "gold"],
+      "textures": [],
+      "sounds": ["build_ambient", "ui_click", "save_game"],
+      "definitions": ["entities", "gameplay", "countries", "text"]
+    }
+  }
+}

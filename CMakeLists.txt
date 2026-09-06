@@ -115,14 +115,20 @@ add_library(strategy_audio STATIC src/audio/AudioSystem.cpp)
 strategy_target(strategy_audio)
 target_link_libraries(strategy_audio PUBLIC strategy_core RapidJSON)
 
-# Asset loading and graphics presentation.
+# CPU asset import has no graphics dependency and is safe on worker threads or headless builds.
+add_library(strategy_asset_data STATIC src/assets/ModelAsset.cpp)
+strategy_target(strategy_asset_data)
+target_include_directories(strategy_asset_data PRIVATE ${Stb_INCLUDE_DIR})
+target_link_libraries(strategy_asset_data PUBLIC strategy_core assimp::assimp)
+
+# Render-thread ownership of uploaded model resources.
 add_library(strategy_assets STATIC
+    src/assets/AssetManifest.cpp
     src/assets/Model.cpp
     src/assets/ResourceManager.cpp
 )
 strategy_target(strategy_assets)
-target_include_directories(strategy_assets PUBLIC ${Stb_INCLUDE_DIR})
-target_link_libraries(strategy_assets PUBLIC strategy_core glad::glad assimp::assimp RapidJSON)
+target_link_libraries(strategy_assets PUBLIC strategy_asset_data strategy_core glad::glad RapidJSON)
 
 add_library(strategy_camera STATIC
     src/game/RtsCamera.cpp
@@ -133,7 +139,9 @@ target_link_libraries(strategy_camera PUBLIC strategy_core)
 
 add_library(strategy_render STATIC
     src/render/FontRenderer.cpp
+    src/render/RenderPass.cpp
     src/render/Renderer.cpp
+    src/render/ShaderManager.cpp
     src/render/UiRenderer.cpp
     src/ui/UiDocument.cpp
 )
@@ -199,7 +207,7 @@ if(STRATEGY_BUILD_TESTS)
 
     add_executable(asset_import_tests tests/AssetImportTests.cpp)
     strategy_target(asset_import_tests)
-    target_link_libraries(asset_import_tests PRIVATE assimp::assimp)
+    target_link_libraries(asset_import_tests PRIVATE strategy_asset_data)
     add_test(NAME asset_imports COMMAND asset_import_tests)
     set_tests_properties(asset_imports PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
@@ -207,4 +215,10 @@ if(STRATEGY_BUILD_TESTS)
     strategy_target(state_stack_tests)
     target_link_libraries(state_stack_tests PRIVATE strategy_app)
     add_test(NAME state_stack_transitions COMMAND state_stack_tests)
+
+    add_executable(renderer_integration_tests tests/RendererIntegrationTests.cpp)
+    strategy_target(renderer_integration_tests)
+    target_link_libraries(renderer_integration_tests PRIVATE strategy_render)
+    add_test(NAME renderer_integration COMMAND renderer_integration_tests)
+    set_tests_properties(renderer_integration PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 endif()

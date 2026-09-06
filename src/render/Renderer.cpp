@@ -3,6 +3,7 @@
 #include "game/RtsCamera.hpp"
 #include "localization/Text.hpp"
 #include "diagnostics/Logger.hpp"
+#include "render/RenderPass.hpp"
 #include "render/UiRenderer.hpp"
 #include "ui/UiDocument.hpp"
 #include "world/World.hpp"
@@ -55,32 +56,31 @@ void GLAPIENTRY openGlDebugMessage(GLenum,
                                ? LogLevel::error
                                : severity == GL_DEBUG_SEVERITY_MEDIUM ? LogLevel::warning
                                                                       : LogLevel::debug;
+    std::string state;
+    if (level == LogLevel::error) {
+        GLint program = 0;
+        GLint vertexArray = 0;
+        GLint arrayBuffer = 0;
+        GLint elementBuffer = 0;
+        glGetIntegerv(GL_CURRENT_PROGRAM, &program);
+        glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &vertexArray);
+        glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &arrayBuffer);
+        // In a core profile the element-buffer binding belongs to a VAO. Querying it
+        // while VAO 0 is active can itself generate GL_INVALID_OPERATION on NVIDIA.
+        if (vertexArray != 0)
+            glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &elementBuffer);
+        state = " state(program=" + std::to_string(program) +
+                " vao=" + std::to_string(vertexArray) +
+                " arrayBuffer=" + std::to_string(arrayBuffer) +
+                " elementBuffer=" + std::to_string(elementBuffer) + ")";
+    }
     logger->log(level,
                 "opengl",
                 std::string("id=") + std::to_string(id) + " type=" + std::to_string(type) +
-                    " occurrences=" + std::to_string(count) + " " + message);
+                    " occurrences=" + std::to_string(count) + " " + message + state);
 }
 
-std::uint32_t compileShader(GLenum type, const char* source) {
-    const std::uint32_t shader = glCreateShader(type);
-    glShaderSource(shader, 1, &source, nullptr);
-    glCompileShader(shader);
-
-    GLint compiled = GL_FALSE;
-    glGetShaderiv(shader, GL_COMPILE_STATUS, &compiled);
-    if (compiled == GL_TRUE) {
-        return shader;
-    }
-
-    GLint length = 0;
-    glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &length);
-    std::string log(static_cast<std::size_t>(length), '\0');
-    glGetShaderInfoLog(shader, length, nullptr, log.data());
-    glDeleteShader(shader);
-    throw std::runtime_error("Shader compilation failed: " + log);
-}
-
-std::uint32_t createTerrainProgram() {
+ShaderHandle createTerrainProgram(ShaderManager& shaders) {
     constexpr const char* vertexSource = R"glsl(
         #version 450 core
         layout(location = 0) in vec3 inPosition;
@@ -124,30 +124,10 @@ std::uint32_t createTerrainProgram() {
         }
     )glsl";
 
-    const std::uint32_t vertex = compileShader(GL_VERTEX_SHADER, vertexSource);
-    const std::uint32_t fragment = compileShader(GL_FRAGMENT_SHADER, fragmentSource);
-    const std::uint32_t program = glCreateProgram();
-    glAttachShader(program, vertex);
-    glAttachShader(program, fragment);
-    glLinkProgram(program);
-    glDeleteShader(vertex);
-    glDeleteShader(fragment);
-
-    GLint linked = GL_FALSE;
-    glGetProgramiv(program, GL_LINK_STATUS, &linked);
-    if (linked == GL_TRUE) {
-        return program;
-    }
-
-    GLint length = 0;
-    glGetProgramiv(program, GL_INFO_LOG_LENGTH, &length);
-    std::string log(static_cast<std::size_t>(length), '\0');
-    glGetProgramInfoLog(program, length, nullptr, log.data());
-    glDeleteProgram(program);
-    throw std::runtime_error("Shader linking failed: " + log);
+    return shaders.load("terrain", vertexSource, fragmentSource);
 }
 
-std::uint32_t createModelProgram() {
+ShaderHandle createModelProgram(ShaderManager& shaders) {
     constexpr const char* vertexSource = R"glsl(
         #version 450 core
         layout(location = 0) in vec3 inPosition;
@@ -207,24 +187,10 @@ std::uint32_t createModelProgram() {
             outColor = vec4(mix(color, vec3(0.42, 0.66, 0.88), fog), base.a);
         }
     )glsl";
-    const std::uint32_t vertex = compileShader(GL_VERTEX_SHADER, vertexSource);
-    const std::uint32_t fragment = compileShader(GL_FRAGMENT_SHADER, fragmentSource);
-    const std::uint32_t result = glCreateProgram();
-    glAttachShader(result, vertex);
-    glAttachShader(result, fragment);
-    glLinkProgram(result);
-    glDeleteShader(vertex);
-    glDeleteShader(fragment);
-    GLint linked = GL_FALSE;
-    glGetProgramiv(result, GL_LINK_STATUS, &linked);
-    if (linked == GL_FALSE) {
-        glDeleteProgram(result);
-        throw std::runtime_error("Model shader linking failed");
-    }
-    return result;
+    return shaders.load("model", vertexSource, fragmentSource);
 }
 
-std::uint32_t createOutlineProgram() {
+ShaderHandle createOutlineProgram(ShaderManager& shaders) {
     constexpr const char* vertexSource = R"glsl(
         #version 450 core
         layout(location=0) in vec3 inPosition;
@@ -245,24 +211,10 @@ std::uint32_t createOutlineProgram() {
         out vec4 outColor;
         void main(){outColor=vec4(1.0,0.82,0.05,1.0);}
     )glsl";
-    const auto vertex = compileShader(GL_VERTEX_SHADER, vertexSource),
-               fragment = compileShader(GL_FRAGMENT_SHADER, fragmentSource);
-    const auto program = glCreateProgram();
-    glAttachShader(program, vertex);
-    glAttachShader(program, fragment);
-    glLinkProgram(program);
-    glDeleteShader(vertex);
-    glDeleteShader(fragment);
-    GLint linked = GL_FALSE;
-    glGetProgramiv(program, GL_LINK_STATUS, &linked);
-    if (!linked) {
-        glDeleteProgram(program);
-        throw std::runtime_error("Outline shader linking failed");
-    }
-    return program;
+    return shaders.load("outline", vertexSource, fragmentSource);
 }
 
-std::uint32_t createHudProgram() {
+ShaderHandle createHudProgram(ShaderManager& shaders) {
     constexpr const char* vertexSource = R"glsl(
         #version 450 core
         layout(location = 0) in vec2 inPosition;
@@ -274,15 +226,7 @@ std::uint32_t createHudProgram() {
         out vec4 outColor;
         void main() { outColor = vec4(hudColor, 1.0); }
     )glsl";
-    const std::uint32_t vertex = compileShader(GL_VERTEX_SHADER, vertexSource);
-    const std::uint32_t fragment = compileShader(GL_FRAGMENT_SHADER, fragmentSource);
-    const std::uint32_t result = glCreateProgram();
-    glAttachShader(result, vertex);
-    glAttachShader(result, fragment);
-    glLinkProgram(result);
-    glDeleteShader(vertex);
-    glDeleteShader(fragment);
-    return result;
+    return shaders.load("hud", vertexSource, fragmentSource);
 }
 
 void appendHudRectangle(std::vector<glm::vec2>& vertices,
@@ -338,10 +282,23 @@ Renderer::Renderer(Logger* logger)
     }
     uiRenderer_ = std::make_unique<UiRenderer>();
 
-    program_ = createTerrainProgram();
-    modelProgram_ = createModelProgram();
-    outlineProgram_ = createOutlineProgram();
-    hudProgram_ = createHudProgram();
+    program_ = createTerrainProgram(shaders_);
+    modelProgram_ = createModelProgram(shaders_);
+    outlineProgram_ = createOutlineProgram(shaders_);
+    hudProgram_ = createHudProgram(shaders_);
+    const auto bindings = [this](ShaderHandle handle) {
+        return ModelShaderBindings{shaders_.program(handle),
+                                   shaders_.uniform(handle, "viewProjection"),
+                                   shaders_.uniform(handle, "model"),
+                                   shaders_.uniform(handle, "useSkinning"),
+                                   shaders_.uniform(handle, "bones[0]"),
+                                   shaders_.uniform(handle, "baseColorTexture"),
+                                   shaders_.uniform(handle, "materialDiffuse"),
+                                   shaders_.uniform(handle, "materialOpacity"),
+                                   shaders_.uniform(handle, "hasBaseColorTexture")};
+    };
+    modelBindings_ = bindings(modelProgram_);
+    outlineBindings_ = bindings(outlineProgram_);
     glGenVertexArrays(1, &hudVao_);
     glGenBuffers(1, &hudVbo_);
     glGenTextures(1, &explorationTexture_);
@@ -453,6 +410,7 @@ Renderer::Renderer(Logger* logger)
 }
 
 void Renderer::drawUi(const UiDocument& document) const {
+    ProfileScope profile(profiler_, "render.ui");
     uiRenderer_->draw(document, viewportWidth_, viewportHeight_);
 }
 
@@ -464,19 +422,63 @@ Renderer::~Renderer() {
     }
     glDeleteBuffers(1, &hudVbo_);
     glDeleteVertexArrays(1, &hudVao_);
-    glDeleteProgram(hudProgram_);
-    glDeleteProgram(modelProgram_);
-    glDeleteProgram(outlineProgram_);
-    glDeleteProgram(program_);
     glDeleteTextures(1, &explorationTexture_);
 }
 
 void Renderer::beginFrame(int width, int height) {
+    ProfileScope profile(profiler_, "render.begin");
+    {
+        ProfileScope uploads(profiler_, "assets.upload");
+        resources_.update();
+    }
     viewportWidth_ = width;
     viewportHeight_ = height;
+    pendingText_.clear();
     glViewport(0, 0, width, height);
     glClearColor(0.42F, 0.66F, 0.88F, 1.0F);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+}
+
+void Renderer::beginProfileFrame() {
+    profiler_.beginFrame();
+}
+
+void Renderer::recordProfile(const std::string& name, double milliseconds) {
+    profiler_.record(name, milliseconds);
+}
+
+ModelHandle Renderer::modelHandle(const std::string& archetype) const {
+    if (const auto found = modelHandles_.find(archetype); found != modelHandles_.end())
+        return found->second;
+    const ModelHandle handle = resources_.requestModel(archetype);
+    modelHandles_.emplace(archetype, handle);
+    return handle;
+}
+
+void Renderer::preloadAssetGroup(const std::string& group) {
+    preloadGroups_.insert_or_assign(group, resources_.preloadGroup(group));
+}
+
+AssetLoadProgress Renderer::assetProgress(const std::string& group) {
+    resources_.update();
+    const auto found = preloadGroups_.find(group);
+    return found == preloadGroups_.end() ? AssetLoadProgress{} : resources_.progress(found->second);
+}
+
+void Renderer::endFrame() {
+    {
+        ProfileScope profile(profiler_, "render.text");
+        font_.drawBatch(pendingText_, viewportWidth_, viewportHeight_);
+    }
+    pendingText_.clear();
+    profiler_.endFrame();
+    const double frameMilliseconds = profiler_.last("frame.total");
+    const auto now = std::chrono::steady_clock::now();
+    if (logger_ && frameMilliseconds > 50.0 && now - lastSlowFrameLog_ > std::chrono::seconds(2)) {
+        logger_->warning("performance",
+                         "Slow frame: " + std::to_string(frameMilliseconds) + " ms");
+        lastSlowFrameLog_ = now;
+    }
 }
 
 void Renderer::drawLoadingScreen(float progress, const std::string& status) const {
@@ -500,13 +502,13 @@ void Renderer::drawLoadingScreen(float progress, const std::string& status) cons
                        viewportHeight_);
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
-    glUseProgram(hudProgram_);
+    shaders_.use(hudProgram_);
     glBindVertexArray(hudVao_);
     glBindBuffer(GL_ARRAY_BUFFER, hudVbo_);
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(glm::vec2), nullptr);
     const auto draw = [this](const std::vector<glm::vec2>& vertices, const glm::vec3& color) {
-        glUniform3fv(glGetUniformLocation(hudProgram_, "hudColor"), 1, glm::value_ptr(color));
+        glUniform3fv(shaders_.uniform(hudProgram_, "hudColor"), 1, glm::value_ptr(color));
         glBufferData(GL_ARRAY_BUFFER,
                      static_cast<GLsizeiptr>(vertices.size() * sizeof(glm::vec2)),
                      vertices.data(),
@@ -525,23 +527,26 @@ void Renderer::drawLoadingScreen(float progress, const std::string& status) cons
 
 void Renderer::drawText(
     const std::string& text, float x, float y, float scale, const glm::vec3& color) const {
-    font_.draw(text, x, y, std::max(scale * 8.0F, 13.0F), color, viewportWidth_, viewportHeight_);
+    pendingText_.push_back(
+        {text, x, y, std::max(scale * 8.0F, 13.0F), color});
 }
 
 void Renderer::drawTerrain(const CameraView& camera, const Player* player) const {
+    ProfileScope profile(profiler_, "render.terrain");
+    RenderPass pass(RenderPassKind::terrain);
     const glm::vec3 focus = camera.target;
     const glm::mat4 viewProjection = camera.viewProjection();
 
-    glUseProgram(program_);
-    const GLint location = glGetUniformLocation(program_, "viewProjection");
+    shaders_.use(program_);
+    const GLint location = shaders_.uniform(program_, "viewProjection");
     glUniformMatrix4fv(location, 1, GL_FALSE, glm::value_ptr(viewProjection));
     glUniform3fv(
-        glGetUniformLocation(program_, "cameraPosition"), 1, glm::value_ptr(camera.position));
+        shaders_.uniform(program_, "cameraPosition"), 1, glm::value_ptr(camera.position));
     const bool closeView = camera.detailDistance < 20.0F;
-    glUniform2f(glGetUniformLocation(program_, "fogRange"),
+    glUniform2f(shaders_.uniform(program_, "fogRange"),
                 closeView ? 75.0F : 125.0F,
                 closeView ? 175.0F : 260.0F);
-    glUniform1i(glGetUniformLocation(program_, "useExploration"), player ? 1 : 0);
+    glUniform1i(shaders_.uniform(program_, "useExploration"), player ? 1 : 0);
     if (player) {
         std::vector<std::uint8_t> map(player->discovered.size());
         for (std::size_t i = 0; i < map.size(); ++i)
@@ -558,7 +563,7 @@ void Renderer::drawTerrain(const CameraView& camera, const Player* player) const
                      GL_RED,
                      GL_UNSIGNED_BYTE,
                      map.data());
-        glUniform1i(glGetUniformLocation(program_, "explorationMap"), 7);
+        glUniform1i(shaders_.uniform(program_, "explorationMap"), 7);
         glActiveTexture(GL_TEXTURE0);
     }
     constexpr float renderDistance = 190.0F;
@@ -593,15 +598,17 @@ void Renderer::drawTerrain(const CameraView& camera, const Player* player) const
 }
 
 void Renderer::drawWorld(const World& world, const CameraView& camera, const Player* player) const {
+    ProfileScope profile(profiler_, "render.world");
+    RenderPass pass(RenderPassKind::world);
     const glm::mat4 viewProjection = camera.viewProjection();
-    glUseProgram(modelProgram_);
+    shaders_.use(modelProgram_);
     glUniform3fv(
-        glGetUniformLocation(modelProgram_, "cameraPosition"), 1, glm::value_ptr(camera.position));
+        shaders_.uniform(modelProgram_, "cameraPosition"), 1, glm::value_ptr(camera.position));
     const bool closeView = camera.detailDistance < 20.0F;
-    glUniform2f(glGetUniformLocation(modelProgram_, "fogRange"),
+    glUniform2f(shaders_.uniform(modelProgram_, "fogRange"),
                 closeView ? 75.0F : 125.0F,
                 closeView ? 175.0F : 260.0F);
-    glUniform1i(glGetUniformLocation(modelProgram_, "rememberedEntity"), 0);
+    glUniform1i(shaders_.uniform(modelProgram_, "rememberedEntity"), 0);
 
     for (const Entity& entity : world.entities()) {
         if (entity.resource && entity.resource.remaining <= 0.0F)
@@ -621,7 +628,8 @@ void Renderer::drawWorld(const World& world, const CameraView& camera, const Pla
             if (!player->visible[static_cast<std::size_t>(z * Player::explorationCells + x)])
                 continue;
         }
-        const Model* model = resources_.model(entity.modelKey);
+        const ModelHandle handle = modelHandle(entity.modelKey);
+        const Model* model = resources_.modelOrMarker(handle);
         if (model == nullptr) {
             continue;
         }
@@ -655,7 +663,7 @@ void Renderer::drawWorld(const World& world, const CameraView& camera, const Pla
         const double animationSeconds =
             std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch())
                 .count();
-        model->draw(modelProgram_, viewProjection, transform, animation, animationSeconds);
+        model->draw(modelBindings_, viewProjection, transform, animation, animationSeconds);
     }
     if (player)
         for (const LastKnownEntity& known : player->intelligence) {
@@ -670,7 +678,7 @@ void Renderer::drawWorld(const World& world, const CameraView& camera, const Pla
                                      Player::explorationCells - 1);
             if (player->visible[static_cast<std::size_t>(z * Player::explorationCells + x)])
                 continue;
-            const Model* model = resources_.model(known.modelKey);
+            const Model* model = resources_.modelOrMarker(modelHandle(known.modelKey));
             if (!model)
                 continue;
             glm::mat4 transform{1.0F};
@@ -686,14 +694,14 @@ void Renderer::drawWorld(const World& world, const CameraView& camera, const Pla
             if (const EntityDefinition* definition = resources_.entityDefinition(known.modelKey))
                 catalogueScale = definition->scale;
             transform = glm::scale(transform, known.scale * catalogueScale);
-            glUseProgram(modelProgram_);
-            glUniform1i(glGetUniformLocation(modelProgram_, "rememberedEntity"), 1);
+            shaders_.use(modelProgram_);
+            glUniform1i(shaders_.uniform(modelProgram_, "rememberedEntity"), 1);
             const glm::vec3 tint =
                 known.building ? glm::vec3{0.22F, 0.34F, 0.40F} : glm::vec3{0.27F, 0.29F, 0.31F};
             glUniform3fv(
-                glGetUniformLocation(modelProgram_, "rememberedTint"), 1, glm::value_ptr(tint));
-            model->draw(modelProgram_, viewProjection, transform, "", 0.0);
-            glUniform1i(glGetUniformLocation(modelProgram_, "rememberedEntity"), 0);
+                shaders_.uniform(modelProgram_, "rememberedTint"), 1, glm::value_ptr(tint));
+            model->draw(modelBindings_, viewProjection, transform, "", 0.0);
+            glUniform1i(shaders_.uniform(modelProgram_, "rememberedEntity"), 0);
         }
     std::vector<glm::vec2> healthBack, healthDamage, healthRemaining;
     for (const Entity& entity : world.entities()) {
@@ -757,13 +765,13 @@ void Renderer::drawWorld(const World& world, const CameraView& camera, const Pla
     if (!healthBack.empty()) {
         glDisable(GL_DEPTH_TEST);
         glDisable(GL_CULL_FACE);
-        glUseProgram(hudProgram_);
+        shaders_.use(hudProgram_);
         glBindVertexArray(hudVao_);
         glBindBuffer(GL_ARRAY_BUFFER, hudVbo_);
         glEnableVertexAttribArray(0);
         glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(glm::vec2), nullptr);
         const auto draw = [this](const std::vector<glm::vec2>& vertices, const glm::vec3& color) {
-            glUniform3fv(glGetUniformLocation(hudProgram_, "hudColor"), 1, glm::value_ptr(color));
+            glUniform3fv(shaders_.uniform(hudProgram_, "hudColor"), 1, glm::value_ptr(color));
             glBufferData(GL_ARRAY_BUFFER,
                          static_cast<GLsizeiptr>(vertices.size() * sizeof(glm::vec2)),
                          vertices.data(),
@@ -814,8 +822,8 @@ void Renderer::drawDebugHud(const RtsCamera& camera, std::size_t entityCount) co
 
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
-    glUseProgram(hudProgram_);
-    glUniform3f(glGetUniformLocation(hudProgram_, "hudColor"), 0.95F, 0.98F, 0.82F);
+    shaders_.use(hudProgram_);
+    glUniform3f(shaders_.uniform(hudProgram_, "hudColor"), 0.95F, 0.98F, 0.82F);
     glBindVertexArray(hudVao_);
     glBindBuffer(GL_ARRAY_BUFFER, hudVbo_);
     glBufferData(GL_ARRAY_BUFFER,
@@ -853,16 +861,16 @@ void Renderer::drawVisionRanges(const CameraView& camera, const Entity* entity) 
                         z = entity->transform.position.z + std::sin(angle) * radius;
             vertices.push_back({{x, terrain_.heightAt(x, z) + heightOffset, z}, {0, 1, 0}, color});
         }
-        glUseProgram(program_);
+        shaders_.use(program_);
         const glm::mat4 viewProjection = camera.viewProjection();
-        glUniformMatrix4fv(glGetUniformLocation(program_, "viewProjection"),
+        glUniformMatrix4fv(shaders_.uniform(program_, "viewProjection"),
                            1,
                            GL_FALSE,
                            glm::value_ptr(viewProjection));
         glUniform3fv(
-            glGetUniformLocation(program_, "cameraPosition"), 1, glm::value_ptr(camera.position));
-        glUniform2f(glGetUniformLocation(program_, "fogRange"), 10000.0F, 10001.0F);
-        glUniform1i(glGetUniformLocation(program_, "useExploration"), 0);
+            shaders_.uniform(program_, "cameraPosition"), 1, glm::value_ptr(camera.position));
+        glUniform2f(shaders_.uniform(program_, "fogRange"), 10000.0F, 10001.0F);
+        glUniform1i(shaders_.uniform(program_, "useExploration"), 0);
         glBindVertexArray(hudVao_);
         glBindBuffer(GL_ARRAY_BUFFER, hudVbo_);
         glBufferData(GL_ARRAY_BUFFER,
@@ -928,6 +936,14 @@ void Renderer::drawDetailedDebugHud(const CameraView& camera,
                      {number(framesPerSecond_),
                       std::to_string(entityCount),
                       std::to_string(resources_.modelCount())})};
+    lines.push_back("TIMINGS (last / average / peak ms)");
+    for (const ProfileMetric& metric : profiler_.snapshot()) {
+        std::ostringstream timing;
+        timing << "  " << metric.name << ": " << std::fixed << std::setprecision(2)
+               << metric.lastMilliseconds << " / " << metric.averageMilliseconds << " / "
+               << metric.peakMilliseconds;
+        lines.push_back(timing.str());
+    }
     if (entity) {
         const char* kinds[] = {"decoration", "unit", "building", "resource"};
         lines.push_back("ENTITY (saved component state)");
@@ -1017,8 +1033,8 @@ void Renderer::drawDetailedDebugHud(const CameraView& camera,
     appendHudRectangle(panel, left, top, right, bottom, viewportWidth_, viewportHeight_);
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
-    glUseProgram(hudProgram_);
-    glUniform3f(glGetUniformLocation(hudProgram_, "hudColor"), 0.018F, 0.028F, 0.038F);
+    shaders_.use(hudProgram_);
+    glUniform3f(shaders_.uniform(hudProgram_, "hudColor"), 0.018F, 0.028F, 0.038F);
     glBindVertexArray(hudVao_);
     glBindBuffer(GL_ARRAY_BUFFER, hudVbo_);
     glBufferData(GL_ARRAY_BUFFER,
@@ -1045,8 +1061,8 @@ void Renderer::drawResourceHud(const Player& player) const {
     appendHudRectangle(panel, 10.0F, 10.0F, 430.0F, 44.0F, viewportWidth_, viewportHeight_);
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
-    glUseProgram(hudProgram_);
-    glUniform3f(glGetUniformLocation(hudProgram_, "hudColor"), 0.018F, 0.028F, 0.038F);
+    shaders_.use(hudProgram_);
+    glUniform3f(shaders_.uniform(hudProgram_, "hudColor"), 0.018F, 0.028F, 0.038F);
     glBindVertexArray(hudVao_);
     glBindBuffer(GL_ARRAY_BUFFER, hudVbo_);
     glBufferData(GL_ARRAY_BUFFER,
@@ -1079,7 +1095,7 @@ void Renderer::drawStartMenu(bool startHovered,
                              const std::string& playerTwoCountry) const {
     const auto drawVertices = [this](const std::vector<glm::vec2>& vertices,
                                      const glm::vec3& color) {
-        glUniform3fv(glGetUniformLocation(hudProgram_, "hudColor"), 1, glm::value_ptr(color));
+        glUniform3fv(shaders_.uniform(hudProgram_, "hudColor"), 1, glm::value_ptr(color));
         glBindBuffer(GL_ARRAY_BUFFER, hudVbo_);
         glBufferData(GL_ARRAY_BUFFER,
                      static_cast<GLsizeiptr>(vertices.size() * sizeof(glm::vec2)),
@@ -1090,7 +1106,7 @@ void Renderer::drawStartMenu(bool startHovered,
 
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
-    glUseProgram(hudProgram_);
+    shaders_.use(hudProgram_);
     glBindVertexArray(hudVao_);
     glBindBuffer(GL_ARRAY_BUFFER, hudVbo_);
     glEnableVertexAttribArray(0);
@@ -1190,7 +1206,9 @@ void Renderer::drawSettings(const GameConfig& config,
                                               "settings.action.debug",
                                               "settings.action.pause"};
     static constexpr const char* ids[] = {"forward", "backward", "left", "right", "debug", "pause"};
-    glDisable(GL_DEPTH_TEST); glDisable(GL_CULL_FACE); glUseProgram(hudProgram_);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);
+    shaders_.use(hudProgram_);
     glBindVertexArray(hudVao_); glBindBuffer(GL_ARRAY_BUFFER, hudVbo_);
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(glm::vec2), nullptr);
@@ -1200,14 +1218,14 @@ void Renderer::drawSettings(const GameConfig& config,
                            viewportWidth_, viewportHeight_);
         const glm::vec3 color = id == hovered ? glm::vec3{0.22F, 0.38F, 0.52F}
                                                : glm::vec3{0.10F, 0.16F, 0.22F};
-        glUniform3fv(glGetUniformLocation(hudProgram_, "hudColor"), 1, glm::value_ptr(color));
+        glUniform3fv(shaders_.uniform(hudProgram_, "hudColor"), 1, glm::value_ptr(color));
         glBufferData(
             GL_ARRAY_BUFFER, vertices.size() * sizeof(glm::vec2), vertices.data(), GL_DYNAMIC_DRAW);
         glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(vertices.size()));
     };
     std::vector<glm::vec2> panel;
     appendHudRectangle(panel, 30, 30, 880, 620, viewportWidth_, viewportHeight_);
-    glUniform3f(glGetUniformLocation(hudProgram_, "hudColor"), 0.035F, 0.055F, 0.075F);
+    glUniform3f(shaders_.uniform(hudProgram_, "hudColor"), 0.035F, 0.055F, 0.075F);
     glBufferData(GL_ARRAY_BUFFER, panel.size() * sizeof(glm::vec2), panel.data(), GL_DYNAMIC_DRAW);
     glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(panel.size()));
     box({60,130,430,168},0); box({60,175,430,213},1);
@@ -1279,7 +1297,7 @@ void Renderer::regenerateTerrain(std::uint32_t seed) {
 void Renderer::drawPauseMenu(bool resumeHovered, bool settingsHovered, bool exitHovered) const {
     const auto drawVertices = [this](const std::vector<glm::vec2>& vertices,
                                      const glm::vec3& color) {
-        glUniform3fv(glGetUniformLocation(hudProgram_, "hudColor"), 1, glm::value_ptr(color));
+        glUniform3fv(shaders_.uniform(hudProgram_, "hudColor"), 1, glm::value_ptr(color));
         glBindBuffer(GL_ARRAY_BUFFER, hudVbo_);
         glBufferData(GL_ARRAY_BUFFER,
                      static_cast<GLsizeiptr>(vertices.size() * sizeof(glm::vec2)),
@@ -1290,7 +1308,7 @@ void Renderer::drawPauseMenu(bool resumeHovered, bool settingsHovered, bool exit
 
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
-    glUseProgram(hudProgram_);
+    shaders_.use(hudProgram_);
     glBindVertexArray(hudVao_);
     glBindBuffer(GL_ARRAY_BUFFER, hudVbo_);
     glEnableVertexAttribArray(0);
@@ -1364,13 +1382,13 @@ void Renderer::drawBuildHud(PlayerId team,
                   viewportHeight_);
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
-    glUseProgram(hudProgram_);
+    shaders_.use(hudProgram_);
     glBindVertexArray(hudVao_);
     glBindBuffer(GL_ARRAY_BUFFER, hudVbo_);
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(glm::vec2), nullptr);
     auto draw = [this](const std::vector<glm::vec2>& vertices, const glm::vec3& color) {
-        glUniform3fv(glGetUniformLocation(hudProgram_, "hudColor"), 1, glm::value_ptr(color));
+        glUniform3fv(shaders_.uniform(hudProgram_, "hudColor"), 1, glm::value_ptr(color));
         glBufferData(GL_ARRAY_BUFFER,
                      static_cast<GLsizeiptr>(vertices.size() * sizeof(glm::vec2)),
                      vertices.data(),
@@ -1466,13 +1484,13 @@ void Renderer::drawStrategyHud(const World& world, EntityId selected, const Play
         }
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
-    glUseProgram(hudProgram_);
+    shaders_.use(hudProgram_);
     glBindVertexArray(hudVao_);
     glBindBuffer(GL_ARRAY_BUFFER, hudVbo_);
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(glm::vec2), nullptr);
     auto draw = [this](const std::vector<glm::vec2>& v, const glm::vec3& c) {
-        glUniform3fv(glGetUniformLocation(hudProgram_, "hudColor"), 1, glm::value_ptr(c));
+        glUniform3fv(shaders_.uniform(hudProgram_, "hudColor"), 1, glm::value_ptr(c));
         glBufferData(GL_ARRAY_BUFFER,
                      static_cast<GLsizeiptr>(v.size() * sizeof(glm::vec2)),
                      v.data(),
@@ -1579,13 +1597,13 @@ void Renderer::drawUnitHud(const Entity& controlled) const {
         crosshair, cx - 1.0F, cy - 10.0F, cx + 1.0F, cy + 10.0F, viewportWidth_, viewportHeight_);
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
-    glUseProgram(hudProgram_);
+    shaders_.use(hudProgram_);
     glBindVertexArray(hudVao_);
     glBindBuffer(GL_ARRAY_BUFFER, hudVbo_);
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(glm::vec2), nullptr);
     auto draw = [this](const std::vector<glm::vec2>& v, const glm::vec3& c) {
-        glUniform3fv(glGetUniformLocation(hudProgram_, "hudColor"), 1, glm::value_ptr(c));
+        glUniform3fv(shaders_.uniform(hudProgram_, "hudColor"), 1, glm::value_ptr(c));
         glBufferData(GL_ARRAY_BUFFER,
                      static_cast<GLsizeiptr>(v.size() * sizeof(glm::vec2)),
                      v.data(),
@@ -1677,13 +1695,13 @@ void Renderer::drawTownHallHud(const Entity& hall, const std::array<bool, 3>& ho
     }
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
-    glUseProgram(hudProgram_);
+    shaders_.use(hudProgram_);
     glBindVertexArray(hudVao_);
     glBindBuffer(GL_ARRAY_BUFFER, hudVbo_);
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(glm::vec2), nullptr);
     auto draw = [this](const std::vector<glm::vec2>& v, const glm::vec3& c) {
-        glUniform3fv(glGetUniformLocation(hudProgram_, "hudColor"), 1, glm::value_ptr(c));
+        glUniform3fv(shaders_.uniform(hudProgram_, "hudColor"), 1, glm::value_ptr(c));
         glBufferData(GL_ARRAY_BUFFER,
                      static_cast<GLsizeiptr>(v.size() * sizeof(glm::vec2)),
                      v.data(),
@@ -1754,8 +1772,8 @@ void Renderer::drawSelectionBox(const glm::vec2& start, const glm::vec2& end) co
     appendHudRectangle(border, right - 2.0F, top, right, bottom, viewportWidth_, viewportHeight_);
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
-    glUseProgram(hudProgram_);
-    glUniform3f(glGetUniformLocation(hudProgram_, "hudColor"), 1.0F, 0.82F, 0.05F);
+    shaders_.use(hudProgram_);
+    glUniform3f(shaders_.uniform(hudProgram_, "hudColor"), 1.0F, 0.82F, 0.05F);
     glBindVertexArray(hudVao_);
     glBindBuffer(GL_ARRAY_BUFFER, hudVbo_);
     glBufferData(GL_ARRAY_BUFFER,
@@ -1848,8 +1866,8 @@ void Renderer::drawUnitSelectionHud(const World& world,
                        viewportHeight_);
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
-    glUseProgram(hudProgram_);
-    glUniform3f(glGetUniformLocation(hudProgram_, "hudColor"), 0.025F, 0.04F, 0.06F);
+    shaders_.use(hudProgram_);
+    glUniform3f(shaders_.uniform(hudProgram_, "hudColor"), 0.025F, 0.04F, 0.06F);
     glBindVertexArray(hudVao_);
     glBindBuffer(GL_ARRAY_BUFFER, hudVbo_);
     glBufferData(GL_ARRAY_BUFFER,
@@ -1937,13 +1955,13 @@ void Renderer::drawOrderMarkers(const World& world,
         return;
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
-    glUseProgram(hudProgram_);
+    shaders_.use(hudProgram_);
     glBindVertexArray(hudVao_);
     glBindBuffer(GL_ARRAY_BUFFER, hudVbo_);
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(glm::vec2), nullptr);
     const auto draw = [this](const std::vector<glm::vec2>& vertices, const glm::vec3& color) {
-        glUniform3fv(glGetUniformLocation(hudProgram_, "hudColor"), 1, glm::value_ptr(color));
+        glUniform3fv(shaders_.uniform(hudProgram_, "hudColor"), 1, glm::value_ptr(color));
         glBufferData(GL_ARRAY_BUFFER,
                      static_cast<GLsizeiptr>(vertices.size() * sizeof(glm::vec2)),
                      vertices.data(),
@@ -2071,8 +2089,9 @@ EntityId Renderer::pickEntity(float pixelX,
 
 void Renderer::drawEntityOutline(const World& world,
                                  EntityId id,
-                                 const CameraView& camera,
-                                 const Player* player) const {
+                                  const CameraView& camera,
+                                  const Player* player) const {
+    RenderPass pass(RenderPassKind::overlay);
     const Entity* entity = world.findEntity(id);
     if (!entity)
         return;
@@ -2103,7 +2122,7 @@ void Renderer::drawEntityOutline(const World& world,
             remembered = true;
         }
     }
-    const Model* model = resources_.model(modelKey);
+    const Model* model = resources_.modelOrMarker(modelHandle(modelKey));
     if (!model)
         return;
     const EntityDefinition* definition = resources_.entityDefinition(modelKey);
@@ -2128,7 +2147,7 @@ void Renderer::drawEntityOutline(const World& world,
     const double seconds =
         std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
     glCullFace(GL_FRONT);
-    model->draw(outlineProgram_, camera.viewProjection(), transform, animation, seconds);
+    model->draw(outlineBindings_, camera.viewProjection(), transform, animation, seconds);
     glCullFace(GL_BACK);
 }
 

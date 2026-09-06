@@ -20,6 +20,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <thread>
 
 namespace strategy {
 namespace {
@@ -169,13 +170,41 @@ int Application::run() {
     auto previous = Clock::now();
     auto fpsStart = previous;
     int frames = 0;
-    const auto showLoading = [this](float progress, const char* textKey) {
+    const auto showLoading = [this](float progress, const std::string& status) {
         int width = 1, height = 1;
         SDL_GetWindowSizeInPixels(window_, &width, &height);
+        renderer_->beginProfileFrame();
         renderer_->beginFrame(width, height);
-        renderer_->drawLoadingScreen(progress, Text::get(textKey));
+        renderer_->drawLoadingScreen(progress, status);
+        renderer_->endFrame();
         SDL_GL_SwapWindow(window_);
         SDL_PumpEvents();
+    };
+    const auto preloadAssets = [this, &showLoading](const std::string& group,
+                                                    float progressStart,
+                                                    float progressRange) {
+        renderer_->preloadAssetGroup(group);
+        AssetLoadProgress progress;
+        do {
+            progress = renderer_->assetProgress(group);
+            std::string phase = Text::get("loading.assets.queued");
+            if (progress.activeState == ResourceState::importing)
+                phase = Text::get("loading.assets.importing");
+            else if (progress.activeState == ResourceState::uploading)
+                phase = Text::get("loading.assets.uploading");
+            else if (progress.finished())
+                phase = progress.failed == 0 ? Text::get("loading.assets.ready")
+                                             : Text::get("loading.assets.failed");
+            showLoading(progressStart + progressRange * progress.fraction(),
+                        Text::format("loading.assets",
+                                     {std::to_string(progress.completed),
+                                      std::to_string(progress.total), phase}));
+            if (!progress.finished())
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        } while (!progress.finished());
+        if (progress.failed > 0)
+            logger_->warning("assets",
+                             std::to_string(progress.failed) + " preload assets failed");
     };
 
     while (running_) {
@@ -197,32 +226,35 @@ int Application::run() {
             const std::uint32_t seed = state->terrainSeed();
             const std::string playerOneCountry = state->playerOneCountry();
             const std::string playerTwoCountry = state->playerTwoCountry();
-            showLoading(0.08F, "loading.terrain");
+            showLoading(0.08F, Text::get("loading.terrain"));
             renderer_->regenerateTerrain(seed);
-            showLoading(0.55F, "loading.world");
+            showLoading(0.32F, Text::get("loading.world"));
+            preloadAssets("match", 0.36F, 0.56F);
             states_->replace<PlayState>(seed, playerOneCountry, playerTwoCountry);
-            showLoading(0.94F, "loading.finalize");
+            showLoading(0.94F, Text::get("loading.finalize"));
             stateContext_->audio.setAmbient(AudioCue::gameAmbient);
         } else if (request == StateRequest::buildMap) {
             logger_->info("state", "Opening map builder");
             const std::uint32_t seed = state->terrainSeed();
-            showLoading(0.08F, "loading.terrain");
+            showLoading(0.08F, Text::get("loading.terrain"));
             renderer_->regenerateTerrain(seed);
-            showLoading(0.60F, "loading.world");
+            showLoading(0.32F, Text::get("loading.world"));
+            preloadAssets("build", 0.36F, 0.56F);
             states_->replace<BuildState>(seed);
-            showLoading(0.94F, "loading.finalize");
+            showLoading(0.94F, Text::get("loading.finalize"));
             stateContext_->audio.setAmbient(AudioCue::buildAmbient);
         } else if (request == StateRequest::loadGame) {
             logger_->info("state", "Loading saved game");
             try {
-                showLoading(0.08F, "loading.save");
+                showLoading(0.08F, Text::get("loading.save"));
                 const GameConfig config = GameConfig::load(stateContext_->configPath);
                 SaveData data = SaveGame::read(config.savePath());
-                showLoading(0.30F, "loading.terrain");
+                showLoading(0.30F, Text::get("loading.terrain"));
                 renderer_->regenerateTerrain(data.terrainSeed);
-                showLoading(0.62F, "loading.world");
+                showLoading(0.36F, Text::get("loading.world"));
+                preloadAssets("match", 0.40F, 0.52F);
                 states_->replace<PlayState>(std::move(data));
-                showLoading(0.94F, "loading.finalize");
+                showLoading(0.94F, Text::get("loading.finalize"));
                 stateContext_->audio.setAmbient(AudioCue::gameAmbient);
             } catch (const std::exception& error) {
                 logger_->error("persistence",
@@ -256,13 +288,21 @@ int Application::run() {
         const float delta = std::chrono::duration<float>(now - previous).count();
         previous = now;
 
+        renderer_->beginProfileFrame();
+        const auto simulationStart = Clock::now();
         states_->current()->update(delta);
+        renderer_->recordProfile(
+            "simulation", std::chrono::duration<double, std::milli>(Clock::now() - simulationStart).count());
 
         int width = 1;
         int height = 1;
         SDL_GetWindowSizeInPixels(window_, &width, &height);
         renderer_->beginFrame(width, height);
+        const auto renderStart = Clock::now();
         states_->current()->render(*renderer_);
+        renderer_->recordProfile(
+            "render.total", std::chrono::duration<double, std::milli>(Clock::now() - renderStart).count());
+        renderer_->endFrame();
         SDL_GL_SwapWindow(window_);
         ++frames;
         const float fpsInterval = std::chrono::duration<float>(now - fpsStart).count();

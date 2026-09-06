@@ -32,6 +32,11 @@ int main() {
     strategy::StateStack stack{context};
 
     bool valid = stack.empty();
+    audio.load();
+    const strategy::AudioHandle click = audio.handle(strategy::AudioCue::uiClick);
+    valid = valid && click && audio.state(click) == strategy::ResourceState::ready;
+    audio.play(click);
+    valid = valid && audio.emittedCueCount() == 1;
     stack.push<TestState>(1);
     valid = valid && stack.empty(); // Mutations are deferred until the dispatch boundary.
     stack.applyPendingChanges();

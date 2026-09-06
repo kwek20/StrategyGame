@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <fstream>
+#include <future>
 #include <iostream>
 #include <rapidjson/document.h>
 #include <rapidjson/istreamwrapper.h>
@@ -10,9 +11,13 @@
 
 namespace strategy {
 
-ResourceManager::ResourceManager(const std::filesystem::path& assetRoot) {
+ResourceManager::ResourceManager(const std::filesystem::path& assetRoot)
+    : manifest_(AssetManifest::load(assetRoot / "asset_manifest.json")),
+      renderThread_(std::this_thread::get_id()) {
     indexModels(assetRoot / "models");
     loadEntityDefinitions(assetRoot / "entities.json");
+    loadingMarker_ = std::make_unique<Model>(makeMarkerModelAsset(false));
+    failedMarker_ = std::make_unique<Model>(makeMarkerModelAsset(true));
     std::cout << "Indexed " << modelPaths_.size() << " model assets\n";
 }
 
@@ -113,24 +118,121 @@ const EntityDefinition* ResourceManager::entityDefinition(const std::string& key
     return found == entityDefinitions_.end() ? nullptr : &found->second;
 }
 
-const Model* ResourceManager::model(const std::string& key) const {
+ModelHandle ResourceManager::requestModel(const std::string& key) const {
+    if (std::this_thread::get_id() != renderThread_)
+        throw std::runtime_error("GPU model access must occur on the render thread");
     const std::string resolved = resolveKey(key);
+    const std::string handleKey = resolved.empty() ? normalizedKey(key) : resolved;
+    if (const auto found = modelHandles_.find(handleKey); found != modelHandles_.end())
+        return found->second;
+    const std::uint32_t index = static_cast<std::uint32_t>(modelSlots_.size());
+    ModelSlot slot;
+    slot.key = handleKey;
     if (resolved.empty()) {
-        return nullptr;
+        slot.state = ResourceState::failed;
+        slot.error = "Model is not indexed";
+    } else {
+        slot.path = modelPaths_.at(resolved);
+        queuedModels_.push_back(index);
     }
-    if (const auto loaded = models_.find(resolved); loaded != models_.end()) {
-        return loaded->second.get();
+    modelSlots_.push_back(std::move(slot));
+    const ModelHandle handle{index, modelSlots_.back().generation};
+    modelHandles_.emplace(handleKey, handle);
+    launchQueuedImports();
+    return handle;
+}
+
+ResourceState ResourceManager::state(ModelHandle handle) const {
+    if (!handle || handle.index >= modelSlots_.size() ||
+        modelSlots_[handle.index].generation != handle.generation)
+        return ResourceState::invalid;
+    return modelSlots_[handle.index].state;
+}
+
+const Model* ResourceManager::model(ModelHandle handle) const {
+    return state(handle) == ResourceState::ready ? modelSlots_[handle.index].model.get() : nullptr;
+}
+
+const Model* ResourceManager::modelOrMarker(ModelHandle handle) const {
+    const ResourceState current = state(handle);
+    if (current == ResourceState::ready)
+        return modelSlots_[handle.index].model.get();
+    return current == ResourceState::failed || current == ResourceState::invalid
+               ? failedMarker_.get()
+               : loadingMarker_.get();
+}
+
+std::string ResourceManager::error(ModelHandle handle) const {
+    return state(handle) == ResourceState::failed ? modelSlots_[handle.index].error : std::string{};
+}
+
+std::vector<ModelHandle> ResourceManager::preloadGroup(const std::string& groupName) const {
+    std::vector<ModelHandle> handles;
+    if (const AssetGroup* group = manifest_.group(groupName)) {
+        handles.reserve(group->models.size());
+        for (const std::string& modelKey : group->models)
+            handles.push_back(requestModel(modelKey));
     }
-    try {
-        auto imported = std::make_unique<Model>(modelPaths_.at(resolved));
-        const Model* result = imported.get();
-        models_.insert_or_assign(resolved, std::move(imported));
-        std::cout << "Imported model '" << resolved << "'\n";
-        return result;
-    } catch (const std::exception& error) {
-        std::cerr << error.what() << '\n';
-        return nullptr;
+    return handles;
+}
+
+AssetLoadProgress ResourceManager::progress(const std::vector<ModelHandle>& handles) const {
+    AssetLoadProgress result;
+    result.total = handles.size();
+    for (ModelHandle handle : handles) {
+        const ResourceState current = state(handle);
+        if (current == ResourceState::ready || current == ResourceState::failed) {
+            ++result.completed;
+            if (current == ResourceState::failed)
+                ++result.failed;
+        } else if (current == ResourceState::uploading || current == ResourceState::importing) {
+            result.activeState = current;
+        } else if (result.activeState == ResourceState::invalid) {
+            result.activeState = current;
+        }
     }
+    return result;
+}
+
+void ResourceManager::launchQueuedImports() const {
+    constexpr std::size_t maximumConcurrentImports = 2;
+    while (pendingModels_.size() < maximumConcurrentImports && !queuedModels_.empty()) {
+        const std::uint32_t index = queuedModels_.front();
+        queuedModels_.pop_front();
+        ModelSlot& slot = modelSlots_[index];
+        slot.state = ResourceState::importing;
+        pendingModels_.emplace(index, std::async(std::launch::async, [path = slot.path] {
+                                   return importModelAsset(path);
+                               }));
+    }
+}
+
+void ResourceManager::update() const {
+    if (std::this_thread::get_id() != renderThread_)
+        throw std::runtime_error("GPU upload queue must be processed on the render thread");
+    using namespace std::chrono_literals;
+    for (auto pending = pendingModels_.begin(); pending != pendingModels_.end();) {
+        if (pending->second.wait_for(0ms) != std::future_status::ready) {
+            ++pending;
+            continue;
+        }
+        const std::uint32_t index = pending->first;
+        ModelSlot& slot = modelSlots_[index];
+        try {
+            std::shared_ptr<ModelAsset> asset = pending->second.get();
+            slot.state = ResourceState::uploading;
+            slot.model = std::make_unique<Model>(std::move(asset));
+            slot.state = ResourceState::ready;
+            ++readyModelCount_;
+            std::cout << "Imported and uploaded model '" << slot.key << "'\n";
+        } catch (const std::exception& error) {
+            slot.state = ResourceState::failed;
+            slot.error = error.what();
+            std::cerr << "Could not prepare model '" << slot.key << "': " << error.what() << '\n';
+        }
+        pending = pendingModels_.erase(pending);
+    }
+    launchQueuedImports();
 }
 
 bool ResourceManager::containsModel(const std::string& key) const {

@@ -1,21 +1,17 @@
-#include <assimp/Importer.hpp>
-#include <assimp/postprocess.h>
-#include <assimp/scene.h>
+#include "assets/ModelAsset.hpp"
+
 #include <filesystem>
 #include <iostream>
 
 namespace {
 
 bool imports(const std::filesystem::path& path, bool expectAnimations) {
-    Assimp::Importer importer;
-    const aiScene* scene = importer.ReadFile(path.string(),
-                                             aiProcess_Triangulate | aiProcess_GenSmoothNormals |
-                                                 aiProcess_JoinIdenticalVertices);
-    if (scene == nullptr || scene->mRootNode == nullptr || scene->mNumMeshes == 0) {
-        std::cerr << "Failed to import " << path << ": " << importer.GetErrorString() << '\n';
+    const auto asset = strategy::importModelAsset(path);
+    if (!asset || asset->meshes.empty()) {
+        std::cerr << "Failed to import " << path << '\n';
         return false;
     }
-    if (expectAnimations && scene->mNumAnimations == 0) {
+    if (expectAnimations && asset->animations.empty()) {
         std::cerr << path << " imported without its expected animations\n";
         return false;
     }

@@ -1,17 +1,22 @@
 #pragma once
 
 #include "assets/ResourceManager.hpp"
+#include "diagnostics/FrameProfiler.hpp"
 #include "persistence/GameConfig.hpp"
 #include "players/Player.hpp"
 #include "render/CameraView.hpp"
 #include "render/FontRenderer.hpp"
+#include "render/ShaderManager.hpp"
 #include "terrain/Terrain.hpp"
 #include "world/Entity.hpp"
 
 #include <array>
+#include <chrono>
 #include <cstdint>
 #include <glm/vec3.hpp>
 #include <memory>
+#include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace strategy {
@@ -31,6 +36,9 @@ class Renderer final {
     Renderer& operator=(const Renderer&) = delete;
 
     void beginFrame(int width, int height);
+    void beginProfileFrame();
+    void recordProfile(const std::string& name, double milliseconds);
+    void endFrame();
     void drawUi(const UiDocument& document) const;
     void drawLoadingScreen(float progress, const std::string& status) const;
     void drawTerrain(const CameraView& camera, const Player* player = nullptr) const;
@@ -95,6 +103,8 @@ class Renderer final {
     }
     void drawPauseMenu(bool resumeHovered, bool settingsHovered, bool exitHovered) const;
     void regenerateTerrain(std::uint32_t seed);
+    void preloadAssetGroup(const std::string& group);
+    [[nodiscard]] AssetLoadProgress assetProgress(const std::string& group);
     void setFramesPerSecond(float fps) {
         framesPerSecond_ = fps;
     }
@@ -113,10 +123,13 @@ class Renderer final {
         float radius{0.0F};
     };
 
-    std::uint32_t program_{0};
-    std::uint32_t modelProgram_{0};
-    std::uint32_t outlineProgram_{0};
-    std::uint32_t hudProgram_{0};
+    ShaderManager shaders_;
+    ShaderHandle program_;
+    ShaderHandle modelProgram_;
+    ShaderHandle outlineProgram_;
+    ShaderHandle hudProgram_;
+    ModelShaderBindings modelBindings_;
+    ModelShaderBindings outlineBindings_;
     std::uint32_t hudVao_{0};
     std::uint32_t hudVbo_{0};
     std::uint32_t explorationTexture_{0};
@@ -129,6 +142,12 @@ class Renderer final {
     float framesPerSecond_{0.0F};
     std::unique_ptr<UiRenderer> uiRenderer_;
     Logger* logger_{nullptr};
+    mutable std::vector<TextDraw> pendingText_;
+    mutable FrameProfiler profiler_;
+    std::chrono::steady_clock::time_point lastSlowFrameLog_{};
+    mutable std::unordered_map<std::string, ModelHandle> modelHandles_;
+    std::unordered_map<std::string, std::vector<ModelHandle>> preloadGroups_;
+    [[nodiscard]] ModelHandle modelHandle(const std::string& archetype) const;
     void drawText(const std::string& text,
                   float x,
                   float y,

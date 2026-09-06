@@ -1,8 +1,9 @@
 #pragma once
+#include "assets/ResourceHandle.hpp"
 #include <cstdint>
 #include <filesystem>
 #include <string>
-#include <unordered_map>
+#include <vector>
 namespace strategy {
 enum class AudioCue {
     uiClick,
@@ -17,7 +18,8 @@ enum class AudioCue {
     trainUnit,
     saveGame,
     loadGame,
-    possessUnit
+    possessUnit,
+    count
 };
 class AudioSystem final {
   public:
@@ -28,7 +30,10 @@ class AudioSystem final {
     void setEffectsVolume(float volume);
     void setMuted(bool muted);
     void play(AudioCue cue);
+    void play(AudioHandle handle);
     void setAmbient(AudioCue cue);
+    [[nodiscard]] AudioHandle handle(AudioCue cue) const;
+    [[nodiscard]] ResourceState state(AudioHandle handle) const;
     [[nodiscard]] float masterVolume() const {
         return masterVolume_;
     }
@@ -44,7 +49,12 @@ class AudioSystem final {
     float musicVolume_{0.8F};
     float effectsVolume_{1.0F};
     bool muted_{false};
-    std::unordered_map<AudioCue, std::filesystem::path> assets_;
+    struct AudioSlot {
+        std::uint32_t generation{1};
+        std::filesystem::path path;
+        ResourceState state{ResourceState::ready};
+    };
+    std::vector<AudioSlot> assets_;
     AudioCue ambient_{AudioCue::menuAmbient};
     std::uint64_t emittedCueCount_{0};
 };

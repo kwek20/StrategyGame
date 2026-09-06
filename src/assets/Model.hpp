@@ -1,4 +1,5 @@
 #pragma once
+#include "assets/ModelAsset.hpp"
 #include <array>
 #include <cstdint>
 #include <filesystem>
@@ -14,13 +15,20 @@ struct Material {
     float opacity{1.0F};
     std::uint32_t baseColorTexture{0};
 };
+struct ModelShaderBindings {
+    std::uint32_t program{0};
+    std::int32_t viewProjection{-1}, model{-1}, useSkinning{-1}, bones{-1};
+    std::int32_t baseColorTexture{-1}, materialDiffuse{-1}, materialOpacity{-1};
+    std::int32_t hasBaseColorTexture{-1};
+};
 class Model final {
   public:
     explicit Model(const std::filesystem::path& path);
+    explicit Model(std::shared_ptr<ModelAsset> asset);
     ~Model();
     Model(const Model&) = delete;
     Model& operator=(const Model&) = delete;
-    void draw(std::uint32_t program,
+    void draw(const ModelShaderBindings& shader,
               const glm::mat4& viewProjection,
               const glm::mat4& worldTransform,
               const std::string& animation = {},
@@ -31,7 +39,7 @@ class Model final {
     [[nodiscard]] bool hasAnimation(const std::string& name) const;
 
   private:
-    static constexpr std::size_t maxBones = 100;
+    static constexpr std::size_t maxBones = ModelAsset::maxBones;
     struct Mesh {
         std::uint32_t vao{0}, vbo{0}, ebo{0}, indexCount{0};
         glm::mat4 nodeTransform{1};
@@ -40,27 +48,11 @@ class Model final {
     };
 
   public:
-    struct KeyVec {
-        double time{0};
-        glm::vec3 value{0};
-    };
-    struct KeyQuat {
-        double time{0};
-        glm::quat value{};
-    };
-    struct Channel {
-        std::vector<KeyVec> positions, scales;
-        std::vector<KeyQuat> rotations;
-    };
-    struct Animation {
-        double duration{0}, ticksPerSecond{25};
-        std::unordered_map<std::string, Channel> channels;
-    };
-    struct Node {
-        std::string name;
-        glm::mat4 transform{1};
-        std::vector<Node> children;
-    };
+    using KeyVec = ModelKeyVec;
+    using KeyQuat = ModelKeyQuat;
+    using Channel = ModelChannel;
+    using Animation = ModelAnimation;
+    using Node = ModelNode;
 
   private:
     std::vector<Mesh> meshes_;

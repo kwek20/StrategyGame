@@ -1,6 +1,7 @@
 #pragma once
 
 #include "render/FontRenderer.hpp"
+#include "render/ShaderManager.hpp"
 
 #include <cstdint>
 #include <string>
@@ -33,7 +34,9 @@ class UiRenderer final {
                    int height) const;
 
   private:
-    std::uint32_t program_{0}, vao_{0}, vbo_{0};
+    ShaderManager shaders_;
+    ShaderHandle program_;
+    std::uint32_t vao_{0}, vbo_{0};
     FontRenderer font_;
 };
 

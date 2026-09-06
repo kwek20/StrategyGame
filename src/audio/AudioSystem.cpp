@@ -22,7 +22,7 @@ const std::pair<const char*, AudioCue> cueNames[] = {
     {"possess_unit", AudioCue::possessUnit}};
 }
 void AudioSystem::load(const std::filesystem::path& manifest) {
-    assets_.clear();
+    assets_.assign(static_cast<std::size_t>(AudioCue::count), AudioSlot{});
     std::ifstream stream(manifest);
     if (!stream)
         return;
@@ -36,7 +36,7 @@ void AudioSystem::load(const std::filesystem::path& manifest) {
         if (document["cues"].HasMember(name) && document["cues"][name].IsString()) {
             const std::string path = document["cues"][name].GetString();
             if (!path.empty())
-                assets_[cue] = manifest.parent_path() / path;
+                assets_[static_cast<std::size_t>(cue)].path = manifest.parent_path() / path;
         }
 }
 void AudioSystem::setMasterVolume(float volume) {
@@ -52,13 +52,27 @@ void AudioSystem::setMuted(bool muted) {
     muted_ = muted;
 }
 void AudioSystem::play(AudioCue cue) {
+    play(handle(cue));
+}
+void AudioSystem::play(AudioHandle audio) {
+    if (state(audio) == ResourceState::invalid || state(audio) == ResourceState::failed)
+        return;
     ++emittedCueCount_;
-    (void)cue; /* Playback backend intentionally accepts empty cue assets. */
+    (void)audio; /* Playback backend intentionally accepts empty cue assets. */
 }
 void AudioSystem::setAmbient(AudioCue cue) {
     if (ambient_ == cue)
         return;
     ambient_ = cue;
     play(cue);
+}
+AudioHandle AudioSystem::handle(AudioCue cue) const {
+    const auto index = static_cast<std::uint32_t>(cue);
+    return index < assets_.size() ? AudioHandle{index, assets_[index].generation} : AudioHandle{};
+}
+ResourceState AudioSystem::state(AudioHandle audio) const {
+    if (!audio || audio.index >= assets_.size() || assets_[audio.index].generation != audio.generation)
+        return ResourceState::invalid;
+    return assets_[audio.index].state;
 }
 } // namespace strategy

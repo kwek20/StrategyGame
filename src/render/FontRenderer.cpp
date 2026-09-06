@@ -1,5 +1,7 @@
 #include "render/FontRenderer.hpp"
 
+#include "render/RenderPass.hpp"
+
 #include <ft2build.h>
 #include <glad/glad.h>
 #include FT_FREETYPE_H
@@ -12,19 +14,8 @@ namespace strategy {
 namespace {
 struct Vertex {
     glm::vec2 position, uv;
+    glm::vec3 color;
 };
-std::uint32_t shader(GLenum type, const char* source) {
-    auto id = glCreateShader(type);
-    glShaderSource(id, 1, &source, nullptr);
-    glCompileShader(id);
-    GLint ok = 0;
-    glGetShaderiv(id, GL_COMPILE_STATUS, &ok);
-    if (!ok) {
-        glDeleteShader(id);
-        throw std::runtime_error("Font shader compilation failed");
-    }
-    return id;
-}
 std::filesystem::path fontPath() {
     for (const auto& path : {std::filesystem::path{"assets/fonts/Inter-Bold.ttf"},
                              std::filesystem::path{"C:/Windows/Fonts/segoeuib.ttf"},
@@ -85,16 +76,10 @@ FontRenderer::FontRenderer() {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     constexpr const char* vs = R"(#version 450 core
-layout(location=0)in vec2 position;layout(location=1)in vec2 uvIn;uniform vec2 offset;out vec2 uv;void main(){gl_Position=vec4(position+offset,0,1);uv=uvIn;})";
+layout(location=0)in vec2 position;layout(location=1)in vec2 uvIn;layout(location=2)in vec3 colorIn;out vec2 uv;out vec3 color;void main(){gl_Position=vec4(position,0,1);uv=uvIn;color=colorIn;})";
     constexpr const char* fs = R"(#version 450 core
-in vec2 uv;uniform sampler2D atlas;uniform vec3 color;out vec4 outColor;void main(){float a=texture(atlas,uv).r;outColor=vec4(color,a);})";
-    auto v = shader(GL_VERTEX_SHADER, vs), f = shader(GL_FRAGMENT_SHADER, fs);
-    program_ = glCreateProgram();
-    glAttachShader(program_, v);
-    glAttachShader(program_, f);
-    glLinkProgram(program_);
-    glDeleteShader(v);
-    glDeleteShader(f);
+in vec2 uv;in vec3 color;uniform sampler2D atlas;out vec4 outColor;void main(){float a=texture(atlas,uv).r;outColor=vec4(color,a);})";
+    program_ = shaders_.load("font", vs, fs);
     glGenVertexArrays(1, &vao_);
     glGenBuffers(1, &vbo_);
     glBindVertexArray(vao_);
@@ -103,12 +88,14 @@ in vec2 uv;uniform sampler2D atlas;uniform vec3 color;out vec4 outColor;void mai
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), nullptr);
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)sizeof(glm::vec2));
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(
+        2, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)(sizeof(glm::vec2) * 2));
     glBindVertexArray(0);
 }
 FontRenderer::~FontRenderer() {
     glDeleteBuffers(1, &vbo_);
     glDeleteVertexArrays(1, &vao_);
-    glDeleteProgram(program_);
     glDeleteTextures(1, &texture_);
 }
 void FontRenderer::draw(const std::string& text,
@@ -118,48 +105,58 @@ void FontRenderer::draw(const std::string& text,
                         glm::vec3 color,
                         int width,
                         int height) const {
-    const float scale = pixelHeight / 48.0F;
-    const float baseline = top + pixelHeight;
-    std::vector<Vertex> vertices;
-    for (unsigned char c : text) {
-        if (c >= glyphs_.size())
-            continue;
-        const Glyph& g = glyphs_[c];
-        const float left = x + g.bearing.x * scale, right = left + g.size.x * scale,
-                    bottom = baseline - g.bearing.y * scale, lower = bottom + g.size.y * scale;
-        auto ndc = [width, height](float px, float py) {
-            return glm::vec2{px / width * 2 - 1, 1 - py / height * 2};
+    drawBatch({TextDraw{text, x, top, pixelHeight, color}}, width, height);
+}
+
+void FontRenderer::drawBatch(const std::vector<TextDraw>& draws, int width, int height) const {
+    std::vector<Vertex> shadows;
+    std::vector<Vertex> glyphs;
+    const auto append = [&](const TextDraw& draw, glm::vec2 offset, glm::vec3 color,
+                            std::vector<Vertex>& output) {
+        float x = draw.x;
+        const float scale = draw.pixelHeight / 48.0F;
+        const float baseline = draw.top + draw.pixelHeight;
+        const auto ndc = [width, height, offset](float px, float py) {
+            return glm::vec2{(px + offset.x) / width * 2 - 1,
+                             1 - (py + offset.y) / height * 2};
         };
-        vertices.insert(vertices.end(),
-                        {{ndc(left, bottom), {g.uvMin.x, g.uvMin.y}},
-                         {ndc(left, lower), {g.uvMin.x, g.uvMax.y}},
-                         {ndc(right, bottom), {g.uvMax.x, g.uvMin.y}},
-                         {ndc(right, bottom), {g.uvMax.x, g.uvMin.y}},
-                         {ndc(left, lower), {g.uvMin.x, g.uvMax.y}},
-                         {ndc(right, lower), {g.uvMax.x, g.uvMax.y}}});
-        x += g.advance * scale;
+        for (unsigned char c : draw.text) {
+            if (c >= glyphs_.size())
+                continue;
+            const Glyph& glyph = glyphs_[c];
+            const float left = x + glyph.bearing.x * scale,
+                        right = left + glyph.size.x * scale,
+                        bottom = baseline - glyph.bearing.y * scale,
+                        lower = bottom + glyph.size.y * scale;
+            output.insert(output.end(),
+                          {{ndc(left, bottom), {glyph.uvMin.x, glyph.uvMin.y}, color},
+                           {ndc(left, lower), {glyph.uvMin.x, glyph.uvMax.y}, color},
+                           {ndc(right, bottom), {glyph.uvMax.x, glyph.uvMin.y}, color},
+                           {ndc(right, bottom), {glyph.uvMax.x, glyph.uvMin.y}, color},
+                           {ndc(left, lower), {glyph.uvMin.x, glyph.uvMax.y}, color},
+                           {ndc(right, lower), {glyph.uvMax.x, glyph.uvMax.y}, color}});
+            x += glyph.advance * scale;
+        }
+    };
+    for (const TextDraw& draw : draws) {
+        append(draw, {2, 2}, {0.01F, 0.015F, 0.02F}, shadows);
+        append(draw, {0, 0}, draw.color, glyphs);
     }
-    if (vertices.empty())
+    shadows.insert(shadows.end(), glyphs.begin(), glyphs.end());
+    if (shadows.empty())
         return;
-    glUseProgram(program_);
+
+    RenderPass pass(RenderPassKind::userInterface);
     glActiveTexture(GL_TEXTURE0);
+    shaders_.use(program_);
     glBindTexture(GL_TEXTURE_2D, texture_);
-    glUniform1i(glGetUniformLocation(program_, "atlas"), 0);
+    glUniform1i(shaders_.uniform(program_, "atlas"), 0);
     glBindVertexArray(vao_);
     glBindBuffer(GL_ARRAY_BUFFER, vbo_);
     glBufferData(GL_ARRAY_BUFFER,
-                 GLsizeiptr(vertices.size() * sizeof(Vertex)),
-                 vertices.data(),
+                 GLsizeiptr(shadows.size() * sizeof(Vertex)),
+                 shadows.data(),
                  GL_DYNAMIC_DRAW);
-    const GLint colorLocation = glGetUniformLocation(program_, "color"),
-                offsetLocation = glGetUniformLocation(program_, "offset");
-    const glm::vec3 shadow{0.01F, 0.015F, 0.02F};
-    glUniform3fv(colorLocation, 1, &shadow.x);
-    glUniform2f(offsetLocation, 2.0F / width, -2.0F / height);
-    glDrawArrays(GL_TRIANGLES, 0, GLsizei(vertices.size()));
-    glUniform3fv(colorLocation, 1, &color.x);
-    glUniform2f(offsetLocation, 0.0F, 0.0F);
-    glDrawArrays(GL_TRIANGLES, 0, GLsizei(vertices.size()));
-    glBindVertexArray(0);
+    glDrawArrays(GL_TRIANGLES, 0, GLsizei(shadows.size()));
 }
 } // namespace strategy
