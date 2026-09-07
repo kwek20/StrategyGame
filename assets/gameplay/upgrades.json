@@ -1,7 +1,7 @@
 {
   "version": 1,
   "upgrades": [
-    { "id": "building.town_center_level_2", "researchRecipe": "town_center.research_level_2", "maximumLevel": 1, "prerequisites": [], "allowedResearchers": ["town_center"], "nameKey": "upgrade.town_center_level_2", "icon": "ui/placeholder", "modifiers": [] },
+    { "id": "building.town_center_level_2", "researchRecipe": "town_center.research_level_2", "maximumLevel": 1, "prerequisites": [], "allowedResearchers": ["town_center"], "nameKey": "upgrade.town_center_level_2", "icon": "upgrade_town_center_level_2", "modifiers": [] },
     {
       "id": "production.efficient_training",
       "researchRecipe": "research.efficient_training",
@@ -9,7 +9,7 @@
       "prerequisites": [],
       "allowedResearchers": ["town_center", "outpost", "command_hub"],
       "nameKey": "upgrade.efficient_training",
-      "icon": "ui/placeholder",
+      "icon": "upgrade_efficient_training",
       "modifiers": [
         { "id": "upgrade.efficient_training.speed", "stat": "trainingTime", "operation": "multiply", "value": 0.9, "target": { "tags": ["unit"] } }
       ]

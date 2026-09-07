@@ -3,21 +3,21 @@
   "groups": {
     "main_menu": {
       "models": [],
-      "textures": ["ui/placeholder"],
+      "textures": ["ui/placeholder", "icons/icons_atlas"],
       "shaders": ["hud", "ui", "font"],
       "sounds": ["ui_click", "menu_ambient"],
       "definitions": ["entities", "gameplay", "countries", "text"]
     },
     "match": {
       "models": ["town_center", "worker", "construction_drone", "tree", "stone", "gold"],
-      "textures": ["ui/placeholder", "terrain/grass", "terrain/dirt", "terrain/rock", "terrain/dry_ground", "foundation_concrete"],
+      "textures": ["ui/placeholder", "icons/icons_atlas", "terrain/grass", "terrain/dirt", "terrain/rock", "terrain/dry_ground", "foundation_concrete"],
       "shaders": ["terrain", "model", "outline", "hud", "ui", "font"],
       "sounds": ["game_ambient", "selection", "move_order", "building_open", "building_upgrade", "training_upgrade", "train_unit", "save_game", "load_game", "possess_unit"],
       "definitions": ["entities", "gameplay", "countries", "text"]
     },
     "build": {
       "models": ["town_center", "worker", "construction_drone", "tree", "stone", "gold"],
-      "textures": ["ui/placeholder", "terrain/grass", "terrain/dirt", "terrain/rock", "terrain/dry_ground", "foundation_concrete"],
+      "textures": ["ui/placeholder", "icons/icons_atlas", "terrain/grass", "terrain/dirt", "terrain/rock", "terrain/dry_ground", "foundation_concrete"],
       "shaders": ["terrain", "model", "outline", "hud", "ui", "font"],
       "sounds": ["build_ambient", "ui_click", "save_game"],
       "definitions": ["entities", "gameplay", "countries", "text"]

@@ -200,6 +200,7 @@ Renderer::Renderer(Logger* logger)
         logger_->info("renderer", "OpenGL debug output enabled");
     }
     uiRenderer_ = std::make_unique<UiRenderer>(shaders_);
+    iconAtlas_ = IconAtlas::load("assets/icons_atlas.json");
 
     program_ = createTerrainProgram(shaders_);
     modelProgram_ = createModelProgram(shaders_);
@@ -329,6 +330,27 @@ void Renderer::drawUi(const UiDocument& document) const {
     renderGraph_.enter(RenderPassKind::userInterface);
     ProfileScope profile(profiler_, "render.ui");
     uiRenderer_->draw(document, viewportWidth_, viewportHeight_);
+}
+
+void Renderer::drawIcon(const std::string& id, float left, float top, float right, float bottom,
+                        const glm::vec3& tint) const {
+    const IconRegion* region = iconAtlas_.region(id);
+    if (!region)
+        return;
+    if (!iconAtlasTexture_)
+        iconAtlasTexture_ = resources_.requestTexture(iconAtlas_.texture());
+    const Texture* texture = resources_.textureOrMarker(iconAtlasTexture_);
+    if (!texture)
+        return;
+    const float u0 = static_cast<float>(region->x) / iconAtlas_.width();
+    const float u1 = static_cast<float>(region->x + region->width) / iconAtlas_.width();
+    // stb_image uploads the source's first (top) scanline as texture row zero. Mapping
+    // screen-top to the lower V value both selects top-origin atlas regions and displays
+    // their source pixels upright.
+    const float v0 = static_cast<float>(region->y) / iconAtlas_.height();
+    const float v1 = static_cast<float>(region->y + region->height) / iconAtlas_.height();
+    uiRenderer_->image(texture->id(), left, top, right, bottom, u0, v0, u1, v1, tint,
+                       viewportWidth_, viewportHeight_);
 }
 
 Renderer::~Renderer() {
@@ -1122,17 +1144,16 @@ void Renderer::drawResourceHud(const Player& player) const {
         const auto found = player.resources.find(id);
         return found == player.resources.end() ? 0.0F : found->second;
     };
-    drawText(Text::format("strategy.resources",
-                          {std::to_string(static_cast<unsigned>(amount("wood"))),
-                           std::to_string(static_cast<unsigned>(amount("stone"))),
-                           std::to_string(static_cast<unsigned>(amount("gold"))),
-                           std::to_string(static_cast<unsigned>(amount("materials")))}),
-             20.0F,
-             17.0F,
-             1.45F);
     glBindVertexArray(0);
     glEnable(GL_CULL_FACE);
     glEnable(GL_DEPTH_TEST);
+    static constexpr std::array<const char*, 5> ids{"wood", "stone", "gold", "materials", "power"};
+    float left = 18.0F;
+    for (const char* id : ids) {
+        drawIcon(std::string("resource_") + id, left, 13.0F, left + 26.0F, 39.0F);
+        drawText(std::to_string(static_cast<unsigned>(amount(id))), left + 30.0F, 17.0F, 1.35F);
+        left += 106.0F;
+    }
 }
 
 void Renderer::drawStartMenu(bool startHovered,
@@ -1583,6 +1604,9 @@ void Renderer::drawBuildHud(PlayerId team,
     glBindVertexArray(0);
     glEnable(GL_CULL_FACE);
     glEnable(GL_DEPTH_TEST);
+    drawIcon("building_command_hub", 38.0F, static_cast<float>(viewportHeight_) - 72.0F,
+             76.0F, static_cast<float>(viewportHeight_) - 34.0F,
+             active ? glm::vec3{0.75F, 1.0F, 0.75F} : glm::vec3{1.0F});
 }
 
 void Renderer::drawStrategyHud(const World& world, EntityId selected, const Player* player) const {
@@ -1949,6 +1973,7 @@ void Renderer::drawTownHallHud(const Entity& hall, const std::array<bool, 3>& ho
 
 void Renderer::drawEntityActionHud(const Entity& entity,
                                    const std::vector<std::string>& labels,
+                                   const std::vector<std::string>& icons,
                                    const std::vector<std::string>& costs,
                                    const std::vector<bool>& enabled,
                                    int hovered,
@@ -1999,6 +2024,12 @@ void Renderer::drawEntityActionHud(const Entity& entity,
     if (entity.production && entity.production.queue.size() > 9)
         drawText("+ " + std::to_string(entity.production.queue.size()-9),526,top+96,1.35F);
     glBindVertexArray(0); glEnable(GL_CULL_FACE); glEnable(GL_DEPTH_TEST);
+    for (std::size_t i = 0; i < count && i < icons.size(); ++i) {
+        const float left = 30.0F + static_cast<float>(i) * 96.0F;
+        const glm::vec3 tint = i < enabled.size() && enabled[i] ? glm::vec3{1.0F}
+                                                                : glm::vec3{0.34F};
+        drawIcon(icons[i], left + 14.0F, height - 82.0F, left + 68.0F, height - 32.0F, tint);
+    }
 }
 
 void Renderer::drawSelectionBox(const glm::vec2& start, const glm::vec2& end) const {

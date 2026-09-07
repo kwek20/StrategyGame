@@ -32,6 +32,18 @@ class UiRenderer final {
                    const glm::vec3& color,
                    int width,
                    int height) const;
+    void image(std::uint32_t texture,
+               float left,
+               float top,
+               float right,
+               float bottom,
+               float u0,
+               float v0,
+               float u1,
+               float v1,
+               const glm::vec3& tint,
+               int width,
+               int height) const;
 
   private:
     ShaderManager& shaders_;

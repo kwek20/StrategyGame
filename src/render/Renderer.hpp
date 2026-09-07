@@ -1,6 +1,7 @@
 #pragma once
 
 #include "assets/ResourceManager.hpp"
+#include "assets/IconAtlas.hpp"
 #include "diagnostics/FrameProfiler.hpp"
 #include "persistence/GameConfig.hpp"
 #include "players/Player.hpp"
@@ -79,6 +80,7 @@ class Renderer final {
     void drawTownHallHud(const Entity& townHall, const std::array<bool, 3>& hovered) const;
     void drawEntityActionHud(const Entity& entity,
                              const std::vector<std::string>& labels,
+                             const std::vector<std::string>& icons,
                              const std::vector<std::string>& costs,
                              const std::vector<bool>& enabled,
                              int hovered,
@@ -177,6 +179,7 @@ class Renderer final {
     std::uint32_t terrainSeed_{0x5EED1234U};
     std::vector<TerrainFoundation> terrainFoundations_;
     ResourceManager resources_{"assets"};
+    IconAtlas iconAtlas_;
     FontRenderer font_;
     std::vector<TerrainChunk> terrainChunks_;
     std::vector<FoundationMesh> foundationMeshes_;
@@ -194,9 +197,12 @@ class Renderer final {
     mutable std::unordered_map<std::string, ModelHandle> modelHandles_;
     mutable std::array<TextureHandle, 4> terrainTextures_{};
     mutable TextureHandle foundationTexture_{};
+    mutable TextureHandle iconAtlasTexture_{};
     std::unordered_map<std::string, AssetPreloadSet> preloadGroups_;
     [[nodiscard]] ModelHandle modelHandle(const std::string& archetype) const;
     void bindTerrainTextures() const;
+    void drawIcon(const std::string& id, float left, float top, float right, float bottom,
+                  const glm::vec3& tint = {1.0F, 1.0F, 1.0F}) const;
     void refreshModelShaderBindings();
     void uploadTerrainChunk(int chunkX, int chunkZ);
     void syncFoundationMeshes();

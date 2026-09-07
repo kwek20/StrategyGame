@@ -14,6 +14,7 @@ namespace {
 struct UiVertex {
     glm::vec2 position;
     glm::vec3 color;
+    glm::vec2 uv{0.0F};
 };
 
 void appendRectangle(std::vector<UiVertex>& output,
@@ -52,6 +53,9 @@ UiRenderer::UiRenderer(ShaderManager& shaders)
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(
         1, 3, GL_FLOAT, GL_FALSE, sizeof(UiVertex), (void*)offsetof(UiVertex, color));
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(
+        2, 2, GL_FLOAT, GL_FALSE, sizeof(UiVertex), (void*)offsetof(UiVertex, uv));
     glBindVertexArray(0);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 }
@@ -72,6 +76,7 @@ void UiRenderer::rectangle(float left,
     appendRectangle(vertices, left, top, right, bottom, color, width, height);
     RenderPass pass(RenderPassKind::userInterface);
     shaders_.use(program_);
+    glUniform1i(shaders_.uniform(program_, "useTexture"), 0);
     glBindVertexArray(vao_);
     glBindBuffer(GL_ARRAY_BUFFER, vbo_);
     glBufferData(GL_ARRAY_BUFFER,
@@ -79,6 +84,32 @@ void UiRenderer::rectangle(float left,
                  vertices.data(),
                  GL_DYNAMIC_DRAW);
     glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(vertices.size()));
+}
+
+void UiRenderer::image(std::uint32_t texture,
+                       float left, float top, float right, float bottom,
+                       float u0, float v0, float u1, float v1,
+                       const glm::vec3& tint, int width, int height) const {
+    const auto point = [width, height](float x, float y) {
+        return glm::vec2{x / static_cast<float>(width) * 2.0F - 1.0F,
+                         1.0F - y / static_cast<float>(height) * 2.0F};
+    };
+    const std::vector<UiVertex> vertices{
+        {point(left, top), tint, {u0, v0}}, {point(left, bottom), tint, {u0, v1}},
+        {point(right, top), tint, {u1, v0}}, {point(right, top), tint, {u1, v0}},
+        {point(left, bottom), tint, {u0, v1}}, {point(right, bottom), tint, {u1, v1}}};
+    RenderPass pass(RenderPassKind::userInterface);
+    shaders_.use(program_);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glUniform1i(shaders_.uniform(program_, "uiTexture"), 0);
+    glUniform1i(shaders_.uniform(program_, "useTexture"), 1);
+    glBindVertexArray(vao_);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo_);
+    glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(vertices.size() * sizeof(UiVertex)),
+                 vertices.data(), GL_DYNAMIC_DRAW);
+    glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(vertices.size()));
+    glUniform1i(shaders_.uniform(program_, "useTexture"), 0);
 }
 
 void UiRenderer::text(const std::string& value,
@@ -120,6 +151,7 @@ void UiRenderer::draw(const UiDocument& document, int width, int height) const {
     RenderPass pass(RenderPassKind::userInterface);
     if (!rectangles.empty()) {
         shaders_.use(program_);
+        glUniform1i(shaders_.uniform(program_, "useTexture"), 0);
         glBindVertexArray(vao_);
         glBindBuffer(GL_ARRAY_BUFFER, vbo_);
         glBufferData(GL_ARRAY_BUFFER,

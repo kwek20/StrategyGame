@@ -1,33 +1,33 @@
 {
   "version": 1,
   "resources": {
-    "wood": { "nameKey": "resource.wood", "icon": "ui/placeholder", "tags": ["stockpile", "raw"], "storage": "stockpile", "enabled": true },
-    "stone": { "nameKey": "resource.stone", "icon": "ui/placeholder", "tags": ["stockpile", "raw"], "storage": "stockpile", "enabled": true },
-    "gold": { "nameKey": "resource.gold", "icon": "ui/placeholder", "tags": ["stockpile", "raw"], "storage": "stockpile", "enabled": true },
+    "wood": { "nameKey": "resource.wood", "icon": "resource_wood", "tags": ["stockpile", "raw"], "storage": "stockpile", "enabled": true },
+    "stone": { "nameKey": "resource.stone", "icon": "resource_stone", "tags": ["stockpile", "raw"], "storage": "stockpile", "enabled": true },
+    "gold": { "nameKey": "resource.gold", "icon": "resource_gold", "tags": ["stockpile", "raw"], "storage": "stockpile", "enabled": true },
     "materials": {
       "nameKey": "resource.materials",
-      "icon": "ui/placeholder",
+      "icon": "resource_materials",
       "tags": ["stockpile", "construction"],
       "storage": "stockpile",
       "enabled": true
     },
     "power": {
       "nameKey": "resource.power",
-      "icon": "ui/placeholder",
+      "icon": "resource_power",
       "tags": ["network", "energy"],
       "storage": "network",
       "enabled": true
     },
     "components": {
       "nameKey": "resource.components",
-      "icon": "ui/placeholder",
+      "icon": "resource_components",
       "tags": ["stockpile", "advanced"],
       "storage": "stockpile",
       "enabled": false
     },
     "fuel": {
       "nameKey": "resource.fuel",
-      "icon": "ui/placeholder",
+      "icon": "resource_fuel",
       "tags": ["stockpile", "logistics"],
       "storage": "stockpile",
       "enabled": false

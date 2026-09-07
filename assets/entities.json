@@ -36,7 +36,7 @@
       }
     },
     "construction_drone": {
-      "model": "units/drone",
+      "model": "units/drone2",
       "scale": 0.8,
       "grounding": { "groundOffset": 0.0, "alignToTerrain": false, "maximumTilt": 0.0, "foundationRadius": 0.0 },
       "selection": { "radius": 1.2, "height": 2.4 },

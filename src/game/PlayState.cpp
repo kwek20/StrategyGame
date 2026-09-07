@@ -743,13 +743,21 @@ void PlayState::render(Renderer& renderer) const {
             renderer.drawUnitSelectionHud(session_.world(), selectedUnits_);
         if (selected && selected->authority.owner == localPlayer_ &&
             (selectedUnits_.empty() || sameType)) {
-            std::vector<std::string> labels, costs;
+            std::vector<std::string> labels, icons, costs;
             std::vector<bool> enabled;
             const std::vector<EntityId> targets = actionTargets(selectedEntity_, selectedUnits_);
             const auto recipes = context_.definitions.recipesForProducer(selected->archetype.value);
             for (const RecipeDefinition* recipe : recipes) {
                 const EntityArchetype* product = context_.definitions.archetype(recipe->product.id);
                 labels.push_back(product ? Text::get(product->nameKey) : recipe->product.id);
+                if (recipe->product.kind == RecipeProductKind::unit)
+                    icons.push_back("unit_" + recipe->product.id);
+                else if (recipe->product.kind == RecipeProductKind::resource)
+                    icons.push_back("resource_" + recipe->product.id);
+                else if (recipe->product.id.starts_with("town_center"))
+                    icons.push_back("building_town_center");
+                else
+                    icons.push_back("building_" + recipe->product.id);
                 std::string cost;
                 for (const auto& [resource, amount] : recipe->cost)
                     cost += resource + ": " + std::to_string(static_cast<int>(amount)) + " ";
@@ -763,6 +771,7 @@ void PlayState::render(Renderer& renderer) const {
             }
             for (const UpgradeDefinition* upgrade : context_.definitions.upgradesForResearcher(selected->archetype.value)) {
                 labels.push_back(Text::get(upgrade->nameKey));
+                icons.push_back(upgrade->icon);
                 std::string cost;
                 if (const RecipeDefinition* recipe = context_.definitions.recipe(RecipeId{upgrade->researchRecipe}))
                     for (const auto& [resource, amount] : recipe->cost)
@@ -790,6 +799,7 @@ void PlayState::render(Renderer& renderer) const {
                 }
             renderer.drawEntityActionHud(*selected,
                                          labels,
+                                         icons,
                                          costs,
                                          enabled,
                                          entityActionHovered_,

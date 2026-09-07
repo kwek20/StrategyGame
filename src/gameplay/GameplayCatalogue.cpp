@@ -477,16 +477,29 @@ void DefinitionRegistry::validateReferences() const {
                 throw std::runtime_error("Starting entity references unknown localization key '" +
                                          start.nameKey + "'");
         }
+    std::unordered_set<std::string> atlasIcons;
+    const std::filesystem::path atlasPath = textureRoot_.parent_path() / "icons_atlas.json";
+    if (std::filesystem::exists(atlasPath)) {
+        const rapidjson::Document atlas = document(atlasPath);
+        if (atlas.HasMember("regions") && atlas["regions"].IsObject())
+            for (auto member = atlas["regions"].MemberBegin();
+                 member != atlas["regions"].MemberEnd(); ++member)
+                atlasIcons.emplace(member->name.GetString());
+    }
+    const auto iconExists = [&](const std::string& icon) {
+        if (atlasIcons.contains(icon))
+            return true;
+        for (const char* extension : {".png", ".ppm", ".jpg", ".jpeg"})
+            if (std::filesystem::exists(textureRoot_ / (icon + extension)))
+                return true;
+        return false;
+    };
     for (const auto& [id, resource] : resourceTypes_) {
         if (!localizationKeys_.contains(resource.nameKey))
             throw std::runtime_error("Resource '" + id +
                                      "' references unknown localization key '" +
                                      resource.nameKey + "'");
-        bool iconExists = false;
-        for (const char* extension : {".png", ".ppm", ".jpg", ".jpeg"})
-            iconExists = iconExists ||
-                         std::filesystem::exists(textureRoot_ / (resource.icon + extension));
-        if (!iconExists)
+        if (!iconExists(resource.icon))
             throw std::runtime_error("Resource '" + id + "' references missing icon '" +
                                      resource.icon + "'");
     }
@@ -495,10 +508,7 @@ void DefinitionRegistry::validateReferences() const {
         // catalogues may intentionally omit unrelated upgrades.
         if (!localizationKeys_.contains(definition.nameKey))
             throw std::runtime_error("Upgrade '" + id + "' references unknown localization key");
-        bool iconExists = false;
-        for (const char* extension : {".png", ".ppm", ".jpg", ".jpeg"})
-            iconExists = iconExists || std::filesystem::exists(textureRoot_ / (definition.icon + extension));
-        if (!iconExists)
+        if (!iconExists(definition.icon))
             throw std::runtime_error("Upgrade '" + id + "' references missing icon '" + definition.icon + "'");
         for (const auto& modifier : definition.modifiers)
             if (!modifier.target.entity.empty() && !entities_.contains(modifier.target.entity))
