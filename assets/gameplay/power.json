@@ -23,6 +23,10 @@
       "tags": ["consumer", "charger"],
       "consumption": 5,
       "chargePerTick": 2
+    },
+    "material_processor": {
+      "tags": ["consumer", "processor"],
+      "consumption": 8
     }
   }
 }

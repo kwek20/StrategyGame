@@ -24,6 +24,7 @@ int main() {
     config.resolutionWidth = 1920;
     config.resolutionHeight = 1080;
     config.fullscreen = true;
+    config.uiScale = 1.3F;
     config.masterVolume = 0.7F;
     config.musicVolume = 0.4F;
     config.effectsVolume = 0.9F;
@@ -33,6 +34,7 @@ int main() {
     const strategy::GameConfig settingsRoundTrip = strategy::GameConfig::load(configPath);
     valid = valid && settingsRoundTrip.resolutionWidth == 1920 &&
             settingsRoundTrip.resolutionHeight == 1080 && settingsRoundTrip.fullscreen &&
+            settingsRoundTrip.uiScale == 1.3F &&
             settingsRoundTrip.keybinds.at("forward") == 42 &&
             settingsRoundTrip.masterVolume == 0.7F && settingsRoundTrip.musicVolume == 0.4F &&
             settingsRoundTrip.effectsVolume == 0.9F && settingsRoundTrip.muted;
@@ -59,6 +61,11 @@ int main() {
     production.durationTicks = 210;
     production.remainingTicks = 135;
     entity.production.queue.push_back(production);
+    entity.construction.emplace();
+    entity.construction.recipeId = "construct.command_hub";
+    entity.construction.powerRequired = 120.0F;
+    entity.construction.powerProgress = 30.0F;
+    entity.construction.state = strategy::BuildingLifecycleState::underConstruction;
     const strategy::EntityId originalId = entity.id;
     world.foundations().push_back({{1.0F, 6.0F, 3.0F}, 5.0F, 7.0F});
     strategy::PlayerRegistry players{"france", "brazil"};
@@ -91,6 +98,11 @@ int main() {
     valid = valid && loaded.entities[0].production.productionSpeedMultiplier == 1.4F;
     valid = valid && loaded.entities[0].production.productionSpeedUpgrades == 4;
     valid = valid && loaded.entities[0].production.queue.size() == 1;
+    valid = valid && loaded.entities[0].construction &&
+            loaded.entities[0].construction.recipeId == "construct.command_hub" &&
+            loaded.entities[0].construction.powerProgress == 30.0F &&
+            loaded.entities[0].construction.state ==
+                strategy::BuildingLifecycleState::underConstruction;
     valid = valid && loaded.entities[0].production.queue.front().remainingTicks == 135 &&
             loaded.entities[0].production.queue.front().recipeId ==
                 "town_center.train_construction_drone" &&

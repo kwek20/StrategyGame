@@ -2,6 +2,7 @@
   "version": 1,
   "entities": {
     "town_center": {
+      "icon": "building_town_center",
       "model": "buildings/TownCenter_FirstAge_Level1",
       "scale": 12.0,
       "grounding": { "groundOffset": 0.0, "alignToTerrain": false, "maximumTilt": 0.0, "foundationRadius": 10.5, "maximumFoundationSlope": 10.0 },
@@ -9,6 +10,7 @@
       "animations": {}
     },
     "town_center_level_2": {
+      "icon": "building_town_center",
       "model": "buildings/TownCenter_FirstAge_Level2",
       "scale": 12.0,
       "grounding": { "groundOffset": 0.0, "alignToTerrain": false, "maximumTilt": 0.0, "foundationRadius": 10.5, "maximumFoundationSlope": 10.0 },
@@ -16,6 +18,7 @@
       "animations": {}
     },
     "town_center_level_3": {
+      "icon": "building_town_center",
       "model": "buildings/TownCenter_FirstAge_Level3",
       "scale": 12.0,
       "grounding": { "groundOffset": 0.0, "alignToTerrain": false, "maximumTilt": 0.0, "foundationRadius": 10.5, "maximumFoundationSlope": 10.0 },
@@ -23,6 +26,7 @@
       "animations": {}
     },
     "worker": {
+      "icon": "unit_worker",
       "model": "units/Worker_Male",
       "scale": 0.55,
       "grounding": { "groundOffset": 0.0, "alignToTerrain": true, "maximumTilt": 8.0, "foundationRadius": 0.0 },
@@ -36,6 +40,7 @@
       }
     },
     "construction_drone": {
+      "icon": "unit_construction_drone",
       "model": "units/drone2",
       "scale": 0.8,
       "grounding": { "groundOffset": 0.0, "alignToTerrain": false, "maximumTilt": 0.0, "foundationRadius": 0.0 },
@@ -43,6 +48,7 @@
       "animations": {}
     },
     "tree": {
+      "icon": "resource_wood",
       "model": "buildings/Resource_PineTree",
       "scale": 8.0,
       "grounding": { "groundOffset": -0.12, "alignToTerrain": false, "maximumTilt": 0.0, "foundationRadius": 0.0, "sinkVariance": 0.12 },
@@ -50,6 +56,7 @@
       "animations": {}
     },
     "stone": {
+      "icon": "resource_stone",
       "model": "buildings/Resource_Rock_1",
       "scale": 6.0,
       "grounding": { "groundOffset": -0.18, "alignToTerrain": true, "maximumTilt": 16.0, "foundationRadius": 0.0, "sinkVariance": 0.2 },
@@ -57,10 +64,43 @@
       "animations": {}
     },
     "gold": {
+      "icon": "resource_gold",
       "model": "buildings/Resource_Gold_1",
       "scale": 6.0,
       "grounding": { "groundOffset": -0.18, "alignToTerrain": true, "maximumTilt": 16.0, "foundationRadius": 0.0, "sinkVariance": 0.2 },
       "selection": { "radius": 2.0, "height": 2.5 },
+      "animations": {}
+    },
+    "storage_silo": {
+      "icon": "building_storage_silo",
+      "model": "buildings/Storage_FirstAge_Level1",
+      "scale": 8.0,
+      "grounding": { "groundOffset": 0.0, "alignToTerrain": false, "maximumTilt": 0.0, "foundationRadius": 4.0, "maximumFoundationSlope": 10.0 },
+      "selection": { "radius": 4.5, "height": 5.0 },
+      "animations": {}
+    },
+    "material_processor": {
+      "icon": "building_material_processor",
+      "model": "buildings/Barracks_FirstAge_Level1",
+      "scale": 7.0,
+      "grounding": { "groundOffset": 0.0, "alignToTerrain": false, "maximumTilt": 0.0, "foundationRadius": 5.0, "maximumFoundationSlope": 10.0 },
+      "selection": { "radius": 5.0, "height": 5.0 },
+      "animations": {}
+    },
+    "basic_generator": {
+      "icon": "building_basic_generator",
+      "model": "buildings/Windmill_FirstAge",
+      "scale": 6.0,
+      "grounding": { "groundOffset": 0.0, "alignToTerrain": false, "maximumTilt": 0.0, "foundationRadius": 4.5, "maximumFoundationSlope": 10.0 },
+      "selection": { "radius": 5.0, "height": 7.0 },
+      "animations": {}
+    },
+    "electricity_pole": {
+      "icon": "building_electricity_pole",
+      "model": "buildings/WatchTower_FirstAge_Level1",
+      "scale": 3.0,
+      "grounding": { "groundOffset": 0.0, "alignToTerrain": false, "maximumTilt": 0.0, "foundationRadius": 1.25, "maximumFoundationSlope": 10.0 },
+      "selection": { "radius": 1.5, "height": 8.0 },
       "animations": {}
     }
   }

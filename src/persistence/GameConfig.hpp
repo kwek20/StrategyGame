@@ -13,6 +13,7 @@ struct GameConfig {
     int resolutionWidth{1280};
     int resolutionHeight{720};
     bool fullscreen{false};
+    float uiScale{1.0F};
     float masterVolume{1.0F};
     float musicVolume{0.8F};
     float effectsVolume{1.0F};

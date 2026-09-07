@@ -22,6 +22,7 @@
   "settings.video": "VIDEO",
   "settings.resolution": "RESOLUTION     {0} x {1}",
   "settings.fullscreen": "FULLSCREEN     {0}",
+  "settings.ui_scale": "UI SCALE       {0}",
   "settings.audio": "AUDIO",
   "settings.master_volume": "MASTER VOLUME     -   {0}   +",
   "settings.music_volume": "MUSIC VOLUME      -   {0}   +",
@@ -130,5 +131,27 @@
   "selection.title": "SELECTED ENTITIES  {0}",
   "selection.group": "{0}   x {1}",
   "selection.entry": "{0}   HEALTH {1} / {2}",
-  "selection.more": "+ {0} MORE"
+  "selection.more": "+ {0} MORE",
+  "building.storage_silo": "STORAGE SILO",
+  "building.electricity_pole": "ELECTRICITY POLE",
+  "entity_hud.count": "  x {0}",
+  "entity_hud.health": "HEALTH  {0} / {1}",
+  "entity_hud.power": "POWER  {0} / {1}",
+  "entity_hud.health_label": "HEALTH",
+  "entity_hud.power_label": "POWER",
+  "entity_hud.cargo": "CARGO",
+  "entity_hud.speed": "SPEED",
+  "entity_hud.vision": "VISION",
+  "entity_hud.gather": "GATHER"
+  ,"entity_hud.construction": "CONSTRUCTION"
+  ,"entity_hud.generation": "GENERATION"
+  ,"entity_hud.consumption": "CONSUMPTION"
+  ,"entity_hud.queue": "QUEUE"
+  ,"entity_hud.upgrades": "UPGRADES"
+  ,"entity_hud.insufficient_resources": "INSUFFICIENT RESOURCES"
+  ,"entity_hud.action_unavailable": "ACTION UNAVAILABLE"
+  ,"entity_hud.drone_power": "DRONE POWER: {0}"
+  ,"entity_hud.time_seconds": "TIME: {0}s"
+  ,"entity_hud.free": "FREE"
+  ,"entity_hud.cancel_refund": "CLICK TO CANCEL AND REFUND"
 }

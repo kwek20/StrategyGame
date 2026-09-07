@@ -37,6 +37,12 @@ int main() {
         gameplay.powerDevice(strategy::PowerDeviceId{"command_hub_integrated_grid"});
     const auto* droneRecipe =
         gameplay.recipe(strategy::RecipeId{"command_hub.train_construction_drone"});
+    for (const std::string& building : gameplay.matchRules().buildPalette) {
+        const auto* construction =
+            gameplay.recipe(strategy::RecipeId{"construct." + building});
+        valid = valid && construction && construction->constructionPower > 0.0F &&
+                construction->workStep > 0.0F && construction->dronePowerPerStep > 0.0F;
+    }
     const auto* generatorRecipe = gameplay.recipe(strategy::RecipeId{"construct.basic_generator"});
     valid = valid && materials && materials->enabled && power && power->enabled && components &&
             !components->enabled && workerWeapon && workerWeapon->cooldownTicks == 30 &&
@@ -285,6 +291,15 @@ int main() {
     valid = valid && decodedCancel &&
             std::holds_alternative<strategy::CancelProductionCommand>(decodedCancel->payload) &&
             std::get<strategy::CancelProductionCommand>(decodedCancel->payload).queueIndex == 3;
+    const strategy::PlayerCommand cancelConstructionWireCommand{
+        1, 54, strategy::CancelConstructionCommand{23}};
+    const auto decodedConstructionCancel = strategy::CommandCodec::decode(
+        strategy::CommandCodec::encode(cancelConstructionWireCommand));
+    valid = valid && decodedConstructionCancel &&
+            std::holds_alternative<strategy::CancelConstructionCommand>(
+                decodedConstructionCancel->payload) &&
+            std::get<strategy::CancelConstructionCommand>(
+                decodedConstructionCancel->payload).entity == 23;
     std::size_t resourceCount = 0;
     for (const strategy::Entity& resource : session.world().entities()) {
         if (resource.authority.owner != 0)
@@ -392,6 +407,52 @@ int main() {
     valid = valid && researcher.production.queue.empty() &&
             recipeSession.players().find(1)->resources["materials"] ==
                 materialsBeforeRefund + 12.0F;
+
+    strategy::GameSession constructionPowerSession{gameplay, 999U};
+    constructionPowerSession.replaceWorld({}, 999U);
+    strategy::Entity& powerDrone = constructionPowerSession.world().createEntity(
+        "Builder", "construction_drone", 1);
+    gameplay.initializeEntity(powerDrone);
+    powerDrone.transform.position = {0.0F, 6.0F, 0.0F};
+    const strategy::EntityId powerDroneId = powerDrone.id;
+    strategy::Entity& poweredBuild = constructionPowerSession.world().createEntity(
+        "Generator", "basic_generator", 1);
+    gameplay.initializeEntity(poweredBuild);
+    poweredBuild.transform.position = {0.0F, 0.0F, 0.0F};
+    poweredBuild.construction.emplace();
+    poweredBuild.construction.recipeId = "construct.basic_generator";
+    poweredBuild.construction.powerRequired = 100.0F;
+    const strategy::EntityId poweredBuildId = poweredBuild.id;
+    const float batteryBeforeConstruction =
+        constructionPowerSession.world().findEntity(powerDroneId)->battery.charge;
+    valid = constructionPowerSession.submit(
+                {1, 1, strategy::ConstructCommand{powerDroneId, poweredBuildId}}) && valid;
+    constructionPowerSession.advanceTicks();
+    const strategy::Entity* updatedDrone = constructionPowerSession.world().findEntity(powerDroneId);
+    const strategy::Entity* updatedBuild = constructionPowerSession.world().findEntity(poweredBuildId);
+    valid = valid && updatedDrone && updatedBuild &&
+            updatedBuild->construction.powerProgress == 2.0F &&
+            updatedDrone->battery.charge == batteryBeforeConstruction - 1.0F;
+
+    strategy::Entity& unfinished =
+        recipeSession.world().createEntity("Unfinished Hub", "command_hub", 1);
+    gameplay.initializeEntity(unfinished);
+    unfinished.construction.emplace();
+    unfinished.construction.recipeId = "construct.command_hub";
+    unfinished.construction.powerRequired = 120.0F;
+    unfinished.construction.powerProgress = 30.0F;
+    unfinished.construction.state = strategy::BuildingLifecycleState::underConstruction;
+    const strategy::EntityId unfinishedId = unfinished.id;
+    valid = valid && !strategy::isOperational(unfinished) &&
+            !recipeSession.canStartRecipe(
+                1, unfinishedId,
+                strategy::RecipeId{"command_hub.train_construction_drone"});
+    recipeSession.players().find(1)->resources["materials"] = 0.0F;
+    valid = recipeSession.submit(
+                {1, 4, strategy::CancelConstructionCommand{unfinishedId}}) && valid;
+    recipeSession.advanceTicks();
+    valid = valid && recipeSession.world().findEntity(unfinishedId) == nullptr &&
+            std::abs(recipeSession.players().find(1)->resources["materials"] - 150.0F) < 0.001F;
 
     strategy::GameSession gatheringSession{gameplay, 321U};
     strategy::Entity* gatherer = nullptr;

@@ -2,6 +2,7 @@
 
 #include "render/RenderPass.hpp"
 #include "ui/UiDocument.hpp"
+#include "ui/UiTheme.hpp"
 
 #include <algorithm>
 #include <glad/glad.h>
@@ -127,8 +128,9 @@ void UiRenderer::draw(const UiDocument& document, int width, int height) const {
     std::vector<TextDraw> labels;
     for (const UiElement& element : document.elements()) {
         if (element.kind != UiElementKind::label) {
-            const glm::vec3 color = element.hovered || element.focused ? element.hoverColor
-                                                                       : element.color;
+            const glm::vec3 color = !element.enabled ? UiTheme::disabled
+                : (element.pressed ? element.hoverColor * 0.72F
+                : (element.hovered || element.focused ? element.hoverColor : element.color));
             appendRectangle(rectangles,
                             element.bounds.left,
                             element.bounds.top,
@@ -137,15 +139,39 @@ void UiRenderer::draw(const UiDocument& document, int width, int height) const {
                             color,
                             width,
                             height);
+            if (element.kind == UiElementKind::progressBar)
+                appendRectangle(rectangles, element.bounds.left, element.bounds.top,
+                                element.bounds.left +
+                                    (element.bounds.right - element.bounds.left) * element.progress,
+                                element.bounds.bottom, element.hoverColor, width, height);
         }
-        if (!element.text.empty())
-            labels.push_back({element.text,
+        if (!element.text.empty()) {
+            std::string displayText = element.text;
+            const float fontPixels = std::max(element.textScale * 8.0F, 13.0F);
+            const float available = element.bounds.right > element.bounds.left
+                ? element.bounds.right - element.bounds.left -
+                    (element.kind == UiElementKind::label ? 0.0F : 24.0F)
+                : 0.0F;
+            if (available > 0.0F) {
+                const std::size_t maximumCharacters = static_cast<std::size_t>(
+                    std::max(1.0F, available / (fontPixels * 0.58F)));
+                if (displayText.size() > maximumCharacters)
+                    displayText = maximumCharacters > 3
+                        ? displayText.substr(0, maximumCharacters - 3) + "..."
+                        : displayText.substr(0, maximumCharacters);
+            }
+            glm::vec3 textColor = element.enabled ? element.textColor : UiTheme::disabledText;
+            const float luminance = textColor.r * 0.2126F + textColor.g * 0.7152F +
+                                    textColor.b * 0.0722F;
+            if (luminance < 0.48F) textColor = UiTheme::text;
+            labels.push_back({displayText,
                               element.bounds.left +
                                   (element.kind == UiElementKind::label ? 0.0F : 12.0F),
                               element.bounds.top +
                                   (element.kind == UiElementKind::label ? 0.0F : 10.0F),
-                              std::max(element.textScale * 8.0F, 13.0F),
-                              element.textColor});
+                              fontPixels,
+                              textColor});
+        }
     }
 
     RenderPass pass(RenderPassKind::userInterface);

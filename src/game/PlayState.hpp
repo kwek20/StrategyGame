@@ -6,8 +6,10 @@
 #include "persistence/GameConfig.hpp"
 #include "persistence/SaveGame.hpp"
 #include "simulation/GameSession.hpp"
+#include "ui/EntityHudModel.hpp"
+#include "ui/UiDocument.hpp"
+#include "ui/UiController.hpp"
 
-#include <array>
 #include <cstdint>
 #include <glm/vec3.hpp>
 #include <glm/vec4.hpp>
@@ -51,9 +53,7 @@ class PlayState final : public GameState {
     mutable EntityId pendingOrderTarget_{0};
     bool paused_{false};
     bool detailedDebug_{false};
-    bool resumeHovered_{false};
-    bool settingsHovered_{false};
-    bool exitHovered_{false};
+    bool powerOverlayVisible_{false};
     StateRequest request_{StateRequest::none};
     GameConfig config_;
     mutable std::optional<std::uint32_t> pendingTerrainSeed_;
@@ -77,11 +77,9 @@ class PlayState final : public GameState {
     mutable std::optional<glm::vec4> pendingSelectionRectangle_;
     mutable std::optional<std::vector<EntityId>> pickedEntities_;
     std::uint32_t inputWindowId_{0};
-    std::array<bool, 3> townHallButtonHovered_{false, false, false};
-    int entityActionHovered_{-1};
-    int productionQueueHovered_{-1};
+    mutable UiController uiController_;
     bool constructionPlacementMode_{false};
-    bool constructionButtonHovered_{false};
+    std::string constructionRecipeId_{"construct.command_hub"};
     mutable std::optional<glm::vec2> pendingConstructionScreen_;
     mutable std::optional<glm::vec3> pendingConstructionPosition_;
     mutable std::optional<glm::vec2> constructionCursorScreen_;
@@ -90,7 +88,11 @@ class PlayState final : public GameState {
     void setMouseCaptured(bool captured);
 
     void handlePauseEvent(const SDL_Event& event);
-    void updatePauseHover(float mouseX, float mouseY);
+    [[nodiscard]] UiDocument pauseUi(int width, int height) const;
+    [[nodiscard]] EntityHudModel buildConstructionHudModel(const Entity& selected,
+                                                           const Player* player) const;
+    [[nodiscard]] EntityHudModel buildEntityActionHudModel(const Entity& selected,
+                                                           const Player* player) const;
 };
 
 } // namespace strategy

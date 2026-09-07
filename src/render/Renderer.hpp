@@ -30,6 +30,8 @@ class UiDocument;
 class UiRenderer;
 class Logger;
 class World;
+class DefinitionRegistry;
+struct EntityHudModel;
 
 class Renderer final {
   public:
@@ -48,7 +50,11 @@ class Renderer final {
     void drawTerrain(const CameraView& camera, const Player* player = nullptr) const;
     void
     drawWorld(const World& world, const CameraView& camera, const Player* player = nullptr) const;
-    void drawResourceHud(const Player& player) const;
+    void drawResourceHud(const Player& player,
+                         const World& world,
+                         const DefinitionRegistry& definitions,
+                         bool powerOverlayVisible,
+                         const UiDocument& layout) const;
     void drawDebugHud(const RtsCamera& camera, std::size_t entityCount) const;
     void drawDetailedDebugHud(const CameraView& camera,
                               const Entity* entity,
@@ -57,42 +63,17 @@ class Renderer final {
                               std::uint64_t tick,
                               std::size_t entityCount) const;
     void drawVisionRanges(const CameraView& camera, const Entity* entity) const;
-    void drawStartMenu(bool startHovered,
-                       bool buildHovered,
-                       bool loadHovered,
-                       bool settingsHovered,
-                       bool exitHovered,
-                       bool seedFocused,
-                       const std::string& seedText,
-                       const std::string& playerOneCountry,
-                       const std::string& playerTwoCountry) const;
+    void drawEntityHud(const EntityHudModel& model, const UiDocument& layout) const;
     void
-    drawSettings(const GameConfig& config, std::size_t resolution, int hovered, int binding) const;
-    void drawBuildHud(PlayerId team,
-                      const std::string& entityType,
-                      std::size_t entityCount,
-                      const std::string& status,
-                      bool hovered = false,
-                      bool active = false) const;
-    void
-    drawStrategyHud(const World& world, EntityId selected, const Player* player = nullptr) const;
-    void drawUnitHud(const Entity& controlled) const;
-    void drawTownHallHud(const Entity& townHall, const std::array<bool, 3>& hovered) const;
-    void drawEntityActionHud(const Entity& entity,
-                             const std::vector<std::string>& labels,
-                             const std::vector<std::string>& icons,
-                             const std::vector<std::string>& costs,
-                             const std::vector<bool>& enabled,
-                             int hovered,
-                             const std::vector<std::string>& queueLabels,
-                             int queueHovered) const;
+    drawStrategyHud(const World& world, EntityId selected, const Player* player,
+                    const UiDocument& layout) const;
+    void drawCrosshair() const;
     void drawSelectionBox(const glm::vec2& start, const glm::vec2& end) const;
     [[nodiscard]] std::vector<EntityId> unitsInScreenRectangle(const glm::vec2& start,
                                                                const glm::vec2& end,
                                                                const World& world,
                                                                const CameraView& camera,
                                                                PlayerId owner) const;
-    void drawUnitSelectionHud(const World& world, const std::vector<EntityId>& selected) const;
     void drawOrderMarkers(const World& world,
                           EntityId selected,
                           const std::vector<EntityId>& selection,
@@ -115,7 +96,8 @@ class Renderer final {
     [[nodiscard]] float aspectRatio() const {
         return static_cast<float>(viewportWidth_) / static_cast<float>(viewportHeight_);
     }
-    void drawPauseMenu(bool resumeHovered, bool settingsHovered, bool exitHovered) const;
+    [[nodiscard]] int viewportWidth() const { return viewportWidth_; }
+    [[nodiscard]] int viewportHeight() const { return viewportHeight_; }
     void regenerateTerrain(std::uint32_t seed);
     void setTerrainFoundations(const std::vector<TerrainFoundation>& foundations);
     void preloadAssetGroup(const std::string& group);

@@ -159,7 +159,8 @@ Allow the drone to establish a functional base through clear, deterministic cons
 - Add building placement commands and authoritative placement validation.
 - Show terrain suitability, collision, resource cost, and power connectivity in previews.
 - Add resource reservation, construction progress, drone work contribution, and cancellation.
-- Define refund rules for planned, partial, and destroyed construction.
+- Player cancellation always refunds the full upfront material cost. Destroyed construction
+  refunds nothing, disappears, and leaves its terrain deformation behind.
 - Add planned, under-construction, operational, damaged, and destroyed states.
 - Prevent unfinished structures from providing unintended full functionality.
 - Add construction audio and interface events.
@@ -411,6 +412,17 @@ These tracks continue throughout all milestones rather than waiting for a final 
 - Invalid-data and missing-asset tests
 - Hidden OpenGL integration tests
 - Long-running match and performance scenarios
+
+### Interface architecture
+
+- The shared `UiDocument` path now covers menus, loading, editor controls, the in-game HUD,
+  entity actions, queues, the minimap, and the power overlay.
+- Responsive layout primitives provide anchors, padding, rows, columns, minimum sizes, and
+  resolution-aware UI scaling. Reference-layout screens are fitted and centered within a safe area.
+- Keyboard and gamepad focus navigation supports Tab/D-pad movement, Enter/Space/South
+  activation, and Escape/East back behavior.
+- The shared UI theme defines disabled states and minimum text contrast. Text is clipped with
+  ellipses, and action tooltips use a consistent hover delay.
 
 ## Near-term execution order
 

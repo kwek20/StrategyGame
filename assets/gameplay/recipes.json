@@ -62,7 +62,40 @@
       "product": { "building": "basic_generator", "amount": 1 },
       "cost": { "materials": 100 },
       "durationTicks": 450,
+      "constructionPower": 100,
+      "workStep": 2,
+      "dronePowerPerStep": 1,
       "tags": ["construction", "power", "generator"]
+    },
+    {
+      "id": "construct.material_processor",
+      "product": { "building": "material_processor", "amount": 1 },
+      "cost": { "materials": 125 },
+      "durationTicks": 480,
+      "constructionPower": 80,
+      "workStep": 2,
+      "dronePowerPerStep": 1,
+      "tags": ["construction", "processing"]
+    },
+    {
+      "id": "construct.storage_silo",
+      "product": { "building": "storage_silo", "amount": 1 },
+      "cost": { "materials": 80 },
+      "durationTicks": 360,
+      "constructionPower": 60,
+      "workStep": 2,
+      "dronePowerPerStep": 1,
+      "tags": ["construction", "storage"]
+    },
+    {
+      "id": "construct.electricity_pole",
+      "product": { "building": "electricity_pole", "amount": 1 },
+      "cost": { "materials": 35 },
+      "durationTicks": 180,
+      "constructionPower": 30,
+      "workStep": 2,
+      "dronePowerPerStep": 1,
+      "tags": ["construction", "power", "relay"]
     },
     {
       "id": "construct.command_hub",

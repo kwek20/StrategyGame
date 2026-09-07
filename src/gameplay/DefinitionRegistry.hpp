@@ -221,6 +221,7 @@ class DefinitionRegistry final {
     [[nodiscard]] const BuildingDefinition* building(BuildingArchetypeId id) const;
     [[nodiscard]] const ResourceNodeDefinition* resource(ResourceArchetypeId id) const;
     [[nodiscard]] const ResourceDefinition* resourceType(ResourceId id) const;
+    [[nodiscard]] std::vector<const ResourceDefinition*> enabledResources() const;
     [[nodiscard]] const WeaponDefinition* weapon(WeaponId id) const;
     [[nodiscard]] const PowerDeviceDefinition* powerDevice(PowerDeviceId id) const;
     [[nodiscard]] const RecipeDefinition* recipe(RecipeId id) const;
@@ -231,6 +232,7 @@ class DefinitionRegistry final {
     [[nodiscard]] const std::vector<CountryDefinition>& countries() const { return countryList_; }
     [[nodiscard]] const MatchRulesDefinition& matchRules() const { return matchRules_; }
     [[nodiscard]] const UpgradeDefinition* upgrade(const std::string& id) const;
+    [[nodiscard]] const std::string& presentationIcon(PresentationId id) const;
     [[nodiscard]] const std::unordered_map<std::string, UpgradeDefinition>& upgrades() const { return upgrades_; }
     [[nodiscard]] float collisionRadius(const std::string& entity) const;
     void initializeEntity(Entity& entity) const;
@@ -239,8 +241,10 @@ class DefinitionRegistry final {
     std::unordered_map<std::string, EntityArchetype> entities_;
     std::unordered_set<std::string> unitIds_, buildingIds_, resourceIds_;
     std::unordered_map<std::string, ResourceDefinition> resourceTypes_;
+    std::vector<std::string> resourceOrder_;
     std::unordered_map<std::string, WeaponDefinition> weapons_;
     std::unordered_map<std::string, PowerDeviceDefinition> powerDevices_;
+    std::unordered_map<std::string, std::string> presentationIcons_;
     std::unordered_map<std::string, RecipeDefinition> recipes_;
     std::vector<CountryDefinition> countryList_;
     std::unordered_map<std::string, std::vector<GameplayModifier>> countries_, specializations_;

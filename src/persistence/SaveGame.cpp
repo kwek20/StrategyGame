@@ -197,6 +197,16 @@ void SaveGame::write(const std::filesystem::path& path,
             writer.Double(entity.resource.remaining);
             writer.EndObject();
         }
+        if (entity.construction) {
+            writer.Key("construction");
+            writer.StartObject();
+            writer.Key("recipe"); writer.String(entity.construction.recipeId.c_str());
+            writer.Key("powerRequired"); writer.Double(entity.construction.powerRequired);
+            writer.Key("powerProgress"); writer.Double(entity.construction.powerProgress);
+            writer.Key("state"); writer.Uint(static_cast<unsigned>(entity.construction.state));
+            writer.Key("placementValid"); writer.Bool(entity.construction.placementValid);
+            writer.EndObject();
+        }
         if (entity.production) {
             writer.Key("production");
             writer.StartObject();
@@ -216,6 +226,8 @@ void SaveGame::write(const std::filesystem::path& path,
                 writer.String(order.productId.c_str());
                 writer.Key("upgrade");
                 writer.String(order.upgradeId.c_str());
+                writer.Key("icon");
+                writer.String(order.iconId.c_str());
                 writer.Key("amount");
                 writer.Uint(order.amount);
                 writer.Key("durationTicks");
@@ -437,6 +449,25 @@ SaveData SaveGame::read(const std::filesystem::path& path) {
                 entity.resource.type = item["type"].GetString();
                 entity.resource.remaining = item["remaining"].GetFloat();
             }
+            if (components.HasMember("construction")) {
+                const auto& item = components["construction"];
+                if (!item.IsObject() || !item.HasMember("recipe") || !item["recipe"].IsString() ||
+                    !item.HasMember("powerRequired") || !item["powerRequired"].IsNumber() ||
+                    !item.HasMember("powerProgress") || !item["powerProgress"].IsNumber() ||
+                    !item.HasMember("state") || !item["state"].IsUint() ||
+                    !item.HasMember("placementValid") || !item["placementValid"].IsBool() ||
+                    item["state"].GetUint() > static_cast<unsigned>(BuildingLifecycleState::destroyed))
+                    throw std::runtime_error("Invalid construction component");
+                entity.construction.emplace();
+                entity.construction.recipeId = item["recipe"].GetString();
+                entity.construction.powerRequired = item["powerRequired"].GetFloat();
+                entity.construction.powerProgress = item["powerProgress"].GetFloat();
+                entity.construction.state = static_cast<BuildingLifecycleState>(item["state"].GetUint());
+                entity.construction.placementValid = item["placementValid"].GetBool();
+                if (entity.construction.powerRequired < 0.0F || entity.construction.powerProgress < 0.0F ||
+                    entity.construction.powerProgress > entity.construction.powerRequired)
+                    throw std::runtime_error("Invalid construction progress");
+            }
             if (components.HasMember("production")) {
                 const auto& item = components["production"];
                 entity.production.emplace();
@@ -456,6 +487,7 @@ SaveData SaveGame::read(const std::filesystem::path& path) {
                         if (!order.HasMember("recipe") || !order["recipe"].IsString() ||
                             !order.HasMember("product") || !order["product"].IsString() ||
                             !order.HasMember("upgrade") || !order["upgrade"].IsString() ||
+                            !order.HasMember("icon") || !order["icon"].IsString() ||
                             !order.HasMember("amount") || !order["amount"].IsUint() ||
                             !order.HasMember("durationTicks") || !order["durationTicks"].IsUint() ||
                             !order.HasMember("remainingTicks") ||
@@ -466,6 +498,7 @@ SaveData SaveGame::read(const std::filesystem::path& path) {
                         parsed.recipeId = order["recipe"].GetString();
                         parsed.productId = order["product"].GetString();
                         parsed.upgradeId = order["upgrade"].GetString();
+                        parsed.iconId = order["icon"].GetString();
                         parsed.amount = order["amount"].GetUint();
                         parsed.durationTicks = order["durationTicks"].GetUint();
                         parsed.remainingTicks = order["remainingTicks"].GetUint();

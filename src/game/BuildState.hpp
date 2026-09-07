@@ -4,6 +4,8 @@
 #include "gameplay/GameplayCatalogue.hpp"
 #include "persistence/GameConfig.hpp"
 #include "world/World.hpp"
+#include "ui/EntityHudModel.hpp"
+#include "ui/UiController.hpp"
 
 #include <optional>
 #include <string>
@@ -35,5 +37,7 @@ class BuildState final : public GameState {
     bool forward_{false}, backward_{false}, left_{false}, right_{false}, orbiting_{false},
         mousePanning_{false};
     StateRequest request_{StateRequest::none};
+    mutable UiController uiController_;
+    [[nodiscard]] EntityHudModel paletteHud() const;
 };
 } // namespace strategy

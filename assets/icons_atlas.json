@@ -10,6 +10,8 @@
     "building_material_processor": {"x":258,"y":2,"width":60,"height":60},
     "building_basic_generator": {"x":322,"y":2,"width":60,"height":60},
     "building_outpost": {"x":386,"y":2,"width":60,"height":60},
+    "building_storage_silo": {"x":386,"y":2,"width":60,"height":60},
+    "building_electricity_pole": {"x":322,"y":2,"width":60,"height":60},
     "resource_wood": {"x":450,"y":2,"width":60,"height":60},
     "resource_stone": {"x":2,"y":66,"width":60,"height":60},
     "resource_gold": {"x":66,"y":66,"width":60,"height":60},

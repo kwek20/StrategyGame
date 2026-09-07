@@ -89,6 +89,21 @@ add_library(strategy_gameplay STATIC src/gameplay/GameplayCatalogue.cpp)
 strategy_target(strategy_gameplay)
 target_link_libraries(strategy_gameplay PUBLIC strategy_world RapidJSON)
 
+# Presentation-ready data assembled outside the renderer.
+add_library(strategy_ui_model STATIC
+    src/ui/EntityHudLayout.cpp
+    src/ui/EntityHudModel.cpp
+    src/ui/GameHudLayout.cpp
+    src/ui/UiController.cpp
+    src/ui/UiDocument.cpp
+    src/ui/UiLayout.cpp
+)
+strategy_target(strategy_ui_model)
+target_link_libraries(strategy_ui_model
+    PUBLIC strategy_gameplay strategy_world
+    PRIVATE strategy_localization
+)
+
 add_library(strategy_simulation STATIC
     src/simulation/GameSession.cpp
     src/simulation/CommandCodec.cpp
@@ -147,7 +162,6 @@ add_library(strategy_render STATIC
     src/render/Renderer.cpp
     src/render/ShaderManager.cpp
     src/render/UiRenderer.cpp
-    src/ui/UiDocument.cpp
 )
 strategy_target(strategy_render)
 target_compile_definitions(strategy_render PRIVATE
@@ -156,7 +170,7 @@ target_compile_definitions(strategy_render PRIVATE
 target_link_libraries(strategy_render
     PUBLIC strategy_assets strategy_camera strategy_diagnostics strategy_persistence strategy_players
            strategy_terrain strategy_world SDL3::SDL3 glad::glad Freetype::Freetype
-    PRIVATE strategy_localization
+    PRIVATE strategy_localization strategy_ui_model
 )
 
 # Interactive states compose engine subsystems but own no platform loop.
@@ -170,7 +184,7 @@ strategy_target(strategy_states)
 target_link_libraries(strategy_states
     PUBLIC strategy_audio strategy_camera strategy_diagnostics strategy_gameplay strategy_persistence
            strategy_players strategy_render strategy_simulation strategy_world SDL3::SDL3
-    PRIVATE strategy_localization
+    PRIVATE strategy_localization strategy_ui_model
 )
 
 add_library(strategy_app STATIC
@@ -205,6 +219,12 @@ if(STRATEGY_BUILD_TESTS)
     )
     add_test(NAME game_systems COMMAND game_system_tests)
     set_tests_properties(game_systems PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
+    add_executable(entity_hud_model_tests tests/EntityHudModelTests.cpp)
+    strategy_target(entity_hud_model_tests)
+    target_link_libraries(entity_hud_model_tests PRIVATE strategy_ui_model)
+    add_test(NAME entity_hud_model COMMAND entity_hud_model_tests)
+    set_tests_properties(entity_hud_model PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
     add_executable(definition_registry_tests tests/DefinitionRegistryTests.cpp)
     strategy_target(definition_registry_tests)

@@ -150,6 +150,7 @@ bool GameSession::canStartRecipe(PlayerId playerId, EntityId producerId, RecipeI
     const Entity* producer = world_.findEntity(producerId);
     const RecipeDefinition* recipe = gameplay_.recipe(recipeId);
     if (!player || !producer || producer->authority.owner != playerId || !producer->production ||
+        !isOperational(*producer) ||
         !recipe || recipe->producer != producer->archetype.value)
         return false;
     for (const auto& [resource, amount] : recipe->cost) {
@@ -180,6 +181,7 @@ bool GameSession::canStartUpgrade(PlayerId playerId,
     const Entity* entity = world_.findEntity(researcherId);
     const UpgradeDefinition* upgrade = gameplay_.upgrade(upgradeId);
     if (!player || !entity || entity->authority.owner != playerId || !entity->production ||
+        !isOperational(*entity) ||
         !entity->upgrades || !upgrade ||
         std::find(upgrade->allowedResearchers.begin(), upgrade->allowedResearchers.end(),
                   entity->archetype.value) == upgrade->allowedResearchers.end())
@@ -300,6 +302,11 @@ void GameSession::apply(const PlayerCommand& command) {
                                      : ProductionKind::trainCharacter;
                     order.recipeId = recipe->id;
                     order.productId = recipe->product.id;
+                    if (const EntityArchetype* product = gameplay_.archetype(recipe->product.id))
+                        order.iconId = gameplay_.presentationIcon(
+                            PresentationId{product->presentation});
+                    else if (recipe->product.kind == RecipeProductKind::resource)
+                        order.iconId = "resource_" + recipe->product.id;
                     order.amount = recipe->product.amount;
                     order.durationTicks = static_cast<std::uint32_t>(
                         std::max(1.0, std::ceil(duration / fixedTickSeconds)));
@@ -339,7 +346,7 @@ void GameSession::apply(const PlayerCommand& command) {
                 building.construction.emplace();
                 building.construction.recipeId = recipe->id;
                 building.construction.powerRequired = recipe->constructionPower;
-                building.construction.complete = false;
+                building.construction.state = BuildingLifecycleState::planned;
                 if (building.health) building.health.current = 1.0F;
                 std::vector<EntityId> builders = payload.builders;
                 if (builders.empty())
@@ -360,7 +367,8 @@ void GameSession::apply(const PlayerCommand& command) {
                 }
             } else if constexpr (std::is_same_v<Type, ConstructCommand>) {
                 Entity* building = world_.findEntity(payload.building);
-                if (entity->flight && entity->battery && building && building->construction && !building->construction.complete) {
+                if (entity->flight && entity->battery && building && building->construction &&
+                    !isOperational(*building)) {
                     entity->unitControl.order = UnitOrderKind::construct;
                     entity->unitControl.orderTarget = building->id;
                     entity->unitControl.strategicDestination = building->transform.position;
@@ -368,6 +376,26 @@ void GameSession::apply(const PlayerCommand& command) {
                 }
             } else if constexpr (std::is_same_v<Type, StopConstructionCommand>) {
                 if (entity->unitControl) { entity->unitControl.order=UnitOrderKind::idle; entity->unitControl.orderTarget=0; entity->unitControl.hasStrategicDestination=false; }
+            } else if constexpr (std::is_same_v<Type, CancelConstructionCommand>) {
+                if (!entity->construction || isOperational(*entity)) return;
+                const RecipeDefinition* recipe = gameplay_.recipe(RecipeId{entity->construction.recipeId});
+                Player* player = players_.find(command.player);
+                if (recipe && player) {
+                    for (const auto& [resource, amount] : recipe->cost)
+                        player->resources[resource] += amount;
+                }
+                const EntityId cancelled = entity->id;
+                for (Entity& builder : world_.entities())
+                    if (builder.unitControl && builder.unitControl.orderTarget == cancelled) {
+                        builder.unitControl.order = UnitOrderKind::idle;
+                        builder.unitControl.orderTarget = 0;
+                        builder.unitControl.hasStrategicDestination = false;
+                    }
+                std::erase_if(world_.foundations(), [cancelled](const TerrainFoundation& foundation) {
+                    return foundation.sourceEntity == cancelled;
+                });
+                terrain_.rebuildFoundations(world_.foundations());
+                world_.destroyEntity(cancelled);
             } else if constexpr (std::is_same_v<Type, RepairCommand>) {
                 Entity* target = world_.findEntity(payload.target);
                 if (entity->flight && target && target->health) { entity->unitControl.order=UnitOrderKind::repair; entity->unitControl.orderTarget=target->id; entity->unitControl.strategicDestination=target->transform.position; entity->unitControl.hasStrategicDestination=true; }
@@ -383,6 +411,7 @@ void GameSession::apply(const PlayerCommand& command) {
                 order.kind = ProductionKind::improveTraining;
                 order.recipeId = recipe->id;
                 order.upgradeId = payload.upgradeId;
+                order.iconId = upgrade->icon;
                 order.durationTicks = recipe->durationTicks;
                 order.remainingTicks = order.durationTicks;
                 order.reservedCosts.insert(recipe->cost.begin(), recipe->cost.end());
@@ -421,7 +450,7 @@ void GameSession::simulateTick() {
         if (entity.flight && entity.battery && entity.battery.returningToCharge) {
             {
                     for (const Entity& hub : world_.entities()) {
-                        if (hub.authority.owner != entity.authority.owner)
+                        if (hub.authority.owner != entity.authority.owner || !isOperational(hub))
                             continue;
                         if (hub.archetype.value != "command_hub" && hub.archetype.value != "town_center")
                             continue;
@@ -446,7 +475,7 @@ void GameSession::simulateTick() {
                     }
             }
         }
-        if (entity.production && !entity.production.queue.empty()) {
+        if (entity.production && isOperational(entity) && !entity.production.queue.empty()) {
             ProductionOrder& order = entity.production.queue.front();
             if (order.remainingTicks > 0)
                 --order.remainingTicks;
@@ -510,6 +539,7 @@ void GameSession::simulateTick() {
                         const RecipeDefinition* recipe = gameplay_.recipe(RecipeId{target->construction.recipeId});
                         if (recipe && entity.battery.charge >= recipe->dronePowerPerStep) {
                             entity.battery.charge -= recipe->dronePowerPerStep;
+                            target->construction.state = BuildingLifecycleState::underConstruction;
                             target->construction.powerProgress = std::min(target->construction.powerRequired, target->construction.powerProgress + recipe->workStep);
                             const float progress = target->construction.powerRequired > 0.0F
                                                        ? target->construction.powerProgress /
@@ -526,13 +556,15 @@ void GameSession::simulateTick() {
                                 terrain_.rebuildFoundations(world_.foundations());
                             }
                             if (target->construction.powerProgress >= target->construction.powerRequired) {
-                                target->construction.complete = true;
+                                target->construction.state = BuildingLifecycleState::operational;
                                 if (target->health) target->health.current = target->health.maximum;
                                 entity.unitControl.order=UnitOrderKind::idle; entity.unitControl.orderTarget=0; entity.unitControl.hasStrategicDestination=false;
                             }
                         }
                     } else if (entity.unitControl.order == UnitOrderKind::repair && target->health && target->health.current < target->health.maximum && entity.battery.charge >= 1.0F) {
                         entity.battery.charge -= 1.0F; target->health.current = std::min(target->health.maximum,target->health.current+2.0F);
+                        if (target->construction && target->health.current >= target->health.maximum)
+                            target->construction.state = BuildingLifecycleState::operational;
                     }
                 }
             }
@@ -590,6 +622,7 @@ void GameSession::simulateTick() {
                 float nearest = std::numeric_limits<float>::max();
                 for (Entity& candidate : world_.entities())
                     if (candidate.authority.owner == entity.authority.owner &&
+                        isOperational(candidate) &&
                         gameplay_.archetype(candidate.archetype) &&
                         gameplay_.archetype(candidate.archetype)->tags.contains("resource-dropoff")) {
                         const glm::vec2 d{
@@ -647,6 +680,9 @@ void GameSession::simulateTick() {
                         entity.unitControl.hasStrategicDestination = false;
                         target->health.current -= stat(entity, GameplayStat::attackDamage) *
                                                   static_cast<float>(fixedTickSeconds);
+                        if (target->construction && target->health.current > 0.0F &&
+                            isOperational(*target))
+                            target->construction.state = BuildingLifecycleState::damaged;
                         if (target->health.current <= 0)
                             destroyed.push_back(target->id);
                     } else
@@ -767,7 +803,8 @@ void GameSession::simulateTick() {
                 float best = std::numeric_limits<float>::max();
                 for (const Entity& candidate : world_.entities()) {
                     const auto* candidateType = gameplay_.archetype(candidate.archetype);
-                    if (!candidateType || candidate.authority.owner != entity.authority.owner || !candidateType->powerDevice) continue;
+                    if (!candidateType || candidate.authority.owner != entity.authority.owner ||
+                        !isOperational(candidate) || !candidateType->powerDevice) continue;
                     const auto* device = gameplay_.powerDevice(*candidateType->powerDevice);
                     if (!device || !device->tags.contains("charger")) continue;
                     const glm::vec3 d = candidate.transform.position - entity.transform.position;
@@ -784,8 +821,17 @@ void GameSession::simulateTick() {
     }
     std::sort(destroyed.begin(), destroyed.end());
     destroyed.erase(std::unique(destroyed.begin(), destroyed.end()), destroyed.end());
-    for (EntityId id : destroyed)
+    for (EntityId id : destroyed) {
+        if (Entity* entity = world_.findEntity(id); entity && entity->construction)
+            entity->construction.state = BuildingLifecycleState::destroyed;
+        for (Entity& worker : world_.entities())
+            if (worker.unitControl && worker.unitControl.orderTarget == id) {
+                worker.unitControl.order = UnitOrderKind::idle;
+                worker.unitControl.orderTarget = 0;
+                worker.unitControl.hasStrategicDestination = false;
+            }
         world_.destroyEntity(id);
+    }
     for (const CompletedCharacter& character : completed) {
         const EntityArchetype* producer = gameplay_.archetype(character.producerId);
         if (!producer)
@@ -824,7 +870,7 @@ void GameSession::updateExploration() {
     for (Player& player : players_.players()) {
         std::fill(player.visible.begin(), player.visible.end(), 0);
         for (const Entity& entity : world_.entities()) {
-            if (entity.authority.owner != player.id || !entity.vision)
+            if (entity.authority.owner != player.id || !entity.vision || !isOperational(entity))
                 continue;
             const float elevation =
                 terrain_.heightAt(entity.transform.position.x, entity.transform.position.z);

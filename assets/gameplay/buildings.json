@@ -105,18 +105,19 @@
     },
     "material_processor": {
       "nameKey": "building.material_processor",
-      "presentation": "town_center",
+      "presentation": "material_processor",
       "collisionRadius": 5.0,
       "footprint": { "shape": "rectangle", "halfExtents": [5.0, 4.0], "edgeFalloff": 2.5, "maximumTiltDegrees": 10.0 },
       "components": ["health", "production"],
       "availableUpgrades": [],
       "tags": ["building", "processor", "production"],
       "health": 600,
+      "powerDevice": "material_processor",
       "stats": { "productionSpeed": 1 }
     },
     "basic_generator": {
       "nameKey": "building.basic_generator",
-      "presentation": "town_center",
+      "presentation": "basic_generator",
       "collisionRadius": 5.0,
       "footprint": { "shape": "circle", "radius": 4.5, "halfExtents": [4.5, 4.5], "edgeFalloff": 2.5, "maximumTiltDegrees": 10.0 },
       "components": ["health", "vision"],
@@ -125,6 +126,29 @@
       "health": 500,
       "vision": { "range": 10 },
       "powerDevice": "basic_generator",
+      "stats": {}
+    },
+    "storage_silo": {
+      "nameKey": "building.storage_silo",
+      "presentation": "storage_silo",
+      "collisionRadius": 4.5,
+      "footprint": { "shape": "circle", "radius": 4.0, "halfExtents": [4.0, 4.0], "edgeFalloff": 2.0, "maximumTiltDegrees": 10.0 },
+      "components": ["health"],
+      "availableUpgrades": [],
+      "tags": ["building", "storage", "resource-dropoff"],
+      "health": 550,
+      "stats": {}
+    },
+    "electricity_pole": {
+      "nameKey": "building.electricity_pole",
+      "presentation": "electricity_pole",
+      "collisionRadius": 1.5,
+      "footprint": { "shape": "circle", "radius": 1.25, "halfExtents": [1.25, 1.25], "edgeFalloff": 1.0, "maximumTiltDegrees": 10.0 },
+      "components": ["health"],
+      "availableUpgrades": [],
+      "tags": ["building", "power", "relay"],
+      "health": 250,
+      "powerDevice": "basic_relay",
       "stats": {}
     }
   }

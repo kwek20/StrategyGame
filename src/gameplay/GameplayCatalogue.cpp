@@ -280,10 +280,21 @@ void DefinitionRegistry::loadResources(const std::filesystem::path& path) {
                                      "' has unknown storage kind '" + storage + "'");
         if (value.HasMember("enabled") && value["enabled"].IsBool())
             definition.enabled = value["enabled"].GetBool();
+        resourceOrder_.push_back(definition.id);
         if (!resourceTypes_.emplace(definition.id, std::move(definition)).second)
             throw std::runtime_error("Duplicate resource definition id '" +
                                      std::string(item->name.GetString()) + "'");
     }
+}
+
+std::vector<const ResourceDefinition*> DefinitionRegistry::enabledResources() const {
+    std::vector<const ResourceDefinition*> result;
+    for (const std::string& id : resourceOrder_) {
+        const auto found = resourceTypes_.find(id);
+        if (found != resourceTypes_.end() && found->second.enabled)
+            result.push_back(&found->second);
+    }
+    return result;
 }
 
 void DefinitionRegistry::loadWeapons(const std::filesystem::path& path) {
@@ -416,6 +427,12 @@ void DefinitionRegistry::loadRecipes(const std::filesystem::path& path) {
                 definition.cost.emplace(cost->name.GetString(), cost->value.GetFloat());
             }
         }
+        if (definition.product.kind == RecipeProductKind::building &&
+            definition.tags.contains("construction") &&
+            (definition.constructionPower <= 0.0F || definition.workStep <= 0.0F ||
+             definition.dronePowerPerStep <= 0.0F))
+            throw std::runtime_error("Construction recipe '" + definition.id +
+                                     "' requires positive constructionPower, workStep, and dronePowerPerStep");
         if (!recipes_.emplace(definition.id, std::move(definition)).second)
             throw std::runtime_error("Duplicate recipe definition id '" +
                                      std::string(value["id"].GetString()) + "'");
@@ -430,11 +447,22 @@ void DefinitionRegistry::loadReferenceKeys(const std::filesystem::path& presenta
                                  presentationPath.string());
     for (auto item = presentations["entities"].MemberBegin();
          item != presentations["entities"].MemberEnd();
-         ++item)
+         ++item) {
         presentationIds_.insert(item->name.GetString());
+        if (item->value.IsObject() && item->value.HasMember("icon") &&
+            item->value["icon"].IsString())
+            presentationIcons_.insert_or_assign(item->name.GetString(),
+                                                item->value["icon"].GetString());
+    }
     auto localization = document(localizationPath);
     for (auto item = localization.MemberBegin(); item != localization.MemberEnd(); ++item)
         localizationKeys_.insert(item->name.GetString());
+}
+
+const std::string& DefinitionRegistry::presentationIcon(PresentationId id) const {
+    static const std::string missing{"status_asset_failed"};
+    const auto found = presentationIcons_.find(id.value);
+    return found == presentationIcons_.end() ? missing : found->second;
 }
 
 void DefinitionRegistry::validateReferences() const {

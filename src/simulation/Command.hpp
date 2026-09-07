@@ -56,6 +56,7 @@ struct PlaceBuildingCommand {
 };
 struct ConstructCommand { EntityId entity{0}; EntityId building{0}; };
 struct StopConstructionCommand { EntityId entity{0}; };
+struct CancelConstructionCommand { EntityId entity{0}; };
 struct RepairCommand { EntityId entity{0}; EntityId target{0}; };
 struct CancelProductionCommand { EntityId entity{0}; std::uint32_t queueIndex{0}; };
 
@@ -70,6 +71,7 @@ using CommandPayload = std::variant<PossessUnitCommand,
                                     PlaceBuildingCommand,
                                     ConstructCommand,
                                     StopConstructionCommand,
+                                    CancelConstructionCommand,
                                     RepairCommand,
                                     CancelProductionCommand>;
 

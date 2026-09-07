@@ -2,8 +2,11 @@
 
 #include "app/GameState.hpp"
 #include "ui/UiDocument.hpp"
+#include "ui/UiController.hpp"
+#include "persistence/GameConfig.hpp"
 
 #include <string>
+#include <string_view>
 
 namespace strategy {
 
@@ -23,15 +26,17 @@ class StartMenuState final : public GameState {
     [[nodiscard]] std::string playerTwoCountry() const override;
 
   private:
-    bool seedFocused_{false};
     std::string seedText_{"1592594996"};
     StateRequest request_{StateRequest::none};
     std::size_t playerOneCountryIndex_{0};
     std::size_t playerTwoCountryIndex_{0};
-    UiDocument ui_;
+    mutable UiDocument ui_;
+    mutable UiController uiController_;
+    GameConfig config_;
 
     void cycleCountry(std::size_t& index, int direction);
     void refreshUiText();
+    void activateControl(std::string_view id);
 };
 
 } // namespace strategy

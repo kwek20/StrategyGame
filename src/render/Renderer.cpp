@@ -3,9 +3,13 @@
 #include "game/RtsCamera.hpp"
 #include "localization/Text.hpp"
 #include "diagnostics/Logger.hpp"
+#include "gameplay/DefinitionRegistry.hpp"
 #include "render/RenderPass.hpp"
 #include "render/UiRenderer.hpp"
 #include "ui/UiDocument.hpp"
+#include "ui/EntityHudLayout.hpp"
+#include "ui/GameHudLayout.hpp"
+#include "ui/EntityHudModel.hpp"
 #include "world/World.hpp"
 
 #include <SDL3/SDL.h>
@@ -507,45 +511,9 @@ void Renderer::drawLoadingScreen(float progress, const std::string& status) cons
     renderGraph_.enter(RenderPassKind::userInterface);
     glClearColor(0.0F, 0.0F, 0.0F, 1.0F);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    const float centerX = viewportWidth_ * 0.5F, centerY = viewportHeight_ * 0.5F;
-    std::vector<glm::vec2> track, fill;
-    appendHudRectangle(track,
-                       centerX - 210.0F,
-                       centerY + 38.0F,
-                       centerX + 210.0F,
-                       centerY + 58.0F,
-                       viewportWidth_,
-                       viewportHeight_);
-    appendHudRectangle(fill,
-                       centerX - 207.0F,
-                       centerY + 41.0F,
-                       centerX - 207.0F + 414.0F * std::clamp(progress, 0.0F, 1.0F),
-                       centerY + 55.0F,
-                       viewportWidth_,
-                       viewportHeight_);
-    glDisable(GL_DEPTH_TEST);
-    glDisable(GL_CULL_FACE);
-    shaders_.use(hudProgram_);
-    glBindVertexArray(hudVao_);
-    glBindBuffer(GL_ARRAY_BUFFER, hudVbo_);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(glm::vec2), nullptr);
-    const auto draw = [this](const std::vector<glm::vec2>& vertices, const glm::vec3& color) {
-        glUniform3fv(shaders_.uniform(hudProgram_, "hudColor"), 1, glm::value_ptr(color));
-        glBufferData(GL_ARRAY_BUFFER,
-                     static_cast<GLsizeiptr>(vertices.size() * sizeof(glm::vec2)),
-                     vertices.data(),
-                     GL_DYNAMIC_DRAW);
-        glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(vertices.size()));
-    };
-    draw(track, {0.10F, 0.13F, 0.16F});
-    draw(fill, {0.18F, 0.76F, 0.88F});
-    const std::string title = Text::get("loading.title");
-    drawText(title, centerX - title.size() * 9.0F, centerY - 35.0F, 3.0F);
-    drawText(status, centerX - status.size() * 4.8F, centerY + 5.0F, 1.4F, {0.65F, 0.74F, 0.78F});
-    glBindVertexArray(0);
-    glEnable(GL_CULL_FACE);
-    glEnable(GL_DEPTH_TEST);
+    UiDocument ui = GameHudLayout::loading(
+        progress, status, viewportWidth_, viewportHeight_);
+    uiRenderer_->draw(ui, viewportWidth_, viewportHeight_);
 }
 
 void Renderer::drawText(
@@ -693,7 +661,7 @@ void Renderer::drawWorld(const World& world, const CameraView& camera, const Pla
              transform,
              std::move(animation),
              animationSeconds,
-             entity.construction && !entity.construction.complete
+             entity.construction && !isOperational(entity)
                  ? (entity.construction.placementValid ? glm::vec3{0.45F} : glm::vec3{0.85F, 0.12F, 0.10F})
                  : glm::vec3{1.0F}});
     }
@@ -755,7 +723,7 @@ void Renderer::drawWorld(const World& world, const CameraView& camera, const Pla
     commandQueue_.clear();
     std::vector<glm::vec2> healthBack, healthDamage, healthRemaining, constructionProgress;
     for (const Entity& entity : world.entities()) {
-        const bool constructing = entity.construction && !entity.construction.complete &&
+        const bool constructing = entity.construction && !isOperational(entity) &&
                                   entity.construction.powerRequired > 0.0F;
         const bool damaged = entity.health && entity.health.current > 0.0F &&
                              entity.health.maximum > 0.0F &&
@@ -1123,23 +1091,13 @@ void Renderer::drawDetailedDebugHud(const CameraView& camera,
     glEnable(GL_DEPTH_TEST);
 }
 
-void Renderer::drawResourceHud(const Player& player) const {
+void Renderer::drawResourceHud(const Player& player,
+                               const World& world,
+                               const DefinitionRegistry& definitions,
+                               bool powerOverlayVisible,
+                               const UiDocument& layout) const {
     renderGraph_.enter(RenderPassKind::overlay);
-    std::vector<glm::vec2> panel;
-    appendHudRectangle(panel, 10.0F, 10.0F, 560.0F, 44.0F, viewportWidth_, viewportHeight_);
-    glDisable(GL_DEPTH_TEST);
-    glDisable(GL_CULL_FACE);
-    shaders_.use(hudProgram_);
-    glUniform3f(shaders_.uniform(hudProgram_, "hudColor"), 0.018F, 0.028F, 0.038F);
-    glBindVertexArray(hudVao_);
-    glBindBuffer(GL_ARRAY_BUFFER, hudVbo_);
-    glBufferData(GL_ARRAY_BUFFER,
-                 static_cast<GLsizeiptr>(panel.size() * sizeof(glm::vec2)),
-                 panel.data(),
-                 GL_DYNAMIC_DRAW);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(glm::vec2), nullptr);
-    glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(panel.size()));
+    uiRenderer_->draw(layout, viewportWidth_, viewportHeight_);
     const auto amount = [&player](const char* id) {
         const auto found = player.resources.find(id);
         return found == player.resources.end() ? 0.0F : found->second;
@@ -1147,192 +1105,81 @@ void Renderer::drawResourceHud(const Player& player) const {
     glBindVertexArray(0);
     glEnable(GL_CULL_FACE);
     glEnable(GL_DEPTH_TEST);
-    static constexpr std::array<const char*, 5> ids{"wood", "stone", "gold", "materials", "power"};
-    float left = 18.0F;
-    for (const char* id : ids) {
-        drawIcon(std::string("resource_") + id, left, 13.0F, left + 26.0F, 39.0F);
-        drawText(std::to_string(static_cast<unsigned>(amount(id))), left + 30.0F, 17.0F, 1.35F);
-        left += 106.0F;
+    float generation = 0.0F, demand = 0.0F, storage = 0.0F;
+    struct DeviceLine { std::string name; float production; float consumption; };
+    std::vector<DeviceLine> devices;
+    for (const Entity& entity : world.entities()) {
+        if (entity.authority.owner != player.id) continue;
+        const EntityArchetype* archetype = definitions.archetype(entity.archetype);
+        if (!archetype || !archetype->powerDevice) continue;
+        const PowerDeviceDefinition* device = definitions.powerDevice(*archetype->powerDevice);
+        if (!device) continue;
+        const bool active = isOperational(entity);
+        const float produced = active ? device->production : 0.0F;
+        const float consumed = active ? device->consumption : 0.0F;
+        generation += produced;
+        demand += consumed;
+        storage += device->storage;
+        devices.push_back({entity.name, produced, consumed});
+    }
+    const auto powerText = [](float used, float capacity) {
+        float scale = 1.0F;
+        const char* unit = "kW";
+        const float largest = std::max(std::abs(used), std::abs(capacity));
+        if (largest >= 1000000.0F) { scale = 1000000.0F; unit = "GW"; }
+        else if (largest >= 1000.0F) { scale = 1000.0F; unit = "MW"; }
+        std::ostringstream output;
+        output << std::fixed << std::setprecision(scale == 1.0F ? 0 : 1)
+               << used / scale << '/' << capacity / scale << ' ' << unit;
+        return output.str();
+    };
+    std::size_t localIndex = 0;
+    for (const ResourceDefinition* resource : definitions.enabledResources()) {
+        if (resource->storage == ResourceStorageKind::network) continue;
+        const UiElement* slot = layout.find("resources.local." + std::to_string(localIndex++));
+        if (!slot) continue;
+        const float iconSize = slot->bounds.bottom - slot->bounds.top;
+        drawIcon(resource->icon, slot->bounds.left, slot->bounds.top,
+                 slot->bounds.left + iconSize, slot->bounds.bottom);
+        drawText(std::to_string(static_cast<unsigned>(amount(resource->id.c_str()))),
+                 slot->bounds.left + iconSize + 4.0F, slot->bounds.top + 4.0F, 1.35F);
+    }
+    const auto resources = definitions.enabledResources();
+    const auto power = std::find_if(resources.begin(), resources.end(),
+        [](const ResourceDefinition* resource) { return resource->storage == ResourceStorageKind::network; });
+    const std::string powerIcon = power == resources.end() ? "resource_power" : (*power)->icon;
+    const UiElement* powerSlot = layout.find("resources.power");
+    if (!powerSlot) return;
+    const float powerIconSize = powerSlot->bounds.bottom - powerSlot->bounds.top - 6.0F;
+    drawIcon(powerIcon, powerSlot->bounds.left, powerSlot->bounds.top + 3.0F,
+             powerSlot->bounds.left + powerIconSize, powerSlot->bounds.bottom - 3.0F);
+    drawText(powerText(demand, generation), powerSlot->bounds.left + powerIconSize + 4.0F,
+             powerSlot->bounds.top + 7.0F, 1.18F,
+             demand > generation ? glm::vec3{1.0F, 0.35F, 0.25F} : glm::vec3{0.88F, 0.94F, 0.86F});
+
+    if (!powerOverlayVisible) return;
+    const UiElement* powerPanel = layout.find("power.panel");
+    if (!powerPanel) return;
+    const float top = powerPanel->bounds.top;
+    const float textLeft = powerPanel->bounds.left + 14.0F;
+    drawText("POWER GRID", textLeft, top + 12.0F, 1.55F, {0.25F, 0.82F, 0.95F});
+    drawText("Load / generation: " + powerText(demand, generation), textLeft, top + 37.0F, 1.25F);
+    drawText("Storage capacity: " + std::to_string(static_cast<int>(storage)) + " kWh",
+             textLeft, top + 58.0F, 1.15F);
+    drawText("Connections: not configured", textLeft, top + 78.0F, 1.05F, {0.62F, 0.68F, 0.72F});
+    float y = top + 100.0F;
+    for (const DeviceLine& device : devices) {
+        const std::string value = device.production > 0.0F
+            ? "+" + std::to_string(static_cast<int>(device.production)) + " kW"
+            : "-" + std::to_string(static_cast<int>(device.consumption)) + " kW";
+        drawText(device.name + "  " + value, textLeft, y, 1.1F,
+                 device.production > 0.0F ? glm::vec3{0.35F, 0.92F, 0.45F}
+                                          : glm::vec3{0.95F, 0.72F, 0.28F});
+        y += 22.0F;
     }
 }
 
-void Renderer::drawStartMenu(bool startHovered,
-                             bool buildHovered,
-                             bool loadHovered,
-                             bool settingsHovered,
-                             bool exitHovered,
-                             bool seedFocused,
-                             const std::string& seedText,
-                             const std::string& playerOneCountry,
-                             const std::string& playerTwoCountry) const {
-    renderGraph_.enter(RenderPassKind::userInterface);
-    const auto drawVertices = [this](const std::vector<glm::vec2>& vertices,
-                                     const glm::vec3& color) {
-        glUniform3fv(shaders_.uniform(hudProgram_, "hudColor"), 1, glm::value_ptr(color));
-        glBindBuffer(GL_ARRAY_BUFFER, hudVbo_);
-        glBufferData(GL_ARRAY_BUFFER,
-                     static_cast<GLsizeiptr>(vertices.size() * sizeof(glm::vec2)),
-                     vertices.data(),
-                     GL_DYNAMIC_DRAW);
-        glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(vertices.size()));
-    };
 
-    glDisable(GL_DEPTH_TEST);
-    glDisable(GL_CULL_FACE);
-    shaders_.use(hudProgram_);
-    glBindVertexArray(hudVao_);
-    glBindBuffer(GL_ARRAY_BUFFER, hudVbo_);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(glm::vec2), nullptr);
-
-    std::vector<glm::vec2> panel;
-    appendHudRectangle(panel, 30.0F, 70.0F, 800.0F, 625.0F, viewportWidth_, viewportHeight_);
-    drawVertices(panel, {0.035F, 0.055F, 0.075F});
-
-    std::vector<glm::vec2> seedField;
-    appendHudRectangle(seedField, 60.0F, 185.0F, 300.0F, 230.0F, viewportWidth_, viewportHeight_);
-    drawVertices(seedField,
-                 seedFocused ? glm::vec3{0.22F, 0.34F, 0.46F} : glm::vec3{0.10F, 0.16F, 0.22F});
-
-    std::vector<glm::vec2> startButton;
-    appendHudRectangle(startButton, 60.0F, 250.0F, 300.0F, 310.0F, viewportWidth_, viewportHeight_);
-    drawVertices(startButton,
-                 startHovered ? glm::vec3{0.28F, 0.62F, 0.24F} : glm::vec3{0.16F, 0.36F, 0.18F});
-
-    std::vector<glm::vec2> buildButton;
-    appendHudRectangle(buildButton, 60.0F, 320.0F, 300.0F, 380.0F, viewportWidth_, viewportHeight_);
-    drawVertices(buildButton,
-                 buildHovered ? glm::vec3{0.25F, 0.48F, 0.70F} : glm::vec3{0.14F, 0.27F, 0.40F});
-
-    std::vector<glm::vec2> loadButton;
-    appendHudRectangle(loadButton, 60.0F, 390.0F, 300.0F, 450.0F, viewportWidth_, viewportHeight_);
-    drawVertices(loadButton,
-                 loadHovered ? glm::vec3{0.54F, 0.46F, 0.20F} : glm::vec3{0.31F, 0.27F, 0.13F});
-
-    std::vector<glm::vec2> settingsButton;
-    appendHudRectangle(settingsButton, 60, 460, 300, 520, viewportWidth_, viewportHeight_);
-    drawVertices(settingsButton,
-                 settingsHovered ? glm::vec3{0.30F, 0.48F, 0.65F} : glm::vec3{0.14F, 0.25F, 0.36F});
-    std::vector<glm::vec2> exitButton;
-    appendHudRectangle(exitButton, 60.0F, 530.0F, 300.0F, 590.0F, viewportWidth_, viewportHeight_);
-    drawVertices(exitButton,
-                 exitHovered ? glm::vec3{0.72F, 0.25F, 0.20F} : glm::vec3{0.40F, 0.16F, 0.14F});
-    std::vector<glm::vec2> countryFields;
-    appendHudRectangle(
-        countryFields, 380.0F, 185.0F, 760.0F, 230.0F, viewportWidth_, viewportHeight_);
-    appendHudRectangle(
-        countryFields, 380.0F, 250.0F, 760.0F, 295.0F, viewportWidth_, viewportHeight_);
-    drawVertices(countryFields, {0.10F, 0.16F, 0.22F});
-
-    std::vector<glm::vec2> text;
-    appendHudText(
-        text, Text::get("menu.title"), 60.0F, 115.0F, 3.0F, viewportWidth_, viewportHeight_);
-    appendHudText(
-        text, Text::get("menu.seed"), 60.0F, 163.0F, 2.0F, viewportWidth_, viewportHeight_);
-    appendHudText(text,
-                  seedText.empty() ? "0" : seedText,
-                  72.0F,
-                  198.0F,
-                  2.0F,
-                  viewportWidth_,
-                  viewportHeight_);
-    appendHudText(
-        text, Text::get("menu.start"), 125.0F, 269.0F, 3.0F, viewportWidth_, viewportHeight_);
-    appendHudText(
-        text, Text::get("menu.build"), 125.0F, 339.0F, 3.0F, viewportWidth_, viewportHeight_);
-    appendHudText(
-        text, Text::get("menu.load"), 134.0F, 409.0F, 3.0F, viewportWidth_, viewportHeight_);
-    appendHudText(
-        text, Text::get("menu.settings"), 100.0F, 479.0F, 3.0F, viewportWidth_, viewportHeight_);
-    appendHudText(
-        text, Text::get("menu.exit"), 134.0F, 549.0F, 3.0F, viewportWidth_, viewportHeight_);
-    drawVertices(text, {0.95F, 0.98F, 0.82F});
-    drawText(Text::get("menu.title"), 60.0F, 108.0F, 3.0F);
-    drawText(Text::get("menu.seed"), 60.0F, 157.0F, 2.0F);
-    drawText(seedText.empty() ? "0" : seedText, 72.0F, 192.0F, 2.0F);
-    drawText(Text::get("menu.start"), 125.0F, 261.0F, 3.0F);
-    drawText(Text::get("menu.build"), 125.0F, 331.0F, 3.0F);
-    drawText(Text::get("menu.load"), 134.0F, 401.0F, 3.0F);
-    drawText(Text::get("menu.settings"), 100.0F, 471.0F, 3.0F);
-    drawText(Text::get("menu.exit"), 134.0F, 541.0F, 3.0F);
-    drawText(Text::get("menu.team_a_country"), 380.0F, 157.0F, 2.0F);
-    drawText("<  " + playerOneCountry + "  >", 400.0F, 192.0F, 2.0F);
-    drawText(Text::get("menu.team_b_country"), 380.0F, 222.0F, 2.0F);
-    drawText("<  " + playerTwoCountry + "  >", 400.0F, 257.0F, 2.0F);
-    drawText(Text::get("menu.country_controls"), 380.0F, 312.0F, 1.5F);
-
-    glBindVertexArray(0);
-    glEnable(GL_CULL_FACE);
-    glEnable(GL_DEPTH_TEST);
-}
-
-void Renderer::drawSettings(const GameConfig& config,
-                            std::size_t resolution,
-                            int hovered,
-                            int binding) const {
-    renderGraph_.enter(RenderPassKind::userInterface);
-    static constexpr std::array<std::pair<int, int>, 4> sizes{
-        {{1280, 720}, {1600, 900}, {1920, 1080}, {2560, 1440}}};
-    static constexpr const char* actions[] = {"settings.action.forward",
-                                              "settings.action.backward",
-                                              "settings.action.left",
-                                              "settings.action.right",
-                                              "settings.action.debug",
-                                              "settings.action.pause"};
-    static constexpr const char* ids[] = {"forward", "backward", "left", "right", "debug", "pause"};
-    glDisable(GL_DEPTH_TEST);
-    glDisable(GL_CULL_FACE);
-    shaders_.use(hudProgram_);
-    glBindVertexArray(hudVao_); glBindBuffer(GL_ARRAY_BUFFER, hudVbo_);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(glm::vec2), nullptr);
-    const auto box = [&](UiRect rect, int id) {
-        std::vector<glm::vec2> vertices;
-        appendHudRectangle(vertices, rect.left, rect.top, rect.right, rect.bottom,
-                           viewportWidth_, viewportHeight_);
-        const glm::vec3 color = id == hovered ? glm::vec3{0.22F, 0.38F, 0.52F}
-                                               : glm::vec3{0.10F, 0.16F, 0.22F};
-        glUniform3fv(shaders_.uniform(hudProgram_, "hudColor"), 1, glm::value_ptr(color));
-        glBufferData(
-            GL_ARRAY_BUFFER, vertices.size() * sizeof(glm::vec2), vertices.data(), GL_DYNAMIC_DRAW);
-        glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(vertices.size()));
-    };
-    std::vector<glm::vec2> panel;
-    appendHudRectangle(panel, 30, 30, 880, 620, viewportWidth_, viewportHeight_);
-    glUniform3f(shaders_.uniform(hudProgram_, "hudColor"), 0.035F, 0.055F, 0.075F);
-    glBufferData(GL_ARRAY_BUFFER, panel.size() * sizeof(glm::vec2), panel.data(), GL_DYNAMIC_DRAW);
-    glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(panel.size()));
-    box({60,130,430,168},0); box({60,175,430,213},1);
-    for(int row=0;row<4;++row) box({60.0F,285.0F+row*45,430.0F,323.0F+row*45},2+row);
-    for(int row=0;row<6;++row) box({470.0F,130.0F+row*45,850.0F,168.0F+row*45},6+row);
-    box({470,500,850,538},12); box({470,545,850,583},13);
-    const auto percent=[](float value){return std::to_string(static_cast<int>(std::round(value*100.0F)))+"%";};
-    drawText(Text::get("settings.title"), 60, 52, 3.0F);
-    const std::string enabled = Text::get("settings.on"), disabled = Text::get("settings.off");
-    drawText(Text::get("settings.video"),60,100,2.0F,{0.35F,0.72F,0.92F});
-    drawText(Text::format("settings.resolution", {std::to_string(sizes[resolution].first),
-                                                   std::to_string(sizes[resolution].second)}),75,140,1.5F);
-    drawText(Text::format("settings.fullscreen", {config.fullscreen ? enabled : disabled}),75,185,1.5F);
-    drawText(Text::get("settings.audio"),60,250,2.0F,{0.35F,0.72F,0.92F});
-    drawText(Text::format("settings.master_volume", {percent(config.masterVolume)}),75,295,1.4F);
-    drawText(Text::format("settings.music_volume", {percent(config.musicVolume)}),75,340,1.4F);
-    drawText(Text::format("settings.effects_volume", {percent(config.effectsVolume)}),75,385,1.4F);
-    drawText(Text::format("settings.mute", {config.muted ? enabled : disabled}),75,430,1.4F);
-    drawText(Text::get("settings.controls"),470,100,2.0F,{0.35F,0.72F,0.92F});
-    for (int i = 0; i < 6; ++i) {
-        const auto found = config.keybinds.find(ids[i]);
-        const SDL_Keycode key = found == config.keybinds.end() ? 0 : found->second;
-        drawText(Text::get(actions[i]),485,140+i*45,1.35F,{0.72F,0.78F,0.82F});
-        drawText(binding == i ? Text::get("settings.press_key")
-                              : Text::format("settings.bound_to", {SDL_GetKeyName(key)}),
-                 625,140+i*45,1.35F,binding==i?glm::vec3{1.0F,0.72F,0.18F}:glm::vec3{0.95F,0.98F,0.82F});
-    }
-    drawText(Text::get("settings.apply"),485,510,1.5F);
-    drawText(Text::get("settings.cancel"),485,555,1.5F);
-    glBindVertexArray(0);
-    glEnable(GL_CULL_FACE);
-    glEnable(GL_DEPTH_TEST);
-}
 
 void Renderer::regenerateTerrain(std::uint32_t seed) {
     terrainSeed_ = seed;
@@ -1506,116 +1353,19 @@ void Renderer::uploadTerrainChunk(int chunkX, int chunkZ) {
     }
 }
 
-void Renderer::drawPauseMenu(bool resumeHovered, bool settingsHovered, bool exitHovered) const {
-    renderGraph_.enter(RenderPassKind::overlay);
-    const auto drawVertices = [this](const std::vector<glm::vec2>& vertices,
-                                     const glm::vec3& color) {
-        glUniform3fv(shaders_.uniform(hudProgram_, "hudColor"), 1, glm::value_ptr(color));
-        glBindBuffer(GL_ARRAY_BUFFER, hudVbo_);
-        glBufferData(GL_ARRAY_BUFFER,
-                     static_cast<GLsizeiptr>(vertices.size() * sizeof(glm::vec2)),
-                     vertices.data(),
-                     GL_DYNAMIC_DRAW);
-        glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(vertices.size()));
-    };
 
-    glDisable(GL_DEPTH_TEST);
-    glDisable(GL_CULL_FACE);
-    shaders_.use(hudProgram_);
-    glBindVertexArray(hudVao_);
-    glBindBuffer(GL_ARRAY_BUFFER, hudVbo_);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(glm::vec2), nullptr);
 
-    std::vector<glm::vec2> panel;
-    appendHudRectangle(panel, 30.0F, 70.0F, 335.0F, 505.0F, viewportWidth_, viewportHeight_);
-    drawVertices(panel, {0.035F, 0.055F, 0.075F});
 
-    std::vector<glm::vec2> resumeButton;
-    appendHudRectangle(
-        resumeButton, 60.0F, 250.0F, 300.0F, 310.0F, viewportWidth_, viewportHeight_);
-    drawVertices(resumeButton,
-                 resumeHovered ? glm::vec3{0.28F, 0.62F, 0.24F} : glm::vec3{0.16F, 0.36F, 0.18F});
-
-    std::vector<glm::vec2> settingsButton;
-    appendHudRectangle(
-        settingsButton, 60.0F, 330.0F, 300.0F, 390.0F, viewportWidth_, viewportHeight_);
-    drawVertices(settingsButton,
-                 settingsHovered ? glm::vec3{0.30F, 0.48F, 0.65F}
-                                 : glm::vec3{0.14F, 0.25F, 0.36F});
-    std::vector<glm::vec2> exitButton;
-    appendHudRectangle(exitButton, 60.0F, 410.0F, 300.0F, 470.0F, viewportWidth_, viewportHeight_);
-    drawVertices(exitButton,
-                 exitHovered ? glm::vec3{0.72F, 0.25F, 0.20F} : glm::vec3{0.40F, 0.16F, 0.14F});
-
-    std::vector<glm::vec2> text;
-    appendHudText(
-        text, Text::get("pause.title"), 91.0F, 115.0F, 4.0F, viewportWidth_, viewportHeight_);
-    appendHudText(
-        text, Text::get("pause.resume"), 107.0F, 269.0F, 3.0F, viewportWidth_, viewportHeight_);
-    appendHudText(
-        text, Text::get("menu.exit"), 134.0F, 429.0F, 3.0F, viewportWidth_, viewportHeight_);
-    drawVertices(text, {0.95F, 0.98F, 0.82F});
-    drawText(Text::get("pause.title"), 91.0F, 106.0F, 4.0F);
-    drawText(Text::get("pause.resume"), 107.0F, 261.0F, 3.0F);
-    drawText(Text::get("menu.settings"), 100.0F, 341.0F, 3.0F);
-    drawText(Text::get("menu.exit"), 134.0F, 421.0F, 3.0F);
-
-    glBindVertexArray(0);
-    glEnable(GL_CULL_FACE);
-    glEnable(GL_DEPTH_TEST);
-}
-
-void Renderer::drawBuildHud(PlayerId team,
-                            const std::string& entityType,
-                            std::size_t entityCount,
-                            const std::string& status,
-                            bool hovered,
-                            bool active) const {
-    renderGraph_.enter(RenderPassKind::overlay);
-    std::vector<glm::vec2> panel, button, icon;
-    const float panelTop = static_cast<float>(viewportHeight_) - 235.0F;
-    appendHudRectangle(panel, 18.0F, panelTop, 640.0F, static_cast<float>(viewportHeight_) - 18.0F, viewportWidth_, viewportHeight_);
-    appendHudRectangle(button, 30.0F, static_cast<float>(viewportHeight_) - 75.0F, 220.0F, static_cast<float>(viewportHeight_) - 30.0F, viewportWidth_, viewportHeight_);
-    appendHudRectangle(icon, 42.0F, static_cast<float>(viewportHeight_) - 67.0F, 70.0F, static_cast<float>(viewportHeight_) - 38.0F, viewportWidth_, viewportHeight_);
-    (void)team;
-    glDisable(GL_DEPTH_TEST);
-    glDisable(GL_CULL_FACE);
-    shaders_.use(hudProgram_);
-    glBindVertexArray(hudVao_);
-    glBindBuffer(GL_ARRAY_BUFFER, hudVbo_);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(glm::vec2), nullptr);
-    auto draw = [this](const std::vector<glm::vec2>& vertices, const glm::vec3& color) {
-        glUniform3fv(shaders_.uniform(hudProgram_, "hudColor"), 1, glm::value_ptr(color));
-        glBufferData(GL_ARRAY_BUFFER,
-                     static_cast<GLsizeiptr>(vertices.size() * sizeof(glm::vec2)),
-                     vertices.data(),
-                     GL_DYNAMIC_DRAW);
-        glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(vertices.size()));
-    };
-    draw(panel, {0.025F, 0.04F, 0.06F});
-    draw(button, active ? glm::vec3{0.38F, 0.58F, 0.24F} : hovered ? glm::vec3{0.32F, 0.56F, 0.22F} : glm::vec3{0.14F, 0.27F, 0.20F});
-    draw(icon, {0.18F, 0.76F, 0.88F});
-    // Keep the build palette icon-first, while exposing a readable tooltip on hover.
-    drawText(entityType, 122.0F, static_cast<float>(viewportHeight_) - 63.0F, 1.25F);
-    if (hovered)
-        drawText(status, 30.0F, panelTop + 18.0F, 1.15F);
-    glBindVertexArray(0);
-    glEnable(GL_CULL_FACE);
-    glEnable(GL_DEPTH_TEST);
-    drawIcon("building_command_hub", 38.0F, static_cast<float>(viewportHeight_) - 72.0F,
-             76.0F, static_cast<float>(viewportHeight_) - 34.0F,
-             active ? glm::vec3{0.75F, 1.0F, 0.75F} : glm::vec3{1.0F});
-}
-
-void Renderer::drawStrategyHud(const World& world, EntityId selected, const Player* player) const {
+void Renderer::drawStrategyHud(const World& world, EntityId selected, const Player* player,
+                               const UiDocument& layout) const {
     renderGraph_.enter(RenderPassKind::overlay);
     (void)selected;
-    std::vector<glm::vec2> map, dots, rememberedFog, visibleFog, rememberedDots;
-    const float mapLeft = static_cast<float>(viewportWidth_) - 210.0F, mapTop = 20.0F,
-                mapRight = static_cast<float>(viewportWidth_) - 20.0F, mapBottom = 210.0F;
-    appendHudRectangle(map, mapLeft, mapTop, mapRight, mapBottom, viewportWidth_, viewportHeight_);
+    std::vector<glm::vec2> dots, rememberedFog, visibleFog, rememberedDots;
+    const UiElement* mapElement = layout.find("strategy.minimap");
+    if (!mapElement) return;
+    const float mapLeft = mapElement->bounds.left, mapTop = mapElement->bounds.top,
+                mapRight = mapElement->bounds.right, mapBottom = mapElement->bounds.bottom;
+    uiRenderer_->draw(layout, viewportWidth_, viewportHeight_);
     const float extent = terrain_.worldExtent(), half = extent * 0.5F;
     if (player)
         for (int z = 0; z < 16; ++z)
@@ -1702,12 +1452,10 @@ void Renderer::drawStrategyHud(const World& world, EntityId selected, const Play
                      GL_DYNAMIC_DRAW);
         glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(v.size()));
     };
-    draw(map, {0.008F, 0.012F, 0.016F});
     draw(rememberedFog, {0.055F, 0.085F, 0.085F});
     draw(visibleFog, {0.10F, 0.22F, 0.18F});
     draw(rememberedDots, {0.32F, 0.38F, 0.40F});
     draw(dots, {0.92F, 0.82F, 0.25F});
-    drawText(Text::get("strategy.minimap"), mapLeft + 8.0F, mapTop + 4.0F, 1.5F);
     // Overlay team markers in their faction colours.
     for (PlayerId team : {PlayerId{1}, PlayerId{2}}) {
         std::vector<glm::vec2> teamDots;
@@ -1747,289 +1495,75 @@ void Renderer::drawStrategyHud(const World& world, EntityId selected, const Play
     glEnable(GL_DEPTH_TEST);
 }
 
-void Renderer::drawUnitHud(const Entity& controlled) const {
+void Renderer::drawEntityHud(const EntityHudModel& model,
+                             const UiDocument& layout) const {
     renderGraph_.enter(RenderPassKind::overlay);
-    std::vector<glm::vec2> panel, text, healthBack, healthFill, crosshair;
-    const float top = static_cast<float>(viewportHeight_) - 125.0F;
-    appendHudRectangle(panel,
-                       18.0F,
-                       top,
-                       390.0F,
-                       static_cast<float>(viewportHeight_) - 18.0F,
-                       viewportWidth_,
-                       viewportHeight_);
-    appendHudText(text,
-                  Text::format("unit.name", {controlled.name}),
-                  30.0F,
-                  top + 12.0F,
-                  2.0F,
-                  viewportWidth_,
-                  viewportHeight_);
-    appendHudText(text,
-                  Text::format("unit.team",
-                               {Text::get(controlled.authority.owner == 1 ? "build.team.a"
-                                                                          : "build.team.b")}),
-                  30.0F,
-                  top + 38.0F,
-                  1.5F,
-                  viewportWidth_,
-                  viewportHeight_);
-    const int current = static_cast<int>(std::max(0.0F, controlled.health.current)),
-              maximum = static_cast<int>(std::max(1.0F, controlled.health.maximum));
-    appendHudText(text,
-                  Text::format("unit.health", {std::to_string(current), std::to_string(maximum)}),
-                  30.0F,
-                  top + 58.0F,
-                  1.5F,
-                  viewportWidth_,
-                  viewportHeight_);
-    appendHudText(
-        text, Text::get("unit.escape"), 30.0F, top + 84.0F, 1.25F, viewportWidth_, viewportHeight_);
-    appendHudRectangle(
-        healthBack, 205.0F, top + 55.0F, 365.0F, top + 70.0F, viewportWidth_, viewportHeight_);
-    const float ratio =
-        glm::clamp(controlled.health.current / controlled.health.maximum, 0.0F, 1.0F);
-    appendHudRectangle(healthFill,
-                       205.0F,
-                       top + 55.0F,
-                       205.0F + 160.0F * ratio,
-                       top + 70.0F,
-                       viewportWidth_,
-                       viewportHeight_);
+    uiRenderer_->draw(layout, viewportWidth_, viewportHeight_);
+
+    if (const UiElement* selectionPanel = layout.find("selection.panel")) {
+        const std::size_t visible = std::min<std::size_t>(model.selectionGroups.size(), 6);
+        for (std::size_t i = 0; i < visible; ++i) {
+            const auto& group = model.selectionGroups[i];
+            const UiElement* row =
+                layout.find(EntityHudLayout::selectionElementId(group.archetype));
+            if (!row) continue;
+            const float padding = std::max(2.0F, (row->bounds.bottom - row->bounds.top) * 0.1F);
+            const float iconSize = row->bounds.bottom - row->bounds.top - padding * 2.0F;
+            drawIcon(group.icon, row->bounds.left + padding, row->bounds.top + padding,
+                     row->bounds.left + padding + iconSize, row->bounds.bottom - padding);
+        }
+        return;
+    }
+
+    if (const UiElement* portrait = layout.find("entity.portrait"))
+        drawIcon(model.portraitIcon, portrait->bounds.left, portrait->bounds.top,
+                 portrait->bounds.right, portrait->bounds.bottom);
+
+    for (std::size_t i = 0; i < model.cards.size(); ++i)
+        if (const UiElement* card = layout.find("entity.card." + std::to_string(i)))
+            drawIcon(model.cards[i].icon, card->bounds.left, card->bounds.top,
+                     card->bounds.right, card->bounds.bottom);
+
+    for (const HudActionModel& action : model.actions)
+        if (const UiElement* element =
+                layout.find(EntityHudLayout::actionElementId(action.id))) {
+            const float padding = std::max(3.0F,
+                (element->bounds.bottom - element->bounds.top) * 0.08F);
+            const glm::vec3 tint = action.enabled ? glm::vec3{1.0F} : glm::vec3{0.34F};
+            drawIcon(action.icon, element->bounds.left + padding, element->bounds.top + padding,
+                     element->bounds.right - padding, element->bounds.bottom - padding, tint);
+        }
+
+    for (std::size_t i = 0; i < model.queue.size(); ++i)
+        if (const UiElement* element =
+                layout.find(EntityHudLayout::queueElementId(i))) {
+            const float padding = std::max(2.0F,
+                (element->bounds.bottom - element->bounds.top) * 0.09F);
+            drawIcon(model.queue[i].icon, element->bounds.left + padding,
+                     element->bounds.top + padding, element->bounds.right - padding,
+                     element->bounds.bottom - padding);
+        }
+}
+
+
+
+void Renderer::drawCrosshair() const {
+    renderGraph_.enter(RenderPassKind::overlay);
     const float cx = viewportWidth_ * 0.5F, cy = viewportHeight_ * 0.5F;
-    appendHudRectangle(
-        crosshair, cx - 10.0F, cy - 1.0F, cx + 10.0F, cy + 1.0F, viewportWidth_, viewportHeight_);
-    appendHudRectangle(
-        crosshair, cx - 1.0F, cy - 10.0F, cx + 1.0F, cy + 10.0F, viewportWidth_, viewportHeight_);
-    glDisable(GL_DEPTH_TEST);
-    glDisable(GL_CULL_FACE);
-    shaders_.use(hudProgram_);
-    glBindVertexArray(hudVao_);
-    glBindBuffer(GL_ARRAY_BUFFER, hudVbo_);
+    std::vector<glm::vec2> vertices;
+    appendHudRectangle(vertices, cx - 10.0F, cy - 1.0F, cx + 10.0F, cy + 1.0F,
+                       viewportWidth_, viewportHeight_);
+    appendHudRectangle(vertices, cx - 1.0F, cy - 10.0F, cx + 1.0F, cy + 10.0F,
+                       viewportWidth_, viewportHeight_);
+    glDisable(GL_DEPTH_TEST); glDisable(GL_CULL_FACE); shaders_.use(hudProgram_);
+    glUniform3f(shaders_.uniform(hudProgram_, "hudColor"), 0.95F, 0.95F, 0.84F);
+    glBindVertexArray(hudVao_); glBindBuffer(GL_ARRAY_BUFFER, hudVbo_);
+    glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(vertices.size() * sizeof(glm::vec2)),
+                 vertices.data(), GL_DYNAMIC_DRAW);
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(glm::vec2), nullptr);
-    auto draw = [this](const std::vector<glm::vec2>& v, const glm::vec3& c) {
-        glUniform3fv(shaders_.uniform(hudProgram_, "hudColor"), 1, glm::value_ptr(c));
-        glBufferData(GL_ARRAY_BUFFER,
-                     static_cast<GLsizeiptr>(v.size() * sizeof(glm::vec2)),
-                     v.data(),
-                     GL_DYNAMIC_DRAW);
-        glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(v.size()));
-    };
-    draw(panel, {0.025F, 0.04F, 0.06F});
-    draw(healthBack, {0.18F, 0.06F, 0.05F});
-    draw(healthFill, {0.18F, 0.72F, 0.22F});
-    draw(crosshair, {0.95F, 0.95F, 0.84F});
-    draw(text, {0.93F, 0.97F, 0.84F});
-    drawText(Text::format("unit.name", {controlled.name}), 30.0F, top + 8.0F, 2.0F);
-    drawText(Text::format(
-                 "unit.team",
-                 {Text::get(controlled.authority.owner == 1 ? "build.team.a" : "build.team.b")}),
-             30.0F,
-             top + 34.0F,
-             1.5F);
-    drawText(Text::format("unit.health", {std::to_string(current), std::to_string(maximum)}),
-             30.0F,
-             top + 54.0F,
-             1.5F);
-    drawText(Text::get("unit.escape"), 30.0F, top + 80.0F, 1.25F);
-    glBindVertexArray(0);
-    glEnable(GL_CULL_FACE);
-    glEnable(GL_DEPTH_TEST);
-}
-
-void Renderer::drawTownHallHud(const Entity& hall, const std::array<bool, 3>& hovered) const {
-    renderGraph_.enter(RenderPassKind::overlay);
-    const float height = static_cast<float>(viewportHeight_), top = height - 235.0F;
-    std::vector<glm::vec2> panel, buttons[3], queueSlots, queueIcons, progressBack, progressFill;
-    appendHudRectangle(panel, 18.0F, top, 640.0F, height - 18.0F, viewportWidth_, viewportHeight_);
-    constexpr std::array<float, 3> lefts{30.0F, 230.0F, 430.0F};
-    constexpr std::array<float, 3> rights{220.0F, 420.0F, 620.0F};
-    for (std::size_t i = 0; i < 3; ++i)
-        appendHudRectangle(buttons[i],
-                           lefts[i],
-                           height - 75.0F,
-                           rights[i],
-                           height - 30.0F,
-                           viewportWidth_,
-                           viewportHeight_);
-    const std::size_t visible = std::min<std::size_t>(hall.production.queue.size(), 9);
-    for (std::size_t i = 0; i < visible; ++i) {
-        const float left = 30.0F + static_cast<float>(i) * 54.0F;
-        appendHudRectangle(queueSlots,
-                           left,
-                           top + 82.0F,
-                           left + 44.0F,
-                           top + 126.0F,
-                           viewportWidth_,
-                           viewportHeight_);
-        // Temporary modern pictogram: a compact equipment tile with a bright core.
-        appendHudRectangle(queueIcons,
-                           left + 10.0F,
-                           top + 92.0F,
-                           left + 34.0F,
-                           top + 116.0F,
-                           viewportWidth_,
-                           viewportHeight_);
-        appendHudRectangle(queueIcons,
-                           left + 16.0F,
-                           top + 86.0F,
-                           left + 28.0F,
-                           top + 122.0F,
-                           viewportWidth_,
-                           viewportHeight_);
-    }
-    if (!hall.production.queue.empty()) {
-        const ProductionOrder& active = hall.production.queue.front();
-        const float ratio = active.durationTicks > 0
-                                ? std::clamp(1.0F - static_cast<float>(active.remainingTicks) /
-                                                           static_cast<float>(active.durationTicks),
-                                             0.0F,
-                                             1.0F)
-                                : 1.0F;
-        appendHudRectangle(progressBack,
-                           30.0F,
-                           top + 137.0F,
-                           620.0F,
-                           top + 147.0F,
-                           viewportWidth_,
-                           viewportHeight_);
-        appendHudRectangle(progressFill,
-                           30.0F,
-                           top + 137.0F,
-                           30.0F + 590.0F * ratio,
-                           top + 147.0F,
-                           viewportWidth_,
-                           viewportHeight_);
-    }
-    glDisable(GL_DEPTH_TEST);
-    glDisable(GL_CULL_FACE);
-    shaders_.use(hudProgram_);
-    glBindVertexArray(hudVao_);
-    glBindBuffer(GL_ARRAY_BUFFER, hudVbo_);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(glm::vec2), nullptr);
-    auto draw = [this](const std::vector<glm::vec2>& v, const glm::vec3& c) {
-        glUniform3fv(shaders_.uniform(hudProgram_, "hudColor"), 1, glm::value_ptr(c));
-        glBufferData(GL_ARRAY_BUFFER,
-                     static_cast<GLsizeiptr>(v.size() * sizeof(glm::vec2)),
-                     v.data(),
-                     GL_DYNAMIC_DRAW);
-        glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(v.size()));
-    };
-    draw(panel, {0.025F, 0.04F, 0.06F});
-    for (std::size_t i = 0; i < 3; ++i)
-        draw(buttons[i],
-             hovered[i] ? glm::vec3{0.32F, 0.56F, 0.22F} : glm::vec3{0.14F, 0.27F, 0.20F});
-    draw(queueSlots, {0.08F, 0.12F, 0.15F});
-    draw(queueIcons, {0.18F, 0.76F, 0.88F});
-    draw(progressBack, {0.06F, 0.08F, 0.10F});
-    draw(progressFill, {0.18F, 0.76F, 0.88F});
-    drawText(hall.name + " - " + std::to_string(hall.buildingUpgrades.level),
-             30.0F,
-             top + 14.0F,
-             2.4F);
-    std::string current = Text::get("town_hall.queue.empty");
-    std::ostringstream remaining;
-    remaining << std::fixed << std::setprecision(1) << 0.0F;
-    if (!hall.production.queue.empty()) {
-        const ProductionOrder& active = hall.production.queue.front();
-        current = Text::get(active.kind == ProductionKind::trainCharacter ? "town_hall.queue.train"
-                            : active.kind == ProductionKind::upgradeBuilding
-                                ? "town_hall.queue.upgrade"
-                                : "town_hall.queue.research");
-        remaining.str("");
-        remaining << std::fixed << std::setprecision(1)
-                  << static_cast<float>(active.remainingTicks) / 30.0F;
-    }
-    if (hall.production.queue.empty())
-        drawText(Text::get("town_hall.production.empty"), 30.0F, top + 48.0F, 1.7F);
-    else
-        drawText(
-            Text::format("town_hall.production",
-                         {std::to_string(hall.production.queue.size()), current, remaining.str()}),
-            30.0F,
-            top + 48.0F,
-            1.7F);
-    if (hall.production.queue.size() > visible)
-        drawText("+ " + std::to_string(hall.production.queue.size() - visible),
-                 526.0F,
-                 top + 96.0F,
-                 1.35F);
-    drawText(hall.buildingUpgrades.level >= 3 ? Text::get("town_hall.max_level")
-                                        : Text::get("town_hall.upgrade"),
-             42.0F,
-             height - 64.0F,
-             1.35F);
-    drawText(Text::get("town_hall.faster"),
-             242.0F,
-             height - 64.0F,
-             1.35F);
-    drawText(Text::get("town_hall.train"), 442.0F, height - 64.0F, 1.35F);
-    glBindVertexArray(0);
-    glEnable(GL_CULL_FACE);
-    glEnable(GL_DEPTH_TEST);
-}
-
-void Renderer::drawEntityActionHud(const Entity& entity,
-                                   const std::vector<std::string>& labels,
-                                   const std::vector<std::string>& icons,
-                                   const std::vector<std::string>& costs,
-                                   const std::vector<bool>& enabled,
-                                   int hovered,
-                                   const std::vector<std::string>& queueLabels,
-                                   int queueHovered) const {
-    if (labels.empty()) return;
-    renderGraph_.enter(RenderPassKind::overlay);
-    const float height = static_cast<float>(viewportHeight_), top = height - 235.0F;
-    std::vector<glm::vec2> panel, buttons, hot, disabled, actionIcons, queueSlots, queueIcons,
-        progressBack, progressFill;
-    appendHudRectangle(panel, 18, top, 640, height - 18, viewportWidth_, viewportHeight_);
-    const std::size_t count = std::min<std::size_t>(labels.size(), 6);
-    for (std::size_t i=0;i<count;++i) {
-        const float left=30.0F+static_cast<float>(i)*96.0F;
-        auto& buttonLayer = i >= enabled.size() || !enabled[i]
-                                ? disabled
-                                : (i == static_cast<std::size_t>(hovered) ? hot : buttons);
-        appendHudRectangle(buttonLayer,left,height-86,left+82,height-30,viewportWidth_,viewportHeight_);
-        appendHudRectangle(actionIcons,left+28,height-76,left+54,height-40,viewportWidth_,viewportHeight_);
-        appendHudRectangle(actionIcons,left+20,height-68,left+62,height-48,viewportWidth_,viewportHeight_);
-    }
-    if (entity.production) {
-        const std::size_t visible = std::min<std::size_t>(entity.production.queue.size(), 9);
-        for (std::size_t i=0;i<visible;++i) {
-            const float left=30.0F+static_cast<float>(i)*54.0F;
-            appendHudRectangle(queueSlots,left,top+82,left+44,top+126,viewportWidth_,viewportHeight_);
-            appendHudRectangle(queueIcons,left+10,top+92,left+34,top+116,viewportWidth_,viewportHeight_);
-            appendHudRectangle(queueIcons,left+16,top+86,left+28,top+122,viewportWidth_,viewportHeight_);
-        }
-        if (!entity.production.queue.empty()) {
-            const ProductionOrder& active=entity.production.queue.front();
-            const float ratio=active.durationTicks ? std::clamp(1.0F-static_cast<float>(active.remainingTicks)/static_cast<float>(active.durationTicks),0.0F,1.0F):1.0F;
-            appendHudRectangle(progressBack,30,top+137,620,top+147,viewportWidth_,viewportHeight_);
-            appendHudRectangle(progressFill,30,top+137,30+590*ratio,top+147,viewportWidth_,viewportHeight_);
-        }
-    }
-    glDisable(GL_DEPTH_TEST); glDisable(GL_CULL_FACE); shaders_.use(hudProgram_); glBindVertexArray(hudVao_); glBindBuffer(GL_ARRAY_BUFFER,hudVbo_); glEnableVertexAttribArray(0); glVertexAttribPointer(0,2,GL_FLOAT,GL_FALSE,sizeof(glm::vec2),nullptr);
-    auto draw=[this](const std::vector<glm::vec2>& v,const glm::vec3& c){ glUniform3fv(shaders_.uniform(hudProgram_,"hudColor"),1,glm::value_ptr(c)); glBufferData(GL_ARRAY_BUFFER,static_cast<GLsizeiptr>(v.size()*sizeof(glm::vec2)),v.data(),GL_DYNAMIC_DRAW); glDrawArrays(GL_TRIANGLES,0,static_cast<GLsizei>(v.size())); };
-    draw(panel,{0.025F,0.04F,0.06F}); draw(buttons,{0.14F,0.27F,0.20F}); draw(hot,{0.32F,0.56F,0.22F});
-    draw(disabled,{0.16F,0.17F,0.18F});
-    draw(actionIcons,{0.18F,0.76F,0.88F}); draw(queueSlots,{0.08F,0.12F,0.15F});
-    draw(queueIcons,{0.18F,0.76F,0.88F}); draw(progressBack,{0.06F,0.08F,0.10F}); draw(progressFill,{0.18F,0.76F,0.88F});
-    drawText(entity.name,30,top+14,2.0F);
-    if(hovered>=0 && static_cast<std::size_t>(hovered)<count) drawText(labels[hovered]+"  "+costs[hovered],30,top+48,1.45F);
-    if (queueHovered >= 0 && static_cast<std::size_t>(queueHovered) < queueLabels.size())
-        drawText(queueLabels[queueHovered] + "  (click to cancel and refund)",
-                 30, top + 48, 1.45F, {1.0F, 0.82F, 0.24F});
-    if (entity.production && entity.production.queue.size() > 9)
-        drawText("+ " + std::to_string(entity.production.queue.size()-9),526,top+96,1.35F);
+    glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(vertices.size()));
     glBindVertexArray(0); glEnable(GL_CULL_FACE); glEnable(GL_DEPTH_TEST);
-    for (std::size_t i = 0; i < count && i < icons.size(); ++i) {
-        const float left = 30.0F + static_cast<float>(i) * 96.0F;
-        const glm::vec3 tint = i < enabled.size() && enabled[i] ? glm::vec3{1.0F}
-                                                                : glm::vec3{0.34F};
-        drawIcon(icons[i], left + 14.0F, height - 82.0F, left + 68.0F, height - 32.0F, tint);
-    }
 }
 
 void Renderer::drawSelectionBox(const glm::vec2& start, const glm::vec2& end) const {
@@ -2108,67 +1642,6 @@ std::vector<EntityId> Renderer::unitsInScreenRectangle(const glm::vec2& start,
     return result;
 }
 
-void Renderer::drawUnitSelectionHud(const World& world,
-                                    const std::vector<EntityId>& selected) const {
-    renderGraph_.enter(RenderPassKind::overlay);
-    struct Group {
-        std::string model, name;
-        std::size_t count;
-    };
-    std::vector<Group> groups;
-    for (EntityId id : selected)
-        if (const Entity* entity = world.findEntity(id)) {
-            auto found = std::find_if(groups.begin(), groups.end(), [&](const Group& group) {
-                return group.model == entity->archetype.value;
-            });
-            if (found == groups.end())
-                groups.push_back({entity->archetype.value, entity->name, 1});
-            else
-                ++found->count;
-        }
-    const std::size_t visible = std::min<std::size_t>(groups.size(), 6);
-    const float panelHeight = 58.0F + static_cast<float>(visible) * 24.0F;
-    const float top = static_cast<float>(viewportHeight_) - panelHeight - 18.0F;
-    std::vector<glm::vec2> panel;
-    appendHudRectangle(panel,
-                       18.0F,
-                       top,
-                       410.0F,
-                       static_cast<float>(viewportHeight_) - 18.0F,
-                       viewportWidth_,
-                       viewportHeight_);
-    glDisable(GL_DEPTH_TEST);
-    glDisable(GL_CULL_FACE);
-    shaders_.use(hudProgram_);
-    glUniform3f(shaders_.uniform(hudProgram_, "hudColor"), 0.025F, 0.04F, 0.06F);
-    glBindVertexArray(hudVao_);
-    glBindBuffer(GL_ARRAY_BUFFER, hudVbo_);
-    glBufferData(GL_ARRAY_BUFFER,
-                 static_cast<GLsizeiptr>(panel.size() * sizeof(glm::vec2)),
-                 panel.data(),
-                 GL_DYNAMIC_DRAW);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(glm::vec2), nullptr);
-    glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(panel.size()));
-    glBindVertexArray(0);
-    drawText(Text::format("selection.title", {std::to_string(selected.size())}),
-             30.0F,
-             top + 12.0F,
-             2.0F);
-    for (std::size_t index = 0; index < visible; ++index)
-        drawText(Text::format("selection.group",
-                              {groups[index].name, std::to_string(groups[index].count)}),
-                 30.0F,
-                 top + 40.0F + index * 24.0F,
-                 1.35F);
-    if (groups.size() > visible)
-        drawText(Text::format("selection.more", {std::to_string(groups.size() - visible)}),
-                 280.0F,
-                 top + 12.0F,
-                 1.35F);
-    glEnable(GL_CULL_FACE);
-    glEnable(GL_DEPTH_TEST);
-}
 
 void Renderer::drawOrderMarkers(const World& world,
                                 EntityId selected,

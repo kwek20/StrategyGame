@@ -41,6 +41,8 @@ GameConfig GameConfig::load(const std::filesystem::path& path) {
             result.resolutionHeight = video["height"].GetInt();
         if (video.HasMember("fullscreen") && video["fullscreen"].IsBool())
             result.fullscreen = video["fullscreen"].GetBool();
+        if (video.HasMember("uiScale") && video["uiScale"].IsNumber())
+            result.uiScale = std::clamp(video["uiScale"].GetFloat(), 0.75F, 1.5F);
     }
     if (configuration.HasMember("audio") && configuration["audio"].IsObject()) {
         const auto& audio = configuration["audio"];
@@ -90,6 +92,8 @@ void GameConfig::write(const std::filesystem::path& path) const {
     writer.Int(resolutionHeight);
     writer.Key("fullscreen");
     writer.Bool(fullscreen);
+    writer.Key("uiScale");
+    writer.Double(uiScale);
     writer.EndObject();
     writer.Key("audio");
     writer.StartObject();

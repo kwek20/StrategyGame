@@ -1,6 +1,7 @@
 #pragma once
 
 #include "world/Entity.hpp"
+#include "world/PowerGrid.hpp"
 #include "terrain/Terrain.hpp"
 
 #include <string>
@@ -33,11 +34,14 @@ class World final {
     }
     [[nodiscard]] std::vector<TerrainFoundation>& foundations() { return foundations_; }
     [[nodiscard]] const std::vector<TerrainFoundation>& foundations() const { return foundations_; }
+    [[nodiscard]] PowerGridTopology& powerGrid() { return powerGrid_; }
+    [[nodiscard]] const PowerGridTopology& powerGrid() const { return powerGrid_; }
 
   private:
     std::vector<Entity> entities_;
     EntityId nextId_{1};
     std::vector<TerrainFoundation> foundations_;
+    PowerGridTopology powerGrid_;
 };
 
 } // namespace strategy

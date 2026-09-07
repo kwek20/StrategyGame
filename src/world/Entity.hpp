@@ -87,11 +87,18 @@ struct BatteryComponent {
     float reserveThreshold{0.0F};
     bool returningToCharge{false};
 };
+enum class BuildingLifecycleState : std::uint8_t {
+    planned,
+    underConstruction,
+    operational,
+    damaged,
+    destroyed
+};
 struct ConstructionComponent {
     std::string recipeId;
     float powerRequired{0.0F};
     float powerProgress{0.0F};
-    bool complete{false};
+    BuildingLifecycleState state{BuildingLifecycleState::planned};
     bool placementValid{true};
 };
 struct CombatComponent {
@@ -122,6 +129,7 @@ struct ProductionOrder {
     std::string recipeId;
     std::string productId;
     std::string upgradeId;
+    std::string iconId;
     std::uint32_t amount{1};
     std::uint32_t durationTicks{0};
     std::uint32_t remainingTicks{0};
@@ -186,5 +194,11 @@ struct Entity {
     Component<UpgradeComponent> upgrades;
     EntityTransientState transient;
 };
+
+[[nodiscard]] inline bool isOperational(const Entity& entity) {
+    return !entity.construction ||
+           entity.construction.state == BuildingLifecycleState::operational ||
+           entity.construction.state == BuildingLifecycleState::damaged;
+}
 
 } // namespace strategy

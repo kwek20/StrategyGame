@@ -5,10 +5,13 @@
 #include "persistence/SaveGame.hpp"
 #include "render/Renderer.hpp"
 #include "terrain/Terrain.hpp"
+#include "ui/EntityHudModel.hpp"
+#include "ui/EntityHudLayout.hpp"
 #include "world/Collision.hpp"
 #include "world/WorldGeneration.hpp"
 
 #include <SDL3/SDL.h>
+#include <algorithm>
 #include <iostream>
 namespace strategy {
 BuildState::BuildState(StateContext& context, std::uint32_t terrainSeed)
@@ -19,6 +22,19 @@ BuildState::BuildState(StateContext& context, std::uint32_t terrainSeed)
     , status_(Text::get("status.ready")) {
     const Terrain terrain{terrainSeed};
     populateResources(world_, terrain, gameplay_, terrainSeed);
+}
+
+EntityHudModel BuildState::paletteHud() const {
+    EntityHudModel hud;
+    for (const std::string& id : gameplay_.matchRules().buildPalette) {
+        const EntityArchetype* type = gameplay_.archetype(id);
+        if (!type) continue;
+        hud.actions.push_back({id,
+            gameplay_.presentationIcon(PresentationId{type->presentation}),
+            Text::get(type->nameKey), status_, {}, {}, true,
+            id == gameplay_.matchRules().buildPalette.at(paletteIndex_)});
+    }
+    return hud;
 }
 
 void BuildState::handleEvent(const SDL_Event& event) {
@@ -62,8 +78,68 @@ void BuildState::handleEvent(const SDL_Event& event) {
             }
             return;
         }
+        if (event.key.key == SDLK_TAB) {
+            EntityHudModel hud = paletteHud();
+            UiDocument layout = EntityHudLayout::actions(
+                hud, config_.resolutionWidth, config_.resolutionHeight, config_.uiScale);
+            uiController_.moveFocus(layout,
+                (SDL_GetModState() & SDL_KMOD_SHIFT) ? -1 : 1);
+            return;
+        }
+        if (event.key.key == SDLK_RETURN || event.key.key == SDLK_SPACE) {
+            EntityHudModel hud = paletteHud();
+            UiDocument layout = EntityHudLayout::actions(
+                hud, config_.resolutionWidth, config_.resolutionHeight, config_.uiScale);
+            if (const auto element = uiController_.activateFocused(layout))
+                if (const auto id = EntityHudLayout::actionId(*element)) {
+                    const auto& palette = gameplay_.matchRules().buildPalette;
+                    const auto found = std::find(palette.begin(), palette.end(), *id);
+                    if (found != palette.end())
+                        paletteIndex_ = static_cast<std::size_t>(found - palette.begin());
+                }
+            return;
+        }
+    }
+    if (event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
+        EntityHudModel hud = paletteHud();
+        UiDocument layout = EntityHudLayout::actions(
+            hud, config_.resolutionWidth, config_.resolutionHeight, config_.uiScale);
+        if (event.gbutton.button == SDL_GAMEPAD_BUTTON_DPAD_RIGHT)
+            uiController_.moveFocus(layout, 1);
+        else if (event.gbutton.button == SDL_GAMEPAD_BUTTON_DPAD_LEFT)
+            uiController_.moveFocus(layout, -1);
+        else if (event.gbutton.button == SDL_GAMEPAD_BUTTON_SOUTH) {
+            if (const auto element = uiController_.activateFocused(layout))
+                if (const auto id = EntityHudLayout::actionId(*element)) {
+                    const auto& palette = gameplay_.matchRules().buildPalette;
+                    const auto found = std::find(palette.begin(), palette.end(), *id);
+                    if (found != palette.end())
+                        paletteIndex_ = static_cast<std::size_t>(found - palette.begin());
+                }
+        } else if (event.gbutton.button == SDL_GAMEPAD_BUTTON_EAST)
+            request_ = StateRequest::returnToMainMenu;
+        return;
     }
     if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_LEFT) {
+        int width = 0, height = 0;
+        if (SDL_Window* window = SDL_GetWindowFromID(event.button.windowID))
+            SDL_GetWindowSize(window, &width, &height);
+        EntityHudModel hud = paletteHud();
+        UiDocument layout = EntityHudLayout::actions(hud, width, height, config_.uiScale);
+        const glm::vec2 point{event.button.x, event.button.y};
+        if (const auto activated = uiController_.press(layout, point)) {
+            if (const auto id = EntityHudLayout::actionId(*activated)) {
+                const auto& palette = gameplay_.matchRules().buildPalette;
+                const auto found = std::find(palette.begin(), palette.end(), *id);
+                if (found != palette.end()) {
+                    paletteIndex_ = static_cast<std::size_t>(found - palette.begin());
+                    const EntityArchetype* type = gameplay_.archetype(*id);
+                    status_ = Text::format("status.selected", {Text::get(type->nameKey)});
+                }
+                return;
+            }
+        }
+        if (layout.find("entity.panel")->bounds.contains(point)) return;
         pendingPlacement_ = glm::vec2{event.button.x, event.button.y};
         return;
     }
@@ -93,6 +169,7 @@ void BuildState::handleEvent(const SDL_Event& event) {
         return;
     }
     if (event.type == SDL_EVENT_MOUSE_MOTION) {
+        uiController_.pointerMoved({event.motion.x, event.motion.y});
         hoverPosition_ = glm::vec2{event.motion.x, event.motion.y};
         return;
     }
@@ -121,6 +198,7 @@ void BuildState::handleEvent(const SDL_Event& event) {
     }
 }
 void BuildState::update(float deltaSeconds) {
+    uiController_.advance(deltaSeconds);
     camera_.pan(float(forward_) - float(backward_), float(right_) - float(left_), deltaSeconds);
 }
 void BuildState::render(Renderer& renderer) const {
@@ -172,8 +250,10 @@ void BuildState::render(Renderer& renderer) const {
     renderer.drawWorld(world_, view);
     if (hoveredEntity_ != 0)
         renderer.drawEntityOutline(world_, hoveredEntity_, view);
-    const EntityArchetype* selected =
-        gameplay_.archetype(gameplay_.matchRules().buildPalette.at(paletteIndex_));
-    renderer.drawBuildHud(team_, Text::get(selected->nameKey), world_.size(), status_);
+    EntityHudModel hud = paletteHud();
+    UiDocument layout = EntityHudLayout::actions(
+        hud, renderer.viewportWidth(), renderer.viewportHeight(), config_.uiScale);
+    uiController_.apply(layout);
+    renderer.drawEntityHud(hud, layout);
 }
 } // namespace strategy
