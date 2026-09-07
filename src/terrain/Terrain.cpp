@@ -135,6 +135,7 @@ void Terrain::generate(std::uint32_t seed) {
         }
         heights_.swap(smoothed);
     }
+    baseHeights_ = heights_;
 }
 
 float Terrain::normalizedHeight(int x, int z) const {
@@ -224,30 +225,138 @@ FootprintFit Terrain::fitFootprint(float worldX,
     }
     const float run = std::max(radius * 2.0F, spacing);
     const float slope = glm::degrees(std::atan2(maximum - minimum, run));
-    return {total / static_cast<float>(offsets.size()), slope, slope <= maximumSlopeDegrees};
+    const float sampleStep = std::max(radius * 0.5F, spacing);
+    const float dx = (heightAt(worldX + sampleStep, worldZ) - heightAt(worldX - sampleStep, worldZ)) /
+                     (2.0F * sampleStep);
+    const float dz = (heightAt(worldX, worldZ + sampleStep) - heightAt(worldX, worldZ - sampleStep)) /
+                     (2.0F * sampleStep);
+    return {total / static_cast<float>(offsets.size()), slope, {dx, dz}, slope <= maximumSlopeDegrees};
+}
+
+FootprintFit Terrain::fitFootprint(float worldX, float worldZ,
+                                   const TerrainFootprint& footprint) const {
+    constexpr int samples = 5;
+    const float radians = glm::radians(footprint.rotationDegrees);
+    const float cosine = std::cos(radians), sine = std::sin(radians);
+    float total = 0.0F;
+    float xx = 0.0F, xz = 0.0F, zz = 0.0F, xh = 0.0F, zh = 0.0F;
+    std::size_t count = 0;
+    for (int z = 0; z < samples; ++z)
+        for (int x = 0; x < samples; ++x) {
+            const glm::vec2 uv{-1.0F + 2.0F * x / (samples - 1.0F),
+                               -1.0F + 2.0F * z / (samples - 1.0F)};
+            if (footprint.shape == FootprintShape::circle && glm::dot(uv, uv) > 1.0F)
+                continue;
+            const glm::vec2 extent = footprint.shape == FootprintShape::circle
+                                         ? glm::vec2{footprint.radius}
+                                         : footprint.halfExtents;
+            const glm::vec2 local = uv * extent;
+            const glm::vec2 rotated{cosine * local.x - sine * local.y,
+                                    sine * local.x + cosine * local.y};
+            const float height = heightAt(worldX + rotated.x, worldZ + rotated.y);
+            total += height;
+            xx += rotated.x * rotated.x;
+            xz += rotated.x * rotated.y;
+            zz += rotated.y * rotated.y;
+            xh += rotated.x * height;
+            zh += rotated.y * height;
+            ++count;
+        }
+    const float determinant = xx * zz - xz * xz;
+    const glm::vec2 gradient = std::abs(determinant) > 0.000001F
+                                   ? glm::vec2{(xh * zz - zh * xz) / determinant,
+                                               (zh * xx - xh * xz) / determinant}
+                                   : glm::vec2{0.0F};
+    const float slope = glm::degrees(std::atan(glm::length(gradient)));
+    return {total / static_cast<float>(std::max<std::size_t>(count, 1)), slope, gradient,
+            slope <= footprint.maximumTiltDegrees};
+}
+
+TerrainFoundation Terrain::evaluateFoundation(std::uint64_t sourceEntity, float worldX,
+                                               float worldZ,
+                                               const TerrainFootprint& footprint) const {
+    FootprintFit fit = fitFootprint(worldX, worldZ, footprint);
+    glm::vec2 gradient = fit.gradient;
+    // Buildings follow gentle terrain directly. On moderate slopes a recessed slab
+    // absorbs the excess while the building itself never tilts beyond five degrees.
+    constexpr float maximumBuildingTiltDegrees = 5.0F;
+    const float maximumGradient = std::tan(glm::radians(maximumBuildingTiltDegrees));
+    const float magnitude = glm::length(gradient);
+    if (magnitude > maximumGradient && magnitude > 0.0F)
+        gradient *= maximumGradient / magnitude;
+    TerrainFoundation foundation{sourceEntity, {worldX, fit.height, worldZ}, footprint, gradient};
+    foundation.sourceSlopeDegrees = fit.slopeDegrees;
+    foundation.requiresSlab = fit.slopeDegrees > maximumBuildingTiltDegrees;
+    return foundation;
+}
+
+float Terrain::signedDistanceToFootprint(const TerrainFoundation& foundation,
+                                         glm::vec2 worldPosition) {
+    const glm::vec2 delta = worldPosition - glm::vec2{foundation.center.x, foundation.center.z};
+    if (foundation.shape == FootprintShape::circle)
+        return glm::length(delta) - foundation.outerRadius;
+    const float radians = glm::radians(foundation.rotationDegrees);
+    const glm::vec2 local{std::cos(radians) * delta.x + std::sin(radians) * delta.y,
+                          -std::sin(radians) * delta.x + std::cos(radians) * delta.y};
+    const glm::vec2 outside = glm::max(glm::abs(local) - foundation.halfExtents, glm::vec2{0.0F});
+    const float outsideDistance = glm::length(outside);
+    const float insideDistance = std::min(
+        std::max(std::abs(local.x) - foundation.halfExtents.x,
+                 std::abs(local.y) - foundation.halfExtents.y),
+        0.0F);
+    return outsideDistance + insideDistance;
 }
 
 void Terrain::applyFoundation(const TerrainFoundation& foundation) {
     const float halfExtent = worldExtent() * 0.5F;
-    for (int z = 0; z < vertexCount; ++z) {
-        for (int x = 0; x < vertexCount; ++x) {
+    // Restrict deformation to the foundation's bounded region. The previous full-map
+    // pass touched ~263k vertices for every placement, causing a visible hitch.
+    const float affectedRadius = foundation.outerRadius + foundation.edgeFalloff;
+    const int minX = std::max(0, static_cast<int>((foundation.center.x - affectedRadius + halfExtent) / spacing) - 1);
+    const int maxX = std::min(vertexCount - 1, static_cast<int>((foundation.center.x + affectedRadius + halfExtent) / spacing) + 1);
+    const int minZ = std::max(0, static_cast<int>((foundation.center.z - affectedRadius + halfExtent) / spacing) - 1);
+    const int maxZ = std::min(vertexCount - 1, static_cast<int>((foundation.center.z + affectedRadius + halfExtent) / spacing) + 1);
+    const int minChunkX = std::max(0, (std::max(0, minX - 1)) / chunkCellCount),
+              maxChunkX = std::min(chunksPerSide - 1, std::min(vertexCount - 1, maxX + 1) / chunkCellCount);
+    const int minChunkZ = std::max(0, (std::max(0, minZ - 1)) / chunkCellCount),
+              maxChunkZ = std::min(chunksPerSide - 1, std::min(vertexCount - 1, maxZ + 1) / chunkCellCount);
+    for (int cz = minChunkZ; cz <= maxChunkZ; ++cz)
+        for (int cx = minChunkX; cx <= maxChunkX; ++cx)
+            if (std::find(dirtyChunks_.begin(), dirtyChunks_.end(), std::pair{cx, cz}) == dirtyChunks_.end())
+                dirtyChunks_.emplace_back(cx, cz);
+    for (int z = minZ; z <= maxZ; ++z) {
+        for (int x = minX; x <= maxX; ++x) {
             const float worldX = static_cast<float>(x) * spacing - halfExtent;
             const float worldZ = static_cast<float>(z) * spacing - halfExtent;
-            const float distance = glm::distance(glm::vec2{worldX, worldZ},
-                                                 glm::vec2{foundation.center.x, foundation.center.z});
-            if (distance >= foundation.outerRadius)
+            const glm::vec2 delta{worldX - foundation.center.x, worldZ - foundation.center.z};
+            const float signedDistance = signedDistanceToFootprint(foundation, {worldX, worldZ});
+            const float falloff = std::max(foundation.edgeFalloff, spacing);
+            if (signedDistance >= falloff)
                 continue;
-            const float blend = distance <= foundation.innerRadius
-                                    ? 1.0F
-                                    : 1.0F - smoothstep(foundation.innerRadius,
-                                                        foundation.outerRadius,
-                                                        distance);
+            const float blend = (signedDistance <= 0.0F
+                                     ? 1.0F
+                                     : 1.0F - smoothstep(0.0F, falloff, signedDistance)) *
+                                glm::clamp(foundation.influence, 0.0F, 1.0F);
             float& normalized = heights_[static_cast<std::size_t>(z * vertexCount + x)];
+            const float planeHeight = (foundation.center.y +
+                                       foundation.gradient.x * delta.x +
+                                       foundation.gradient.y * delta.y) / heightScale;
             normalized = glm::mix(normalized,
-                                  foundation.center.y / heightScale,
+                                  planeHeight,
                                   blend);
         }
     }
+}
+
+void Terrain::rebuildFoundations(const std::vector<TerrainFoundation>& foundations) {
+    // Mark the previous regions too, so removing or shrinking a foundation restores their VBOs.
+    for (const TerrainFoundation& foundation : appliedFoundations_)
+        applyFoundation(foundation);
+    if (baseHeights_.size() == heights_.size())
+        heights_ = baseHeights_;
+    for (const TerrainFoundation& foundation : foundations)
+        applyFoundation(foundation);
+    appliedFoundations_ = foundations;
 }
 
 } // namespace strategy

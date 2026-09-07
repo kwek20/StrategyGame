@@ -72,6 +72,24 @@ int main() {
     valid = valid && after.valid && nearlyEqual(flattened.heightAt(12.0F, -7.0F), before.height);
     valid = valid && nearlyEqual(flattened.heightAt(15.0F, -7.0F), before.height, 0.01F);
 
+    strategy::Terrain boundaryTerrain{0x5EED1234U};
+    const float chunkBoundary = -halfExtent + strategy::Terrain::chunkCellCount *
+                                                  strategy::Terrain::spacing;
+    strategy::TerrainFootprint boundaryFootprint;
+    boundaryFootprint.shape = strategy::FootprintShape::rectangle;
+    boundaryFootprint.halfExtents = {2.0F, 2.0F};
+    boundaryFootprint.edgeFalloff = 1.0F;
+    boundaryFootprint.maximumTiltDegrees = 90.0F;
+    boundaryTerrain.applyFoundation(boundaryTerrain.evaluateFoundation(
+        1, chunkBoundary, chunkBoundary, boundaryFootprint));
+    const auto hasDirtyChunk = [&](int x, int z) {
+        return std::find(boundaryTerrain.dirtyChunks().begin(),
+                         boundaryTerrain.dirtyChunks().end(), std::pair{x, z}) !=
+               boundaryTerrain.dirtyChunks().end();
+    };
+    valid = valid && hasDirtyChunk(0, 0) && hasDirtyChunk(1, 0) &&
+            hasDirtyChunk(0, 1) && hasDirtyChunk(1, 1);
+
     if (!valid) {
         std::cerr << "Terrain validation failed\n";
         return 1;

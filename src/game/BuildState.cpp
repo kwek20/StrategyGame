@@ -133,8 +133,13 @@ void BuildState::render(Renderer& renderer) const {
         const glm::vec3 position =
             renderer.screenToTerrain(pendingPlacement_->x, pendingPlacement_->y, view);
         const float radius = collisionRadius(gameplay_, entityType);
-        const FootprintFit footprint = renderer.fitTerrainFootprint(
-            position.x, position.z, radius, type->kind == EntityKind::building ? 10.0F : 90.0F);
+        TerrainFootprint shape{FootprintShape::circle, radius, {radius, radius}};
+        if (type->kind == EntityKind::building && type->footprint)
+            shape = *type->footprint;
+        shape.rotationDegrees = team_ == 2 ? 180.0F : 0.0F;
+        const FootprintFit footprint = type->kind == EntityKind::building
+                                           ? renderer.fitTerrainFootprint(position.x, position.z, shape)
+                                           : renderer.fitTerrainFootprint(position.x, position.z, radius, 90.0F);
         if (!footprint.valid || overlapsObject(world_,
                            gameplay_,
                            {position.x, position.z},
@@ -145,12 +150,13 @@ void BuildState::render(Renderer& renderer) const {
                 world_.createEntity(Text::get(type->nameKey), entityType, team_);
             gameplay_.initializeEntity(entity);
             entity.transform.position = {position.x, 0.0F, position.z};
+            entity.transform.rotationDegrees.y = shape.rotationDegrees;
             if (entity.kind == EntityKind::building) {
-                world_.foundations().push_back({{position.x, footprint.height, position.z},
-                                                radius, radius + 2.0F});
+                world_.foundations().push_back(TerrainFoundation{
+                    entity.id, {position.x, footprint.height, position.z}, shape,
+                    footprint.gradient});
                 renderer.setTerrainFoundations(world_.foundations());
             }
-            entity.transform.rotationDegrees.y = team_ == 2 ? 180.0F : 0.0F;
             if (entity.unitControl)
                 entity.unitControl.directlyControllable = true;
             status_ = Text::format("status.placed", {entity.name});

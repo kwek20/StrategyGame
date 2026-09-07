@@ -9,7 +9,9 @@ uniform sampler2D grassTexture;
 uniform sampler2D dirtTexture;
 uniform sampler2D rockTexture;
 uniform sampler2D dryGroundTexture;
+uniform sampler2D foundationTexture;
 uniform bool useExploration;
+uniform bool useFoundationTexture;
 out vec4 outColor;
 
 float terrainHash(vec2 point) {
@@ -55,12 +57,21 @@ void main() {
     vec3 dryGround = tiledSample(dryGroundTexture, tiledUv * 0.88, variation);
     vec3 textured = grass * weights.x + dirt * weights.y + rock * weights.z +
                     dryGround * weights.w;
+    if (useFoundationTexture) {
+        // Foundation geometry uses the same world-space projection as terrain so
+        // rotated and circular slabs tile without requiring unique UV meshes.
+        textured = tiledSample(foundationTexture, worldPosition.xz * 0.22, variation);
+    }
 
     // Keep material exposure independent of camera altitude. Strategy-camera zoom must
     // not wash the terrain toward its brighter vertex-colour fallback.
     float cameraDistance = distance(cameraPosition.xz, worldPosition.xz);
     float textureStrength = 0.82;
-    vec3 surface = mix(vertexColor, textured * mix(vec3(1.0), vertexColor, 0.18), textureStrength);
+    vec3 surface = useFoundationTexture
+                       ? textured
+                       : mix(vertexColor,
+                             textured * mix(vec3(1.0), vertexColor, 0.18),
+                             textureStrength);
     vec3 lit = surface * (0.46 + diffuse * 0.64);
     float fog = smoothstep(fogRange.x, fogRange.y, cameraDistance);
     vec3 atmospheric = mix(lit, vec3(0.32, 0.36, 0.38), fog * 0.72);

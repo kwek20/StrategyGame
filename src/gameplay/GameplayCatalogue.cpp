@@ -101,6 +101,30 @@ void DefinitionRegistry::loadArchetypes(const std::filesystem::path& path,
             throw std::runtime_error("Definition '" + archetype.id +
                                      "' requires a non-negative collisionRadius in " + path.string());
         archetype.collisionRadius = item->value["collisionRadius"].GetFloat();
+        if (item->value.HasMember("footprint") && item->value["footprint"].IsObject()) {
+            const auto& footprint = item->value["footprint"];
+            TerrainFootprint definition;
+            if (!footprint.HasMember("shape") || !footprint["shape"].IsString())
+                throw std::runtime_error("Definition '" + archetype.id + "' has invalid footprint shape");
+            const std::string_view shape{footprint["shape"].GetString()};
+            if (shape == "rectangle") definition.shape = FootprintShape::rectangle;
+            else if (shape == "circle") definition.shape = FootprintShape::circle;
+            else throw std::runtime_error("Definition '" + archetype.id + "' has unsupported footprint shape");
+            if (footprint.HasMember("halfExtents") && footprint["halfExtents"].IsArray() &&
+                footprint["halfExtents"].Size() == 2)
+                definition.halfExtents = {footprint["halfExtents"][0].GetFloat(), footprint["halfExtents"][1].GetFloat()};
+            if (footprint.HasMember("radius") && footprint["radius"].IsNumber())
+                definition.radius = footprint["radius"].GetFloat();
+            if (footprint.HasMember("edgeFalloff") && footprint["edgeFalloff"].IsNumber())
+                definition.edgeFalloff = footprint["edgeFalloff"].GetFloat();
+            if (footprint.HasMember("maximumTiltDegrees") && footprint["maximumTiltDegrees"].IsNumber())
+                definition.maximumTiltDegrees = footprint["maximumTiltDegrees"].GetFloat();
+            if (definition.radius <= 0.0F || definition.halfExtents.x <= 0.0F ||
+                definition.halfExtents.y <= 0.0F || definition.edgeFalloff <= 0.0F ||
+                definition.maximumTiltDegrees < 0.0F || definition.maximumTiltDegrees > 10.0F)
+                throw std::runtime_error("Definition '" + archetype.id + "' has invalid footprint dimensions");
+            archetype.footprint = definition;
+        }
         if (item->value.HasMember("interactionMargin"))
             archetype.interactionMargin = requiredNumber(
                 item->value, "interactionMargin", "Definition '" + archetype.id + "'");

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "world/Entity.hpp"
+#include "terrain/Terrain.hpp"
 
 #include <filesystem>
 #include <cstdint>
@@ -154,6 +155,7 @@ struct EntityArchetype {
     std::optional<Generation> generation;
     MovementDefinition movement;
     std::optional<BatteryDefinition> battery;
+    std::optional<TerrainFootprint> footprint;
     std::optional<PowerDeviceId> powerDevice;
     std::vector<WeaponId> weapons;
     std::unordered_set<std::string> tags, components;

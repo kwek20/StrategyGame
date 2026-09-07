@@ -656,14 +656,17 @@ void PlayState::render(Renderer& renderer) const {
     renderer.drawWorld(session_.world(), view, local);
     if (constructionPlacementMode_ && constructionCursorScreen_) {
         const glm::vec3 position = renderer.screenToTerrain(constructionCursorScreen_->x, constructionCursorScreen_->y, view);
-        constructionPreviewValid_ = !overlapsObject(session_.world(), context_.definitions,
-                                                     {position.x, position.z},
-                                                     collisionRadius(context_.definitions, "command_hub"));
+        bool currentlyVisible = true;
+        bool previouslyExplored = true;
+        const EntityArchetype* buildingDefinition = context_.definitions.archetype("command_hub");
+        const float buildingRadius = collisionRadius(context_.definitions, "command_hub");
+        const TerrainFootprint buildingFootprint = buildingDefinition && buildingDefinition->footprint
+                                                       ? *buildingDefinition->footprint
+                                                       : TerrainFootprint{FootprintShape::circle,
+                                                                          buildingRadius,
+                                                                          {buildingRadius, buildingRadius}};
         const FootprintFit footprint = renderer.fitTerrainFootprint(
-            position.x, position.z, collisionRadius(context_.definitions, "command_hub"), 10.0F);
-        constructionPreviewValid_ = constructionPreviewValid_ && footprint.valid;
-        // Fog of war is a placement rule: construction requires currently visible terrain,
-        // not merely terrain that was discovered previously.
+            position.x, position.z, buildingFootprint);
         if (local) {
             constexpr float extent = Terrain::cellCount * Terrain::spacing;
             const int gx = std::clamp(static_cast<int>((position.x / extent + 0.5F) * Player::explorationCells),
@@ -671,9 +674,17 @@ void PlayState::render(Renderer& renderer) const {
             const int gz = std::clamp(static_cast<int>((position.z / extent + 0.5F) * Player::explorationCells),
                                       0, Player::explorationCells - 1);
             const auto index = static_cast<std::size_t>(gz * Player::explorationCells + gx);
-            if (index >= local->visible.size() || local->visible[index] == 0)
-                constructionPreviewValid_ = false;
+            currentlyVisible = index < local->visible.size() && local->visible[index] != 0;
+            previouslyExplored = index < local->discovered.size() && local->discovered[index] != 0;
         }
+        constructionPreviewValid_ = previouslyExplored;
+        // Hidden enemy construction is resolved authoritatively by PlaceBuildingCommand.
+        // Do not leak it through a red preview in previously explored fog.
+        if (currentlyVisible)
+            constructionPreviewValid_ = constructionPreviewValid_ &&
+                !overlapsObject(session_.world(), context_.definitions,
+                                {position.x, position.z}, buildingRadius);
+        constructionPreviewValid_ = constructionPreviewValid_ && footprint.valid;
         if (local)
             if (const RecipeDefinition* recipe = context_.definitions.recipe(RecipeId{"construct.command_hub"}))
                 for (const auto& [resource, amount] : recipe->cost)

@@ -57,15 +57,19 @@ GameSession::GameSession(const DefinitionRegistry& definitions,
     };
     createStartingEntities(1, gameplay_.matchRules().playerOne, 0.0F);
     createStartingEntities(2, gameplay_.matchRules().playerTwo, 180.0F);
-    for (const Entity& entity : world_.entities()) {
+    for (Entity& entity : world_.entities()) {
         if (entity.kind != EntityKind::building)
             continue;
         const float radius = collisionRadius(gameplay_, entity.archetype);
-        const FootprintFit fit = terrain_.fitFootprint(
-            entity.transform.position.x, entity.transform.position.z, radius, 90.0F);
-        const TerrainFoundation foundation{{entity.transform.position.x, fit.height,
-                                            entity.transform.position.z},
-                                           radius, radius + 2.0F};
+        const EntityArchetype* definition = gameplay_.archetype(entity.archetype);
+        TerrainFootprint shape = definition && definition->footprint
+                                     ? *definition->footprint
+                                     : TerrainFootprint{FootprintShape::circle, radius, {radius, radius}};
+        shape.rotationDegrees = entity.transform.rotationDegrees.y;
+        const TerrainFoundation foundation = terrain_.evaluateFoundation(
+            entity.id, entity.transform.position.x, entity.transform.position.z, shape);
+        entity.transform.rotationDegrees.x = -glm::degrees(std::atan(foundation.gradient.y));
+        entity.transform.rotationDegrees.z = glm::degrees(std::atan(foundation.gradient.x));
         world_.foundations().push_back(foundation);
         terrain_.applyFoundation(foundation);
     }
@@ -311,8 +315,13 @@ void GameSession::apply(const PlayerCommand& command) {
                 const float footprintRadius = collisionRadius(gameplay_, recipe->product.id);
                 if (overlapsObject(world_, gameplay_, {payload.position.x, payload.position.z},
                                    footprintRadius)) return;
-                const FootprintFit footprint = terrain_.fitFootprint(
-                    payload.position.x, payload.position.z, footprintRadius, 10.0F);
+                const EntityArchetype* buildingDefinition = gameplay_.archetype(recipe->product.id);
+                TerrainFootprint shape = buildingDefinition && buildingDefinition->footprint
+                                             ? *buildingDefinition->footprint
+                                             : TerrainFootprint{FootprintShape::circle, footprintRadius,
+                                                                {footprintRadius, footprintRadius}};
+                const FootprintFit footprint = terrain_.fitFootprint(payload.position.x,
+                                                                     payload.position.z, shape);
                 if (!footprint.valid) return;
                 for (const auto& [resource, amount] : recipe->cost)
                     if (player->resources[resource] < amount) return;
@@ -320,10 +329,11 @@ void GameSession::apply(const PlayerCommand& command) {
                 Entity& building = world_.createEntity(recipe->product.id, recipe->product.id, command.player);
                 gameplay_.initializeEntity(building);
                 building.transform.position = {payload.position.x, 0.0F, payload.position.z};
-                const TerrainFoundation foundation{{payload.position.x, footprint.height,
-                                                    payload.position.z},
-                                                   footprintRadius,
-                                                   footprintRadius + 2.0F};
+                TerrainFoundation foundation = terrain_.evaluateFoundation(
+                    building.id, payload.position.x, payload.position.z, shape);
+                foundation.influence = 0.0F;
+                building.transform.rotationDegrees.x = -glm::degrees(std::atan(foundation.gradient.y));
+                building.transform.rotationDegrees.z = glm::degrees(std::atan(foundation.gradient.x));
                 world_.foundations().push_back(foundation);
                 terrain_.applyFoundation(foundation);
                 building.construction.emplace();
@@ -501,6 +511,20 @@ void GameSession::simulateTick() {
                         if (recipe && entity.battery.charge >= recipe->dronePowerPerStep) {
                             entity.battery.charge -= recipe->dronePowerPerStep;
                             target->construction.powerProgress = std::min(target->construction.powerRequired, target->construction.powerProgress + recipe->workStep);
+                            const float progress = target->construction.powerRequired > 0.0F
+                                                       ? target->construction.powerProgress /
+                                                             target->construction.powerRequired
+                                                       : 1.0F;
+                            const auto foundation = std::find_if(
+                                world_.foundations().begin(), world_.foundations().end(),
+                                [&](const TerrainFoundation& item) {
+                                    return item.sourceEntity == target->id;
+                                });
+                            if (foundation != world_.foundations().end() &&
+                                foundation->influence != progress) {
+                                foundation->influence = progress;
+                                terrain_.rebuildFoundations(world_.foundations());
+                            }
                             if (target->construction.powerProgress >= target->construction.powerRequired) {
                                 target->construction.complete = true;
                                 if (target->health) target->health.current = target->health.maximum;
@@ -888,8 +912,7 @@ void GameSession::replaceWorld(std::vector<Entity> entities, std::uint32_t terra
     world_.replaceFoundations(std::move(foundations));
     terrainSeed_ = terrainSeed;
     terrain_ = Terrain{terrainSeed};
-    for (const TerrainFoundation& foundation : world_.foundations())
-        terrain_.applyFoundation(foundation);
+    terrain_.rebuildFoundations(world_.foundations());
     navigation_.rebuildTerrain(terrain_);
     commands_.clear();
     lastSequence_.clear();

@@ -332,6 +332,11 @@ void Renderer::drawUi(const UiDocument& document) const {
 }
 
 Renderer::~Renderer() {
+    for (const FoundationMesh& mesh : foundationMeshes_) {
+        if (mesh.ebo) glDeleteBuffers(1, &mesh.ebo);
+        if (mesh.vbo) glDeleteBuffers(1, &mesh.vbo);
+        if (mesh.vao) glDeleteVertexArrays(1, &mesh.vao);
+    }
     for (const TerrainChunk& chunk : terrainChunks_) {
         glDeleteBuffers(static_cast<GLsizei>(chunk.ebos.size()), chunk.ebos.data());
         glDeleteBuffers(1, &chunk.vbo);
@@ -378,6 +383,33 @@ void Renderer::beginFrame(int width, int height) {
     viewportWidth_ = width;
     viewportHeight_ = height;
     pendingText_.clear();
+    // Upload a complete connected deformation region in one frame. Splitting adjacent
+    // chunks across frames exposes stale shared-edge vertices and produces a visible seam.
+    if (!pendingTerrainChunkUploads_.empty()) {
+        std::vector<std::pair<int, int>> connected{pendingTerrainChunkUploads_.front()};
+        pendingTerrainChunkUploads_.erase(pendingTerrainChunkUploads_.begin());
+        bool expanded = true;
+        while (expanded) {
+            expanded = false;
+            for (auto pending = pendingTerrainChunkUploads_.begin();
+                 pending != pendingTerrainChunkUploads_.end();) {
+                const bool adjacent = std::any_of(
+                    connected.begin(), connected.end(), [&](const auto& included) {
+                        return std::abs(included.first - pending->first) <= 1 &&
+                               std::abs(included.second - pending->second) <= 1;
+                    });
+                if (adjacent) {
+                    connected.push_back(*pending);
+                    pending = pendingTerrainChunkUploads_.erase(pending);
+                    expanded = true;
+                } else {
+                    ++pending;
+                }
+            }
+        }
+        for (const auto [chunkX, chunkZ] : connected)
+            uploadTerrainChunk(chunkX, chunkZ);
+    }
     glViewport(0, 0, width, height);
     glClearColor(0.42F, 0.66F, 0.88F, 1.0F);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -513,6 +545,7 @@ void Renderer::drawTerrain(const CameraView& camera, const Player* player) const
     glUniform1i(shaders_.uniform(program_, "dirtTexture"), 1);
     glUniform1i(shaders_.uniform(program_, "rockTexture"), 2);
     glUniform1i(shaders_.uniform(program_, "dryGroundTexture"), 3);
+    glUniform1i(shaders_.uniform(program_, "useFoundationTexture"), 0);
     const GLint location = shaders_.uniform(program_, "viewProjection");
     glUniformMatrix4fv(location, 1, GL_FALSE, glm::value_ptr(viewProjection));
     glUniform3fv(
@@ -549,12 +582,9 @@ void Renderer::drawTerrain(const CameraView& camera, const Player* player) const
         }
         std::size_t lodLevel;
         if (closeView) {
-            const float cameraDx = chunk.center.x - camera.position.x;
-            const float cameraDz = chunk.center.z - camera.position.z;
-            const float distanceSquared = cameraDx * cameraDx + cameraDz * cameraDz;
-            lodLevel = distanceSquared < 55.0F * 55.0F     ? 0U
-                       : distanceSquared < 105.0F * 105.0F ? 1U
-                                                           : 2U;
+            // Third-person terrain uses one topology. Independent per-chunk LODs create
+            // T-junctions where a deformed fine edge meets a coarser neighboring edge.
+            lodLevel = 0U;
         } else {
             lodLevel = camera.detailDistance <= 36.0F   ? 0U
                        : camera.detailDistance <= 76.0F ? 1U
@@ -567,6 +597,20 @@ void Renderer::drawTerrain(const CameraView& camera, const Player* player) const
                        GL_UNSIGNED_INT,
                        nullptr);
     }
+    for (const FoundationMesh& mesh : foundationMeshes_) {
+        if (!foundationTexture_)
+            foundationTexture_ = resources_.requestTexture("foundation_concrete");
+        resources_.textureOrMarker(foundationTexture_)->bind(4, true);
+        glUniform1i(shaders_.uniform(program_, "foundationTexture"), 4);
+        glUniform1i(shaders_.uniform(program_, "useFoundationTexture"), 1);
+        if (!mesh.visible || mesh.indexCount == 0)
+            continue;
+        glBindVertexArray(mesh.vao);
+        glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(mesh.indexCount), GL_UNSIGNED_INT,
+                       nullptr);
+    }
+    glUniform1i(shaders_.uniform(program_, "useFoundationTexture"), 0);
+    glActiveTexture(GL_TEXTURE0);
     glBindVertexArray(0);
 }
 
@@ -1272,8 +1316,7 @@ void Renderer::drawSettings(const GameConfig& config,
 void Renderer::regenerateTerrain(std::uint32_t seed) {
     terrainSeed_ = seed;
     terrain_ = Terrain(seed);
-    for (const TerrainFoundation& foundation : terrainFoundations_)
-        terrain_.applyFoundation(foundation);
+    terrain_.rebuildFoundations(terrainFoundations_);
     constexpr int chunkSide = Terrain::chunkCellCount + 1;
     constexpr float halfExtent = static_cast<float>(Terrain::cellCount) * Terrain::spacing * 0.5F;
 
@@ -1308,14 +1351,138 @@ void Renderer::regenerateTerrain(std::uint32_t seed) {
 
 void Renderer::setTerrainFoundations(const std::vector<TerrainFoundation>& foundations) {
     const auto equal = [](const TerrainFoundation& a, const TerrainFoundation& b) {
-        return a.center == b.center && a.innerRadius == b.innerRadius &&
-               a.outerRadius == b.outerRadius;
+        return a.sourceEntity == b.sourceEntity && a.shape == b.shape &&
+               a.center == b.center && a.innerRadius == b.innerRadius &&
+               a.outerRadius == b.outerRadius && a.edgeFalloff == b.edgeFalloff &&
+               a.halfExtents == b.halfExtents &&
+               a.rotationDegrees == b.rotationDegrees && a.gradient == b.gradient &&
+               a.influence == b.influence && a.sourceSlopeDegrees == b.sourceSlopeDegrees &&
+               a.requiresSlab == b.requiresSlab;
     };
     if (terrainFoundations_.size() == foundations.size() &&
         std::equal(terrainFoundations_.begin(), terrainFoundations_.end(), foundations.begin(), equal))
         return;
     terrainFoundations_ = foundations;
-    regenerateTerrain(terrainSeed_);
+    terrain_.rebuildFoundations(terrainFoundations_);
+    syncFoundationMeshes();
+    for (const auto chunk : terrain_.dirtyChunks())
+        if (std::find(pendingTerrainChunkUploads_.begin(), pendingTerrainChunkUploads_.end(), chunk) ==
+            pendingTerrainChunkUploads_.end())
+            pendingTerrainChunkUploads_.push_back(chunk);
+    terrain_.clearDirtyChunks();
+}
+
+void Renderer::syncFoundationMeshes() {
+    std::vector<std::uint64_t> expected;
+    for (const TerrainFoundation& foundation : terrainFoundations_)
+        if (foundation.requiresSlab)
+            expected.push_back(foundation.sourceEntity);
+    const bool unchanged = foundationMeshes_.size() == expected.size() &&
+        std::equal(foundationMeshes_.begin(), foundationMeshes_.end(), expected.begin(),
+                   [](const FoundationMesh& mesh, std::uint64_t source) {
+                       return mesh.sourceEntity == source;
+                   });
+    if (unchanged)
+        return;
+    for (const FoundationMesh& mesh : foundationMeshes_) {
+        if (mesh.ebo) glDeleteBuffers(1, &mesh.ebo);
+        if (mesh.vbo) glDeleteBuffers(1, &mesh.vbo);
+        if (mesh.vao) glDeleteVertexArrays(1, &mesh.vao);
+    }
+    foundationMeshes_.clear();
+    for (const TerrainFoundation& foundation : terrainFoundations_) {
+        if (!foundation.requiresSlab)
+            continue;
+        std::vector<TerrainVertex> vertices;
+        std::vector<std::uint32_t> indices;
+        const glm::vec3 normal = glm::normalize(
+            glm::vec3{-foundation.gradient.x, 1.0F, -foundation.gradient.y});
+        const glm::vec3 sideColor{0.20F, 0.22F, 0.23F};
+        const float excessSlope = std::max(foundation.sourceSlopeDegrees - 5.0F, 0.0F);
+        const float thickness = std::clamp(
+            0.15F + std::tan(glm::radians(excessSlope)) * foundation.outerRadius,
+            0.15F, 2.5F);
+        const auto height = [&](glm::vec2 point) {
+            const glm::vec2 offset = point - glm::vec2{foundation.center.x, foundation.center.z};
+            return foundation.center.y + glm::dot(foundation.gradient, offset);
+        };
+        if (foundation.shape == FootprintShape::circle) {
+            constexpr std::uint32_t segments = 24;
+            for (std::uint32_t i = 0; i < segments; ++i) {
+                const float angle = glm::two_pi<float>() * static_cast<float>(i) / segments;
+                const glm::vec2 point{foundation.center.x + std::cos(angle) * foundation.outerRadius,
+                                      foundation.center.z + std::sin(angle) * foundation.outerRadius};
+                vertices.push_back({{point.x, height(point) - 0.06F, point.y}, normal, sideColor});
+                vertices.push_back({{point.x, height(point) - thickness, point.y},
+                                    {std::cos(angle), 0.0F, std::sin(angle)}, sideColor});
+            }
+            for (std::uint32_t i = 0; i < segments; ++i) {
+                const std::uint32_t next = (i + 1) % segments;
+                indices.insert(indices.end(), {i * 2, i * 2 + 1, next * 2 + 1,
+                                               i * 2, next * 2 + 1, next * 2});
+            }
+        } else {
+            const float radians = glm::radians(foundation.rotationDegrees);
+            const float c = std::cos(radians), s = std::sin(radians);
+            const std::array<glm::vec2, 4> local{{{-foundation.halfExtents.x, -foundation.halfExtents.y},
+                                                   {foundation.halfExtents.x, -foundation.halfExtents.y},
+                                                   {foundation.halfExtents.x, foundation.halfExtents.y},
+                                                   {-foundation.halfExtents.x, foundation.halfExtents.y}}};
+            for (const glm::vec2 p : local) {
+                const glm::vec2 point{foundation.center.x + c * p.x - s * p.y,
+                                      foundation.center.z + s * p.x + c * p.y};
+                vertices.push_back({{point.x, height(point) - 0.06F, point.y}, normal, sideColor});
+                vertices.push_back({{point.x, height(point) - thickness, point.y}, normal, sideColor});
+            }
+            for (std::uint32_t i = 0; i < 4; ++i) {
+                const std::uint32_t next = (i + 1) % 4;
+                indices.insert(indices.end(), {i * 2, i * 2 + 1, next * 2 + 1,
+                                               i * 2, next * 2 + 1, next * 2});
+            }
+        }
+        FoundationMesh mesh;
+        mesh.sourceEntity = foundation.sourceEntity;
+        mesh.center = foundation.center;
+        mesh.halfExtents = foundation.halfExtents;
+        mesh.rotationDegrees = foundation.rotationDegrees;
+        mesh.indexCount = static_cast<std::uint32_t>(indices.size());
+        glGenVertexArrays(1, &mesh.vao); glGenBuffers(1, &mesh.vbo); glGenBuffers(1, &mesh.ebo);
+        glBindVertexArray(mesh.vao);
+        glBindBuffer(GL_ARRAY_BUFFER, mesh.vbo);
+        glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(vertices.size() * sizeof(TerrainVertex)),
+                     vertices.data(), GL_STATIC_DRAW);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mesh.ebo);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, static_cast<GLsizeiptr>(indices.size() * sizeof(std::uint32_t)),
+                     indices.data(), GL_STATIC_DRAW);
+        glEnableVertexAttribArray(0); glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(TerrainVertex), reinterpret_cast<void*>(offsetof(TerrainVertex, position)));
+        glEnableVertexAttribArray(1); glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(TerrainVertex), reinterpret_cast<void*>(offsetof(TerrainVertex, normal)));
+        glEnableVertexAttribArray(2); glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(TerrainVertex), reinterpret_cast<void*>(offsetof(TerrainVertex, color)));
+        glBindVertexArray(0);
+        foundationMeshes_.push_back(mesh);
+    }
+}
+
+void Renderer::uploadTerrainChunk(int chunkX, int chunkZ) {
+    constexpr int chunkSide = Terrain::chunkCellCount + 1;
+    constexpr float halfExtent = static_cast<float>(Terrain::cellCount) * Terrain::spacing * 0.5F;
+    std::vector<TerrainVertex> vertices;
+    vertices.reserve(chunkSide * chunkSide);
+    const int startX = chunkX * Terrain::chunkCellCount;
+    const int startZ = chunkZ * Terrain::chunkCellCount;
+    for (int localZ = 0; localZ < chunkSide; ++localZ)
+        for (int localX = 0; localX < chunkSide; ++localX) {
+            const int x = startX + localX, z = startZ + localZ;
+            vertices.push_back({{x * Terrain::spacing - halfExtent, terrain_.vertexHeight(x, z),
+                                 z * Terrain::spacing - halfExtent}, terrain_.normalAt(x, z),
+                                terrain_.colorAt(terrain_.normalizedHeight(x, z))});
+        }
+    const std::size_t index = static_cast<std::size_t>(chunkZ * Terrain::chunksPerSide + chunkX);
+    if (index < terrainChunks_.size()) {
+        glBindBuffer(GL_ARRAY_BUFFER, terrainChunks_[index].vbo);
+        glBufferSubData(GL_ARRAY_BUFFER, 0,
+                        static_cast<GLsizeiptr>(vertices.size() * sizeof(TerrainVertex)), vertices.data());
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
+    }
 }
 
 void Renderer::drawPauseMenu(bool resumeHovered, bool settingsHovered, bool exitHovered) const {

@@ -129,11 +129,27 @@ class Renderer final {
                                                    float maximumSlopeDegrees) const {
         return terrain_.fitFootprint(worldX, worldZ, radius, maximumSlopeDegrees);
     }
+    [[nodiscard]] FootprintFit fitTerrainFootprint(float worldX, float worldZ,
+                                                   const TerrainFootprint& footprint) const {
+        return terrain_.fitFootprint(worldX, worldZ, footprint);
+    }
     [[nodiscard]] std::size_t loadedModelCount() const {
         return resources_.modelCount();
     }
 
   private:
+    struct FoundationMesh {
+        std::uint32_t vao{0};
+        std::uint32_t vbo{0};
+        std::uint32_t ebo{0};
+        std::uint32_t indexCount{0};
+        EntityId sourceEntity{0};
+        glm::vec3 center{0.0F};
+        glm::vec2 halfExtents{0.0F};
+        float rotationDegrees{0.0F};
+        bool visible{true};
+    };
+
     struct TerrainChunk {
         std::uint32_t vao{0};
         std::uint32_t vbo{0};
@@ -163,6 +179,8 @@ class Renderer final {
     ResourceManager resources_{"assets"};
     FontRenderer font_;
     std::vector<TerrainChunk> terrainChunks_;
+    std::vector<FoundationMesh> foundationMeshes_;
+    std::vector<std::pair<int, int>> pendingTerrainChunkUploads_;
     int viewportWidth_{1};
     int viewportHeight_{1};
     float framesPerSecond_{0.0F};
@@ -175,10 +193,13 @@ class Renderer final {
     std::chrono::steady_clock::time_point lastSlowFrameLog_{};
     mutable std::unordered_map<std::string, ModelHandle> modelHandles_;
     mutable std::array<TextureHandle, 4> terrainTextures_{};
+    mutable TextureHandle foundationTexture_{};
     std::unordered_map<std::string, AssetPreloadSet> preloadGroups_;
     [[nodiscard]] ModelHandle modelHandle(const std::string& archetype) const;
     void bindTerrainTextures() const;
     void refreshModelShaderBindings();
+    void uploadTerrainChunk(int chunkX, int chunkZ);
+    void syncFoundationMeshes();
     void drawText(const std::string& text,
                   float x,
                   float y,
