@@ -49,7 +49,7 @@ void SaveGame::write(const std::filesystem::path& path,
     rapidjson::PrettyWriter<rapidjson::OStreamWrapper> writer{output};
     writer.StartObject();
     writer.Key("formatVersion");
-    writer.Uint(3);
+    writer.Uint(4);
     writer.Key("terrainSeed");
     writer.Uint(terrainSeed);
     writer.Key("mapChunksPerSide");
@@ -184,6 +184,27 @@ void SaveGame::write(const std::filesystem::path& path,
             writer.Double(entity.gatherer.carriedAmount);
             writer.EndObject();
         }
+        if (entity.flight) {
+            writer.Key("flight");
+            writer.StartObject();
+            writer.Key("altitude"); writer.Double(entity.flight.altitude);
+            writer.EndObject();
+        }
+        if (entity.battery) {
+            writer.Key("battery");
+            writer.StartObject();
+            writer.Key("charge"); writer.Double(entity.battery.charge);
+            writer.Key("returningToCharge"); writer.Bool(entity.battery.returningToCharge);
+            writer.Key("hasSuspendedOrder"); writer.Bool(entity.battery.hasSuspendedOrder);
+            writer.Key("suspendedOrder");
+            writer.Uint(static_cast<unsigned>(entity.battery.suspendedOrder));
+            writer.Key("suspendedTarget"); writer.Uint64(entity.battery.suspendedTarget);
+            writeVector(writer, "suspendedDestination", entity.battery.suspendedDestination);
+            writer.Key("suspendedHasDestination");
+            writer.Bool(entity.battery.suspendedHasDestination);
+            writer.Key("chargerTarget"); writer.Uint64(entity.battery.chargerTarget);
+            writer.EndObject();
+        }
         if (entity.combat) {
             writer.Key("combat");
             writer.StartObject();
@@ -284,7 +305,7 @@ SaveData SaveGame::read(const std::filesystem::path& path) {
     rapidjson::Document document;
     document.ParseStream(input);
     if (document.HasParseError() || !document.IsObject() || !document.HasMember("formatVersion") ||
-        !document["formatVersion"].IsUint() || document["formatVersion"].GetUint() != 3 ||
+        !document["formatVersion"].IsUint() || document["formatVersion"].GetUint() != 4 ||
         !document.HasMember("terrainSeed") || !document["terrainSeed"].IsUint() ||
         !document.HasMember("mapChunksPerSide") || !document["mapChunksPerSide"].IsUint() ||
         !document.HasMember("players") || !document["players"].IsArray() ||
@@ -428,6 +449,8 @@ SaveData SaveGame::read(const std::filesystem::path& path) {
                                                              item["hasDestination"].GetBool();
                 entity.unitControl.order = static_cast<UnitOrderKind>(item["order"].GetUint());
                 entity.unitControl.orderTarget = item["orderTarget"].GetUint64();
+                if (item["order"].GetUint() > static_cast<unsigned>(UnitOrderKind::stranded))
+                    throw std::runtime_error("Invalid unit order");
             }
             if (components.HasMember("gatherer")) {
                 const auto& item = components["gatherer"];
@@ -438,6 +461,46 @@ SaveData SaveGame::read(const std::filesystem::path& path) {
                     throw std::runtime_error("Invalid gatherer component");
                 entity.gatherer.carriedResource = item["carriedResource"].GetString();
                 entity.gatherer.carriedAmount = item["carriedAmount"].GetFloat();
+            }
+            if (components.HasMember("flight")) {
+                const auto& item = components["flight"];
+                if (!item.IsObject() || !item.HasMember("altitude") ||
+                    !item["altitude"].IsNumber())
+                    throw std::runtime_error("Invalid flight component");
+                entity.flight.emplace();
+                entity.flight.altitude = item["altitude"].GetFloat();
+                if (entity.flight.altitude < entity.flight.minimumAltitude ||
+                    entity.flight.altitude > entity.flight.maximumAltitude)
+                    throw std::runtime_error("Invalid flight altitude");
+                entity.transform.position.y = entity.flight.altitude;
+            }
+            if (components.HasMember("battery")) {
+                const auto& item = components["battery"];
+                if (!item.IsObject() || !item.HasMember("charge") || !item["charge"].IsNumber() ||
+                    !item.HasMember("returningToCharge") || !item["returningToCharge"].IsBool() ||
+                    !item.HasMember("hasSuspendedOrder") || !item["hasSuspendedOrder"].IsBool() ||
+                    !item.HasMember("suspendedOrder") || !item["suspendedOrder"].IsUint() ||
+                    !item.HasMember("suspendedTarget") || !item["suspendedTarget"].IsUint64() ||
+                    !item.HasMember("suspendedHasDestination") ||
+                    !item["suspendedHasDestination"].IsBool() ||
+                    !item.HasMember("chargerTarget") || !item["chargerTarget"].IsUint64())
+                    throw std::runtime_error("Invalid battery component");
+                entity.battery.emplace();
+                entity.battery.charge = item["charge"].GetFloat();
+                entity.battery.returningToCharge = item["returningToCharge"].GetBool();
+                entity.battery.hasSuspendedOrder = item["hasSuspendedOrder"].GetBool();
+                entity.battery.suspendedOrder =
+                    static_cast<UnitOrderKind>(item["suspendedOrder"].GetUint());
+                entity.battery.suspendedTarget = item["suspendedTarget"].GetUint64();
+                entity.battery.suspendedDestination = readVector(item, "suspendedDestination");
+                entity.battery.suspendedHasDestination =
+                    item["suspendedHasDestination"].GetBool();
+                entity.battery.chargerTarget = item["chargerTarget"].GetUint64();
+                if (entity.battery.charge < 0.0F ||
+                    entity.battery.charge > entity.battery.capacity ||
+                    item["suspendedOrder"].GetUint() >
+                        static_cast<unsigned>(UnitOrderKind::stranded))
+                    throw std::runtime_error("Invalid battery state");
             }
             if (components.HasMember("combat")) {
                 const auto& item = components["combat"];

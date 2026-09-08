@@ -67,7 +67,7 @@ UiDocument EntityHudLayout::actions(const EntityHudModel& model, int width, int 
                                     float uiScale) {
     UiDocument document;
     const UiLayout canvas(width, height, uiScale);
-    const UiRect panel = canvas.rect(UiAnchor::bottomLeft, 18, 18, 622, 302, 420, 220);
+    const UiRect panel = canvas.rect(UiAnchor::bottomLeft, 18, 18, 622, 340, 420, 250);
     document.panel("entity.panel", panel,
                    {0.025F, 0.04F, 0.06F});
     document.label("entity.title", {panel.left + canvas.value(12), panel.top + canvas.value(12), 0, 0},
@@ -103,12 +103,13 @@ UiDocument EntityHudLayout::actions(const EntityHudModel& model, int width, int 
                    stats, 1.0F * canvas.scale(), {0.75F, 0.84F, 0.88F});
     document.label("entity.footer", {panel.left + canvas.value(384), panel.top + canvas.value(86), 0, 0},
                    model.footer, 1.05F * canvas.scale(), {0.82F, 0.88F, 0.90F});
-    document.label("entity.tooltip", {panel.left + canvas.value(12), panel.top + canvas.value(48), 0, 0},
-                   {}, 1.45F * canvas.scale());
+    document.label("entity.tooltip", {panel.left + canvas.value(12), panel.top + canvas.value(137),
+                   panel.right - canvas.value(12), panel.top + canvas.value(160)},
+                   {}, 1.25F * canvas.scale(), {0.96F, 0.90F, 0.58F});
     const std::size_t queueCount = std::min<std::size_t>(model.queue.size(), 9);
-    const UiRect queueArea{panel.left + canvas.value(12), panel.top + canvas.value(145),
+    const UiRect queueArea{panel.left + canvas.value(12), panel.top + canvas.value(170),
                            panel.left + canvas.value(12 + static_cast<float>(queueCount) * 54),
-                           panel.top + canvas.value(189)};
+                           panel.top + canvas.value(214)};
     const auto queueCells = canvas.row(queueArea, queueCount, 10, 44);
     for (std::size_t i = 0; i < queueCount; ++i) {
         document.queueSlot(queueElementId(i), queueCells[i],
@@ -118,8 +119,8 @@ UiDocument EntityHudLayout::actions(const EntityHudModel& model, int width, int 
     }
     if (!model.queue.empty())
         document.progressBar("entity.queue.progress",
-            {panel.left + canvas.value(12), panel.top + canvas.value(200),
-             panel.right - canvas.value(20), panel.top + canvas.value(210)},
+            {panel.left + canvas.value(12), panel.top + canvas.value(224),
+             panel.right - canvas.value(20), panel.top + canvas.value(234)},
             model.queue.front().progress);
     const std::size_t actionCount = std::min<std::size_t>(model.actions.size(), 6);
     const UiRect actionArea{panel.left + canvas.value(12), panel.bottom - canvas.value(68),

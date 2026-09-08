@@ -79,6 +79,9 @@ class GameSession final {
 
     void simulateTick();
     void apply(const PlayerCommand& command);
+    void beginRecharge(Entity& entity);
+    void finishRecharge(Entity& entity);
+    void stopUnit(Entity& entity);
     void updateExploration();
     [[nodiscard]] float stat(const Entity& entity, GameplayStat stat) const;
     void initializeEntity(Entity& entity);

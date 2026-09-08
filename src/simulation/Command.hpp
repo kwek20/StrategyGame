@@ -59,6 +59,8 @@ struct StopConstructionCommand { EntityId entity{0}; };
 struct CancelConstructionCommand { EntityId entity{0}; };
 struct RepairCommand { EntityId entity{0}; EntityId target{0}; };
 struct CancelProductionCommand { EntityId entity{0}; std::uint32_t queueIndex{0}; };
+struct RechargeCommand { EntityId entity{0}; };
+struct StopUnitCommand { EntityId entity{0}; };
 
 using CommandPayload = std::variant<PossessUnitCommand,
                                     ReleaseUnitCommand,
@@ -73,7 +75,9 @@ using CommandPayload = std::variant<PossessUnitCommand,
                                     StopConstructionCommand,
                                     CancelConstructionCommand,
                                     RepairCommand,
-                                    CancelProductionCommand>;
+                                    CancelProductionCommand,
+                                    RechargeCommand,
+                                    StopUnitCommand>;
 
 struct PlayerCommand {
     PlayerId player{0};

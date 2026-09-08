@@ -16,6 +16,8 @@ struct ModelRenderCommand {
     std::string animation;
     double animationSeconds{0.0};
     glm::vec3 tint{1.0F};
+    // 1 draws currently visible fragments, -1 draws remembered/fogged fragments.
+    int visibilityMode{0};
 };
 
 class RenderCommandQueue final {

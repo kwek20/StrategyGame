@@ -88,7 +88,8 @@ Economic depth should produce strategic choices without becoming spreadsheet man
 
 ### Opening: establish the network
 
-Each player begins with a command hub, a construction drone, limited stored power, and a
+Each player begins with a command hub, a construction drone, a directly controlled
+non-gathering ground worker, limited stored power, and a
 partially unexplored map. The drone scouts, collects loose materials, constructs foundational
 buildings, repairs structures, and returns to powered facilities to recharge.
 
@@ -356,7 +357,7 @@ Possible later modes include:
 The first representative gameplay slice should include:
 
 1. Two players with independent resources and fog of war.
-2. One command hub and one construction drone per player.
+2. One command hub, one construction drone, and one non-gathering ground worker per player.
 3. Materials and power as functional resources.
 4. Resource deposits gathered by drones.
 5. A generator, relay pylon, charging pad, extractor, factory, and sensor tower.
@@ -390,9 +391,10 @@ by the engine:
 
 ### Phase 2: implement the starting drone
 
-Replace the current worker as the starting entity. Add flying navigation, battery charge,
-gathering with cargo and deposit, upfront-cost construction with power-budgeted drone work,
-charging, automatic return, and direct-control flight.
+Make the construction drone the starting economic entity while retaining the worker as a
+directly controlled, non-gathering unit. Add flying navigation, battery charge, gathering with
+cargo and deposit, upfront-cost construction with power-budgeted drone work, explicit charging,
+automatic return, stranded-state reporting, and deterministic resumption of interrupted work.
 
 ### Phase 3: complete construction
 
@@ -427,7 +429,7 @@ Every new gameplay system must pass deterministic replay, persistence, and simul
 
 ## Immediate next milestone
 
-The next implementation milestone is the starting construction drone together with its
-battery and charging model. This is the foundation for gathering, construction, power-grid
-expansion, logistics, and direct control, and it establishes the game's distinct identity
-before the unit roster grows.
+The current implementation milestone is validating the construction drone's complete task and
+battery loop: gathering, construction, repair, explicit recharge, automatic return, charging,
+stranded handling, save/load, and deterministic task resumption. This is the foundation for
+power-grid expansion and logistics before the unit roster grows.

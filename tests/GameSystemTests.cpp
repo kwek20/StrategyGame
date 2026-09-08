@@ -327,6 +327,13 @@ int main() {
                 decodedConstructionCancel->payload) &&
             std::get<strategy::CancelConstructionCommand>(
                 decodedConstructionCancel->payload).entity == 23;
+    const auto decodedRecharge = strategy::CommandCodec::decode(strategy::CommandCodec::encode(
+        {1, 55, strategy::RechargeCommand{7}}));
+    const auto decodedStop = strategy::CommandCodec::decode(strategy::CommandCodec::encode(
+        {1, 56, strategy::StopUnitCommand{7}}));
+    valid = valid && decodedRecharge && decodedStop &&
+            std::holds_alternative<strategy::RechargeCommand>(decodedRecharge->payload) &&
+            std::holds_alternative<strategy::StopUnitCommand>(decodedStop->payload);
     std::size_t resourceCount = 0;
     for (const strategy::Entity& resource : session.world().entities()) {
         if (resource.authority.owner != 0)
@@ -471,7 +478,35 @@ int main() {
     const strategy::Entity* updatedBuild = constructionPowerSession.world().findEntity(poweredBuildId);
     valid = valid && updatedDrone && updatedBuild &&
             updatedBuild->construction.powerProgress == 2.0F &&
+            updatedBuild->health &&
+            std::abs(updatedBuild->health.current - updatedBuild->health.maximum * 0.02F) < 0.001F &&
             updatedDrone->battery.charge == batteryBeforeConstruction - 1.0F;
+
+    strategy::Entity& chargingHub = constructionPowerSession.world().createEntity(
+        "Command Hub", "command_hub", 1);
+    gameplay.initializeEntity(chargingHub);
+    chargingHub.transform.position = {0.0F, 0.0F, 0.0F};
+    strategy::Entity* rechargingDrone =
+        constructionPowerSession.world().findEntity(powerDroneId);
+    rechargingDrone->battery.charge = 98.0F;
+    valid = constructionPowerSession.submit(
+                {1, 2, strategy::RechargeCommand{powerDroneId}}) && valid;
+    constructionPowerSession.advanceTicks();
+    rechargingDrone = constructionPowerSession.world().findEntity(powerDroneId);
+    valid = valid && !rechargingDrone->battery.returningToCharge &&
+            !rechargingDrone->battery.hasSuspendedOrder &&
+            rechargingDrone->unitControl.order == strategy::UnitOrderKind::construct;
+
+    strategy::Entity* depletedDrone =
+        constructionPowerSession.world().findEntity(powerDroneId);
+    depletedDrone->battery.charge = 0.0F;
+    depletedDrone->battery.returningToCharge = true;
+    const glm::vec3 depletedPosition = depletedDrone->transform.position;
+    valid = constructionPowerSession.submit(
+                {1, 3, strategy::MoveUnitCommand{powerDroneId, {20.0F, 6.0F, 20.0F}}}) && valid;
+    constructionPowerSession.advanceTicks();
+    valid = valid && constructionPowerSession.world().findEntity(powerDroneId)->transform.position ==
+                           depletedPosition;
 
     strategy::Entity& unfinished =
         recipeSession.world().createEntity("Unfinished Hub", "command_hub", 1);

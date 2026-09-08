@@ -1,4 +1,5 @@
 #include "terrain/Terrain.hpp"
+#include "world/MapArea.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -18,6 +19,18 @@ int main() {
     const strategy::Terrain sameSeed{0x5EED1234U};
     const strategy::Terrain differentSeed{12345U};
     bool valid = true;
+    const strategy::MapArea smallMap{10};
+    const strategy::MapArea mediumMap{15};
+    const strategy::MapArea largeMap{20};
+    valid = valid && nearlyEqual(smallMap.extent(), 240.0F) &&
+            nearlyEqual(mediumMap.extent(), 360.0F) &&
+            nearlyEqual(largeMap.extent(), 480.0F);
+    const glm::vec2 mapPoint{-72.0F, 54.0F};
+    valid = valid && glm::length(
+        mediumMap.worldFromNormalized(mediumMap.normalized(mapPoint)) - mapPoint) < 0.001F;
+    valid = valid && mediumMap.gridCell({0.0F, 0.0F}, 128) == glm::ivec2{64, 64} &&
+            mediumMap.contains({179.0F, -179.0F}) &&
+            !mediumMap.contains({181.0F, 0.0F});
     const float halfExtent = terrain.worldExtent() * 0.5F;
 
     for (int z = 0; z < strategy::Terrain::vertexCount; ++z) {

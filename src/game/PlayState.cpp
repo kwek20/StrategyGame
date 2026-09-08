@@ -11,6 +11,7 @@
 #include "render/Renderer.hpp"
 #include "terrain/Terrain.hpp"
 #include "world/Collision.hpp"
+#include "world/MapArea.hpp"
 
 #include <SDL3/SDL.h>
 #include <algorithm>
@@ -72,7 +73,15 @@ PlayState::PlayState(StateContext& context, MatchSetupOptions setup)
                setup.mapChunksPerSide,
                setup.startingResourcesScale,
                setup.resourceAbundanceScale)
-    , config_(GameConfig::load(context.configPath)) {}
+    , config_(GameConfig::load(context.configPath)) {
+    for (const Entity& entity : session_.world().entities()) {
+        if (entity.authority.owner != localPlayer_) continue;
+        if (entity.archetype.value == "command_hub")
+            camera_.focusAt(entity.transform.position);
+        if (entity.archetype.value == "construction_drone")
+            selectedEntity_ = entity.id;
+    }
+}
 
 PlayState::PlayState(StateContext& context, SaveData data)
     : GameState(context)
@@ -284,6 +293,8 @@ void PlayState::handleEvent(const SDL_Event& event) {
             return;
         }
         if (viewMode_ == ViewMode::unitControl && possessedEntity_ != 0) {
+            if (const Entity* controlled = session_.world().findEntity(possessedEntity_))
+                camera_.focusAt(controlled->transform.position);
             session_.submit(
                 {localPlayer_, nextCommandSequence_++, ReleaseUnitCommand{possessedEntity_}});
             possessedEntity_ = 0;
@@ -495,6 +506,24 @@ void PlayState::handleEvent(const SDL_Event& event) {
     }
     if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_RIGHT &&
         viewMode_ == ViewMode::strategy) {
+        int width = config_.resolutionWidth, height = config_.resolutionHeight;
+        if (SDL_Window* window = SDL_GetWindowFromID(inputWindowId_))
+            SDL_GetWindowSize(window, &width, &height);
+        const UiDocument minimap = GameHudLayout::minimap(width, height, config_.uiScale);
+        if (const UiElement* map = minimap.find("strategy.minimap");
+            map && map->bounds.contains({event.button.x, event.button.y})) {
+            const float left = map->bounds.left + 8.0F;
+            const float right = map->bounds.right - 8.0F;
+            const float top = map->bounds.top + 28.0F;
+            const float bottom = map->bounds.bottom - 8.0F;
+            const MapArea mapArea{session_.mapChunksPerSide()};
+            const float x = std::clamp((event.button.x - left) / (right - left), 0.0F, 1.0F);
+            const float z = std::clamp((event.button.y - top) / (bottom - top), 0.0F, 1.0F);
+            pendingOrderTarget_ = 0;
+            const glm::vec2 world = mapArea.worldFromNormalized({x, z});
+            pendingMoveDestination_ = glm::vec3{world.x, 0.0F, world.y};
+            return;
+        }
         mousePanning_ = true;
         rightDragDistance_ = 0.0F;
         return;
@@ -836,22 +865,17 @@ void PlayState::render(Renderer& renderer) const {
         const FootprintFit footprint = renderer.fitTerrainFootprint(
             position.x, position.z, buildingFootprint);
         if (local) {
-            constexpr float extent = Terrain::cellCount * Terrain::spacing;
-            const int gx = std::clamp(static_cast<int>((position.x / extent + 0.5F) * Player::explorationCells),
-                                      0, Player::explorationCells - 1);
-            const int gz = std::clamp(static_cast<int>((position.z / extent + 0.5F) * Player::explorationCells),
-                                      0, Player::explorationCells - 1);
-            const auto index = static_cast<std::size_t>(gz * Player::explorationCells + gx);
+            const glm::ivec2 cell = MapArea{session_.mapChunksPerSide()}.gridCell(
+                {position.x, position.z}, Player::explorationCells);
+            const auto index = static_cast<std::size_t>(
+                cell.y * Player::explorationCells + cell.x);
             currentlyVisible = index < local->visible.size() && local->visible[index] != 0;
             previouslyExplored = index < local->discovered.size() && local->discovered[index] != 0;
         }
         constructionPreviewValid_ = previouslyExplored;
-        const float mapHalfExtent =
-            static_cast<float>(session_.mapChunksPerSide() * Terrain::chunkCellCount) *
-            Terrain::spacing * 0.5F;
         constructionPreviewValid_ = constructionPreviewValid_ &&
-            std::abs(position.x) + buildingRadius <= mapHalfExtent &&
-            std::abs(position.z) + buildingRadius <= mapHalfExtent;
+            MapArea{session_.mapChunksPerSide()}.contains(
+                {position.x, position.z}, buildingRadius);
         // Hidden enemy construction is resolved authoritatively by PlaceBuildingCommand.
         // Do not leak it through a red preview in previously explored fog.
         if (currentlyVisible)
@@ -875,20 +899,6 @@ void PlayState::render(Renderer& renderer) const {
     }
     if (viewMode_ == ViewMode::strategy)
         renderer.drawOrderMarkers(session_.world(), selectedEntity_, selectedUnits_, view);
-    if (viewMode_ == ViewMode::strategy) {
-        const Entity* selected = session_.world().findEntity(selectedEntity_);
-        const bool sameType = selected && isHomogeneousSelection(
-            session_.world(), selectedUnits_, selected->archetype.value);
-        if ((selectedUnits_.empty() || sameType) && selected &&
-            selected->authority.owner == localPlayer_ &&
-            selected->archetype.value == "construction_drone") {
-            EntityHudModel hud = buildConstructionHudModel(*selected, local);
-            UiDocument layout = EntityHudLayout::actions(
-                hud, renderer.viewportWidth(), renderer.viewportHeight(), config_.uiScale);
-            uiController_.apply(layout);
-            renderer.drawEntityHud(hud, layout);
-        }
-    }
     if (!selectedUnits_.empty())
         for (EntityId selected : selectedUnits_)
             renderer.drawEntityOutline(session_.world(), selected, view, local);
@@ -929,6 +939,15 @@ void PlayState::render(Renderer& renderer) const {
             EntityHudModel hud = EntityHudModelBuilder::build(
                 session_.world(), selectedEntity_, selectedUnits_, context_.definitions);
             UiDocument layout = EntityHudLayout::selection(
+                hud, renderer.viewportWidth(), renderer.viewportHeight(), config_.uiScale);
+            uiController_.apply(layout);
+            renderer.drawEntityHud(hud, layout);
+        }
+        if (selected && selected->authority.owner == localPlayer_ &&
+            selected->archetype.value == "construction_drone" &&
+            (selectedUnits_.empty() || sameType)) {
+            EntityHudModel hud = buildConstructionHudModel(*selected, local);
+            UiDocument layout = EntityHudLayout::actions(
                 hud, renderer.viewportWidth(), renderer.viewportHeight(), config_.uiScale);
             uiController_.apply(layout);
             renderer.drawEntityHud(hud, layout);

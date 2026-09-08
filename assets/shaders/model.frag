@@ -12,8 +12,17 @@ uniform sampler2D baseColorTexture;
 uniform vec2 fogRange;
 uniform bool rememberedEntity;
 uniform vec3 rememberedTint;
+uniform int visibilityMode;
+uniform sampler2D explorationMap;
+uniform float explorationExtent;
 out vec4 outColor;
 void main() {
+    if (visibilityMode != 0) {
+        vec2 explorationUv = worldPosition.xz / explorationExtent + 0.5;
+        float visibility = texture(explorationMap, explorationUv).r;
+        if ((visibilityMode > 0 && visibility < 0.68) ||
+            (visibilityMode < 0 && visibility >= 0.68)) discard;
+    }
     vec3 lightDirection = normalize(vec3(-0.45, 0.82, 0.35));
     vec3 normal = normalize(worldNormal);
     float diffuseAmount = max(dot(normal, lightDirection), 0.0);

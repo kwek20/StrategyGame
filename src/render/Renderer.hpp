@@ -13,6 +13,7 @@
 #include "render/ShaderManager.hpp"
 #include "terrain/Terrain.hpp"
 #include "world/Entity.hpp"
+#include "world/MapArea.hpp"
 
 #include <array>
 #include <chrono>
@@ -184,6 +185,10 @@ class Renderer final {
     mutable TextureHandle iconAtlasTexture_{};
     std::unordered_map<std::string, AssetPreloadSet> preloadGroups_;
     [[nodiscard]] ModelHandle modelHandle(const std::string& archetype) const;
+    [[nodiscard]] float activeWorldExtent() const {
+        return activeMapArea().extent();
+    }
+    [[nodiscard]] MapArea activeMapArea() const { return MapArea{activeTerrainChunksPerSide_}; }
     void bindTerrainTextures() const;
     void drawIcon(const std::string& id, float left, float top, float right, float bottom,
                   const glm::vec3& tint = {1.0F, 1.0F, 1.0F}) const;

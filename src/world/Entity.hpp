@@ -40,7 +40,18 @@ struct Authority {
     PlayerId directController{0};
 };
 
-enum class UnitOrderKind : std::uint8_t { idle, move, gather, returnResources, attack, construct, repair };
+enum class UnitOrderKind : std::uint8_t {
+    idle,
+    move,
+    gather,
+    returnResources,
+    attack,
+    construct,
+    repair,
+    returningToCharge,
+    charging,
+    stranded
+};
 
 enum class EntityKind : std::uint8_t { decoration, unit, building, resource };
 
@@ -86,6 +97,12 @@ struct BatteryComponent {
     float movementDrainPerSecond{0.0F};
     float reserveThreshold{0.0F};
     bool returningToCharge{false};
+    bool hasSuspendedOrder{false};
+    UnitOrderKind suspendedOrder{UnitOrderKind::idle};
+    EntityId suspendedTarget{0};
+    glm::vec3 suspendedDestination{0.0F};
+    bool suspendedHasDestination{false};
+    EntityId chargerTarget{0};
 };
 enum class BuildingLifecycleState : std::uint8_t {
     planned,

@@ -102,21 +102,24 @@ Establish a reliable baseline before replacing the starting worker and economy.
 
 ### Goal
 
-Replace the ground worker with the defining starting unit of the game.
+Establish the construction drone as the defining economic unit while retaining one
+directly controlled, non-gathering ground worker.
 
 ### Work
 
 - Add a flight-capable navigation mode with altitude and valid operating bounds.
 - Add authoritative battery, cargo/gathering, construction, and repair components.
-- Add commands for gather, construct, repair, recharge, stop, and direct control.
+- Add serializable commands for gather, construct, repair, recharge, and generic stop.
 - Implement automatic return to an available charger at a configurable reserve level.
 - Handle unreachable, destroyed, occupied, or disconnected charging destinations.
-- Implement direct-control flight and a drone-specific HUD.
+- Preserve interrupted work while charging and resume it deterministically afterward.
+- Keep construction drones indirect-control only and provide a drone-specific HUD.
 - Add readable battery, task, route, construction-power, and work-step indicators.
 
 ### Exit criteria
 
-- Each player starts with exactly one command hub and one construction drone.
+- Each player starts with one command hub, one construction drone, and one directly controlled
+  ground worker that cannot gather.
 - The drone can gather materials into cargo, deposit them into the player's stockpile, construct
   after an upfront material cost, recharge, and resume work.
 - Each construction recipe defines an upfront material cost, a power budget, and deterministic work
@@ -124,7 +127,7 @@ Replace the ground worker with the defining starting unit of the game.
 - Identical command streams produce identical battery, cargo, construction-power, movement, and
   resource results.
 - Drone state survives save/load at every point in its work cycle.
-- A drone cannot become permanently stranded without an explicit visible reason.
+- A drone enters an explicit stranded state when no powered headquarters charger is available.
 
 ## Milestone 3: construction gameplay
 
@@ -407,7 +410,8 @@ These tracks continue throughout all milestones rather than waiting for a final 
 The immediate order of work is:
 
 1. Complete milestone 0 navigation and visual stabilization.
-2. Implement the milestone 2 construction drone and battery loop.
+2. Finish milestone 2 validation for the implemented construction-drone task, battery,
+   charging, interruption-resume, persistence, and deterministic command loop.
 3. Build milestone 3 construction around that drone.
 4. Add the milestone 4 power grid.
 5. Balance the milestone 5 materials-and-power economy.

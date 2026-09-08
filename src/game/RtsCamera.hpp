@@ -14,6 +14,7 @@ class RtsCamera final {
     void dragPan(float deltaX, float deltaY);
     void zoom(float wheelDelta);
     [[nodiscard]] glm::vec2 groundMovement(float forward, float right) const;
+    void focusAt(glm::vec3 position) { focus_ = position; }
 
     [[nodiscard]] glm::vec3 eye(float groundHeight) const;
     [[nodiscard]] glm::vec3 target(float groundHeight) const;

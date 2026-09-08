@@ -3,6 +3,7 @@
 #include "players/PlayerRegistry.hpp"
 #include "world/World.hpp"
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -67,6 +68,21 @@ int main() {
     entity.construction.powerProgress = 30.0F;
     entity.construction.state = strategy::BuildingLifecycleState::underConstruction;
     const strategy::EntityId originalId = entity.id;
+    strategy::Entity& drone = world.createEntity("Drone", "construction_drone", 1);
+    drone.kind = strategy::EntityKind::unit;
+    drone.unitControl.emplace();
+    drone.battery.emplace();
+    drone.battery.capacity = 100.0F;
+    drone.battery.charge = 18.0F;
+    drone.battery.returningToCharge = true;
+    drone.battery.hasSuspendedOrder = true;
+    drone.battery.suspendedOrder = strategy::UnitOrderKind::construct;
+    drone.battery.suspendedTarget = originalId;
+    drone.battery.suspendedDestination = entity.transform.position;
+    drone.battery.suspendedHasDestination = true;
+    drone.battery.chargerTarget = 77;
+    drone.unitControl.order = strategy::UnitOrderKind::returningToCharge;
+    const strategy::EntityId droneId = drone.id;
     world.foundations().push_back({{1.0F, 6.0F, 3.0F}, 5.0F, 7.0F});
     strategy::PlayerRegistry players{"france", "brazil"};
     players.find(1)->resources["materials"] = 125.0F;
@@ -75,7 +91,7 @@ int main() {
     strategy::SaveGame::write(savePath, 424242U, world, &players, 10);
     const strategy::SaveData loaded = strategy::SaveGame::read(savePath);
     valid = valid && loaded.terrainSeed == 424242U && loaded.mapChunksPerSide == 10 &&
-            loaded.entities.size() == 1;
+            loaded.entities.size() == 2;
     valid = valid && loaded.foundations.size() == 1 &&
             loaded.foundations[0].center == glm::vec3{1.0F, 6.0F, 3.0F} &&
             loaded.foundations[0].innerRadius == 5.0F &&
@@ -108,6 +124,15 @@ int main() {
             loaded.entities[0].production.queue.front().recipeId ==
                 "town_center.train_construction_drone" &&
             loaded.resources[0].at("materials") == 125.0F;
+    const auto loadedDrone = std::find_if(loaded.entities.begin(), loaded.entities.end(),
+        [droneId](const strategy::Entity& candidate) { return candidate.id == droneId; });
+    valid = valid && loadedDrone != loaded.entities.end() && loadedDrone->battery &&
+            loadedDrone->battery.charge == 18.0F &&
+            loadedDrone->battery.returningToCharge &&
+            loadedDrone->battery.hasSuspendedOrder &&
+            loadedDrone->battery.suspendedOrder == strategy::UnitOrderKind::construct &&
+            loadedDrone->battery.suspendedTarget == originalId &&
+            loadedDrone->battery.chargerTarget == 77;
 
     std::filesystem::remove_all(directory);
     if (!valid) {

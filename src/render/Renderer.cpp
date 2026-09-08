@@ -543,6 +543,7 @@ void Renderer::drawTerrain(const CameraView& camera, const Player* player) const
     const bool closeView = camera.detailDistance < 20.0F;
     glUniform2f(shaders_.uniform(program_, "fogRange"), 140.0F, 280.0F);
     glUniform1i(shaders_.uniform(program_, "useExploration"), player ? 1 : 0);
+    glUniform1f(shaders_.uniform(program_, "explorationExtent"), activeWorldExtent());
     if (player) {
         std::vector<std::uint8_t> map(player->discovered.size());
         for (std::size_t i = 0; i < map.size(); ++i)
@@ -614,25 +615,12 @@ void Renderer::drawWorld(const World& world, const CameraView& camera, const Pla
         shaders_.uniform(modelProgram_, "cameraPosition"), 1, glm::value_ptr(camera.position));
     glUniform2f(shaders_.uniform(modelProgram_, "fogRange"), 140.0F, 280.0F);
     glUniform1i(shaders_.uniform(modelProgram_, "rememberedEntity"), 0);
+    glUniform1i(shaders_.uniform(modelProgram_, "explorationMap"), 7);
+    glUniform1f(shaders_.uniform(modelProgram_, "explorationExtent"), activeWorldExtent());
 
     for (const Entity& entity : world.entities()) {
         if (entity.resource && entity.resource.remaining <= 0.0F)
             continue;
-        if (player && entity.authority.owner != player->id) {
-            constexpr float extent = Terrain::cellCount * Terrain::spacing;
-            const int x =
-                std::clamp(static_cast<int>((entity.transform.position.x / extent + 0.5F) *
-                                            Player::explorationCells),
-                           0,
-                           Player::explorationCells - 1);
-            const int z =
-                std::clamp(static_cast<int>((entity.transform.position.z / extent + 0.5F) *
-                                            Player::explorationCells),
-                           0,
-                           Player::explorationCells - 1);
-            if (!player->visible[static_cast<std::size_t>(z * Player::explorationCells + x)])
-                continue;
-        }
         const ModelHandle handle = modelHandle(entity.renderId());
         const Model* model = resources_.modelOrMarker(handle);
         if (model == nullptr) {
@@ -663,21 +651,11 @@ void Renderer::drawWorld(const World& world, const CameraView& camera, const Pla
              animationSeconds,
              entity.construction && !isOperational(entity)
                  ? (entity.construction.placementValid ? glm::vec3{0.45F} : glm::vec3{0.85F, 0.12F, 0.10F})
-                 : glm::vec3{1.0F}});
+                 : glm::vec3{1.0F},
+             player && entity.authority.owner != player->id ? 1 : 0});
     }
     if (player)
         for (const LastKnownEntity& known : player->intelligence) {
-            constexpr float extent = Terrain::cellCount * Terrain::spacing;
-            const int x = std::clamp(static_cast<int>((known.position.x / extent + 0.5F) *
-                                                      Player::explorationCells),
-                                     0,
-                                     Player::explorationCells - 1),
-                      z = std::clamp(static_cast<int>((known.position.z / extent + 0.5F) *
-                                                      Player::explorationCells),
-                                     0,
-                                     Player::explorationCells - 1);
-            if (player->visible[static_cast<std::size_t>(z * Player::explorationCells + x)])
-                continue;
             const Model* model = resources_.modelOrMarker(modelHandle(known.modelKey));
             if (!model)
                 continue;
@@ -688,7 +666,7 @@ void Renderer::drawWorld(const World& world, const CameraView& camera, const Pla
             const glm::vec3 tint =
                 known.building ? glm::vec3{0.22F, 0.34F, 0.40F} : glm::vec3{0.27F, 0.29F, 0.31F};
             commandQueue_.submit(
-                {modelHandle(known.modelKey), rememberedMaterial_, transform, {}, 0.0, tint});
+                {modelHandle(known.modelKey), rememberedMaterial_, transform, {}, 0.0, tint, -1});
         }
     commandQueue_.sort();
     for (const ModelRenderCommand& command : commandQueue_.commands()) {
@@ -704,6 +682,8 @@ void Renderer::drawWorld(const World& world, const CameraView& camera, const Pla
         glUniform1f(shaders_.uniform(material.shader, "materialRoughness"), material.roughness);
         const bool tinted = material.rememberedEntity || command.tint != glm::vec3{1.0F};
         glUniform1i(shaders_.uniform(material.shader, "rememberedEntity"), tinted ? 1 : 0);
+        glUniform1i(shaders_.uniform(material.shader, "visibilityMode"),
+                    command.visibilityMode);
         if (tinted)
             glUniform3fv(shaders_.uniform(material.shader, "rememberedTint"),
                          1,
@@ -731,18 +711,11 @@ void Renderer::drawWorld(const World& world, const CameraView& camera, const Pla
         if (!constructing && !damaged)
             continue;
         if (player && entity.authority.owner != player->id) {
-            constexpr float extent = Terrain::cellCount * Terrain::spacing;
-            const int x = std::clamp(
-                          static_cast<int>((entity.transform.position.x / extent + 0.5F) *
-                                           Player::explorationCells),
-                          0,
-                          Player::explorationCells - 1),
-                      z = std::clamp(
-                          static_cast<int>((entity.transform.position.z / extent + 0.5F) *
-                                           Player::explorationCells),
-                          0,
-                          Player::explorationCells - 1);
-            if (!player->visible[static_cast<std::size_t>(z * Player::explorationCells + x)])
+            const glm::ivec2 cell = activeMapArea().gridCell(
+                {entity.transform.position.x, entity.transform.position.z},
+                Player::explorationCells);
+            if (!player->visible[static_cast<std::size_t>(
+                    cell.y * Player::explorationCells + cell.x)])
                 continue;
         }
     const EntityDefinition* definition = resources_.entityDefinition(entity.renderId());
@@ -1368,9 +1341,7 @@ void Renderer::drawStrategyHud(const World& world, EntityId selected, const Play
     const float mapLeft = mapElement->bounds.left, mapTop = mapElement->bounds.top,
                 mapRight = mapElement->bounds.right, mapBottom = mapElement->bounds.bottom;
     uiRenderer_->draw(layout, viewportWidth_, viewportHeight_);
-    const float extent = static_cast<float>(activeTerrainChunksPerSide_ *
-                             Terrain::chunkCellCount) * Terrain::spacing,
-                half = extent * 0.5F;
+    const MapArea map = activeMapArea();
     if (player)
         for (int z = 0; z < 16; ++z)
             for (int x = 0; x < 16; ++x) {
@@ -1395,44 +1366,30 @@ void Renderer::drawStrategyHud(const World& world, EntityId selected, const Play
             }
     for (const Entity& entity : world.entities()) {
         if (player && entity.authority.owner != player->id) {
-            const int gx = std::clamp(
-                          static_cast<int>((entity.transform.position.x / extent + 0.5F) *
-                                           Player::explorationCells),
-                          0,
-                          Player::explorationCells - 1),
-                      gz = std::clamp(
-                          static_cast<int>((entity.transform.position.z / extent + 0.5F) *
-                                           Player::explorationCells),
-                          0,
-                          Player::explorationCells - 1);
-            if (!player->visible[static_cast<std::size_t>(gz * Player::explorationCells + gx)])
+            const glm::ivec2 cell = activeMapArea().gridCell(
+                {entity.transform.position.x, entity.transform.position.z},
+                Player::explorationCells);
+            if (!player->visible[static_cast<std::size_t>(
+                    cell.y * Player::explorationCells + cell.x)])
                 continue;
         }
-        const float x =
-            mapLeft + 8.0F +
-            (entity.transform.position.x + half) / extent * (mapRight - mapLeft - 16.0F);
-        const float y =
-            mapTop + 28.0F +
-            (entity.transform.position.z + half) / extent * (mapBottom - mapTop - 36.0F);
+        const glm::vec2 normalized = map.normalized(
+            {entity.transform.position.x, entity.transform.position.z});
+        const float x = mapLeft + 8.0F + normalized.x * (mapRight - mapLeft - 16.0F);
+        const float y = mapTop + 28.0F + normalized.y * (mapBottom - mapTop - 36.0F);
         appendHudRectangle(
             dots, x - 2.5F, y - 2.5F, x + 2.5F, y + 2.5F, viewportWidth_, viewportHeight_);
     }
     if (player)
         for (const LastKnownEntity& known : player->intelligence) {
-            const int gx = std::clamp(static_cast<int>((known.position.x / extent + 0.5F) *
-                                                       Player::explorationCells),
-                                      0,
-                                      Player::explorationCells - 1),
-                      gz = std::clamp(static_cast<int>((known.position.z / extent + 0.5F) *
-                                                       Player::explorationCells),
-                                      0,
-                                      Player::explorationCells - 1);
-            if (player->visible[static_cast<std::size_t>(gz * Player::explorationCells + gx)])
+            const glm::ivec2 cell = activeMapArea().gridCell(
+                {known.position.x, known.position.z}, Player::explorationCells);
+            if (player->visible[static_cast<std::size_t>(
+                    cell.y * Player::explorationCells + cell.x)])
                 continue;
-            const float x = mapLeft + 8.0F +
-                            (known.position.x + half) / extent * (mapRight - mapLeft - 16.0F),
-                        y = mapTop + 28.0F +
-                            (known.position.z + half) / extent * (mapBottom - mapTop - 36.0F);
+            const glm::vec2 normalized = map.normalized({known.position.x, known.position.z});
+            const float x = mapLeft + 8.0F + normalized.x * (mapRight - mapLeft - 16.0F),
+                        y = mapTop + 28.0F + normalized.y * (mapBottom - mapTop - 36.0F);
             appendHudRectangle(rememberedDots,
                                x - 2.0F,
                                y - 2.0F,
@@ -1466,24 +1423,17 @@ void Renderer::drawStrategyHud(const World& world, EntityId selected, const Play
         for (const Entity& e : world.entities())
             if (e.authority.owner == team) {
                 if (player && team != player->id) {
-                    const int gx = std::clamp(
-                                  static_cast<int>((e.transform.position.x / extent + 0.5F) *
-                                                   Player::explorationCells),
-                                  0,
-                                  Player::explorationCells - 1),
-                              gz = std::clamp(
-                                  static_cast<int>((e.transform.position.z / extent + 0.5F) *
-                                                   Player::explorationCells),
-                                  0,
-                                  Player::explorationCells - 1);
-                    if (!player->visible[static_cast<std::size_t>(gz * Player::explorationCells +
-                                                                  gx)])
+                    const glm::ivec2 cell = activeMapArea().gridCell(
+                        {e.transform.position.x, e.transform.position.z},
+                        Player::explorationCells);
+                    if (!player->visible[static_cast<std::size_t>(
+                            cell.y * Player::explorationCells + cell.x)])
                         continue;
                 }
-                float x = mapLeft + 8.0F +
-                          (e.transform.position.x + half) / extent * (mapRight - mapLeft - 16.0F);
-                float y = mapTop + 28.0F +
-                          (e.transform.position.z + half) / extent * (mapBottom - mapTop - 36.0F);
+                const glm::vec2 normalized =
+                    map.normalized({e.transform.position.x, e.transform.position.z});
+                float x = mapLeft + 8.0F + normalized.x * (mapRight - mapLeft - 16.0F);
+                float y = mapTop + 28.0F + normalized.y * (mapBottom - mapTop - 36.0F);
                 appendHudRectangle(teamDots,
                                    x - 3.5F,
                                    y - 3.5F,
@@ -1607,7 +1557,7 @@ std::vector<EntityId> Renderer::unitsInScreenRectangle(const glm::vec2& start,
     const glm::mat4 viewProjection = camera.viewProjection();
     std::vector<EntityId> result;
     for (const Entity& entity : world.entities()) {
-        if (entity.authority.owner != owner || entity.resource)
+        if (entity.authority.owner != owner || entity.kind != EntityKind::unit)
             continue;
         const EntityDefinition* definition = resources_.entityDefinition(entity.renderId());
         const float height = definition ? definition->selectionHeight : 1.8F;
@@ -1784,19 +1734,11 @@ EntityId Renderer::pickEntity(float pixelX,
             continue;
         glm::vec3 pickPosition = entity.transform.position;
         if (player && entity.authority.owner != player->id) {
-            constexpr float extent = Terrain::cellCount * Terrain::spacing;
-            const int gridX =
-                std::clamp(static_cast<int>((entity.transform.position.x / extent + 0.5F) *
-                                            Player::explorationCells),
-                           0,
-                           Player::explorationCells - 1);
-            const int gridZ =
-                std::clamp(static_cast<int>((entity.transform.position.z / extent + 0.5F) *
-                                            Player::explorationCells),
-                           0,
-                           Player::explorationCells - 1);
+            const glm::ivec2 cell = activeMapArea().gridCell(
+                {entity.transform.position.x, entity.transform.position.z},
+                Player::explorationCells);
             const std::size_t index =
-                static_cast<std::size_t>(gridZ * Player::explorationCells + gridX);
+                static_cast<std::size_t>(cell.y * Player::explorationCells + cell.x);
             if (!player->discovered[index] || (currentlyVisibleOnly && !player->visible[index]))
                 continue;
             if (!player->visible[index]) {
@@ -1855,16 +1797,10 @@ void Renderer::drawEntityOutline(const World& world,
     Transform shown = entity->transform;
     bool remembered = false;
     if (player && entity->authority.owner != player->id) {
-        constexpr float extent = Terrain::cellCount * Terrain::spacing;
-        const int x = std::clamp(static_cast<int>((shown.position.x / extent + 0.5F) *
-                                                  Player::explorationCells),
-                                 0,
-                                 Player::explorationCells - 1),
-                  z = std::clamp(static_cast<int>((shown.position.z / extent + 0.5F) *
-                                                  Player::explorationCells),
-                                 0,
-                                 Player::explorationCells - 1);
-        if (!player->visible[static_cast<std::size_t>(z * Player::explorationCells + x)]) {
+        const glm::ivec2 cell = activeMapArea().gridCell(
+            {shown.position.x, shown.position.z}, Player::explorationCells);
+        if (!player->visible[static_cast<std::size_t>(
+                cell.y * Player::explorationCells + cell.x)]) {
             const auto known =
                 std::find_if(player->intelligence.begin(),
                              player->intelligence.end(),
@@ -1914,7 +1850,7 @@ CameraView Renderer::constrainThirdPersonCamera(const CameraView& desired,
         return desired;
     const glm::vec3 direction = segment / desiredDistance;
     float allowed = desiredDistance;
-    const float half = terrain_.worldExtent() * 0.5F - 0.5F;
+    const float half = activeWorldExtent() * 0.5F - 0.5F;
     for (float distance = 0.5F; distance <= desiredDistance; distance += 0.25F) {
         const glm::vec3 point = desired.target + direction * distance;
         if (std::abs(point.x) > half || std::abs(point.z) > half ||

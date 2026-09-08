@@ -5,6 +5,7 @@
 #include "simulation/DeterministicRandom.hpp"
 #include "terrain/Terrain.hpp"
 #include "world/Collision.hpp"
+#include "world/MapArea.hpp"
 #include "world/World.hpp"
 
 #include <algorithm>
@@ -16,9 +17,7 @@ namespace {
 bool suitable(const Terrain& terrain, const MatchRulesDefinition& rules,
               std::uint32_t mapChunksPerSide,
               float x, float z) {
-    const float half = static_cast<float>(mapChunksPerSide * Terrain::chunkCellCount) *
-                           Terrain::spacing * 0.5F - rules.terrainEdgeMargin;
-    if (std::abs(x) > half || std::abs(z) > half)
+    if (!MapArea{mapChunksPerSide}.contains({x, z}, rules.terrainEdgeMargin))
         return false;
     const float normalized = terrain.heightAt(x, z) / Terrain::heightScale;
     if (normalized < rules.minimumResourceHeight || normalized > rules.maximumResourceHeight)

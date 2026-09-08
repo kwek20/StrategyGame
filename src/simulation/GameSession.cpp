@@ -5,6 +5,7 @@
 #include "terrain/Terrain.hpp"
 #include "world/Collision.hpp"
 #include "world/Navigation.hpp"
+#include "world/MapArea.hpp"
 #include "world/WorldGeneration.hpp"
 
 #include <algorithm>
@@ -20,6 +21,67 @@ namespace strategy {
 
 std::uint64_t GameSession::stateChecksum() const {
     return authoritativeStateChecksum(world_, players_, terrainSeed_, tick_, mapChunksPerSide_);
+}
+
+void GameSession::beginRecharge(Entity& entity) {
+    if (!entity.unitControl || !entity.battery || entity.battery.returningToCharge)
+        return;
+    const UnitOrderKind order = entity.unitControl.order;
+    if (order != UnitOrderKind::idle && order != UnitOrderKind::returningToCharge &&
+        order != UnitOrderKind::charging && order != UnitOrderKind::stranded) {
+        entity.battery.hasSuspendedOrder = true;
+        entity.battery.suspendedOrder = order;
+        entity.battery.suspendedTarget = entity.unitControl.orderTarget;
+        entity.battery.suspendedDestination = entity.unitControl.strategicDestination;
+        entity.battery.suspendedHasDestination = entity.unitControl.hasStrategicDestination;
+    }
+    entity.battery.returningToCharge = true;
+    entity.battery.chargerTarget = 0;
+    entity.unitControl.order = UnitOrderKind::returningToCharge;
+    entity.unitControl.orderTarget = 0;
+    entity.unitControl.hasStrategicDestination = false;
+    entity.unitControl.directInput = {0.0F, 0.0F};
+    entity.unitControl.running = false;
+    entity.transient.navigationPath.clear();
+    entity.transient.navigationWaypoint = 0;
+}
+
+void GameSession::finishRecharge(Entity& entity) {
+    entity.battery.returningToCharge = false;
+    entity.battery.chargerTarget = 0;
+    if (entity.battery.hasSuspendedOrder) {
+        entity.unitControl.order = entity.battery.suspendedOrder;
+        entity.unitControl.orderTarget = entity.battery.suspendedTarget;
+        entity.unitControl.strategicDestination = entity.battery.suspendedDestination;
+        entity.unitControl.hasStrategicDestination = entity.battery.suspendedHasDestination;
+        entity.battery.hasSuspendedOrder = false;
+        entity.battery.suspendedOrder = UnitOrderKind::idle;
+        entity.battery.suspendedTarget = 0;
+        entity.battery.suspendedHasDestination = false;
+    } else {
+        entity.unitControl.order = UnitOrderKind::idle;
+        entity.unitControl.orderTarget = 0;
+        entity.unitControl.hasStrategicDestination = false;
+    }
+}
+
+void GameSession::stopUnit(Entity& entity) {
+    if (!entity.unitControl) return;
+    entity.unitControl.order = UnitOrderKind::idle;
+    entity.unitControl.orderTarget = 0;
+    entity.unitControl.hasStrategicDestination = false;
+    entity.unitControl.directInput = {0.0F, 0.0F};
+    entity.unitControl.running = false;
+    entity.transient.navigationPath.clear();
+    entity.transient.navigationWaypoint = 0;
+    if (entity.battery) {
+        entity.battery.returningToCharge = false;
+        entity.battery.hasSuspendedOrder = false;
+        entity.battery.suspendedOrder = UnitOrderKind::idle;
+        entity.battery.suspendedTarget = 0;
+        entity.battery.suspendedHasDestination = false;
+        entity.battery.chargerTarget = 0;
+    }
 }
 
 GameSession::GameSession(const DefinitionRegistry& definitions,
@@ -249,6 +311,13 @@ void GameSession::apply(const PlayerCommand& command) {
                 }
             } else if constexpr (std::is_same_v<Type, DirectUnitInputCommand>) {
                 if (entity->unitControl && entity->authority.directController == command.player) {
+                    if (entity->battery &&
+                        (entity->battery.charge <= entity->battery.reserveThreshold ||
+                         entity->battery.returningToCharge)) {
+                        entity->unitControl.directInput = {0.0F, 0.0F};
+                        entity->unitControl.running = false;
+                        return;
+                    }
                     entity->unitControl.directInput = payload.movement;
                     entity->unitControl.running = payload.running;
                     entity->transform.rotationDegrees.y = payload.facingDegrees;
@@ -259,6 +328,10 @@ void GameSession::apply(const PlayerCommand& command) {
                 }
             } else if constexpr (std::is_same_v<Type, MoveUnitCommand>) {
                 if (!entity->unitControl)
+                    return;
+                if (entity->battery &&
+                    (entity->battery.charge <= entity->battery.reserveThreshold ||
+                     entity->battery.returningToCharge))
                     return;
                 entity->unitControl.order = UnitOrderKind::move;
                 entity->unitControl.orderTarget = 0;
@@ -276,7 +349,8 @@ void GameSession::apply(const PlayerCommand& command) {
             } else if constexpr (std::is_same_v<Type, GatherResourceCommand>) {
                 Entity* resource = world_.findEntity(payload.resource);
                 if (entity->unitControl && entity->gatherer && resource && resource->resource &&
-                    resource->resource.remaining > 0) {
+                    resource->resource.remaining > 0 &&
+                    (!entity->battery || !entity->battery.returningToCharge)) {
                     entity->unitControl.order = UnitOrderKind::gather;
                     entity->unitControl.orderTarget = resource->id;
                     entity->unitControl.strategicDestination = resource->transform.position;
@@ -331,11 +405,8 @@ void GameSession::apply(const PlayerCommand& command) {
                 if (!player || !entity->flight || !recipe || recipe->product.kind != RecipeProductKind::building)
                     return;
                 const float footprintRadius = collisionRadius(gameplay_, recipe->product.id);
-                const float mapHalfExtent =
-                    static_cast<float>(mapChunksPerSide_ * Terrain::chunkCellCount) *
-                    Terrain::spacing * 0.5F;
-                if (std::abs(payload.position.x) + footprintRadius > mapHalfExtent ||
-                    std::abs(payload.position.z) + footprintRadius > mapHalfExtent)
+                const MapArea map{mapChunksPerSide_};
+                if (!map.contains({payload.position.x, payload.position.z}, footprintRadius))
                     return;
                 if (overlapsObject(world_, gameplay_, {payload.position.x, payload.position.z},
                                    footprintRadius)) return;
@@ -364,7 +435,7 @@ void GameSession::apply(const PlayerCommand& command) {
                 building.construction.recipeId = recipe->id;
                 building.construction.powerRequired = recipe->constructionPower;
                 building.construction.state = BuildingLifecycleState::planned;
-                if (building.health) building.health.current = 1.0F;
+                if (building.health) building.health.current = 0.0F;
                 std::vector<EntityId> builders = payload.builders;
                 if (builders.empty())
                     builders.push_back(payload.entity);
@@ -385,14 +456,14 @@ void GameSession::apply(const PlayerCommand& command) {
             } else if constexpr (std::is_same_v<Type, ConstructCommand>) {
                 Entity* building = world_.findEntity(payload.building);
                 if (entity->flight && entity->battery && building && building->construction &&
-                    !isOperational(*building)) {
+                    !isOperational(*building) && !entity->battery.returningToCharge) {
                     entity->unitControl.order = UnitOrderKind::construct;
                     entity->unitControl.orderTarget = building->id;
                     entity->unitControl.strategicDestination = building->transform.position;
                     entity->unitControl.hasStrategicDestination = true;
                 }
             } else if constexpr (std::is_same_v<Type, StopConstructionCommand>) {
-                if (entity->unitControl) { entity->unitControl.order=UnitOrderKind::idle; entity->unitControl.orderTarget=0; entity->unitControl.hasStrategicDestination=false; }
+                stopUnit(*entity);
             } else if constexpr (std::is_same_v<Type, CancelConstructionCommand>) {
                 if (!entity->construction || isOperational(*entity)) return;
                 const RecipeDefinition* recipe = gameplay_.recipe(RecipeId{entity->construction.recipeId});
@@ -415,7 +486,8 @@ void GameSession::apply(const PlayerCommand& command) {
                 world_.destroyEntity(cancelled);
             } else if constexpr (std::is_same_v<Type, RepairCommand>) {
                 Entity* target = world_.findEntity(payload.target);
-                if (entity->flight && target && target->health) { entity->unitControl.order=UnitOrderKind::repair; entity->unitControl.orderTarget=target->id; entity->unitControl.strategicDestination=target->transform.position; entity->unitControl.hasStrategicDestination=true; }
+                if (entity->flight && target && target->health && entity->battery &&
+                    !entity->battery.returningToCharge) { entity->unitControl.order=UnitOrderKind::repair; entity->unitControl.orderTarget=target->id; entity->unitControl.strategicDestination=target->transform.position; entity->unitControl.hasStrategicDestination=true; }
             } else if constexpr (std::is_same_v<Type, StartUpgradeCommand>) {
                 if (!canStartUpgrade(command.player, entity->id, payload.upgradeId))
                     return;
@@ -443,6 +515,11 @@ void GameSession::apply(const PlayerCommand& command) {
                     for (const auto& [resource, amount] : order->reservedCosts)
                         player->resources[resource] += amount;
                 entity->production.queue.erase(order);
+            } else if constexpr (std::is_same_v<Type, RechargeCommand>) {
+                if (entity->flight && entity->battery && entity->unitControl)
+                    beginRecharge(*entity);
+            } else if constexpr (std::is_same_v<Type, StopUnitCommand>) {
+                stopUnit(*entity);
             }
         },
         command.payload);
@@ -465,31 +542,56 @@ void GameSession::simulateTick() {
     std::vector<EntityId> destroyed;
     for (Entity& entity : world_.entities()) {
         if (entity.flight && entity.battery && entity.battery.returningToCharge) {
-            {
-                    for (const Entity& hub : world_.entities()) {
-                        if (hub.authority.owner != entity.authority.owner || !isOperational(hub))
-                            continue;
-                        if (hub.archetype.value != "command_hub" && hub.archetype.value != "town_center")
-                            continue;
-                        const EntityArchetype* hubType = gameplay_.archetype(hub.archetype);
-                        if (!hubType || !hubType->powerDevice)
-                            continue;
-                        const PowerDeviceDefinition* charger = gameplay_.powerDevice(*hubType->powerDevice);
-                        if (!charger || !charger->tags.contains("charger"))
-                            continue;
-                        const glm::vec3 offset = hub.transform.position - entity.transform.position;
-                        if (glm::dot(offset, offset) <= 4.0F) {
-                            entity.battery.charge = std::min(
-                                entity.battery.capacity,
-                                entity.battery.charge + charger->chargePerTick);
-                            if (entity.battery.charge >= entity.battery.capacity) {
-                                entity.battery.returningToCharge = false;
-                                entity.unitControl.hasStrategicDestination = false;
-                                entity.unitControl.order = UnitOrderKind::idle;
-                            }
-                            break;
-                        }
+            const Entity* chargerEntity = world_.findEntity(entity.battery.chargerTarget);
+            const auto validCharger = [&](const Entity* candidate) {
+                if (!candidate || candidate->authority.owner != entity.authority.owner ||
+                    !isOperational(*candidate)) return false;
+                const EntityArchetype* type = gameplay_.archetype(candidate->archetype);
+                if (!type || !type->powerDevice) return false;
+                const PowerDeviceDefinition* device = gameplay_.powerDevice(*type->powerDevice);
+                // Until grid connectivity is implemented, the integrated headquarters charger
+                // is the only device that can prove it has an authoritative power supply.
+                return device && device->tags.contains("charger") &&
+                       device->tags.contains("headquarters") && device->chargePerTick > 0.0F;
+            };
+            if (!validCharger(chargerEntity)) {
+                chargerEntity = nullptr;
+                float nearestDistance = std::numeric_limits<float>::max();
+                for (const Entity& candidate : world_.entities()) {
+                    if (!validCharger(&candidate)) continue;
+                    const glm::vec3 offset = candidate.transform.position - entity.transform.position;
+                    const float distance = glm::dot(offset, offset);
+                    if (distance < nearestDistance ||
+                        (distance == nearestDistance && chargerEntity && candidate.id < chargerEntity->id)) {
+                        nearestDistance = distance;
+                        chargerEntity = &candidate;
                     }
+                }
+                entity.battery.chargerTarget = chargerEntity ? chargerEntity->id : 0;
+            }
+            if (!chargerEntity) {
+                entity.unitControl.order = UnitOrderKind::stranded;
+                entity.unitControl.orderTarget = 0;
+                entity.unitControl.hasStrategicDestination = false;
+            } else {
+                const EntityArchetype* chargerType = gameplay_.archetype(chargerEntity->archetype);
+                const PowerDeviceDefinition* charger =
+                    gameplay_.powerDevice(*chargerType->powerDevice);
+                const glm::vec3 offset = chargerEntity->transform.position - entity.transform.position;
+                if (glm::dot(offset, offset) <= 4.0F) {
+                    entity.unitControl.order = UnitOrderKind::charging;
+                    entity.unitControl.orderTarget = chargerEntity->id;
+                    entity.unitControl.hasStrategicDestination = false;
+                    entity.battery.charge = std::min(
+                        entity.battery.capacity, entity.battery.charge + charger->chargePerTick);
+                    if (entity.battery.charge >= entity.battery.capacity)
+                        finishRecharge(entity);
+                } else {
+                    entity.unitControl.order = UnitOrderKind::returningToCharge;
+                    entity.unitControl.orderTarget = chargerEntity->id;
+                    entity.unitControl.strategicDestination = chargerEntity->transform.position;
+                    entity.unitControl.hasStrategicDestination = true;
+                }
             }
         }
         if (entity.production && isOperational(entity) && !entity.production.queue.empty()) {
@@ -562,6 +664,8 @@ void GameSession::simulateTick() {
                                                        ? target->construction.powerProgress /
                                                              target->construction.powerRequired
                                                        : 1.0F;
+                            if (target->health)
+                                target->health.current = target->health.maximum * progress;
                             const auto foundation = std::find_if(
                                 world_.foundations().begin(), world_.foundations().end(),
                                 [&](const TerrainFoundation& item) {
@@ -577,6 +681,9 @@ void GameSession::simulateTick() {
                                 if (target->health) target->health.current = target->health.maximum;
                                 entity.unitControl.order=UnitOrderKind::idle; entity.unitControl.orderTarget=0; entity.unitControl.hasStrategicDestination=false;
                             }
+                            if (entity.battery.charge <= entity.battery.reserveThreshold &&
+                                entity.unitControl.order == UnitOrderKind::construct)
+                                beginRecharge(entity);
                         }
                     } else if (entity.unitControl.order == UnitOrderKind::repair && target->health && target->health.current < target->health.maximum && entity.battery.charge >= 1.0F) {
                         entity.battery.charge -= 1.0F; target->health.current = std::min(target->health.maximum,target->health.current+2.0F);
@@ -584,6 +691,8 @@ void GameSession::simulateTick() {
                             target->construction.state = BuildingLifecycleState::operational;
                     }
                 }
+            } else {
+                stopUnit(entity);
             }
         }
         entity.transient.navigationRetrySeconds = std::max(
@@ -684,7 +793,9 @@ void GameSession::simulateTick() {
             }
             if (entity.unitControl.order == UnitOrderKind::attack) {
                 Entity* target = world_.findEntity(entity.unitControl.orderTarget);
-                if (!target || !target->health || target->health.current <= 0 ||
+                if (!target || !target->health ||
+                    (target->health.current <= 0 &&
+                     (!target->construction || isOperational(*target))) ||
                     target->authority.owner == entity.authority.owner)
                     entity.unitControl.order = UnitOrderKind::idle;
                 else {
@@ -789,13 +900,12 @@ void GameSession::simulateTick() {
             entity.battery.charge = std::max(0.0F, entity.battery.charge -
                 entity.battery.movementDrainPerSecond * static_cast<float>(fixedTickSeconds));
             if (entity.battery.charge <= entity.battery.reserveThreshold)
-                entity.battery.returningToCharge = true;
+                beginRecharge(entity);
         }
         const float radius = flying ? 0.0F : collisionRadius(gameplay_, entity.archetype);
-        const float boundary = static_cast<float>(mapChunksPerSide_ * Terrain::chunkCellCount) *
-                                   Terrain::spacing * 0.5F - radius;
-        const auto validPosition = [this, &entity, radius, boundary, flying](glm::vec2 candidate) {
-            return std::abs(candidate.x) <= boundary && std::abs(candidate.y) <= boundary &&
+        const MapArea map{mapChunksPerSide_};
+        const auto validPosition = [this, &entity, radius, map, flying](glm::vec2 candidate) {
+            return map.contains(candidate, radius) &&
                    (flying || !overlapsObject(world_, gameplay_, candidate, radius, entity.id));
         };
         if (validPosition(current + delta)) {
@@ -815,25 +925,6 @@ void GameSession::simulateTick() {
                                                 entity.flight.minimumAltitude,
                                                 entity.flight.maximumAltitude);
             entity.transform.position.y = entity.flight.altitude;
-            if (entity.battery && entity.battery.returningToCharge && !entity.unitControl.hasStrategicDestination) {
-                const Entity* nearest = nullptr;
-                float best = std::numeric_limits<float>::max();
-                for (const Entity& candidate : world_.entities()) {
-                    const auto* candidateType = gameplay_.archetype(candidate.archetype);
-                    if (!candidateType || candidate.authority.owner != entity.authority.owner ||
-                        !isOperational(candidate) || !candidateType->powerDevice) continue;
-                    const auto* device = gameplay_.powerDevice(*candidateType->powerDevice);
-                    if (!device || !device->tags.contains("charger")) continue;
-                    const glm::vec3 d = candidate.transform.position - entity.transform.position;
-                    const float distance = glm::dot(d, d);
-                    if (distance < best) { best = distance; nearest = &candidate; }
-                }
-                if (nearest) {
-                    entity.unitControl.strategicDestination = nearest->transform.position;
-                    entity.unitControl.hasStrategicDestination = true;
-                    entity.unitControl.order = UnitOrderKind::returnResources;
-                }
-            }
         }
     }
     std::sort(destroyed.begin(), destroyed.end());
@@ -883,7 +974,8 @@ void GameSession::simulateTick() {
 }
 
 void GameSession::updateExploration() {
-    constexpr float extent = Terrain::cellCount * Terrain::spacing;
+    const MapArea map{mapChunksPerSide_};
+    const float extent = map.extent();
     for (Player& player : players_.players()) {
         std::fill(player.visible.begin(), player.visible.end(), 0);
         for (const Entity& entity : world_.entities()) {
@@ -893,23 +985,20 @@ void GameSession::updateExploration() {
                 terrain_.heightAt(entity.transform.position.x, entity.transform.position.z);
             const float radius =
                 effectiveSightRange(stat(entity, GameplayStat::sightRange), elevation);
-            const int centerX = static_cast<int>((entity.transform.position.x / extent + 0.5F) *
-                                                 Player::explorationCells);
-            const int centerZ = static_cast<int>((entity.transform.position.z / extent + 0.5F) *
-                                                 Player::explorationCells);
+            const glm::ivec2 center = map.gridCell(
+                {entity.transform.position.x, entity.transform.position.z},
+                Player::explorationCells);
             const int cells = static_cast<int>(radius / extent * Player::explorationCells) + 1;
-            for (int z = std::max(0, centerZ - cells);
-                 z <= std::min(Player::explorationCells - 1, centerZ + cells);
+            for (int z = std::max(0, center.y - cells);
+                 z <= std::min(Player::explorationCells - 1, center.y + cells);
                  ++z)
-                for (int x = std::max(0, centerX - cells);
-                     x <= std::min(Player::explorationCells - 1, centerX + cells);
+                for (int x = std::max(0, center.x - cells);
+                     x <= std::min(Player::explorationCells - 1, center.x + cells);
                      ++x) {
-                    const float wx =
-                        (static_cast<float>(x) + 0.5F) / Player::explorationCells * extent -
-                        extent * 0.5F;
-                    const float wz =
-                        (static_cast<float>(z) + 0.5F) / Player::explorationCells * extent -
-                        extent * 0.5F;
+                    const glm::vec2 world =
+                        map.gridCellCenter({x, z}, Player::explorationCells);
+                    const float wx = world.x;
+                    const float wz = world.y;
                     if ((wx - entity.transform.position.x) * (wx - entity.transform.position.x) +
                             (wz - entity.transform.position.z) *
                                 (wz - entity.transform.position.z) <=
@@ -922,15 +1011,10 @@ void GameSession::updateExploration() {
                 }
         }
         const auto cellVisible = [&](glm::vec3 position) {
-            const int x = std::clamp(
-                          static_cast<int>((position.x / extent + 0.5F) * Player::explorationCells),
-                          0,
-                          Player::explorationCells - 1),
-                      z = std::clamp(
-                          static_cast<int>((position.z / extent + 0.5F) * Player::explorationCells),
-                          0,
-                          Player::explorationCells - 1);
-            return player.visible[static_cast<std::size_t>(z * Player::explorationCells + x)] != 0;
+            const glm::ivec2 cell =
+                map.gridCell({position.x, position.z}, Player::explorationCells);
+            return player.visible[static_cast<std::size_t>(
+                       cell.y * Player::explorationCells + cell.x)] != 0;
         };
         for (const Entity& entity : world_.entities())
             if (entity.authority.owner != player.id && cellVisible(entity.transform.position)) {
@@ -945,7 +1029,7 @@ void GameSession::updateExploration() {
                     continue;
                 }
                 LastKnownEntity snapshot{entity.id,
-                                         entity.archetype.value,
+                                         entity.renderId(),
                                          entity.transform.position,
                                          entity.transform.rotationDegrees,
                                          entity.transform.scale,

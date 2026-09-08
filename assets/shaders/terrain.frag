@@ -5,6 +5,7 @@ in vec3 worldPosition;
 uniform vec3 cameraPosition;
 uniform vec2 fogRange;
 uniform sampler2D explorationMap;
+uniform float explorationExtent;
 uniform sampler2D grassTexture;
 uniform sampler2D dirtTexture;
 uniform sampler2D rockTexture;
@@ -75,7 +76,9 @@ void main() {
     vec3 lit = surface * (0.46 + diffuse * 0.64);
     float fog = smoothstep(fogRange.x, fogRange.y, cameraDistance);
     vec3 atmospheric = mix(lit, vec3(0.32, 0.36, 0.38), fog * 0.72);
-    float explored = useExploration ? texture(explorationMap, worldPosition.xz / 192.0 + 0.5).r : 1.0;
+    float explored = useExploration
+        ? texture(explorationMap, worldPosition.xz / explorationExtent + 0.5).r
+        : 1.0;
     vec3 hidden = vec3(0.008, 0.012, 0.018);
     vec3 remembered = atmospheric * 0.42;
     outColor = vec4(explored < 0.12 ? hidden : (explored < 0.75 ? remembered : atmospheric), 1.0);
