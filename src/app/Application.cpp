@@ -8,6 +8,7 @@
 #include "game/PlayState.hpp"
 #include "game/SettingsState.hpp"
 #include "game/StartMenuState.hpp"
+#include "game/MatchSetupState.hpp"
 #include "gameplay/DefinitionRegistry.hpp"
 #include "localization/Text.hpp"
 #include "persistence/GameConfig.hpp"
@@ -224,16 +225,17 @@ int Application::run() {
         if (state == nullptr)
             break;
         const StateRequest request = state->takeRequest();
-        if (request == StateRequest::startGame) {
+        if (request == StateRequest::openMatchSetup) {
+            states_->replace<MatchSetupState>();
+        } else if (request == StateRequest::startGame) {
             logger_->info("state", "Starting a new game");
-            const std::uint32_t seed = state->terrainSeed();
-            const std::string playerOneCountry = state->playerOneCountry();
-            const std::string playerTwoCountry = state->playerTwoCountry();
+            MatchSetupOptions setup = state->matchSetup();
+            const std::uint32_t seed = setup.terrainSeed;
             showLoading(0.08F, Text::get("loading.terrain"));
-            renderer_->regenerateTerrain(seed);
+            renderer_->regenerateTerrain(seed, setup.mapChunksPerSide);
             showLoading(0.32F, Text::get("loading.world"));
             preloadAssets("match", 0.36F, 0.56F);
-            states_->replace<PlayState>(seed, playerOneCountry, playerTwoCountry);
+            states_->replace<PlayState>(std::move(setup));
             showLoading(0.94F, Text::get("loading.finalize"));
             stateContext_->audio.setAmbient(AudioCue::gameAmbient);
         } else if (request == StateRequest::buildMap) {
@@ -253,7 +255,7 @@ int Application::run() {
                 const GameConfig config = GameConfig::load(stateContext_->configPath);
                 SaveData data = SaveGame::read(config.savePath());
                 showLoading(0.30F, Text::get("loading.terrain"));
-                renderer_->regenerateTerrain(data.terrainSeed);
+                renderer_->regenerateTerrain(data.terrainSeed, data.mapChunksPerSide);
                 showLoading(0.36F, Text::get("loading.world"));
                 preloadAssets("match", 0.40F, 0.52F);
                 states_->replace<PlayState>(std::move(data));

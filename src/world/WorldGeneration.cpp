@@ -7,13 +7,17 @@
 #include "world/Collision.hpp"
 #include "world/World.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <glm/geometric.hpp>
 
 namespace strategy {
 namespace {
-bool suitable(const Terrain& terrain, const MatchRulesDefinition& rules, float x, float z) {
-    const float half = terrain.worldExtent() * 0.5F - rules.terrainEdgeMargin;
+bool suitable(const Terrain& terrain, const MatchRulesDefinition& rules,
+              std::uint32_t mapChunksPerSide,
+              float x, float z) {
+    const float half = static_cast<float>(mapChunksPerSide * Terrain::chunkCellCount) *
+                           Terrain::spacing * 0.5F - rules.terrainEdgeMargin;
     if (std::abs(x) > half || std::abs(z) > half)
         return false;
     const float normalized = terrain.heightAt(x, z) / Terrain::heightScale;
@@ -62,25 +66,29 @@ void clusters(World& world,
               const Terrain& terrain,
               const DefinitionRegistry& definitions,
               std::uint32_t seed,
-              const ResourceNodeDefinition& type) {
+              const ResourceNodeDefinition& type,
+              std::uint32_t mapChunksPerSide,
+              float abundanceScale) {
     const auto& rules = definitions.matchRules();
     const auto& settings = *type.generation;
     DeterministicRandom random(seed, settings.stream);
     std::uint32_t made = 0;
-    const std::uint32_t maximumAttempts = settings.clusterPairs * settings.attemptsPerCluster;
-    for (std::uint32_t attempt = 0; attempt < maximumAttempts && made < settings.clusterPairs;
+    const std::uint32_t desiredPairs = std::max(1U, static_cast<std::uint32_t>(
+        std::round(static_cast<float>(settings.clusterPairs) * abundanceScale)));
+    const std::uint32_t maximumAttempts = desiredPairs * settings.attemptsPerCluster;
+    for (std::uint32_t attempt = 0; attempt < maximumAttempts && made < desiredPairs;
          ++attempt) {
         const float centerX = random.range(-settings.centerExtent, settings.centerExtent);
         const float centerZ = random.range(-settings.centerExtent, settings.centerExtent);
-        if (centerX < 0.0F || !suitable(terrain, rules, centerX, centerZ) ||
-            !suitable(terrain, rules, -centerX, -centerZ) ||
+        if (centerX < 0.0F || !suitable(terrain, rules, mapChunksPerSide, centerX, centerZ) ||
+            !suitable(terrain, rules, mapChunksPerSide, -centerX, -centerZ) ||
             !clearOfStarts(rules, definitions, centerX, centerZ) ||
             !clearOfStarts(rules, definitions, -centerX, -centerZ))
             continue;
         for (std::uint32_t member = 0; member < settings.nodesPerCluster; ++member) {
             const float x = centerX + random.range(-settings.spread, settings.spread);
             const float z = centerZ + random.range(-settings.spread, settings.spread);
-            if (!suitable(terrain, rules, x, z) ||
+            if (!suitable(terrain, rules, mapChunksPerSide, x, z) ||
                 !clearOfStarts(rules, definitions, x, z))
                 continue;
             const float angle = random.range(0.0F, 360.0F);
@@ -98,12 +106,17 @@ void clusters(World& world,
 void populateResources(World& world,
                        const Terrain& terrain,
                        const DefinitionRegistry& definitions,
-                       std::uint32_t terrainSeed) {
+                       std::uint32_t terrainSeed,
+                       std::uint32_t mapChunksPerSide,
+                       float abundanceScale) {
     for (const std::string& id : definitions.matchRules().generatedResourceNodes)
         clusters(world,
                  terrain,
                  definitions,
                  terrainSeed,
-                 *definitions.resource(ResourceArchetypeId{id}));
+                 *definitions.resource(ResourceArchetypeId{id}),
+                 std::clamp(mapChunksPerSide, 10U,
+                            static_cast<std::uint32_t>(Terrain::chunksPerSide)),
+                 std::clamp(abundanceScale, 0.5F, 2.0F));
 }
 } // namespace strategy

@@ -20,10 +20,7 @@ namespace strategy {
 
 class PlayState final : public GameState {
   public:
-    PlayState(StateContext& context,
-              std::uint32_t terrainSeed,
-              std::string playerOneCountry = "spain",
-              std::string playerTwoCountry = "japan");
+    PlayState(StateContext& context, MatchSetupOptions setup);
     PlayState(StateContext& context, SaveData data);
     void handleEvent(const SDL_Event& event) override;
     void update(float deltaSeconds) override;
@@ -57,6 +54,7 @@ class PlayState final : public GameState {
     StateRequest request_{StateRequest::none};
     GameConfig config_;
     mutable std::optional<std::uint32_t> pendingTerrainSeed_;
+    mutable std::optional<std::uint32_t> pendingTerrainChunksPerSide_;
     PlayerId localPlayer_{1};
     EntityId possessedEntity_{0};
     std::uint64_t nextCommandSequence_{1};

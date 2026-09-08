@@ -178,6 +178,7 @@ add_library(strategy_states STATIC
     src/game/PlayState.cpp
     src/game/BuildState.cpp
     src/game/StartMenuState.cpp
+    src/game/MatchSetupState.cpp
     src/game/SettingsState.cpp
 )
 strategy_target(strategy_states)

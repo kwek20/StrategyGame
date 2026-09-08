@@ -1181,8 +1181,10 @@ void Renderer::drawResourceHud(const Player& player,
 
 
 
-void Renderer::regenerateTerrain(std::uint32_t seed) {
+void Renderer::regenerateTerrain(std::uint32_t seed, std::uint32_t chunksPerSide) {
     terrainSeed_ = seed;
+    activeTerrainChunksPerSide_ = std::clamp(
+        chunksPerSide, 10U, static_cast<std::uint32_t>(Terrain::chunksPerSide));
     terrain_ = Terrain(seed);
     terrain_.rebuildFoundations(terrainFoundations_);
     constexpr int chunkSide = Terrain::chunkCellCount + 1;
@@ -1366,7 +1368,9 @@ void Renderer::drawStrategyHud(const World& world, EntityId selected, const Play
     const float mapLeft = mapElement->bounds.left, mapTop = mapElement->bounds.top,
                 mapRight = mapElement->bounds.right, mapBottom = mapElement->bounds.bottom;
     uiRenderer_->draw(layout, viewportWidth_, viewportHeight_);
-    const float extent = terrain_.worldExtent(), half = extent * 0.5F;
+    const float extent = static_cast<float>(activeTerrainChunksPerSide_ *
+                             Terrain::chunkCellCount) * Terrain::spacing,
+                half = extent * 0.5F;
     if (player)
         for (int z = 0; z < 16; ++z)
             for (int x = 0; x < 16; ++x) {

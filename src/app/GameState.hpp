@@ -21,8 +21,18 @@ struct StateContext {
     std::filesystem::path configPath;
 };
 
+struct MatchSetupOptions {
+    std::uint32_t terrainSeed{0x5EED1234U};
+    std::string playerOneCountry{"spain"};
+    std::string playerTwoCountry{"japan"};
+    std::uint32_t mapChunksPerSide{15};
+    float startingResourcesScale{1.0F};
+    float resourceAbundanceScale{1.0F};
+};
+
 enum class StateRequest {
     none,
+    openMatchSetup,
     startGame,
     buildMap,
     loadGame,
@@ -50,6 +60,9 @@ class GameState {
     }
     [[nodiscard]] virtual std::string playerTwoCountry() const {
         return "japan";
+    }
+    [[nodiscard]] virtual MatchSetupOptions matchSetup() const {
+        return {terrainSeed(), playerOneCountry(), playerTwoCountry()};
     }
 
   protected:

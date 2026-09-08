@@ -98,7 +98,8 @@ class Renderer final {
     }
     [[nodiscard]] int viewportWidth() const { return viewportWidth_; }
     [[nodiscard]] int viewportHeight() const { return viewportHeight_; }
-    void regenerateTerrain(std::uint32_t seed);
+    void regenerateTerrain(std::uint32_t seed,
+                           std::uint32_t chunksPerSide = Terrain::chunksPerSide);
     void setTerrainFoundations(const std::vector<TerrainFoundation>& foundations);
     void preloadAssetGroup(const std::string& group);
     [[nodiscard]] AssetLoadProgress assetProgress(const std::string& group);
@@ -159,6 +160,7 @@ class Renderer final {
     std::uint32_t explorationTexture_{0};
     Terrain terrain_;
     std::uint32_t terrainSeed_{0x5EED1234U};
+    std::uint32_t activeTerrainChunksPerSide_{Terrain::chunksPerSide};
     std::vector<TerrainFoundation> terrainFoundations_;
     ResourceManager resources_{"assets"};
     IconAtlas iconAtlas_;

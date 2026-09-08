@@ -344,6 +344,16 @@ int main() {
         valid = valid && mirrored;
     }
     valid = valid && resourceCount >= 20;
+
+    strategy::GameSession configuredMatch{gameplay, 123U, "spain", "japan",
+        "unassigned", "unassigned", 20, 2.0F, 1.5F};
+    valid = valid &&
+            configuredMatch.players().find(1)->resources.at("materials") == 300.0F &&
+            configuredMatch.players().find(2)->resources.at("materials") == 300.0F;
+    std::size_t configuredResourceCount = 0;
+    for (const strategy::Entity& entity : configuredMatch.world().entities())
+        if (entity.authority.owner == 0) ++configuredResourceCount;
+    valid = valid && configuredResourceCount > resourceCount;
     const auto playerOneStart = playerOneUnit->transform.position;
     valid = session.submit({1, 1, strategy::PossessUnitCommand{playerTwoUnit->id}}) && valid;
     valid = session.submit({1, 2, strategy::PossessUnitCommand{playerOneUnit->id}}) && valid;

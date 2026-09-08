@@ -58,10 +58,10 @@ struct FootprintFit {
 
 class Terrain final {
   public:
-    static constexpr int cellCount = 512;
-    static constexpr int vertexCount = cellCount + 1;
     static constexpr int chunkCellCount = 64;
-    static constexpr int chunksPerSide = cellCount / chunkCellCount;
+    static constexpr int chunksPerSide = 20;
+    static constexpr int cellCount = chunksPerSide * chunkCellCount;
+    static constexpr int vertexCount = cellCount + 1;
     static constexpr float spacing = 0.375F;
     static constexpr float heightScale = 16.0F;
 

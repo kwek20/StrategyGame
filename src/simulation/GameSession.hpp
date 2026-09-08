@@ -22,13 +22,17 @@ class GameSession final {
                          std::string playerOneCountry = "spain",
                          std::string playerTwoCountry = "japan",
                          std::string playerOneSpecialization = "unassigned",
-                         std::string playerTwoSpecialization = "unassigned");
+                         std::string playerTwoSpecialization = "unassigned",
+                         std::uint32_t mapChunksPerSide = Terrain::chunksPerSide,
+                         float startingResourcesScale = 1.0F,
+                         float resourceAbundanceScale = 1.0F);
 
     void update(double elapsedSeconds);
     void advanceTicks(std::uint32_t count = 1);
     bool submit(PlayerCommand command);
     void replaceWorld(std::vector<Entity> entities, std::uint32_t terrainSeed,
-                      std::vector<TerrainFoundation> foundations = {});
+                      std::vector<TerrainFoundation> foundations = {},
+                      std::uint32_t mapChunksPerSide = Terrain::chunksPerSide);
     void restorePlayerProgress(PlayerId player,
                                float wood,
                                float stone,
@@ -53,6 +57,7 @@ class GameSession final {
     [[nodiscard]] std::uint32_t terrainSeed() const {
         return terrainSeed_;
     }
+    [[nodiscard]] std::uint32_t mapChunksPerSide() const { return mapChunksPerSide_; }
     [[nodiscard]] std::uint64_t stateChecksum() const;
     [[nodiscard]] bool canStartRecipe(PlayerId player, EntityId producer, RecipeId recipe) const;
     [[nodiscard]] bool canStartUpgrade(PlayerId player, EntityId researcher,
@@ -69,6 +74,8 @@ class GameSession final {
     double accumulator_{0.0};
     Terrain terrain_;
     Navigation navigation_;
+    std::uint32_t mapChunksPerSide_{15};
+    float resourceAbundanceScale_{1.0F};
 
     void simulateTick();
     void apply(const PlayerCommand& command);

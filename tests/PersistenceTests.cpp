@@ -72,9 +72,10 @@ int main() {
     players.find(1)->resources["materials"] = 125.0F;
     players.find(1)->intelligence.push_back(
         {42, "town_center", {8, 0, 9}, {0, 45, 0}, {1, 1, 1}, true});
-    strategy::SaveGame::write(savePath, 424242U, world, &players);
+    strategy::SaveGame::write(savePath, 424242U, world, &players, 10);
     const strategy::SaveData loaded = strategy::SaveGame::read(savePath);
-    valid = valid && loaded.terrainSeed == 424242U && loaded.entities.size() == 1;
+    valid = valid && loaded.terrainSeed == 424242U && loaded.mapChunksPerSide == 10 &&
+            loaded.entities.size() == 1;
     valid = valid && loaded.foundations.size() == 1 &&
             loaded.foundations[0].center == glm::vec3{1.0F, 6.0F, 3.0F} &&
             loaded.foundations[0].innerRadius == 5.0F &&

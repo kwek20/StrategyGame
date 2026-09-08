@@ -19,7 +19,7 @@
 namespace strategy {
 
 std::uint64_t GameSession::stateChecksum() const {
-    return authoritativeStateChecksum(world_, players_, terrainSeed_, tick_);
+    return authoritativeStateChecksum(world_, players_, terrainSeed_, tick_, mapChunksPerSide_);
 }
 
 GameSession::GameSession(const DefinitionRegistry& definitions,
@@ -27,7 +27,10 @@ GameSession::GameSession(const DefinitionRegistry& definitions,
                          std::string playerOneCountry,
                          std::string playerTwoCountry,
                          std::string playerOneSpecialization,
-                         std::string playerTwoSpecialization)
+                         std::string playerTwoSpecialization,
+                         std::uint32_t mapChunksPerSide,
+                         float startingResourcesScale,
+                         float resourceAbundanceScale)
     : players_(std::move(playerOneCountry),
                std::move(playerTwoCountry),
                std::move(playerOneSpecialization),
@@ -35,9 +38,14 @@ GameSession::GameSession(const DefinitionRegistry& definitions,
     , gameplay_(definitions)
     , terrainSeed_(terrainSeed)
     , terrain_(terrainSeed)
-    , navigation_(terrain_, gameplay_) {
+    , navigation_(terrain_, gameplay_)
+    , mapChunksPerSide_(std::clamp(mapChunksPerSide, 10U,
+                                  static_cast<std::uint32_t>(Terrain::chunksPerSide)))
+    , resourceAbundanceScale_(std::clamp(resourceAbundanceScale, 0.5F, 2.0F)) {
     for (Player& player : players_.players())
-        player.resources = gameplay_.matchRules().startingResources;
+        for (const auto& [resource, amount] : gameplay_.matchRules().startingResources)
+            player.resources[resource] =
+                amount * std::clamp(startingResourcesScale, 0.0F, 4.0F);
     const auto createStartingEntities = [this](PlayerId player,
                                                const auto& starts,
                                                float rotation) {
@@ -75,7 +83,8 @@ GameSession::GameSession(const DefinitionRegistry& definitions,
         world_.foundations().push_back(foundation);
         terrain_.applyFoundation(foundation);
     }
-    populateResources(world_, terrain_, gameplay_, terrainSeed);
+    populateResources(world_, terrain_, gameplay_, terrainSeed,
+                      mapChunksPerSide_, resourceAbundanceScale_);
     updateExploration();
 }
 
@@ -322,6 +331,12 @@ void GameSession::apply(const PlayerCommand& command) {
                 if (!player || !entity->flight || !recipe || recipe->product.kind != RecipeProductKind::building)
                     return;
                 const float footprintRadius = collisionRadius(gameplay_, recipe->product.id);
+                const float mapHalfExtent =
+                    static_cast<float>(mapChunksPerSide_ * Terrain::chunkCellCount) *
+                    Terrain::spacing * 0.5F;
+                if (std::abs(payload.position.x) + footprintRadius > mapHalfExtent ||
+                    std::abs(payload.position.z) + footprintRadius > mapHalfExtent)
+                    return;
                 if (overlapsObject(world_, gameplay_, {payload.position.x, payload.position.z},
                                    footprintRadius)) return;
                 const EntityArchetype* buildingDefinition = gameplay_.archetype(recipe->product.id);
@@ -777,8 +792,8 @@ void GameSession::simulateTick() {
                 entity.battery.returningToCharge = true;
         }
         const float radius = flying ? 0.0F : collisionRadius(gameplay_, entity.archetype);
-        const float boundary =
-            static_cast<float>(Terrain::cellCount) * Terrain::spacing * 0.5F - radius;
+        const float boundary = static_cast<float>(mapChunksPerSide_ * Terrain::chunkCellCount) *
+                                   Terrain::spacing * 0.5F - radius;
         const auto validPosition = [this, &entity, radius, boundary, flying](glm::vec2 candidate) {
             return std::abs(candidate.x) <= boundary && std::abs(candidate.y) <= boundary &&
                    (flying || !overlapsObject(world_, gameplay_, candidate, radius, entity.id));
@@ -955,10 +970,13 @@ void GameSession::updateExploration() {
 }
 
 void GameSession::replaceWorld(std::vector<Entity> entities, std::uint32_t terrainSeed,
-                               std::vector<TerrainFoundation> foundations) {
+                               std::vector<TerrainFoundation> foundations,
+                               std::uint32_t mapChunksPerSide) {
     world_.replaceEntities(std::move(entities));
     world_.replaceFoundations(std::move(foundations));
     terrainSeed_ = terrainSeed;
+    mapChunksPerSide_ = std::clamp(mapChunksPerSide, 10U,
+                                   static_cast<std::uint32_t>(Terrain::chunksPerSide));
     terrain_ = Terrain{terrainSeed};
     terrain_.rebuildFoundations(world_.foundations());
     navigation_.rebuildTerrain(terrain_);

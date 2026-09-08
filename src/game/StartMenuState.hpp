@@ -21,21 +21,12 @@ class StartMenuState final : public GameState {
         request_ = StateRequest::none;
         return result;
     }
-    [[nodiscard]] std::uint32_t terrainSeed() const override;
-    [[nodiscard]] std::string playerOneCountry() const override;
-    [[nodiscard]] std::string playerTwoCountry() const override;
-
   private:
-    std::string seedText_{"1592594996"};
     StateRequest request_{StateRequest::none};
-    std::size_t playerOneCountryIndex_{0};
-    std::size_t playerTwoCountryIndex_{0};
     mutable UiDocument ui_;
     mutable UiController uiController_;
     GameConfig config_;
 
-    void cycleCountry(std::size_t& index, int direction);
-    void refreshUiText();
     void activateControl(std::string_view id);
 };
 

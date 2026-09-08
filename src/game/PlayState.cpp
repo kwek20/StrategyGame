@@ -61,15 +61,17 @@ void PlayState::setMouseCaptured(bool captured) {
     }
 }
 
-PlayState::PlayState(StateContext& context,
-                     std::uint32_t terrainSeed,
-                     std::string playerOneCountry,
-                     std::string playerTwoCountry)
+PlayState::PlayState(StateContext& context, MatchSetupOptions setup)
     : GameState(context)
     , session_(context.definitions,
-               terrainSeed,
-               std::move(playerOneCountry),
-               std::move(playerTwoCountry))
+               setup.terrainSeed,
+               std::move(setup.playerOneCountry),
+               std::move(setup.playerTwoCountry),
+               "unassigned",
+               "unassigned",
+               setup.mapChunksPerSide,
+               setup.startingResourcesScale,
+               setup.resourceAbundanceScale)
     , config_(GameConfig::load(context.configPath)) {}
 
 PlayState::PlayState(StateContext& context, SaveData data)
@@ -79,9 +81,11 @@ PlayState::PlayState(StateContext& context, SaveData data)
                data.playerOneCountry,
                data.playerTwoCountry,
                data.playerOneSpecialization,
-               data.playerTwoSpecialization)
+               data.playerTwoSpecialization,
+               data.mapChunksPerSide)
     , config_(GameConfig::load(context.configPath)) {
-    session_.replaceWorld(std::move(data.entities), data.terrainSeed, std::move(data.foundations));
+    session_.replaceWorld(std::move(data.entities), data.terrainSeed,
+                          std::move(data.foundations), data.mapChunksPerSide);
     session_.restorePlayerProgress(1,
                                    data.wood[0],
                                    data.stone[0],
@@ -209,7 +213,8 @@ void PlayState::handleEvent(const SDL_Event& event) {
     if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat && event.key.key == SDLK_F5) {
         try {
             SaveGame::write(
-                config_.savePath(), session_.terrainSeed(), session_.world(), &session_.players());
+                config_.savePath(), session_.terrainSeed(), session_.world(), &session_.players(),
+                session_.mapChunksPerSide());
             context_.logger.info("persistence",
                                  "Saved game to " + config_.savePath().string());
             context_.events.enqueue(AudioEvent{AudioCue::saveGame});
@@ -222,7 +227,9 @@ void PlayState::handleEvent(const SDL_Event& event) {
         try {
             SaveData data = SaveGame::read(config_.savePath());
             pendingTerrainSeed_ = data.terrainSeed;
-            session_.replaceWorld(std::move(data.entities), data.terrainSeed, std::move(data.foundations));
+            pendingTerrainChunksPerSide_ = data.mapChunksPerSide;
+            session_.replaceWorld(std::move(data.entities), data.terrainSeed,
+                                  std::move(data.foundations), data.mapChunksPerSide);
             possessedEntity_ = 0;
             viewMode_ = ViewMode::strategy;
             setMouseCaptured(false);
@@ -752,8 +759,10 @@ void PlayState::update(float deltaSeconds) {
 
 void PlayState::render(Renderer& renderer) const {
     if (pendingTerrainSeed_) {
-        renderer.regenerateTerrain(*pendingTerrainSeed_);
+        renderer.regenerateTerrain(*pendingTerrainSeed_,
+            pendingTerrainChunksPerSide_.value_or(Terrain::chunksPerSide));
         pendingTerrainSeed_.reset();
+        pendingTerrainChunksPerSide_.reset();
     }
     renderer.setTerrainFoundations(session_.world().foundations());
     const glm::vec3 focus = camera_.focus();
@@ -837,6 +846,12 @@ void PlayState::render(Renderer& renderer) const {
             previouslyExplored = index < local->discovered.size() && local->discovered[index] != 0;
         }
         constructionPreviewValid_ = previouslyExplored;
+        const float mapHalfExtent =
+            static_cast<float>(session_.mapChunksPerSide() * Terrain::chunkCellCount) *
+            Terrain::spacing * 0.5F;
+        constructionPreviewValid_ = constructionPreviewValid_ &&
+            std::abs(position.x) + buildingRadius <= mapHalfExtent &&
+            std::abs(position.z) + buildingRadius <= mapHalfExtent;
         // Hidden enemy construction is resolved authoritatively by PlaceBuildingCommand.
         // Do not leak it through a red preview in previously explored fog.
         if (currentlyVisible)

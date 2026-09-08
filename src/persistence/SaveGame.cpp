@@ -38,7 +38,8 @@ glm::vec3 readVector(const rapidjson::Value& object, const char* name) {
 void SaveGame::write(const std::filesystem::path& path,
                      std::uint32_t terrainSeed,
                      const World& world,
-                     const PlayerRegistry* players) {
+                     const PlayerRegistry* players,
+                     std::uint32_t mapChunksPerSide) {
     std::filesystem::create_directories(path.parent_path());
     std::ofstream stream(path, std::ios::trunc);
     if (!stream) {
@@ -48,9 +49,11 @@ void SaveGame::write(const std::filesystem::path& path,
     rapidjson::PrettyWriter<rapidjson::OStreamWrapper> writer{output};
     writer.StartObject();
     writer.Key("formatVersion");
-    writer.Uint(1);
+    writer.Uint(3);
     writer.Key("terrainSeed");
     writer.Uint(terrainSeed);
+    writer.Key("mapChunksPerSide");
+    writer.Uint(mapChunksPerSide);
     writer.Key("foundations");
     writer.StartArray();
     for (const TerrainFoundation& foundation : world.foundations()) {
@@ -281,8 +284,9 @@ SaveData SaveGame::read(const std::filesystem::path& path) {
     rapidjson::Document document;
     document.ParseStream(input);
     if (document.HasParseError() || !document.IsObject() || !document.HasMember("formatVersion") ||
-        !document["formatVersion"].IsUint() || document["formatVersion"].GetUint() != 1 ||
+        !document["formatVersion"].IsUint() || document["formatVersion"].GetUint() != 3 ||
         !document.HasMember("terrainSeed") || !document["terrainSeed"].IsUint() ||
+        !document.HasMember("mapChunksPerSide") || !document["mapChunksPerSide"].IsUint() ||
         !document.HasMember("players") || !document["players"].IsArray() ||
         !document.HasMember("entities") || !document["entities"].IsArray()) {
         throw std::runtime_error("Invalid or unsupported save file: " + path.string());
@@ -290,6 +294,9 @@ SaveData SaveGame::read(const std::filesystem::path& path) {
 
     SaveData result;
     result.terrainSeed = document["terrainSeed"].GetUint();
+    result.mapChunksPerSide = document["mapChunksPerSide"].GetUint();
+    if (result.mapChunksPerSide < 10 || result.mapChunksPerSide > 20)
+        throw std::runtime_error("Invalid save map chunk count");
     if (!document.HasMember("foundations") || !document["foundations"].IsArray())
         throw std::runtime_error("Invalid save foundations");
     for (const auto& item : document["foundations"].GetArray()) {
