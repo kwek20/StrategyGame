@@ -72,15 +72,32 @@ UiDocument EntityHudLayout::actions(const EntityHudModel& model, int width, int 
                    {0.025F, 0.04F, 0.06F});
     document.label("entity.title", {panel.left + canvas.value(12), panel.top + canvas.value(12), 0, 0},
                    model.title, 2.0F * canvas.scale());
-    document.entityCard("entity.portrait",
-        {panel.left + canvas.value(12), panel.top + canvas.value(35),
-         panel.left + canvas.value(84), panel.top + canvas.value(107)}, model.portraitIcon);
+    // A multi-entity selection is represented by its compact entity cards. Drawing the
+    // single-entity portrait as well duplicates the first unit and overlaps that row.
+    if (model.cards.empty()) {
+        document.entityCard("entity.portrait",
+            {panel.left + canvas.value(12), panel.top + canvas.value(35),
+             panel.left + canvas.value(84), panel.top + canvas.value(107)}, model.portraitIcon);
+    }
     const std::size_t visibleCards = std::min<std::size_t>(model.cards.size(), 9);
     for (std::size_t i = 0; i < visibleCards; ++i) {
         const float left = panel.left + canvas.value(12 + i * 54.0F);
+        const float iconTop = panel.top + canvas.value(42);
+        const float iconBottom = panel.top + canvas.value(76);
         document.entityCard("entity.card." + std::to_string(i),
-            {left, panel.top + canvas.value(42), left + canvas.value(44),
-             panel.top + canvas.value(86)}, model.cards[i].icon);
+            {left, iconTop, left + canvas.value(44), iconBottom}, model.cards[i].icon);
+        const std::size_t visibleBars = std::min<std::size_t>(model.cards[i].bars.size(), 2);
+        for (std::size_t barIndex = 0; barIndex < visibleBars; ++barIndex) {
+            const HudBarModel& bar = model.cards[i].bars[barIndex];
+            const float barTop = panel.top + canvas.value(78.0F + barIndex * 5.0F);
+            auto& element = document.progressBar(
+                "entity.card." + std::to_string(i) + ".bar." + std::to_string(barIndex),
+                {left, barTop, left + canvas.value(44), barTop + canvas.value(3)},
+                bar.maximum > 0.0F ? bar.current / bar.maximum : 0.0F,
+                bar.kind == HudBarKind::health ? glm::vec3{0.24F, 0.78F, 0.30F}
+                                               : glm::vec3{0.20F, 0.68F, 0.95F});
+            element.color = {0.10F, 0.12F, 0.13F};
+        }
     }
     for (std::size_t i = 0; i < model.bars.size(); ++i) {
         const auto& bar = model.bars[i];

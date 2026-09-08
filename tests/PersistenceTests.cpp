@@ -71,6 +71,9 @@ int main() {
     strategy::Entity& drone = world.createEntity("Drone", "construction_drone", 1);
     drone.kind = strategy::EntityKind::unit;
     drone.unitControl.emplace();
+    drone.flight.emplace();
+    drone.flight.altitude = 9.0F;
+    drone.transform.position.y = 9.0F;
     drone.battery.emplace();
     drone.battery.capacity = 100.0F;
     drone.battery.charge = 18.0F;
@@ -127,6 +130,7 @@ int main() {
     const auto loadedDrone = std::find_if(loaded.entities.begin(), loaded.entities.end(),
         [droneId](const strategy::Entity& candidate) { return candidate.id == droneId; });
     valid = valid && loadedDrone != loaded.entities.end() && loadedDrone->battery &&
+            loadedDrone->flight && loadedDrone->flight.altitude == 9.0F &&
             loadedDrone->battery.charge == 18.0F &&
             loadedDrone->battery.returningToCharge &&
             loadedDrone->battery.hasSuspendedOrder &&

@@ -26,10 +26,13 @@ void presentHealth(const Entity& entity, const DefinitionRegistry&, EntityHudMod
 }
 
 void presentBattery(const Entity& entity, const DefinitionRegistry&, EntityHudModel& model) {
-    if (entity.battery)
+    if (entity.battery) {
         model.bars.push_back(
             {Text::get("entity_hud.power_label"), entity.battery.charge,
              entity.battery.capacity, HudBarKind::power});
+        if (entity.unitControl && entity.unitControl.order == UnitOrderKind::stranded)
+            model.footer = Text::get("entity_hud.no_charger");
+    }
 }
 
 void presentGatherer(const Entity& entity, const DefinitionRegistry&, EntityHudModel& model) {
@@ -87,8 +90,7 @@ void presentProduction(const Entity& entity, const DefinitionRegistry& definitio
         const float progress = order.durationTicks > 0
             ? 1.0F - static_cast<float>(order.remainingTicks) /
                          static_cast<float>(order.durationTicks) : 1.0F;
-        model.queue.push_back({order.iconId, std::move(name), progress,
-                               order.kind == ProductionKind::improveTraining});
+        model.queue.push_back({order.iconId, std::move(name), progress, true});
     }
 }
 

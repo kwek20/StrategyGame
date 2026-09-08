@@ -454,6 +454,22 @@ int main() {
             recipeSession.players().find(1)->resources["materials"] ==
                 materialsBeforeRefund + 12.0F;
 
+    strategy::ProductionOrder cancellableUnit;
+    cancellableUnit.kind = strategy::ProductionKind::trainCharacter;
+    cancellableUnit.productId = "construction_drone";
+    cancellableUnit.durationTicks = 300;
+    cancellableUnit.remainingTicks = 200;
+    cancellableUnit.reservedCosts["materials"] = 25.0F;
+    researcher.production.queue.push_back(cancellableUnit);
+    const float materialsBeforeUnitRefund =
+        recipeSession.players().find(1)->resources["materials"];
+    valid = recipeSession.submit(
+                {1, 4, strategy::CancelProductionCommand{researcher.id, 0}}) && valid;
+    recipeSession.advanceTicks();
+    valid = valid && researcher.production.queue.empty() &&
+            recipeSession.players().find(1)->resources["materials"] ==
+                materialsBeforeUnitRefund + 25.0F;
+
     strategy::GameSession constructionPowerSession{gameplay, 999U};
     constructionPowerSession.replaceWorld({}, 999U);
     strategy::Entity& powerDrone = constructionPowerSession.world().createEntity(
@@ -497,16 +513,45 @@ int main() {
             !rechargingDrone->battery.hasSuspendedOrder &&
             rechargingDrone->unitControl.order == strategy::UnitOrderKind::construct;
 
-    strategy::Entity* depletedDrone =
-        constructionPowerSession.world().findEntity(powerDroneId);
-    depletedDrone->battery.charge = 0.0F;
-    depletedDrone->battery.returningToCharge = true;
-    const glm::vec3 depletedPosition = depletedDrone->transform.position;
+    rechargingDrone->battery.charge = 10.0F;
     valid = constructionPowerSession.submit(
                 {1, 3, strategy::MoveUnitCommand{powerDroneId, {20.0F, 6.0F, 20.0F}}}) && valid;
     constructionPowerSession.advanceTicks();
+    rechargingDrone = constructionPowerSession.world().findEntity(powerDroneId);
+    valid = valid && !rechargingDrone->battery.returningToCharge &&
+            rechargingDrone->unitControl.order == strategy::UnitOrderKind::move;
+
+    strategy::Entity* depletedDrone =
+        constructionPowerSession.world().findEntity(powerDroneId);
+    depletedDrone->battery.charge = 0.0F;
+    const glm::vec3 depletedPosition = depletedDrone->transform.position;
+    valid = constructionPowerSession.submit(
+                {1, 4, strategy::MoveUnitCommand{powerDroneId, {20.0F, 6.0F, 20.0F}}}) && valid;
+    constructionPowerSession.advanceTicks();
     valid = valid && constructionPowerSession.world().findEntity(powerDroneId)->transform.position ==
-                           depletedPosition;
+                           depletedPosition &&
+            constructionPowerSession.world().findEntity(powerDroneId)->battery.returningToCharge;
+    const strategy::EntityId chargingHubId = chargingHub.id;
+    constructionPowerSession.world().destroyEntity(chargingHubId);
+    constructionPowerSession.advanceTicks();
+    valid = valid &&
+            constructionPowerSession.world().findEntity(powerDroneId)->unitControl.order ==
+                strategy::UnitOrderKind::stranded;
+    strategy::Entity& replacementHub = constructionPowerSession.world().createEntity(
+        "Replacement Hub", "command_hub", 1);
+    gameplay.initializeEntity(replacementHub);
+    replacementHub.transform.position = {5.0F, 0.0F, 0.0F};
+    constructionPowerSession.advanceTicks();
+    valid = valid &&
+            constructionPowerSession.world().findEntity(powerDroneId)->unitControl.order ==
+                strategy::UnitOrderKind::returningToCharge;
+    valid = constructionPowerSession.submit(
+                {1, 5, strategy::StopUnitCommand{powerDroneId}}) && valid;
+    constructionPowerSession.advanceTicks();
+    valid = valid &&
+            constructionPowerSession.world().findEntity(powerDroneId)->unitControl.order ==
+                strategy::UnitOrderKind::idle &&
+            !constructionPowerSession.world().findEntity(powerDroneId)->battery.returningToCharge;
 
     strategy::Entity& unfinished =
         recipeSession.world().createEntity("Unfinished Hub", "command_hub", 1);
@@ -523,7 +568,7 @@ int main() {
                 strategy::RecipeId{"command_hub.train_construction_drone"});
     recipeSession.players().find(1)->resources["materials"] = 0.0F;
     valid = recipeSession.submit(
-                {1, 4, strategy::CancelConstructionCommand{unfinishedId}}) && valid;
+                {1, 5, strategy::CancelConstructionCommand{unfinishedId}}) && valid;
     recipeSession.advanceTicks();
     valid = valid && recipeSession.world().findEntity(unfinishedId) == nullptr &&
             std::abs(recipeSession.players().find(1)->resources["materials"] - 150.0F) < 0.001F;

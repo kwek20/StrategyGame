@@ -2,10 +2,9 @@
 
 ## Purpose
 
-Create the first production-ready icon family for the resource HUD, entity action panel,
+Create the production-ready icon family for the resource HUD, entity action panel,
 construction palette, production queue, upgrades, selection summaries, and future status
-badges. Gameplay IDs remain stable; definitions will be changed from `ui/placeholder` only
-after the art has been reviewed. This document does not authorize generation yet.
+badges. Gameplay IDs remain stable; definitions will be changed from `ui/placeholder`.
 
 ## Current implementation findings
 
@@ -13,7 +12,6 @@ after the art has been reviewed. This document does not authorize generation yet
 - `IconAtlas` loads that metadata, but no live renderer currently owns or uses it.
 - The build, entity-action, town-hall, and queue interfaces still draw temporary cyan
   rectangles instead of textured icons.
-- The resource HUD is a hard-coded formatted text line and draws no resource icons.
 - Resources and upgrades have definition-level `icon` fields. Unit and building archetypes
   still need an icon/presentation field.
 - Dynamic recipe buttons should normally inherit the product icon. Research should inherit
@@ -23,13 +21,18 @@ after the art has been reviewed. This document does not authorize generation yet
 
 ## Shared art direction
 
-- Modern near-future industrial RTS: grounded, functional, and readable rather than fantasy
-  or highly futuristic.
+- modern brutalist, with a hint of steampunk and cyberpunk RTS: grounded, functional, and readable rather than fantasy
+  or highly futuristic. 
 - Bold silhouette and limited interior detail.
+- buildings that consume power need to have an electricity power mast that is logical to the size of the building.
 - Consistent three-quarter orthographic view for physical subjects; flat frontal symbols for
   abstract actions and status badges.
-- Graphite, steel blue, and cyan base palette. Reserve amber for construction, research,
-  energy, and warnings.
+- The three dominant base colors are:
+  Warm charcoal / gunmetal: #34302B
+  Dusty taupe / earth brown: #756759
+  Weathered concrete gray: #8B8176
+
+  The amber/orange #C87B35 and solar-panel blue #35465B work better as accent colors rather than base colors.
 - Neutral colors must remain readable under future team-color tinting.
 - One centered subject with at least 8% clear space around it.
 - Validate physical icons at 24, 36, 48, and 64 pixels. Validate status badges at 16 and 24.
@@ -59,7 +62,7 @@ After approval, downsample and pack the reviewed sources deterministically:
 | Region ID / source file | Active ID | Visual brief |
 |---|---|---|
 | `unit_worker` | `worker` | Human field engineer with hard hat and compact tool pack; strong human silhouette. |
-| `unit_construction_drone` | `construction_drone` | Small ducted-fan or quad-rotor utility drone with an articulated construction tool. It must not look armed. |
+| `unit_construction_drone` | `construction_drone` | Small quad-rotor utility drone with an articulated construction tool. It must not look armed. |
 
 ### Buildings
 
@@ -79,7 +82,7 @@ After approval, downsample and pack the reviewed sources deterministically:
 | `resource_stone` | `stone` | enabled | Faceted aggregate/stone pile with cool mineral highlights. |
 | `resource_gold` | `gold` | enabled | Gold-bearing ore cluster, not coins or currency. |
 | `resource_materials` | `materials` | enabled | Refined construction plates, beams, and composite blocks; clearly manufactured. |
-| `resource_power` | `power` | enabled/network | Cyan electrical cell combined with a grid-node symbol. This replaces the obsolete `resource_energy` name. |
+| `resource_power` | `power` | enabled/network | Cyan electrical cell combined with a grid-node symbol |
 | `resource_components` | `components` | defined/disabled | Precision electronics and mechanical modules. Generate now so enabling it needs no new art pass. |
 | `resource_fuel` | `fuel` | defined/disabled | Sealed industrial fuel canister with restrained amber fluid/energy accent and no lettering. |
 

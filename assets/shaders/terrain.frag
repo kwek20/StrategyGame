@@ -37,6 +37,15 @@ vec3 tiledSample(sampler2D surface, vec2 worldUv, float variation) {
 }
 
 void main() {
+    // The renderer owns terrain for the maximum map size, while a match can use a
+    // smaller centered area. Sampling outside that area clamps to the outer fog
+    // texel and stretches a revealed edge cell into a long strip. Clip against the
+    // authoritative match extent before sampling the exploration texture.
+    if (useExploration &&
+        any(greaterThan(abs(worldPosition.xz), vec2(explorationExtent * 0.5)))) {
+        discard;
+    }
+
     vec3 lightDirection = normalize(vec3(-0.45, 0.82, 0.35));
     float diffuse = max(dot(normalize(vertexNormal), lightDirection), 0.0);
     float height = clamp(worldPosition.y / 16.0, 0.0, 1.0);

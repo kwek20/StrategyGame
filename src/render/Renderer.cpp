@@ -994,6 +994,21 @@ void Renderer::drawDetailedDebugHud(const CameraView& camera,
             lines.push_back("  capacity [resolved]: " + number(entity->gatherer.carryCapacity));
             lines.push_back("  rate [resolved]: " + number(entity->gatherer.gatherPerSecond));
         }
+        if (entity->battery) {
+            lines.push_back("Battery");
+            lines.push_back("  charge [saved]: " + number(entity->battery.charge));
+            lines.push_back("  capacity [resolved]: " + number(entity->battery.capacity));
+            lines.push_back("  reserve [resolved]: " +
+                            number(entity->battery.reserveThreshold));
+            lines.push_back("  returningToCharge [saved]: " +
+                            std::string(entity->battery.returningToCharge ? "true" : "false"));
+            lines.push_back("  chargerTarget [saved]: " +
+                            std::to_string(entity->battery.chargerTarget));
+            lines.push_back("  suspendedOrder [saved]: " +
+                            std::to_string(static_cast<unsigned>(entity->battery.suspendedOrder)));
+            lines.push_back("  suspendedTarget [saved]: " +
+                            std::to_string(entity->battery.suspendedTarget));
+        }
         if (entity->combat) {
             lines.push_back("Combat");
             lines.push_back("  damage [resolved]: " + number(entity->combat.damage));

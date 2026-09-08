@@ -28,6 +28,15 @@ int main() {
     valid = valid && multiple.totalEntities == 2 && multiple.cards.size() == 2 &&
             multiple.cards[0].bars.size() == 2 && multiple.cards[1].bars.size() == 2 &&
             multiple.selectionGroups.size() == 1 && multiple.selectionGroups[0].count == 2;
+    const strategy::UiDocument multipleActions =
+        strategy::EntityHudLayout::actions(multiple, 1280, 720);
+    valid = valid && multipleActions.find("entity.portrait") == nullptr &&
+            multipleActions.find("entity.card.0") != nullptr &&
+            multipleActions.find("entity.card.1") != nullptr &&
+            multipleActions.find("entity.card.0.bar.0") != nullptr &&
+            multipleActions.find("entity.card.0.bar.1") != nullptr &&
+            multipleActions.find("entity.card.1.bar.0") != nullptr &&
+            multipleActions.find("entity.card.1.bar.1") != nullptr;
 
     strategy::Entity& building = world.createEntity("Hub", "command_hub", 1);
     definitions.initializeEntity(building);

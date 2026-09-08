@@ -312,8 +312,10 @@ void GameSession::apply(const PlayerCommand& command) {
             } else if constexpr (std::is_same_v<Type, DirectUnitInputCommand>) {
                 if (entity->unitControl && entity->authority.directController == command.player) {
                     if (entity->battery &&
-                        (entity->battery.charge <= entity->battery.reserveThreshold ||
+                        (entity->battery.charge <= 0.0F ||
                          entity->battery.returningToCharge)) {
+                        if (!entity->battery.returningToCharge)
+                            beginRecharge(*entity);
                         entity->unitControl.directInput = {0.0F, 0.0F};
                         entity->unitControl.running = false;
                         return;
@@ -330,9 +332,12 @@ void GameSession::apply(const PlayerCommand& command) {
                 if (!entity->unitControl)
                     return;
                 if (entity->battery &&
-                    (entity->battery.charge <= entity->battery.reserveThreshold ||
-                     entity->battery.returningToCharge))
+                    (entity->battery.charge <= 0.0F ||
+                     entity->battery.returningToCharge)) {
+                    if (!entity->battery.returningToCharge)
+                        beginRecharge(*entity);
                     return;
+                }
                 entity->unitControl.order = UnitOrderKind::move;
                 entity->unitControl.orderTarget = 0;
                 entity->unitControl.strategicDestination = payload.destination;
@@ -348,6 +353,10 @@ void GameSession::apply(const PlayerCommand& command) {
                     entity->transient.navigationPath.empty() ? 0.5F : 0.0F;
             } else if constexpr (std::is_same_v<Type, GatherResourceCommand>) {
                 Entity* resource = world_.findEntity(payload.resource);
+                if (entity->battery && entity->battery.charge <= 0.0F) {
+                    beginRecharge(*entity);
+                    return;
+                }
                 if (entity->unitControl && entity->gatherer && resource && resource->resource &&
                     resource->resource.remaining > 0 &&
                     (!entity->battery || !entity->battery.returningToCharge)) {
@@ -452,9 +461,15 @@ void GameSession::apply(const PlayerCommand& command) {
                     builder->unitControl.hasStrategicDestination = true;
                     builder->transient.navigationPath.clear();
                     builder->transient.navigationWaypoint = 0;
+                    if (builder->battery.charge <= 0.0F)
+                        beginRecharge(*builder);
                 }
             } else if constexpr (std::is_same_v<Type, ConstructCommand>) {
                 Entity* building = world_.findEntity(payload.building);
+                if (entity->battery && entity->battery.charge <= 0.0F) {
+                    beginRecharge(*entity);
+                    return;
+                }
                 if (entity->flight && entity->battery && building && building->construction &&
                     !isOperational(*building) && !entity->battery.returningToCharge) {
                     entity->unitControl.order = UnitOrderKind::construct;
@@ -486,6 +501,10 @@ void GameSession::apply(const PlayerCommand& command) {
                 world_.destroyEntity(cancelled);
             } else if constexpr (std::is_same_v<Type, RepairCommand>) {
                 Entity* target = world_.findEntity(payload.target);
+                if (entity->battery && entity->battery.charge <= 0.0F) {
+                    beginRecharge(*entity);
+                    return;
+                }
                 if (entity->flight && target && target->health && entity->battery &&
                     !entity->battery.returningToCharge) { entity->unitControl.order=UnitOrderKind::repair; entity->unitControl.orderTarget=target->id; entity->unitControl.strategicDestination=target->transform.position; entity->unitControl.hasStrategicDestination=true; }
             } else if constexpr (std::is_same_v<Type, StartUpgradeCommand>) {
@@ -509,8 +528,6 @@ void GameSession::apply(const PlayerCommand& command) {
                 if (!entity->production || payload.queueIndex >= entity->production.queue.size())
                     return;
                 auto order = entity->production.queue.begin() + payload.queueIndex;
-                if (order->kind != ProductionKind::improveTraining)
-                    return;
                 if (Player* player = players_.find(command.player))
                     for (const auto& [resource, amount] : order->reservedCosts)
                         player->resources[resource] += amount;
@@ -681,14 +698,18 @@ void GameSession::simulateTick() {
                                 if (target->health) target->health.current = target->health.maximum;
                                 entity.unitControl.order=UnitOrderKind::idle; entity.unitControl.orderTarget=0; entity.unitControl.hasStrategicDestination=false;
                             }
-                            if (entity.battery.charge <= entity.battery.reserveThreshold &&
+                            if (entity.battery.charge <= 0.0F &&
                                 entity.unitControl.order == UnitOrderKind::construct)
                                 beginRecharge(entity);
+                        } else if (entity.battery.charge <= 0.0F) {
+                            beginRecharge(entity);
                         }
                     } else if (entity.unitControl.order == UnitOrderKind::repair && target->health && target->health.current < target->health.maximum && entity.battery.charge >= 1.0F) {
                         entity.battery.charge -= 1.0F; target->health.current = std::min(target->health.maximum,target->health.current+2.0F);
                         if (target->construction && target->health.current >= target->health.maximum)
                             target->construction.state = BuildingLifecycleState::operational;
+                        if (entity.battery.charge <= 0.0F)
+                            beginRecharge(entity);
                     }
                 }
             } else {
@@ -899,7 +920,7 @@ void GameSession::simulateTick() {
         if (flying && entity.battery && glm::length(delta) > 0.001F) {
             entity.battery.charge = std::max(0.0F, entity.battery.charge -
                 entity.battery.movementDrainPerSecond * static_cast<float>(fixedTickSeconds));
-            if (entity.battery.charge <= entity.battery.reserveThreshold)
+            if (entity.battery.charge <= 0.0F)
                 beginRecharge(entity);
         }
         const float radius = flying ? 0.0F : collisionRadius(gameplay_, entity.archetype);
