@@ -33,6 +33,11 @@ int main() {
     const auto* constructionDrone =
         gameplay.unit(strategy::UnitArchetypeId{"construction_drone"});
     const auto* commandHub = gameplay.building(strategy::BuildingArchetypeId{"command_hub"});
+    const auto* chargingPad = gameplay.building(strategy::BuildingArchetypeId{"charging_pad"});
+    const auto* extractor =
+        gameplay.building(strategy::BuildingArchetypeId{"resource_extractor"});
+    const auto* factory = gameplay.building(strategy::BuildingArchetypeId{"drone_factory"});
+    const auto* sensorTower = gameplay.building(strategy::BuildingArchetypeId{"sensor_tower"});
     const auto* commandHubPower =
         gameplay.powerDevice(strategy::PowerDeviceId{"command_hub_integrated_grid"});
     const auto* droneRecipe =
@@ -48,6 +53,8 @@ int main() {
             !components->enabled && workerWeapon && workerWeapon->cooldownTicks == 30 &&
             constructionDrone && constructionDrone->movement.type == "flying" &&
             constructionDrone->battery && commandHub && commandHub->powerDevice &&
+            chargingPad && chargingPad->powerDevice && extractor && extractor->powerDevice &&
+            factory && factory->powerDevice && sensorTower && sensorTower->powerDevice &&
             commandHubPower && commandHubPower->production == 10.0F && droneRecipe &&
             droneRecipe->producer == "command_hub" && droneRecipe->cost.at("materials") == 75.0F &&
             generatorRecipe && generatorRecipe->producer.empty() &&
@@ -236,13 +243,33 @@ int main() {
     strategy::GameSession session{gameplay, 123U};
     strategy::Entity* playerOneUnit = nullptr;
     strategy::Entity* playerTwoUnit = nullptr;
+    std::size_t playerOneHubs = 0, playerTwoHubs = 0;
+    std::size_t playerOneDrones = 0, playerTwoDrones = 0;
     for (strategy::Entity& candidate : session.world().entities()) {
         if (candidate.archetype.value == "worker" && candidate.authority.owner == 1)
             playerOneUnit = &candidate;
         if (candidate.archetype.value == "worker" && candidate.authority.owner == 2)
             playerTwoUnit = &candidate;
+        if (candidate.archetype.value == "command_hub") {
+            if (candidate.authority.owner == 1) ++playerOneHubs;
+            if (candidate.authority.owner == 2) ++playerTwoHubs;
+        }
+        if (candidate.archetype.value == "construction_drone") {
+            if (candidate.authority.owner == 1) ++playerOneDrones;
+            if (candidate.authority.owner == 2) ++playerTwoDrones;
+        }
     }
     valid = valid && playerOneUnit != nullptr && playerTwoUnit != nullptr;
+    valid = valid && playerOneHubs == 1 && playerTwoHubs == 1 &&
+            playerOneDrones == 1 && playerTwoDrones == 1;
+    valid = valid && playerOneUnit && playerOneUnit->unitControl &&
+            playerOneUnit->unitControl.directlyControllable && !playerOneUnit->gatherer;
+    valid = valid && playerTwoUnit && playerTwoUnit->unitControl &&
+            playerTwoUnit->unitControl.directlyControllable && !playerTwoUnit->gatherer;
+    if (playerOneHubs != 1 || playerTwoHubs != 1 || playerOneDrones != 1 ||
+        playerTwoDrones != 1 || !playerOneUnit || playerOneUnit->gatherer ||
+        !playerTwoUnit || playerTwoUnit->gatherer)
+        std::cerr << "Starting roster validation failed\n";
     valid = valid && session.players().players().size() == 2;
 
     strategy::GameSession replayA{gameplay, 123U}, replayB{gameplay, 123U};
@@ -345,15 +372,15 @@ int main() {
     for (strategy::Entity& entity : session.world().entities()) {
         if (entity.archetype.value == "construction_drone" && entity.authority.owner == 1)
             ++dronesBefore;
-        if (entity.archetype.value == "town_center" && entity.authority.owner == 1) {
+        if (entity.archetype.value == "command_hub" && entity.authority.owner == 1) {
             hallId = entity.id;
             entity.production.productionSpeedMultiplier = 1000.0F;
         }
     }
-    valid = session.submit(
-                         {1,
-                          6,
-                          strategy::StartRecipeCommand{hallId, "town_center.train_construction_drone"}}) && valid;
+    const bool startingHubQueued = session.submit(
+        {1, 6,
+         strategy::StartRecipeCommand{hallId, "command_hub.train_construction_drone"}});
+    valid = startingHubQueued && valid;
     for (int tick = 0; tick < 460; ++tick)
         session.update(strategy::GameSession::fixedTickSeconds);
     const strategy::Entity* upgradedHall = session.world().findEntity(hallId);
@@ -362,6 +389,8 @@ int main() {
         if (entity.archetype.value == "construction_drone" && entity.authority.owner == 1)
             ++dronesAfter;
     valid = valid && upgradedHall && dronesAfter == dronesBefore + 1;
+    if (!startingHubQueued || !upgradedHall || dronesAfter != dronesBefore + 1)
+        std::cerr << "Starting command hub production validation failed\n";
 
     strategy::GameSession recipeSession{gameplay, 654U};
     recipeSession.replaceWorld({}, 654U);
@@ -455,24 +484,25 @@ int main() {
             std::abs(recipeSession.players().find(1)->resources["materials"] - 150.0F) < 0.001F;
 
     strategy::GameSession gatheringSession{gameplay, 321U};
-    strategy::Entity* gatherer = nullptr;
+    strategy::Entity* startingWorker = nullptr;
     for (strategy::Entity& entity : gatheringSession.world().entities())
         if (entity.archetype.value == "worker" && entity.authority.owner == 1) {
-            gatherer = &entity;
+            startingWorker = &entity;
             break;
         }
-    valid = valid && gatherer != nullptr;
-    if (gatherer) {
+    valid = valid && startingWorker != nullptr && !startingWorker->gatherer;
+    if (startingWorker) {
         strategy::Entity& tree = gatheringSession.world().createEntity("Test Tree", "tree", 0);
-        tree.transform.position = gatherer->transform.position;
+        tree.transform.position = startingWorker->transform.position;
         tree.resource.emplace();
         tree.resource.type = "materials";
         tree.resource.remaining = 2.0F;
         valid = gatheringSession.submit(
-                             {1, 1, strategy::GatherResourceCommand{gatherer->id, tree.id}}) && valid;
-        for (int tick = 0; tick < 100; ++tick)
-            gatheringSession.update(strategy::GameSession::fixedTickSeconds);
-        valid = valid && gatheringSession.players().find(1)->wood > 0.0F;
+                    {1, 1,
+                     strategy::GatherResourceCommand{startingWorker->id, tree.id}}) && valid;
+        gatheringSession.advanceTicks();
+        valid = valid && startingWorker->unitControl.order == strategy::UnitOrderKind::idle &&
+                tree.resource.remaining == 2.0F;
     }
 
     strategy::GameSession intelligenceSession{gameplay, 777U};

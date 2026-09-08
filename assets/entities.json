@@ -102,6 +102,38 @@
       "grounding": { "groundOffset": 0.0, "alignToTerrain": false, "maximumTilt": 0.0, "foundationRadius": 1.25, "maximumFoundationSlope": 10.0 },
       "selection": { "radius": 1.5, "height": 8.0 },
       "animations": {}
+    },
+    "charging_pad": {
+      "icon": "building_charging_pad",
+      "model": "buildings/Farm_Dirt_Level1",
+      "scale": 4.0,
+      "grounding": { "groundOffset": 0.0, "alignToTerrain": false, "maximumTilt": 0.0, "foundationRadius": 3.5, "maximumFoundationSlope": 10.0 },
+      "selection": { "radius": 4.0, "height": 2.0 },
+      "animations": {}
+    },
+    "resource_extractor": {
+      "icon": "building_resource_extractor",
+      "model": "buildings/Market_FirstAge_Level1",
+      "scale": 6.0,
+      "grounding": { "groundOffset": 0.0, "alignToTerrain": false, "maximumTilt": 0.0, "foundationRadius": 4.5, "maximumFoundationSlope": 10.0 },
+      "selection": { "radius": 5.0, "height": 5.0 },
+      "animations": {}
+    },
+    "drone_factory": {
+      "icon": "building_drone_factory",
+      "model": "buildings/Barracks_SecondAge_Level1",
+      "scale": 8.0,
+      "grounding": { "groundOffset": 0.0, "alignToTerrain": false, "maximumTilt": 0.0, "foundationRadius": 7.0, "maximumFoundationSlope": 10.0 },
+      "selection": { "radius": 7.0, "height": 6.0 },
+      "animations": {}
+    },
+    "sensor_tower": {
+      "icon": "building_sensor_tower",
+      "model": "buildings/WatchTower_SecondAge_Level1",
+      "scale": 4.0,
+      "grounding": { "groundOffset": 0.0, "alignToTerrain": false, "maximumTilt": 0.0, "foundationRadius": 2.5, "maximumFoundationSlope": 10.0 },
+      "selection": { "radius": 3.0, "height": 10.0 },
+      "animations": {}
     }
   }
 }

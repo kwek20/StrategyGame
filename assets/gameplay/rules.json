@@ -6,16 +6,16 @@
     "fuel": 0
   },
   "playerOneStart": [
-    { "archetype": "town_center", "nameKey": "entity.player_one_base", "position": [-28, 0, -28] },
-    { "archetype": "worker", "nameKey": "entity.player_one_unit", "position": [-20, 0, -20], "directlyControllable": true },
+    { "archetype": "command_hub", "nameKey": "entity.player_one_base", "position": [-28, 0, -28] },
+    { "archetype": "worker", "nameKey": "entity.player_one_unit", "position": [-20, 0, -20], "directlyControllable": true, "gatheringEnabled": false },
     { "archetype": "construction_drone", "nameKey": "unit.construction_drone", "position": [-24, 6, -20], "directlyControllable": false }
   ],
   "playerTwoStart": [
-    { "archetype": "town_center", "nameKey": "entity.player_two_base", "position": [28, 0, 28] },
-    { "archetype": "worker", "nameKey": "entity.player_two_unit", "position": [20, 0, 20], "directlyControllable": true },
+    { "archetype": "command_hub", "nameKey": "entity.player_two_base", "position": [28, 0, 28] },
+    { "archetype": "worker", "nameKey": "entity.player_two_unit", "position": [20, 0, 20], "directlyControllable": true, "gatheringEnabled": false },
     { "archetype": "construction_drone", "nameKey": "unit.construction_drone", "position": [24, 6, 20], "directlyControllable": false }
   ],
-  "buildPalette": ["command_hub", "material_processor", "basic_generator", "storage_silo", "electricity_pole"],
+  "buildPalette": ["command_hub", "material_processor", "basic_generator", "storage_silo", "electricity_pole", "charging_pad", "resource_extractor", "drone_factory", "sensor_tower"],
   "generatedResourceNodes": ["tree", "stone", "gold"],
   "trainingUpgradeProduct": "construction_drone",
   "unitLimit": 100,

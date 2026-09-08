@@ -25,14 +25,19 @@ bool suitable(const Terrain& terrain, const MatchRulesDefinition& rules, float x
     return std::sqrt(dx * dx + dz * dz) < rules.maximumResourceSlope;
 }
 
-bool clearOfStarts(const MatchRulesDefinition& rules, float x, float z) {
+bool clearOfStarts(const MatchRulesDefinition& rules,
+                   const DefinitionRegistry& definitions,
+                   float x,
+                   float z) {
     const glm::vec2 point{x, z};
     for (const auto* starts : {&rules.playerOne, &rules.playerTwo})
-        for (const StartingEntityDefinition& start : *starts)
-            if (start.archetype.find("town_center") != std::string::npos)
+        for (const StartingEntityDefinition& start : *starts) {
+            const EntityArchetype* archetype = definitions.archetype(start.archetype);
+            if (archetype && archetype->tags.contains("headquarters"))
             if (glm::distance(point, glm::vec2{start.position.x, start.position.z}) <=
                 rules.baseExclusionRadius)
                 return false;
+        }
     return true;
 }
 
@@ -69,12 +74,14 @@ void clusters(World& world,
         const float centerZ = random.range(-settings.centerExtent, settings.centerExtent);
         if (centerX < 0.0F || !suitable(terrain, rules, centerX, centerZ) ||
             !suitable(terrain, rules, -centerX, -centerZ) ||
-            !clearOfStarts(rules, centerX, centerZ) || !clearOfStarts(rules, -centerX, -centerZ))
+            !clearOfStarts(rules, definitions, centerX, centerZ) ||
+            !clearOfStarts(rules, definitions, -centerX, -centerZ))
             continue;
         for (std::uint32_t member = 0; member < settings.nodesPerCluster; ++member) {
             const float x = centerX + random.range(-settings.spread, settings.spread);
             const float z = centerZ + random.range(-settings.spread, settings.spread);
-            if (!suitable(terrain, rules, x, z) || !clearOfStarts(rules, x, z))
+            if (!suitable(terrain, rules, x, z) ||
+                !clearOfStarts(rules, definitions, x, z))
                 continue;
             const float angle = random.range(0.0F, 360.0F);
             if (!overlapsObject(world, definitions, {x, z}, type.collisionRadius) &&

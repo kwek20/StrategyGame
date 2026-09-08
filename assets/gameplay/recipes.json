@@ -106,6 +106,46 @@
       "workStep": 2,
       "dronePowerPerStep": 1,
       "tags": ["construction", "headquarters"]
+    },
+    {
+      "id": "construct.charging_pad",
+      "product": { "building": "charging_pad", "amount": 1 },
+      "cost": { "materials": 60 },
+      "durationTicks": 240,
+      "constructionPower": 45,
+      "workStep": 2,
+      "dronePowerPerStep": 1,
+      "tags": ["construction", "power", "charger"]
+    },
+    {
+      "id": "construct.resource_extractor",
+      "product": { "building": "resource_extractor", "amount": 1 },
+      "cost": { "materials": 140 },
+      "durationTicks": 540,
+      "constructionPower": 100,
+      "workStep": 2,
+      "dronePowerPerStep": 1,
+      "tags": ["construction", "economic", "extractor"]
+    },
+    {
+      "id": "construct.drone_factory",
+      "product": { "building": "drone_factory", "amount": 1 },
+      "cost": { "materials": 175 },
+      "durationTicks": 660,
+      "constructionPower": 140,
+      "workStep": 2,
+      "dronePowerPerStep": 1,
+      "tags": ["construction", "factory", "production", "drone"]
+    },
+    {
+      "id": "construct.sensor_tower",
+      "product": { "building": "sensor_tower", "amount": 1 },
+      "cost": { "materials": 110 },
+      "durationTicks": 420,
+      "constructionPower": 75,
+      "workStep": 2,
+      "dronePowerPerStep": 1,
+      "tags": ["construction", "sensor", "information"]
     }
   ]
 }

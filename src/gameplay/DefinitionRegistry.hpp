@@ -167,6 +167,7 @@ struct StartingEntityDefinition {
     std::string archetype, nameKey;
     glm::vec3 position{0.0F};
     bool directlyControllable{false};
+    bool gatheringEnabled{true};
 };
 
 struct MatchRulesDefinition {

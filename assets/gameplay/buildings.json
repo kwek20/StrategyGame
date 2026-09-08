@@ -150,6 +150,58 @@
       "health": 250,
       "powerDevice": "basic_relay",
       "stats": {}
+    },
+    "charging_pad": {
+      "nameKey": "building.charging_pad",
+      "presentation": "charging_pad",
+      "collisionRadius": 4.0,
+      "footprint": { "shape": "circle", "radius": 3.5, "halfExtents": [3.5, 3.5], "edgeFalloff": 2.0, "maximumTiltDegrees": 10.0 },
+      "components": ["health", "vision"],
+      "availableUpgrades": [],
+      "tags": ["building", "power", "charger"],
+      "health": 400,
+      "vision": { "range": 10 },
+      "powerDevice": "basic_charger",
+      "stats": {}
+    },
+    "resource_extractor": {
+      "nameKey": "building.resource_extractor",
+      "presentation": "resource_extractor",
+      "collisionRadius": 5.0,
+      "footprint": { "shape": "circle", "radius": 4.5, "halfExtents": [4.5, 4.5], "edgeFalloff": 2.5, "maximumTiltDegrees": 10.0 },
+      "components": ["health", "production"],
+      "availableUpgrades": [],
+      "tags": ["building", "economic", "extractor", "production"],
+      "health": 550,
+      "powerDevice": "resource_extractor",
+      "stats": { "productionSpeed": 1 }
+    },
+    "drone_factory": {
+      "nameKey": "building.drone_factory",
+      "presentation": "drone_factory",
+      "collisionRadius": 7.0,
+      "footprint": { "shape": "rectangle", "halfExtents": [7.0, 5.5], "edgeFalloff": 3.0, "maximumTiltDegrees": 10.0 },
+      "interactionMargin": 0.9,
+      "spawn": { "clearance": 0.6, "candidateCount": 16 },
+      "components": ["health", "production", "upgrades"],
+      "availableUpgrades": [],
+      "tags": ["building", "factory", "production", "drone"],
+      "health": 800,
+      "powerDevice": "drone_factory",
+      "stats": { "productionSpeed": 1, "researchTime": 10 }
+    },
+    "sensor_tower": {
+      "nameKey": "building.sensor_tower",
+      "presentation": "sensor_tower",
+      "collisionRadius": 3.0,
+      "footprint": { "shape": "circle", "radius": 2.5, "halfExtents": [2.5, 2.5], "edgeFalloff": 1.5, "maximumTiltDegrees": 10.0 },
+      "components": ["health", "vision", "upgrades"],
+      "availableUpgrades": [],
+      "tags": ["building", "sensor", "information"],
+      "health": 450,
+      "vision": { "range": 36 },
+      "powerDevice": "sensor_tower",
+      "stats": { "researchTime": 10 }
     }
   }
 }

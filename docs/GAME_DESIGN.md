@@ -388,12 +388,6 @@ by the engine:
 
 ## Development roadmap
 
-### Completed foundation: formalize definitions
-
-Create schemas and validated data definitions for resources, units, buildings, weapons, power
-devices, recipes, countries, and specializations. Remove remaining gameplay constants from
-rendering and interface code.
-
 ### Phase 2: implement the starting drone
 
 Replace the current worker as the starting entity. Add flying navigation, battery charge,

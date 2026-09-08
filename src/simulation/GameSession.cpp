@@ -53,6 +53,8 @@ GameSession::GameSession(const DefinitionRegistry& definitions,
             entity.transform.rotationDegrees.y = rotation;
             if (entity.unitControl)
                 entity.unitControl.directlyControllable = start.directlyControllable;
+            if (!start.gatheringEnabled)
+                entity.gatherer.reset();
         }
     };
     createStartingEntities(1, gameplay_.matchRules().playerOne, 0.0F);

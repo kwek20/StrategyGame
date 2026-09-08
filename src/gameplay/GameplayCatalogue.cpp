@@ -730,6 +730,11 @@ void DefinitionRegistry::loadRules(const std::filesystem::path& path) {
             start.directlyControllable = value.HasMember("directlyControllable") &&
                                          value["directlyControllable"].IsBool() &&
                                          value["directlyControllable"].GetBool();
+            if (value.HasMember("gatheringEnabled")) {
+                if (!value["gatheringEnabled"].IsBool())
+                    throw std::runtime_error("Starting entity gatheringEnabled must be a boolean");
+                start.gatheringEnabled = value["gatheringEnabled"].GetBool();
+            }
             output.push_back(std::move(start));
         }
     };

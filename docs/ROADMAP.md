@@ -27,9 +27,9 @@ The prototype already provides:
 This foundation should be preserved while the placeholder medieval gameplay is replaced with
 the modern drone, infrastructure, and power-grid loop.
 
-## Current implementation status
+## Completed definition foundation
 
-The Phase 1 foundation is complete. The repository currently has:
+The repository currently has:
 
 - Central JSON definitions for units, buildings, resource nodes, resources, weapons, power devices,
   recipes, countries, specializations, match rules, and upgrades.
@@ -44,9 +44,10 @@ The Phase 1 foundation is complete. The repository currently has:
 - Separate entity archetype and presentation IDs at the entity/save boundary, plus typed registry IDs.
 - No legacy save migrations; entity runtime identity no longer uses `Entity::modelKey`.
 
-Phase 1 exit criteria are met: definitions, typed identity, recipe-backed upgrades, deterministic
-simulation boundaries, persistence, diagnostics, and automated coverage are implemented without
-legacy migration paths.
+Definitions, typed identity, recipe-backed upgrades, deterministic simulation boundaries,
+persistence, diagnostics, and automated coverage are implemented without legacy migration paths.
+The initial command hub, construction drone, materials, generator, relay, charging pad, extractor,
+factory, and sensor-tower archetypes are present and validated.
 
 ## Development loop
 
@@ -59,7 +60,7 @@ Each content change should follow this loop:
 5. Verify renderer/UI consumption through presentation data without adding gameplay constants.
 6. Run the complete CTest suite before moving to the next definition or gameplay system.
 
-Phase 2 starts with the construction-drone milestone:
+Current work continues with the construction-drone milestone:
 drone definition → flight/battery components → gather/return commands → charger/power state →
 save/checksum tests → HUD and presentation integration.
 
@@ -96,29 +97,6 @@ Establish a reliable baseline before replacing the starting worker and economy.
 - A ten-minute smoke test produces no OpenGL errors, crashes, or severe frame spikes.
 - Debug mode can explain why a selected unit is idle, moving, blocked, or retrying.
 - All existing automated tests pass.
-
-## Milestone 1: data-definition foundation
-
-### Goal
-
-Make modern gameplay content configurable without adding entity-specific branches.
-
-### Work
-
-- Define versioned schemas for resources, units, buildings, weapons, recipes, and power devices.
-- Extend country and specialization definitions to modify tagged groups and individual types.
-- Add stable definition identifiers and typed handles.
-- Validate references, ranges, required fields, and duplicate identifiers during loading.
-- Report definition errors with file, field, and entity context.
-- Create initial definitions for the command hub, construction drone, materials, generator,
-  relay, charging pad, extractor, factory, and sensor tower.
-
-### Exit criteria
-
-- The game refuses invalid definitions with actionable diagnostics.
-- Simulation entities retain stable definition identifiers across save/load.
-- Country, specialization, producer, upgrade, and power modifiers resolve in deterministic order.
-- Tests cover successful loading, invalid references, modifier order, and current-schema save/load.
 
 ## Milestone 2: starting construction drone
 
@@ -167,7 +145,7 @@ Allow the drone to establish a functional base through clear, deterministic cons
 
 ### Exit criteria
 
-- A player can build all milestone-one structures using only the starting drone.
+- A player can build all foundational structures using only the starting drone.
 - Placement preview and simulation validation agree.
 - Construction remains deterministic with multiple drones and simultaneous projects.
 - Cancellation, destruction, save/load, and insufficient-resource cases are tested.
@@ -429,12 +407,11 @@ These tracks continue throughout all milestones rather than waiting for a final 
 The immediate order of work is:
 
 1. Complete milestone 0 navigation and visual stabilization.
-2. Establish milestone 1 definitions for the initial modern content.
-3. Implement the milestone 2 construction drone and battery loop.
-4. Build milestone 3 construction around that drone.
-5. Add the milestone 4 power grid.
-6. Balance the milestone 5 materials-and-power economy.
-7. Produce the milestone 6 first complete combat match.
+2. Implement the milestone 2 construction drone and battery loop.
+3. Build milestone 3 construction around that drone.
+4. Add the milestone 4 power grid.
+5. Balance the milestone 5 materials-and-power economy.
+6. Produce the milestone 6 first complete combat match.
 
 Work outside this sequence should be limited to defects, architectural blockers, and reusable
 assets needed by the active milestone.

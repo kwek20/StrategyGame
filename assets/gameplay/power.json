@@ -27,6 +27,18 @@
     "material_processor": {
       "tags": ["consumer", "processor"],
       "consumption": 8
+    },
+    "resource_extractor": {
+      "tags": ["consumer", "extractor", "economic"],
+      "consumption": 6
+    },
+    "drone_factory": {
+      "tags": ["consumer", "factory", "production"],
+      "consumption": 12
+    },
+    "sensor_tower": {
+      "tags": ["consumer", "sensor", "information"],
+      "consumption": 4
     }
   }
 }
