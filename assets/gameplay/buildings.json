@@ -65,7 +65,7 @@
     },
     "outpost": {
       "nameKey": "building.outpost",
-      "presentation": "town_center",
+      "presentation": "outpost",
       "collisionRadius": 5.0,
       "footprint": { "shape": "rectangle", "halfExtents": [4.5, 4.5], "edgeFalloff": 2.5, "maximumTiltDegrees": 10.0 },
       "interactionMargin": 0.9,
@@ -84,12 +84,13 @@
     },
     "command_hub": {
       "nameKey": "building.command_hub",
-      "presentation": "town_center",
+      "presentation": "command_hub",
       "collisionRadius": 10.5,
       "footprint": { "shape": "rectangle", "halfExtents": [10.5, 10.5], "edgeFalloff": 3.0, "maximumTiltDegrees": 10.0 },
       "interactionMargin": 0.9,
       "spawn": { "clearance": 0.6, "candidateCount": 16 },
-      "components": ["health", "vision", "production", "buildingUpgrades", "upgrades"],
+        "components": ["health", "vision", "production", "processor", "buildingUpgrades", "upgrades"],
+        "processorCapacity": 200,
       "availableUpgrades": [],
       "tags": ["building", "headquarters", "economic", "production", "charger", "power", "resource-dropoff"],
       "health": 1000,
@@ -103,17 +104,46 @@
         "maximumProductionUpgrades": 8
       }
     },
-    "material_processor": {
-      "nameKey": "building.material_processor",
-      "presentation": "material_processor",
+    "alloy_processor": {
+      "nameKey": "building.alloy_processor",
+      "presentation": "alloy_processor",
       "collisionRadius": 5.0,
       "footprint": { "shape": "rectangle", "halfExtents": [5.0, 4.0], "edgeFalloff": 2.5, "maximumTiltDegrees": 10.0 },
-      "components": ["health", "production"],
+        "components": ["health", "processor"],
+        "processorCapacity": 400,
       "availableUpgrades": [],
-      "tags": ["building", "processor", "production"],
+      "tags": ["building", "processor", "economic", "alloy-processing"],
       "health": 600,
-      "powerDevice": "material_processor",
-      "stats": { "productionSpeed": 1 }
+      "powerDevice": "alloy_processor",
+      "stats": {}
+    },
+    "fuel_processor": {
+      "nameKey": "building.fuel_processor",
+      "presentation": "fuel_processor",
+      "collisionRadius": 5.0,
+      "footprint": { "shape": "rectangle", "halfExtents": [5.0, 4.0], "edgeFalloff": 2.5, "maximumTiltDegrees": 10.0 },
+        "components": ["health", "processor"],
+        "processorCapacity": 400,
+      "availableUpgrades": [],
+      "tags": ["building", "processor", "economic", "fuel-processing"],
+      "health": 600,
+      "powerDevice": "fuel_processor",
+      "stats": {}
+    },
+    "synthetic_mine": {
+      "nameKey": "building.synthetic_mine",
+      "presentation": "synthetic_mine",
+      "collisionRadius": 5.0,
+      "footprint": { "shape": "circle", "radius": 4.5, "halfExtents": [4.5, 4.5], "edgeFalloff": 2.5, "maximumTiltDegrees": 10.0 },
+      "resourceType": "synthetic",
+      "capacity": 100,
+      "rawProductionPerTick": 0.1,
+      "components": ["health", "resource"],
+      "availableUpgrades": [],
+      "tags": ["building", "economic", "synthetic-producer"],
+      "health": 550,
+      "powerDevice": "synthetic_mine",
+      "stats": {}
     },
     "basic_generator": {
       "nameKey": "building.basic_generator",

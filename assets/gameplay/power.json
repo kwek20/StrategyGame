@@ -24,9 +24,20 @@
       "consumption": 5,
       "chargePerTick": 2
     },
-    "material_processor": {
+    "alloy_processor": {
       "tags": ["consumer", "processor"],
-      "consumption": 8
+      "consumption": 8,
+      "priority": 40
+    },
+    "fuel_processor": {
+      "tags": ["consumer", "processor"],
+      "consumption": 8,
+      "priority": 40
+    },
+    "synthetic_mine": {
+      "tags": ["consumer", "extractor", "synthetic"],
+      "consumption": 6,
+      "priority": 60
     },
     "resource_extractor": {
       "tags": ["consumer", "extractor", "economic"],

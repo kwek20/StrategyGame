@@ -114,18 +114,22 @@
   "unit.construction_drone": "CONSTRUCTION DRONE",
   "building.command_hub": "COMMAND HUB",
   "building.basic_generator": "GENERATOR",
-  "building.material_processor": "MATERIAL PROCESSOR",
+  "building.alloy_processor": "ALLOY PROCESSOR",
+  "building.fuel_processor": "FUEL PROCESSOR",
+  "building.synthetic_mine": "SYNTHETIC MINE",
   "building.outpost": "OUTPOST",
-  "resource.materials": "MATERIALS",
-  "resource.wood": "WOOD",
-  "resource.stone": "STONE",
-  "resource.gold": "GOLD",
   "resource.power": "POWER",
-  "resource.components": "COMPONENTS",
   "resource.fuel": "FUEL",
-  "entity.tree": "TREE",
-  "entity.stone": "STONE",
-  "entity.gold": "GOLD",
+  "resource.scrap": "SCRAP",
+  "resource.oil": "OIL",
+  "resource.uranium": "URANIUM",
+  "resource.synthetic": "SYNTHETIC",
+  "resource.alloy": "ALLOY",
+  "resource.data": "DATA",
+  "resource.authority": "AUTHORITY",
+  "entity.scrap_field": "SCRAP FIELD",
+  "entity.oil_deposit": "OIL DEPOSIT",
+  "entity.uranium_deposit": "URANIUM DEPOSIT",
   "entity.player_one_base": "PLAYER 1 BASE",
   "entity.player_two_base": "PLAYER 2 BASE",
   "entity.player_one_unit": "PLAYER 1 UNIT",
@@ -175,6 +179,13 @@
   ,"entity_hud.construction": "CONSTRUCTION"
   ,"entity_hud.generation": "GENERATION"
   ,"entity_hud.consumption": "CONSUMPTION"
+  ,"entity_hud.power_supplied": "POWER SUPPLIED"
+  ,"entity_hud.processor_input": "PROCESSOR INPUT"
+  ,"entity_hud.processor_empty": "EMPTY"
+  ,"entity_hud.processor_waiting_power": "WAITING FOR POWER"
+  ,"entity_hud.resource_source": "RESOURCE SOURCE"
+  ,"entity_hud.delivery_destination": "DELIVERY DESTINATION"
+  ,"entity_hud.no_compatible_processor": "NO COMPATIBLE PROCESSOR"
   ,"entity_hud.queue": "QUEUE"
   ,"entity_hud.upgrades": "UPGRADES"
   ,"entity_hud.insufficient_resources": "INSUFFICIENT RESOURCES"
@@ -183,4 +194,20 @@
   ,"entity_hud.time_seconds": "TIME: {0}s"
   ,"entity_hud.free": "FREE"
   ,"entity_hud.cancel_refund": "CLICK TO CANCEL AND REFUND"
+  ,"entity_hud.loop_stage": "LOOP"
+  ,"entity_hud.task_idle": "IDLE"
+  ,"entity_hud.task_gathering": "GATHERING"
+  ,"entity_hud.task_delivering": "DELIVERING"
+  ,"entity_hud.task_charging": "CHARGING"
+  ,"entity_hud.conversion_route": "CONVERSION"
+  ,"entity_hud.processor_state": "STATUS"
+  ,"processor.state.idle": "POWERED / IDLE"
+  ,"processor.state.powered": "POWERED"
+  ,"processor.state.underpowered": "UNDERPOWERED"
+  ,"processor.state.blocked": "BLOCKED"
+  ,"processor.state.processing": "PROCESSING"
+  ,"processor.state.offline": "OFFLINE"
+  ,"processor.alert.waiting_power": "RAW CARGO WAITING FOR POWER"
+  ,"processor.route.synthetic_alloy": "SYNTHETIC TO ALLOY"
+  ,"processor.route.synthetic_fuel": "SYNTHETIC TO FUEL"
 }

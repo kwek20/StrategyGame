@@ -37,30 +37,14 @@
       "id": "command_hub.train_construction_drone",
       "producer": "command_hub",
       "product": { "unit": "construction_drone", "amount": 1 },
-      "cost": { "materials": 75 },
+      "cost": { "alloy": 75 },
       "durationTicks": 300,
       "tags": ["training", "drone", "construction"]
     },
     {
-      "id": "material_processor.process_materials",
-      "producer": "material_processor",
-      "product": { "resource": "materials", "amount": 1 },
-      "cost": { "wood": 2, "stone": 1 },
-      "durationTicks": 30,
-      "tags": ["processing", "materials"]
-    },
-    {
-      "id": "command_hub.process_materials",
-      "producer": "command_hub",
-      "product": { "resource": "materials", "amount": 1 },
-      "cost": { "wood": 2, "stone": 1 },
-      "durationTicks": 30,
-      "tags": ["processing", "materials"]
-    },
-    {
       "id": "construct.basic_generator",
       "product": { "building": "basic_generator", "amount": 1 },
-      "cost": { "materials": 100 },
+      "cost": { "alloy": 100 },
       "durationTicks": 450,
       "constructionPower": 100,
       "workStep": 2,
@@ -68,9 +52,9 @@
       "tags": ["construction", "power", "generator"]
     },
     {
-      "id": "construct.material_processor",
-      "product": { "building": "material_processor", "amount": 1 },
-      "cost": { "materials": 125 },
+      "id": "construct.alloy_processor",
+      "product": { "building": "alloy_processor", "amount": 1 },
+      "cost": { "alloy": 125 },
       "durationTicks": 480,
       "constructionPower": 80,
       "workStep": 2,
@@ -78,9 +62,29 @@
       "tags": ["construction", "processing"]
     },
     {
+      "id": "construct.fuel_processor",
+      "product": { "building": "fuel_processor", "amount": 1 },
+      "cost": { "alloy": 140 },
+      "durationTicks": 510,
+      "constructionPower": 90,
+      "workStep": 2,
+      "dronePowerPerStep": 1,
+      "tags": ["construction", "processing", "fuel"]
+    },
+    {
+      "id": "construct.synthetic_mine",
+      "product": { "building": "synthetic_mine", "amount": 1 },
+      "cost": { "alloy": 160 },
+      "durationTicks": 600,
+      "constructionPower": 120,
+      "workStep": 2,
+      "dronePowerPerStep": 1,
+      "tags": ["construction", "economic", "synthetic"]
+    },
+    {
       "id": "construct.storage_silo",
       "product": { "building": "storage_silo", "amount": 1 },
-      "cost": { "materials": 80 },
+      "cost": { "alloy": 80 },
       "durationTicks": 360,
       "constructionPower": 60,
       "workStep": 2,
@@ -90,7 +94,7 @@
     {
       "id": "construct.electricity_pole",
       "product": { "building": "electricity_pole", "amount": 1 },
-      "cost": { "materials": 35 },
+      "cost": { "alloy": 35 },
       "durationTicks": 180,
       "constructionPower": 30,
       "workStep": 2,
@@ -100,7 +104,7 @@
     {
       "id": "construct.command_hub",
       "product": { "building": "command_hub", "amount": 1 },
-      "cost": { "materials": 150 },
+      "cost": { "alloy": 150 },
       "durationTicks": 600,
       "constructionPower": 120,
       "workStep": 2,
@@ -110,7 +114,7 @@
     {
       "id": "construct.charging_pad",
       "product": { "building": "charging_pad", "amount": 1 },
-      "cost": { "materials": 60 },
+      "cost": { "alloy": 60 },
       "durationTicks": 240,
       "constructionPower": 45,
       "workStep": 2,
@@ -120,7 +124,7 @@
     {
       "id": "construct.resource_extractor",
       "product": { "building": "resource_extractor", "amount": 1 },
-      "cost": { "materials": 140 },
+      "cost": { "alloy": 140 },
       "durationTicks": 540,
       "constructionPower": 100,
       "workStep": 2,
@@ -130,7 +134,7 @@
     {
       "id": "construct.drone_factory",
       "product": { "building": "drone_factory", "amount": 1 },
-      "cost": { "materials": 175 },
+      "cost": { "alloy": 175 },
       "durationTicks": 660,
       "constructionPower": 140,
       "workStep": 2,
@@ -140,7 +144,7 @@
     {
       "id": "construct.sensor_tower",
       "product": { "building": "sensor_tower", "amount": 1 },
-      "cost": { "materials": 110 },
+      "cost": { "alloy": 110 },
       "durationTicks": 420,
       "constructionPower": 75,
       "workStep": 2,

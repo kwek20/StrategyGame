@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "conversions": [
+    { "id": "command_hub.scrap_to_alloy", "processor": "command_hub", "input": "scrap", "output": "alloy", "outputPerInput": 0.5, "requiredPower": 0, "priority": 10 },
+    { "id": "command_hub.oil_to_fuel", "processor": "command_hub", "input": "oil", "output": "fuel", "outputPerInput": 0.5, "requiredPower": 0, "priority": 20 },
+    { "id": "command_hub.uranium_to_fuel", "processor": "command_hub", "input": "uranium", "output": "fuel", "outputPerInput": 1.25, "requiredPower": 0, "priority": 20 },
+    { "id": "alloy_processor.scrap_to_alloy", "processor": "alloy_processor", "input": "scrap", "output": "alloy", "outputPerInput": 1.0, "requiredPower": 8 },
+    { "id": "alloy_processor.synthetic_to_alloy", "processor": "alloy_processor", "input": "synthetic", "output": "alloy", "outputPerInput": 1.0, "requiredPower": 8 },
+    { "id": "fuel_processor.oil_to_fuel", "processor": "fuel_processor", "input": "oil", "output": "fuel", "outputPerInput": 1.0, "requiredPower": 8 },
+    { "id": "fuel_processor.synthetic_to_fuel", "processor": "fuel_processor", "input": "synthetic", "output": "fuel", "outputPerInput": 1.5, "requiredPower": 8 },
+    { "id": "fuel_processor.uranium_to_fuel", "processor": "fuel_processor", "input": "uranium", "output": "fuel", "outputPerInput": 2.5, "requiredPower": 8 }
+  ]
+}

@@ -1,36 +1,14 @@
 {
-  "version": 1,
+  "version": 2,
   "resources": {
-    "wood": { "nameKey": "resource.wood", "icon": "resource_wood", "tags": ["stockpile", "raw"], "storage": "stockpile", "enabled": true },
-    "stone": { "nameKey": "resource.stone", "icon": "resource_stone", "tags": ["stockpile", "raw"], "storage": "stockpile", "enabled": true },
-    "gold": { "nameKey": "resource.gold", "icon": "resource_gold", "tags": ["stockpile", "raw"], "storage": "stockpile", "enabled": true },
-    "materials": {
-      "nameKey": "resource.materials",
-      "icon": "resource_materials",
-      "tags": ["stockpile", "construction"],
-      "storage": "stockpile",
-      "enabled": true
-    },
-    "power": {
-      "nameKey": "resource.power",
-      "icon": "resource_power",
-      "tags": ["network", "energy"],
-      "storage": "network",
-      "enabled": true
-    },
-    "components": {
-      "nameKey": "resource.components",
-      "icon": "resource_components",
-      "tags": ["stockpile", "advanced"],
-      "storage": "stockpile",
-      "enabled": false
-    },
-    "fuel": {
-      "nameKey": "resource.fuel",
-      "icon": "resource_fuel",
-      "tags": ["stockpile", "logistics"],
-      "storage": "stockpile",
-      "enabled": false
-    }
+    "scrap": { "nameKey": "resource.scrap", "icon": "resource_scrap", "tags": ["raw", "construction-feedstock"], "storage": "cargo", "category": "raw", "enabled": true },
+    "oil": { "nameKey": "resource.oil", "icon": "resource_oil", "tags": ["raw", "fuel-source"], "storage": "cargo", "category": "raw", "enabled": true },
+    "uranium": { "nameKey": "resource.uranium", "icon": "resource_uranium", "tags": ["raw", "fuel-source", "rare"], "storage": "cargo", "category": "raw", "enabled": true },
+    "synthetic": { "nameKey": "resource.synthetic", "icon": "resource_synthetic", "tags": ["raw", "flexible-feedstock"], "storage": "cargo", "category": "raw", "enabled": true },
+    "alloy": { "nameKey": "resource.alloy", "icon": "resource_alloy", "tags": ["stockpile", "construction"], "storage": "stockpile", "category": "processed", "enabled": true },
+    "fuel": { "nameKey": "resource.fuel", "icon": "resource_fuel", "tags": ["stockpile", "mechanized"], "storage": "stockpile", "category": "processed", "enabled": true },
+    "data": { "nameKey": "resource.data", "icon": "resource_data", "tags": ["stockpile", "research", "cyber"], "storage": "stockpile", "category": "strategic", "enabled": true },
+    "authority": { "nameKey": "resource.authority", "icon": "resource_authority", "tags": ["stockpile", "influence"], "storage": "stockpile", "category": "strategic", "enabled": true },
+    "power": { "nameKey": "resource.power", "icon": "resource_power", "tags": ["network", "energy"], "storage": "network", "category": "infrastructure", "enabled": true }
   }
 }

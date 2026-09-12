@@ -13,6 +13,10 @@
     "train_unit": "",
     "save_game": "",
     "load_game": "",
-    "possess_unit": ""
+    "possess_unit": "",
+    "gather_order": "",
+    "delivery_complete": "",
+    "conversion_complete": "",
+    "resource_warning": ""
   }
 }

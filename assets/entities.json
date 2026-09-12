@@ -25,6 +25,16 @@
       "selection": { "radius": 10.5, "height": 5.0 },
       "animations": {}
     },
+    "command_hub": {
+      "icon": "building_command_hub", "model": "buildings/TownCenter_FirstAge_Level1", "scale": 12.0,
+      "grounding": { "groundOffset": 0.0, "alignToTerrain": false, "maximumTilt": 0.0, "foundationRadius": 10.5, "maximumFoundationSlope": 10.0 },
+      "selection": { "radius": 10.5, "height": 5.0 }, "animations": {}
+    },
+    "outpost": {
+      "icon": "building_outpost", "model": "buildings/TownCenter_FirstAge_Level1", "scale": 7.0,
+      "grounding": { "groundOffset": 0.0, "alignToTerrain": false, "maximumTilt": 0.0, "foundationRadius": 5.0, "maximumFoundationSlope": 10.0 },
+      "selection": { "radius": 5.0, "height": 5.0 }, "animations": {}
+    },
     "worker": {
       "icon": "unit_worker",
       "model": "units/Worker_Male",
@@ -86,6 +96,21 @@
       "grounding": { "groundOffset": 0.0, "alignToTerrain": false, "maximumTilt": 0.0, "foundationRadius": 5.0, "maximumFoundationSlope": 10.0 },
       "selection": { "radius": 5.0, "height": 5.0 },
       "animations": {}
+    },
+    "alloy_processor": {
+      "icon": "building_alloy_processor", "model": "buildings/Barracks_FirstAge_Level1", "scale": 7.0,
+      "grounding": { "groundOffset": 0.0, "alignToTerrain": false, "maximumTilt": 0.0, "foundationRadius": 5.0, "maximumFoundationSlope": 10.0 },
+      "selection": { "radius": 5.0, "height": 5.0 }, "animations": {}
+    },
+    "fuel_processor": {
+      "icon": "building_fuel_processor", "model": "buildings/Barracks_FirstAge_Level1", "scale": 7.0,
+      "grounding": { "groundOffset": 0.0, "alignToTerrain": false, "maximumTilt": 0.0, "foundationRadius": 5.0, "maximumFoundationSlope": 10.0 },
+      "selection": { "radius": 5.0, "height": 5.0 }, "animations": {}
+    },
+    "synthetic_mine": {
+      "icon": "building_synthetic_mine", "model": "buildings/Market_FirstAge_Level1", "scale": 6.0,
+      "grounding": { "groundOffset": 0.0, "alignToTerrain": false, "maximumTilt": 0.0, "foundationRadius": 4.5, "maximumFoundationSlope": 10.0 },
+      "selection": { "radius": 5.0, "height": 5.0 }, "animations": {}
     },
     "basic_generator": {
       "icon": "building_basic_generator",

@@ -1,32 +1,23 @@
 {
-  "version": 1,
+  "version": 2,
   "resourceNodes": {
-    "tree": {
-      "collisionRadius": 1.2,
-      "resourceType": "wood",
-      "capacity": 120,
-      "generation": { "stream": "resources.wood", "clusterPairs": 18, "nodesPerCluster": 3, "attemptsPerCluster": 80, "spread": 4.5, "centerExtent": 78 },
-      "components": ["resource"],
-      "tags": ["resource", "wood"],
-      "stats": {}
+    "scrap_field": {
+      "presentation": "tree", "nameKey": "entity.scrap_field", "collisionRadius": 1.2,
+      "resourceType": "scrap", "capacity": 160,
+      "generation": { "stream": "resources.scrap", "clusterPairs": 18, "nodesPerCluster": 3, "attemptsPerCluster": 80, "spread": 4.5, "centerExtent": 78, "startingNodesPerPlayer": 3, "startingMinimumDistance": 16, "startingMaximumDistance": 24 },
+      "components": ["resource"], "tags": ["resource", "raw", "scrap"], "stats": {}
     },
-    "stone": {
-      "collisionRadius": 1.5,
-      "resourceType": "stone",
-      "capacity": 180,
-      "generation": { "stream": "resources.stone", "clusterPairs": 6, "nodesPerCluster": 2, "attemptsPerCluster": 80, "spread": 3.0, "centerExtent": 78 },
-      "components": ["resource"],
-      "tags": ["resource", "stone"],
-      "stats": {}
+    "oil_deposit": {
+      "presentation": "stone", "nameKey": "entity.oil_deposit", "collisionRadius": 1.5,
+      "resourceType": "oil", "capacity": 220,
+      "generation": { "stream": "resources.oil", "clusterPairs": 6, "nodesPerCluster": 2, "attemptsPerCluster": 80, "spread": 3.0, "centerExtent": 78 },
+      "components": ["resource"], "tags": ["resource", "raw", "oil"], "stats": {}
     },
-    "gold": {
-      "collisionRadius": 1.5,
-      "resourceType": "gold",
-      "capacity": 140,
-      "generation": { "stream": "resources.gold", "clusterPairs": 5, "nodesPerCluster": 2, "attemptsPerCluster": 80, "spread": 2.5, "centerExtent": 78 },
-      "components": ["resource"],
-      "tags": ["resource", "gold"],
-      "stats": {}
+    "uranium_deposit": {
+      "presentation": "gold", "nameKey": "entity.uranium_deposit", "collisionRadius": 1.5,
+      "resourceType": "uranium", "capacity": 120,
+      "generation": { "stream": "resources.uranium", "clusterPairs": 3, "nodesPerCluster": 2, "attemptsPerCluster": 80, "spread": 2.5, "centerExtent": 78 },
+      "components": ["resource"], "tags": ["resource", "raw", "uranium", "rare"], "stats": {}
     }
   }
 }
