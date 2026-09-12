@@ -100,6 +100,49 @@ void clusters(World& world,
         ++made;
     }
 }
+
+void guaranteedStartingNodes(World& world,
+                             const DefinitionRegistry& definitions,
+                             std::uint32_t seed,
+                             const ResourceNodeDefinition& type,
+                             std::uint32_t mapChunksPerSide) {
+    const auto& settings = *type.generation;
+    if (settings.startingNodesPerPlayer == 0) return;
+    const auto& rules = definitions.matchRules();
+    DeterministicRandom random(seed, settings.stream + ".starting");
+    const StartingEntityDefinition* headquarters = nullptr;
+    for (const auto& start : rules.playerOne) {
+        const EntityArchetype* archetype = definitions.archetype(EntityArchetypeId{start.archetype});
+        if (archetype && archetype->tags.contains("headquarters")) { headquarters = &start; break; }
+    }
+    if (!headquarters) return;
+    std::uint32_t made = 0;
+    const float centerDirection = std::atan2(-headquarters->position.z, -headquarters->position.x);
+    for (std::uint32_t attempt = 0;
+         attempt < settings.attemptsPerCluster && made < settings.startingNodesPerPlayer;
+         ++attempt) {
+        const float distance = random.range(settings.startingMinimumDistance,
+                                            settings.startingMaximumDistance);
+        const float angle = centerDirection + random.range(-0.85F, 0.85F);
+        const float x = headquarters->position.x + std::cos(angle) * distance;
+        const float z = headquarters->position.z + std::sin(angle) * distance;
+        const MapArea map{mapChunksPerSide};
+        // Starting gatherers are flying drones. Preserve a guaranteed, mirrored opening
+        // supply even when a seed has unusually steep terrain around a headquarters.
+        if (map.contains({x, z}, rules.terrainEdgeMargin) &&
+            map.contains({-x, -z}, rules.terrainEdgeMargin) &&
+            !overlapsObject(world, definitions, {x, z}, type.collisionRadius) &&
+            !overlapsObject(world, definitions, {-x, -z}, type.collisionRadius)) {
+            const float rotation = random.range(0.0F, 360.0F);
+            add(world, definitions, type, x, z, rotation);
+            add(world, definitions, type, -x, -z, rotation + 180.0F);
+            ++made;
+        }
+    }
+    if (made != settings.startingNodesPerPlayer)
+        throw std::runtime_error("Unable to place guaranteed mirrored starting resource nodes for " +
+                                 type.id);
+}
 } // namespace
 
 void populateResources(World& world,
@@ -109,13 +152,19 @@ void populateResources(World& world,
                        std::uint32_t mapChunksPerSide,
                        float abundanceScale) {
     for (const std::string& id : definitions.matchRules().generatedResourceNodes)
+    {
+        const ResourceNodeDefinition& type = *definitions.resource(ResourceArchetypeId{id});
+        guaranteedStartingNodes(world, definitions, terrainSeed, type,
+                                std::clamp(mapChunksPerSide, 10U,
+                                           static_cast<std::uint32_t>(Terrain::chunksPerSide)));
         clusters(world,
                  terrain,
                  definitions,
                  terrainSeed,
-                 *definitions.resource(ResourceArchetypeId{id}),
+                 type,
                  std::clamp(mapChunksPerSide, 10U,
                             static_cast<std::uint32_t>(Terrain::chunksPerSide)),
                  std::clamp(abundanceScale, 0.5F, 2.0F));
+    }
 }
 } // namespace strategy

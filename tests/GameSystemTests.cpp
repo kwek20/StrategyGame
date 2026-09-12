@@ -9,6 +9,7 @@
 #include "world/World.hpp"
 
 #include <cmath>
+#include <array>
 #include <iostream>
 #include <unordered_set>
 
@@ -23,12 +24,12 @@ int main() {
             gameplay.unit(strategy::UnitArchetypeId{"town_center"}) == nullptr &&
             gameplay.building(strategy::BuildingArchetypeId{"town_center"}) != nullptr &&
             gameplay.building(strategy::BuildingArchetypeId{"worker"}) == nullptr &&
-            gameplay.resource(strategy::ResourceArchetypeId{"tree"}) != nullptr &&
+            gameplay.resource(strategy::ResourceArchetypeId{"scrap_field"}) != nullptr &&
             std::abs(gameplay.collisionRadius("worker") - 0.65F) < 0.001F &&
             std::abs(gameplay.collisionRadius("town_center") - 10.5F) < 0.001F;
-    const auto* materials = gameplay.resourceType(strategy::ResourceId{"materials"});
+    const auto* alloy = gameplay.resourceType(strategy::ResourceId{"alloy"});
     const auto* power = gameplay.resourceType(strategy::ResourceId{"power"});
-    const auto* components = gameplay.resourceType(strategy::ResourceId{"components"});
+    const auto* scrap = gameplay.resourceType(strategy::ResourceId{"scrap"});
     const auto* workerWeapon = gameplay.weapon(strategy::WeaponId{"worker_unarmed"});
     const auto* constructionDrone =
         gameplay.unit(strategy::UnitArchetypeId{"construction_drone"});
@@ -49,16 +50,35 @@ int main() {
                 construction->workStep > 0.0F && construction->dronePowerPerStep > 0.0F;
     }
     const auto* generatorRecipe = gameplay.recipe(strategy::RecipeId{"construct.basic_generator"});
-    valid = valid && materials && materials->enabled && power && power->enabled && components &&
-            !components->enabled && workerWeapon && workerWeapon->cooldownTicks == 30 &&
+    const auto* scrapConversion = gameplay.conversionFor(
+        strategy::BuildingArchetypeId{"alloy_processor"}, strategy::ResourceId{"scrap"});
+    const auto* syntheticAlloyConversion = gameplay.conversionFor(
+        strategy::BuildingArchetypeId{"alloy_processor"}, strategy::ResourceId{"synthetic"});
+    const auto* syntheticFuelConversion = gameplay.conversionFor(
+        strategy::BuildingArchetypeId{"fuel_processor"}, strategy::ResourceId{"synthetic"});
+    const auto* hubScrapConversion = gameplay.conversionFor(
+        strategy::BuildingArchetypeId{"command_hub"}, strategy::ResourceId{"scrap"});
+    const auto* hubOilConversion = gameplay.conversionFor(
+        strategy::BuildingArchetypeId{"command_hub"}, strategy::ResourceId{"oil"});
+    valid = valid && alloy && alloy->enabled && power && power->enabled && scrap &&
+            scrap->storage == strategy::ResourceStorageKind::cargo && workerWeapon && workerWeapon->cooldownTicks == 30 &&
             constructionDrone && constructionDrone->movement.type == "flying" &&
             constructionDrone->battery && commandHub && commandHub->powerDevice &&
             chargingPad && chargingPad->powerDevice && extractor && extractor->powerDevice &&
             factory && factory->powerDevice && sensorTower && sensorTower->powerDevice &&
             commandHubPower && commandHubPower->production == 10.0F && droneRecipe &&
-            droneRecipe->producer == "command_hub" && droneRecipe->cost.at("materials") == 75.0F &&
+            droneRecipe->producer == "command_hub" && droneRecipe->cost.at("alloy") == 75.0F &&
             generatorRecipe && generatorRecipe->producer.empty() &&
-            generatorRecipe->product.kind == strategy::RecipeProductKind::building;
+            generatorRecipe->product.kind == strategy::RecipeProductKind::building &&
+            scrapConversion && scrapConversion->output.value == "alloy" &&
+            syntheticAlloyConversion && syntheticAlloyConversion->output.value == "alloy" &&
+            syntheticFuelConversion && syntheticFuelConversion->output.value == "fuel" &&
+            std::abs(syntheticFuelConversion->outputPerInput - 1.5F) < 0.001F &&
+            hubScrapConversion && hubScrapConversion->output.value == "alloy" &&
+            std::abs(hubScrapConversion->outputPerInput - 0.5F) < 0.001F &&
+            hubOilConversion && std::abs(hubOilConversion->outputPerInput - 0.5F) < 0.001F &&
+            !gameplay.acceptsResource(strategy::BuildingArchetypeId{"command_hub"},
+                                      strategy::ResourceId{"synthetic"});
     strategy::Entity componentWorker;
     componentWorker.archetype = strategy::EntityArchetypeId{"worker"};
     gameplay.initializeEntity(componentWorker);
@@ -147,7 +167,7 @@ int main() {
                                               2.0F,
                                               100});
     strategy::ModifierTarget resourceTarget;
-    resourceTarget.resourceTypes = {"materials"};
+    resourceTarget.resourceTypes = {"alloy"};
     domainLayers.permanentUpgrades.push_back({"test.resource_target",
                                               strategy::GameplayStat::gatherRate,
                                               resourceTarget,
@@ -176,7 +196,7 @@ int main() {
                                       "worker",
                                       {},
                                       domainLayers,
-                                      strategy::ResourceId{"materials"}) -
+                                      strategy::ResourceId{"alloy"}) -
                      8.0F) < 0.001F &&
             std::abs(gameplay.resolve(strategy::GameplayStat::productionSpeed,
                                       "united_states",
@@ -199,7 +219,10 @@ int main() {
         navigationWorld.createEntity("Blocker", "town_center", 0);
     navigationObstacle.transform.position = {0.0F, 0.0F, 0.0F};
     const strategy::Terrain navigationTerrain{123U};
-    strategy::Navigation navigation{navigationTerrain, gameplay};
+    strategy::Navigation navigation{navigationTerrain, gameplay, 13};
+    valid = valid && navigation.cellsPerSide() ==
+                           static_cast<int>(std::ceil(
+                               strategy::MapArea{13}.extent() / strategy::Navigation::cellSize));
     const auto route = navigation.findPath(navigationWorld,
                                            {-18.0F, 0.0F, 0.0F},
                                            {18.0F, 0.0F, 0.0F},
@@ -212,6 +235,49 @@ int main() {
             strategy::collisionRadius(gameplay, "worker");
         valid = valid && (point.x * point.x + point.z * point.z >= safe * safe);
     }
+    const strategy::SpatialShape navigationTarget =
+        strategy::spatialShape(gameplay, navigationObstacle);
+    for (const glm::vec3 start : std::array<glm::vec3, 4>{
+             glm::vec3{-30.0F, 0.0F, 0.0F}, glm::vec3{30.0F, 0.0F, 0.0F},
+             glm::vec3{0.0F, 0.0F, -30.0F}, glm::vec3{0.0F, 0.0F, 30.0F}}) {
+        const auto interactionRoute = navigation.findPath(
+            navigationWorld, start,
+            strategy::NavigationGoalRegion{navigationTarget, 0.9F, {start.x, start.z},
+                                           navigationObstacle.id},
+            strategy::collisionRadius(gameplay, "worker"), 999);
+        valid = valid && !interactionRoute.empty();
+        if (!interactionRoute.empty()) {
+            const glm::vec3 endpoint = interactionRoute.back();
+            valid = valid && strategy::signedDistance(
+                    navigationTarget, {endpoint.x, endpoint.z}) <= 1.55F;
+        }
+    }
+    navigationObstacle.transform.rotationDegrees.y = 37.0F;
+    const strategy::SpatialShape rotatedTarget =
+        strategy::spatialShape(gameplay, navigationObstacle);
+    const auto rotatedRoute = navigation.findPath(
+        navigationWorld, {-32.0F, 0.0F, 7.0F},
+        strategy::NavigationGoalRegion{rotatedTarget, 0.9F, {-32.0F, 7.0F},
+                                       navigationObstacle.id, 42},
+        1.25F, 42);
+    valid = valid && !rotatedRoute.empty();
+    if (!rotatedRoute.empty())
+        valid = valid && strategy::signedDistance(
+                rotatedTarget, {rotatedRoute.back().x, rotatedRoute.back().z}) <= 2.15F;
+
+    strategy::Entity& sideBlocker =
+        navigationWorld.createEntity("Side blocker", "alloy_processor", 0);
+    sideBlocker.transform.position = {-19.0F, 0.0F, 0.0F};
+    const auto blockedSideRoute = navigation.findPath(
+        navigationWorld, {-36.0F, 0.0F, 0.0F},
+        strategy::NavigationGoalRegion{rotatedTarget, 0.9F, {-36.0F, 0.0F},
+                                       navigationObstacle.id, 43},
+        strategy::collisionRadius(gameplay, "worker"), 43);
+    valid = valid && !blockedSideRoute.empty();
+
+    navigation.rebuildTerrain(navigationTerrain, 17);
+    valid = valid && navigation.cellsPerSide() == static_cast<int>(std::ceil(
+                           strategy::MapArea{17}.extent() / strategy::Navigation::cellSize));
 
     strategy::RtsCamera camera;
     const auto originalFocus = camera.focus();
@@ -334,6 +400,19 @@ int main() {
     valid = valid && decodedRecharge && decodedStop &&
             std::holds_alternative<strategy::RechargeCommand>(decodedRecharge->payload) &&
             std::holds_alternative<strategy::StopUnitCommand>(decodedStop->payload);
+    const auto decodedGather = strategy::CommandCodec::decode(strategy::CommandCodec::encode(
+        {1, 57, strategy::GatherResourceCommand{7, 80, 90}}));
+    const auto decodedDelivery = strategy::CommandCodec::decode(strategy::CommandCodec::encode(
+        {1, 58, strategy::DeliverResourceCommand{7, 90}}));
+    const auto decodedPreference = strategy::CommandCodec::decode(strategy::CommandCodec::encode(
+        {1, 59, strategy::SetPreferredProcessorCommand{7, 90}}));
+    const auto decodedOutput = strategy::CommandCodec::decode(strategy::CommandCodec::encode(
+        {1, 60, strategy::SetDeliveryOutputCommand{7, "fuel"}}));
+    valid = valid && decodedGather && decodedDelivery && decodedPreference && decodedOutput &&
+            std::get<strategy::GatherResourceCommand>(decodedGather->payload).processor == 90 &&
+            std::get<strategy::DeliverResourceCommand>(decodedDelivery->payload).processor == 90 &&
+            std::get<strategy::SetPreferredProcessorCommand>(decodedPreference->payload).processor == 90 &&
+            std::get<strategy::SetDeliveryOutputCommand>(decodedOutput->payload).output == "fuel";
     std::size_t resourceCount = 0;
     for (const strategy::Entity& resource : session.world().entities()) {
         if (resource.authority.owner != 0)
@@ -351,12 +430,25 @@ int main() {
         valid = valid && mirrored;
     }
     valid = valid && resourceCount >= 20;
+    for (const glm::vec2 base : {glm::vec2{-28.0F, -28.0F}, glm::vec2{28.0F, 28.0F}}) {
+        std::size_t nearbyScrap = 0;
+        float nearbyCapacity = 0.0F;
+        for (const strategy::Entity& resource : session.world().entities()) {
+            if (resource.archetype.value != "scrap_field" || !resource.resource) continue;
+            const glm::vec2 position{resource.transform.position.x, resource.transform.position.z};
+            if (glm::distance(position, base) <= 24.01F) {
+                ++nearbyScrap;
+                nearbyCapacity += resource.resource.remaining;
+            }
+        }
+        valid = valid && nearbyScrap >= 3 && nearbyCapacity >= 480.0F;
+    }
 
     strategy::GameSession configuredMatch{gameplay, 123U, "spain", "japan",
         "unassigned", "unassigned", 20, 2.0F, 1.5F};
     valid = valid &&
-            configuredMatch.players().find(1)->resources.at("materials") == 300.0F &&
-            configuredMatch.players().find(2)->resources.at("materials") == 300.0F;
+            configuredMatch.players().find(1)->resources.at("alloy") == 300.0F &&
+            configuredMatch.players().find(2)->resources.at("alloy") == 300.0F;
     std::size_t configuredResourceCount = 0;
     for (const strategy::Entity& entity : configuredMatch.world().entities())
         if (entity.authority.owner == 0) ++configuredResourceCount;
@@ -415,7 +507,7 @@ int main() {
         recipeSession.world().createEntity("Command Hub", "command_hub", 1);
     gameplay.initializeEntity(commandHubEntity);
     commandHubEntity.transform.position = {0.0F, 0.0F, 0.0F};
-    recipeSession.players().find(1)->resources["materials"] = 75.0F;
+    recipeSession.players().find(1)->resources["alloy"] = 75.0F;
     valid = recipeSession.submit(
                          {1,
                           1,
@@ -428,7 +520,7 @@ int main() {
         if (entity.archetype.value == "construction_drone" && entity.authority.owner == 1)
             ++constructedDrones;
     valid = valid && constructedDrones == 1 &&
-            recipeSession.players().find(1)->resources.at("materials") == 0.0F;
+            recipeSession.players().find(1)->resources.at("alloy") == 0.0F;
 
     strategy::Entity& researcher =
         recipeSession.world().createEntity("Outpost", "outpost", 1);
@@ -443,15 +535,15 @@ int main() {
     cancellableUpgrade.upgradeId = "production.efficient_training";
     cancellableUpgrade.durationTicks = 300;
     cancellableUpgrade.remainingTicks = 200;
-    cancellableUpgrade.reservedCosts["materials"] = 12.0F;
+    cancellableUpgrade.reservedCosts["alloy"] = 12.0F;
     researcher.production.queue.push_back(cancellableUpgrade);
     const float materialsBeforeRefund =
-        recipeSession.players().find(1)->resources["materials"];
+        recipeSession.players().find(1)->resources["alloy"];
     valid = recipeSession.submit(
                 {1, 3, strategy::CancelProductionCommand{researcher.id, 0}}) && valid;
     recipeSession.advanceTicks();
     valid = valid && researcher.production.queue.empty() &&
-            recipeSession.players().find(1)->resources["materials"] ==
+            recipeSession.players().find(1)->resources["alloy"] ==
                 materialsBeforeRefund + 12.0F;
 
     strategy::ProductionOrder cancellableUnit;
@@ -459,15 +551,15 @@ int main() {
     cancellableUnit.productId = "construction_drone";
     cancellableUnit.durationTicks = 300;
     cancellableUnit.remainingTicks = 200;
-    cancellableUnit.reservedCosts["materials"] = 25.0F;
+    cancellableUnit.reservedCosts["alloy"] = 25.0F;
     researcher.production.queue.push_back(cancellableUnit);
     const float materialsBeforeUnitRefund =
-        recipeSession.players().find(1)->resources["materials"];
+        recipeSession.players().find(1)->resources["alloy"];
     valid = recipeSession.submit(
                 {1, 4, strategy::CancelProductionCommand{researcher.id, 0}}) && valid;
     recipeSession.advanceTicks();
     valid = valid && researcher.production.queue.empty() &&
-            recipeSession.players().find(1)->resources["materials"] ==
+            recipeSession.players().find(1)->resources["alloy"] ==
                 materialsBeforeUnitRefund + 25.0F;
 
     strategy::GameSession constructionPowerSession{gameplay, 999U};
@@ -540,7 +632,7 @@ int main() {
     strategy::Entity& replacementHub = constructionPowerSession.world().createEntity(
         "Replacement Hub", "command_hub", 1);
     gameplay.initializeEntity(replacementHub);
-    replacementHub.transform.position = {5.0F, 0.0F, 0.0F};
+    replacementHub.transform.position = {30.0F, 0.0F, 0.0F};
     constructionPowerSession.advanceTicks();
     valid = valid &&
             constructionPowerSession.world().findEntity(powerDroneId)->unitControl.order ==
@@ -566,12 +658,12 @@ int main() {
             !recipeSession.canStartRecipe(
                 1, unfinishedId,
                 strategy::RecipeId{"command_hub.train_construction_drone"});
-    recipeSession.players().find(1)->resources["materials"] = 0.0F;
+    recipeSession.players().find(1)->resources["alloy"] = 0.0F;
     valid = recipeSession.submit(
                 {1, 5, strategy::CancelConstructionCommand{unfinishedId}}) && valid;
     recipeSession.advanceTicks();
     valid = valid && recipeSession.world().findEntity(unfinishedId) == nullptr &&
-            std::abs(recipeSession.players().find(1)->resources["materials"] - 150.0F) < 0.001F;
+            std::abs(recipeSession.players().find(1)->resources["alloy"] - 150.0F) < 0.001F;
 
     strategy::GameSession gatheringSession{gameplay, 321U};
     strategy::Entity* startingWorker = nullptr;
@@ -582,10 +674,10 @@ int main() {
         }
     valid = valid && startingWorker != nullptr && !startingWorker->gatherer;
     if (startingWorker) {
-        strategy::Entity& tree = gatheringSession.world().createEntity("Test Tree", "tree", 0);
+        strategy::Entity& tree = gatheringSession.world().createEntity("Test Scrap", "scrap_field", 0);
         tree.transform.position = startingWorker->transform.position;
         tree.resource.emplace();
-        tree.resource.type = "materials";
+        tree.resource.type = "scrap";
         tree.resource.remaining = 2.0F;
         valid = gatheringSession.submit(
                     {1, 1,
@@ -594,6 +686,238 @@ int main() {
         valid = valid && startingWorker->unitControl.order == strategy::UnitOrderKind::idle &&
                 tree.resource.remaining == 2.0F;
     }
+
+    strategy::GameSession conversionSession{gameplay, 322U};
+    conversionSession.replaceWorld({}, 322U);
+    conversionSession.players().find(1)->resources["alloy"] = 0.0F;
+    strategy::Entity& conversionHub = conversionSession.world().createEntity(
+        "Grid source", "command_hub", 1);
+    gameplay.initializeEntity(conversionHub);
+    const strategy::EntityId conversionHubId = conversionHub.id;
+    strategy::Entity& alloyProcessor = conversionSession.world().createEntity(
+        "Alloy Processor", "alloy_processor", 1);
+    gameplay.initializeEntity(alloyProcessor);
+    const strategy::EntityId alloyProcessorId = alloyProcessor.id;
+    strategy::Entity& deliveryDrone = conversionSession.world().createEntity(
+        "Delivery Drone", "construction_drone", 1);
+    gameplay.initializeEntity(deliveryDrone);
+    const strategy::EntityId deliveryDroneId = deliveryDrone.id;
+    conversionSession.world().findEntity(alloyProcessorId)->transform.position = {0.0F, 0.0F, 0.0F};
+    conversionSession.world().findEntity(conversionHubId)->transform.position = {20.0F, 0.0F, 0.0F};
+    strategy::Entity* activeDeliveryDrone = conversionSession.world().findEntity(deliveryDroneId);
+    activeDeliveryDrone->transform.position = {0.0F, 6.0F, 0.0F};
+    activeDeliveryDrone->gatherer.carriedResource = "scrap";
+    activeDeliveryDrone->gatherer.carriedAmount = 10.0F;
+    activeDeliveryDrone->unitControl.order = strategy::UnitOrderKind::returnResources;
+    conversionSession.advanceTicks();
+    const strategy::Entity* activeAlloyProcessor = conversionSession.world().findEntity(alloyProcessorId);
+    valid = valid && activeAlloyProcessor && activeAlloyProcessor->processor &&
+            std::abs(activeAlloyProcessor->processor.bufferedInputs.at("scrap") - 10.0F) < 0.001F &&
+            !conversionSession.players().find(1)->resources.contains("scrap");
+    conversionSession.advanceTicks();
+    activeAlloyProcessor = conversionSession.world().findEntity(alloyProcessorId);
+    valid = valid && activeAlloyProcessor->processor.bufferedInputs.empty() &&
+            activeAlloyProcessor->processor.state == strategy::ProcessorOperationalState::processing &&
+            std::abs(conversionSession.players().find(1)->resources.at("alloy") - 10.0F) < 0.001F;
+    strategy::Entity* activeConversionHub = conversionSession.world().findEntity(conversionHubId);
+    activeConversionHub->processor.bufferedInputs["oil"] = 10.0F;
+    conversionSession.advanceTicks();
+    valid = valid && activeConversionHub->processor.bufferedInputs.empty() &&
+            std::abs(conversionSession.players().find(1)->resources.at("fuel") - 5.0F) < 0.001F;
+
+    strategy::GameSession deliverySelectionSession{gameplay, 325U};
+    deliverySelectionSession.replaceWorld({}, 325U);
+    deliverySelectionSession.players().find(1)->resources["alloy"] = 0.0F;
+    strategy::Entity& nearbyHub = deliverySelectionSession.world().createEntity(
+        "Nearby Hub", "command_hub", 1);
+    gameplay.initializeEntity(nearbyHub);
+    const strategy::EntityId nearbyHubId = nearbyHub.id;
+    strategy::Entity& distantProcessor = deliverySelectionSession.world().createEntity(
+        "Distant Processor", "alloy_processor", 1);
+    gameplay.initializeEntity(distantProcessor);
+    const strategy::EntityId distantProcessorId = distantProcessor.id;
+    strategy::Entity& selectionDrone = deliverySelectionSession.world().createEntity(
+        "Selection Drone", "construction_drone", 1);
+    gameplay.initializeEntity(selectionDrone);
+    const strategy::EntityId selectionDroneId = selectionDrone.id;
+    deliverySelectionSession.world().findEntity(nearbyHubId)->transform.position = {0, 0, 0};
+    deliverySelectionSession.world().findEntity(distantProcessorId)->transform.position = {30, 0, 0};
+    strategy::Entity* selectedDeliveryDrone = deliverySelectionSession.world().findEntity(selectionDroneId);
+    selectedDeliveryDrone->transform.position = {0, 6, 0};
+    selectedDeliveryDrone->gatherer.carriedResource = "scrap";
+    selectedDeliveryDrone->gatherer.carriedAmount = 10.0F;
+    selectedDeliveryDrone->unitControl.order = strategy::UnitOrderKind::returnResources;
+    deliverySelectionSession.advanceTicks();
+    selectedDeliveryDrone = deliverySelectionSession.world().findEntity(selectionDroneId);
+    valid = valid && selectedDeliveryDrone->gatherer.deliveryTarget == distantProcessorId;
+    deliverySelectionSession.world().destroyEntity(distantProcessorId);
+    deliverySelectionSession.advanceTicks(2);
+    selectedDeliveryDrone = deliverySelectionSession.world().findEntity(selectionDroneId);
+    valid = valid && selectedDeliveryDrone->gatherer.carriedAmount == 0.0F &&
+            std::abs(deliverySelectionSession.players().find(1)->resources.at("alloy") - 5.0F) < 0.001F;
+
+    strategy::Entity& syntheticDeliveryDrone = deliverySelectionSession.world().createEntity(
+        "Synthetic Delivery", "construction_drone", 1);
+    gameplay.initializeEntity(syntheticDeliveryDrone);
+    const strategy::EntityId syntheticDeliveryDroneId = syntheticDeliveryDrone.id;
+    strategy::Entity* activeSyntheticDelivery =
+        deliverySelectionSession.world().findEntity(syntheticDeliveryDroneId);
+    activeSyntheticDelivery->gatherer.carriedResource = "synthetic";
+    activeSyntheticDelivery->gatherer.carriedAmount = 4.0F;
+    activeSyntheticDelivery->unitControl.order = strategy::UnitOrderKind::returnResources;
+    deliverySelectionSession.advanceTicks();
+    activeSyntheticDelivery = deliverySelectionSession.world().findEntity(syntheticDeliveryDroneId);
+    valid = valid && activeSyntheticDelivery->unitControl.order == strategy::UnitOrderKind::idle &&
+            activeSyntheticDelivery->gatherer.waitingForProcessor &&
+            activeSyntheticDelivery->gatherer.carriedAmount == 4.0F;
+
+    strategy::Entity& routeAlloy = deliverySelectionSession.world().createEntity(
+        "Route Alloy", "alloy_processor", 1);
+    gameplay.initializeEntity(routeAlloy);
+    const strategy::EntityId routeAlloyId = routeAlloy.id;
+    strategy::Entity& routeFuel = deliverySelectionSession.world().createEntity(
+        "Route Fuel", "fuel_processor", 1);
+    gameplay.initializeEntity(routeFuel);
+    const strategy::EntityId routeFuelId = routeFuel.id;
+    deliverySelectionSession.world().findEntity(routeAlloyId)->transform.position = {2, 0, 0};
+    deliverySelectionSession.world().findEntity(routeFuelId)->transform.position = {20, 0, 0};
+    activeSyntheticDelivery = deliverySelectionSession.world().findEntity(syntheticDeliveryDroneId);
+    activeSyntheticDelivery->unitControl.order = strategy::UnitOrderKind::returnResources;
+    valid = deliverySelectionSession.submit(
+        {1, 2, strategy::SetDeliveryOutputCommand{syntheticDeliveryDroneId, "fuel"}}) && valid;
+    deliverySelectionSession.advanceTicks();
+    activeSyntheticDelivery = deliverySelectionSession.world().findEntity(syntheticDeliveryDroneId);
+    valid = valid && activeSyntheticDelivery->gatherer.preferredOutput == "fuel" &&
+            activeSyntheticDelivery->gatherer.deliveryTarget == routeFuelId;
+
+    strategy::GameSession repeatedGatherSession{gameplay, 326U};
+    repeatedGatherSession.replaceWorld({}, 326U);
+    repeatedGatherSession.players().find(1)->resources["alloy"] = 0.0F;
+    strategy::Entity& loopHub = repeatedGatherSession.world().createEntity("Loop Hub", "command_hub", 1);
+    gameplay.initializeEntity(loopHub);
+    const strategy::EntityId loopHubId = loopHub.id;
+    strategy::Entity& loopDrone = repeatedGatherSession.world().createEntity(
+        "Loop Drone", "construction_drone", 1);
+    gameplay.initializeEntity(loopDrone);
+    const strategy::EntityId loopDroneId = loopDrone.id;
+    strategy::Entity& loopSource = repeatedGatherSession.world().createEntity(
+        "Loop Scrap", "scrap_field", 0);
+    gameplay.initializeEntity(loopSource);
+    const strategy::EntityId loopSourceId = loopSource.id;
+    repeatedGatherSession.world().findEntity(loopHubId)->transform.position = {0, 0, 0};
+    repeatedGatherSession.world().findEntity(loopDroneId)->transform.position = {0, 6, 0};
+    repeatedGatherSession.world().findEntity(loopSourceId)->transform.position = {0, 0, 0};
+    valid = repeatedGatherSession.submit(
+                {1, 1, strategy::GatherResourceCommand{loopDroneId, loopSourceId, 0}}) && valid;
+    repeatedGatherSession.advanceTicks(500);
+    const auto resourceEvents = repeatedGatherSession.consumeResourceEvents();
+    const auto hasResourceEvent = [&](strategy::ResourceEventKind kind) {
+        return std::any_of(resourceEvents.begin(), resourceEvents.end(),
+                           [kind](const strategy::ResourceEvent& event) {
+                               return event.kind == kind;
+                           });
+    };
+    valid = valid && repeatedGatherSession.players().find(1)->resources.at("alloy") > 0.0F &&
+            repeatedGatherSession.world().findEntity(loopSourceId)->resource.remaining < 160.0F &&
+            repeatedGatherSession.world().findEntity(loopDroneId)->gatherer.sourceTarget == loopSourceId &&
+            hasResourceEvent(strategy::ResourceEventKind::gatheringStarted) &&
+            hasResourceEvent(strategy::ResourceEventKind::deliveryCompleted) &&
+            hasResourceEvent(strategy::ResourceEventKind::conversionCompleted);
+
+    strategy::GameSession explicitDeliverySession{gameplay, 327U};
+    explicitDeliverySession.replaceWorld({}, 327U);
+    explicitDeliverySession.players().find(1)->resources["alloy"] = 0.0F;
+    strategy::Entity& explicitHub = explicitDeliverySession.world().createEntity(
+        "Explicit Hub", "command_hub", 1);
+    gameplay.initializeEntity(explicitHub);
+    const strategy::EntityId explicitHubId = explicitHub.id;
+    strategy::Entity& availableDedicated = explicitDeliverySession.world().createEntity(
+        "Available Dedicated", "alloy_processor", 1);
+    gameplay.initializeEntity(availableDedicated);
+    strategy::Entity& explicitDrone = explicitDeliverySession.world().createEntity(
+        "Explicit Drone", "construction_drone", 1);
+    gameplay.initializeEntity(explicitDrone);
+    const strategy::EntityId explicitDroneId = explicitDrone.id;
+    explicitDeliverySession.world().findEntity(explicitHubId)->transform.position = {0, 0, 0};
+    explicitDeliverySession.world().findEntity(explicitDroneId)->transform.position = {0, 6, 0};
+    strategy::Entity* commandedDrone = explicitDeliverySession.world().findEntity(explicitDroneId);
+    commandedDrone->gatherer.carriedResource = "scrap";
+    commandedDrone->gatherer.carriedAmount = 10.0F;
+    valid = explicitDeliverySession.submit(
+                {1, 1, strategy::DeliverResourceCommand{explicitDroneId, explicitHubId}}) && valid;
+    explicitDeliverySession.advanceTicks(2);
+    valid = valid &&
+            std::abs(explicitDeliverySession.players().find(1)->resources.at("alloy") - 5.0F) < 0.001F;
+
+    strategy::GameSession powerAllocationSession{gameplay, 323U};
+    powerAllocationSession.replaceWorld({}, 323U);
+    strategy::Entity& allocationHub = powerAllocationSession.world().createEntity(
+        "Grid source", "command_hub", 1);
+    gameplay.initializeEntity(allocationHub);
+    strategy::Entity& firstProcessor = powerAllocationSession.world().createEntity(
+        "First processor", "alloy_processor", 1);
+    gameplay.initializeEntity(firstProcessor);
+    const strategy::EntityId firstProcessorId = firstProcessor.id;
+    strategy::Entity& secondProcessor = powerAllocationSession.world().createEntity(
+        "Second processor", "fuel_processor", 1);
+    gameplay.initializeEntity(secondProcessor);
+    const strategy::EntityId secondProcessorId = secondProcessor.id;
+    powerAllocationSession.advanceTicks();
+    const strategy::Entity* allocatedFirst = powerAllocationSession.world().findEntity(firstProcessorId);
+    const strategy::Entity* allocatedSecond = powerAllocationSession.world().findEntity(secondProcessorId);
+    valid = valid && allocatedFirst->power.state == strategy::PowerOperationalState::powered &&
+            allocatedFirst->power.supplied == 8.0F &&
+            allocatedSecond->power.state == strategy::PowerOperationalState::underpowered &&
+            allocatedSecond->power.supplied == 2.0F;
+    powerAllocationSession.world().findEntity(secondProcessorId)->processor.bufferedInputs["oil"] = 4.0F;
+    powerAllocationSession.advanceTicks();
+    allocatedSecond = powerAllocationSession.world().findEntity(secondProcessorId);
+    valid = valid && allocatedSecond->processor.bufferedInputs.at("oil") == 4.0F &&
+            allocatedSecond->processor.state == strategy::ProcessorOperationalState::blocked &&
+            powerAllocationSession.players().find(1)->resources.at("fuel") == 0.0F;
+    powerAllocationSession.advanceTicks(10);
+    const auto blockedEvents = powerAllocationSession.consumeResourceEvents();
+    valid = valid && std::count_if(blockedEvents.begin(), blockedEvents.end(),
+        [](const strategy::ResourceEvent& event) {
+            return event.kind == strategy::ResourceEventKind::waitingForPower;
+        }) == 1;
+
+    strategy::GameSession capacitySession{gameplay, 328U};
+    capacitySession.replaceWorld({}, 328U);
+    strategy::Entity& cappedProcessor = capacitySession.world().createEntity(
+        "Capped", "alloy_processor", 1);
+    gameplay.initializeEntity(cappedProcessor);
+    const strategy::EntityId cappedProcessorId = cappedProcessor.id;
+    cappedProcessor.processor.bufferedInputs["scrap"] = 399.0F;
+    strategy::Entity& capacityDrone = capacitySession.world().createEntity(
+        "Capacity Drone", "construction_drone", 1);
+    gameplay.initializeEntity(capacityDrone);
+    const strategy::EntityId capacityDroneId = capacityDrone.id;
+    capacityDrone.transform.position = {0, 6, 0};
+    cappedProcessor.transform.position = {0, 0, 0};
+    capacityDrone.gatherer.carriedResource = "scrap";
+    capacityDrone.gatherer.carriedAmount = 10.0F;
+    capacityDrone.unitControl.order = strategy::UnitOrderKind::returnResources;
+    capacitySession.advanceTicks();
+    valid = valid && std::abs(capacitySession.world().findEntity(cappedProcessorId)
+                                  ->processor.bufferedInputs.at("scrap") - 400.0F) < 0.001F &&
+            std::abs(capacitySession.world().findEntity(capacityDroneId)
+                                  ->gatherer.carriedAmount - 9.0F) < 0.001F;
+
+    strategy::GameSession syntheticSession{gameplay, 324U};
+    syntheticSession.replaceWorld({}, 324U);
+    strategy::Entity& syntheticHub = syntheticSession.world().createEntity(
+        "Grid source", "command_hub", 1);
+    gameplay.initializeEntity(syntheticHub);
+    strategy::Entity& syntheticMine = syntheticSession.world().createEntity(
+        "Synthetic Mine", "synthetic_mine", 1);
+    gameplay.initializeEntity(syntheticMine);
+    const strategy::EntityId syntheticMineId = syntheticMine.id;
+    syntheticSession.advanceTicks(5);
+    const strategy::Entity* activeSyntheticMine = syntheticSession.world().findEntity(syntheticMineId);
+    valid = valid && activeSyntheticMine->resource.type == "synthetic" &&
+            std::abs(activeSyntheticMine->resource.remaining - 0.5F) < 0.001F &&
+            activeSyntheticMine->power.state == strategy::PowerOperationalState::powered;
 
     strategy::GameSession intelligenceSession{gameplay, 777U};
     strategy::Entity* scout = nullptr;

@@ -52,6 +52,46 @@ bool canAffordForAll(const Player* player,
     return true;
 }
 
+void appendSyntheticRoutes(EntityHudModel& hud,
+                           const World& world,
+                           const DefinitionRegistry& definitions,
+                           PlayerId player,
+                           const std::vector<EntityId>& targets) {
+    bool synthetic = false;
+    for (EntityId id : targets) {
+        const Entity* entity = world.findEntity(id);
+        if (!entity || !entity->gatherer) continue;
+        if (entity->gatherer.carriedResource == "synthetic") synthetic = true;
+        if (const Entity* source = world.findEntity(entity->gatherer.sourceTarget);
+            source && source->resource && source->resource.type == "synthetic") synthetic = true;
+    }
+    if (!synthetic) return;
+    for (const std::string output : {std::string{"alloy"}, std::string{"fuel"}}) {
+        float bestRatio = 0.0F;
+        bool available = false;
+        for (const Entity& processor : world.entities()) {
+            if (processor.authority.owner != player || !processor.processor ||
+                !isOperational(processor)) continue;
+            const auto* conversion = definitions.conversionFor(
+                BuildingArchetypeId{processor.archetype.value}, ResourceId{"synthetic"});
+            if (conversion && conversion->output.value == output) {
+                available = true;
+                bestRatio = std::max(bestRatio, conversion->outputPerInput);
+            }
+        }
+        const ResourceDefinition* resource = definitions.resourceType(ResourceId{output});
+        HudActionModel action;
+        action.id = "delivery-output:" + output;
+        action.icon = resource ? resource->icon : "status_asset_failed";
+        action.name = Text::get(output == "alloy" ? "processor.route.synthetic_alloy"
+                                                   : "processor.route.synthetic_fuel");
+        action.description = "x" + std::to_string(bestRatio);
+        action.enabled = available;
+        if (!available) action.disabledReason = Text::get("entity_hud.no_compatible_processor");
+        hud.actions.push_back(std::move(action));
+    }
+}
+
 } // namespace
 
 void PlayState::setMouseCaptured(bool captured) {
@@ -96,16 +136,10 @@ PlayState::PlayState(StateContext& context, SaveData data)
     session_.replaceWorld(std::move(data.entities), data.terrainSeed,
                           std::move(data.foundations), data.mapChunksPerSide);
     session_.restorePlayerProgress(1,
-                                   data.wood[0],
-                                   data.stone[0],
-                                   data.gold[0],
                                    std::move(data.resources[0]),
                                    std::move(data.discovered[0]),
                                    std::move(data.intelligence[0]));
     session_.restorePlayerProgress(2,
-                                   data.wood[1],
-                                   data.stone[1],
-                                   data.gold[1],
                                    std::move(data.resources[1]),
                                    std::move(data.discovered[1]),
                                    std::move(data.intelligence[1]));
@@ -115,6 +149,8 @@ EntityHudModel PlayState::buildConstructionHudModel(const Entity& selected,
                                                     const Player* player) const {
     EntityHudModel hud = EntityHudModelBuilder::build(
         session_.world(), selected.id, selectedUnits_, context_.definitions);
+    appendSyntheticRoutes(hud, session_.world(), context_.definitions, localPlayer_,
+                          actionTargets(selected.id, selectedUnits_));
     for (const std::string& building : context_.definitions.matchRules().buildPalette) {
         const RecipeDefinition* recipe =
             context_.definitions.recipe(RecipeId{"construct." + building});
@@ -198,6 +234,7 @@ EntityHudModel PlayState::buildEntityActionHudModel(const Entity& selected,
         if (!action.enabled) action.disabledReason = Text::get("entity_hud.action_unavailable");
         hud.actions.push_back(std::move(action));
     }
+    appendSyntheticRoutes(hud, session_.world(), context_.definitions, localPlayer_, targets);
     return hud;
 }
 
@@ -316,7 +353,7 @@ void PlayState::handleEvent(const SDL_Event& event) {
     const auto hudResources = context_.definitions.enabledResources();
     const std::size_t localResourceCount = std::count_if(
         hudResources.begin(), hudResources.end(), [](const ResourceDefinition* resource) {
-            return resource->storage != ResourceStorageKind::network;
+            return resource->storage == ResourceStorageKind::stockpile;
         });
     const std::size_t powerDeviceCount = std::count_if(
         session_.world().entities().begin(), session_.world().entities().end(),
@@ -366,6 +403,13 @@ void PlayState::handleEvent(const SDL_Event& event) {
             constructionCursorScreen_ = point;
         else if (const auto activated = uiController_.press(layout, point)) {
             if (const auto actionId = EntityHudLayout::actionId(*activated)) {
+                if (actionId->starts_with("delivery-output:")) {
+                    const std::string output = actionId->substr(std::string{"delivery-output:"}.size());
+                    for (EntityId id : actionTargets(selectedEntity_, selectedUnits_))
+                        session_.submit({localPlayer_, nextCommandSequence_++,
+                                         SetDeliveryOutputCommand{id, output}});
+                    return;
+                }
                 constructionRecipeId_ = *actionId;
                 constructionPlacementMode_ = true;
                 return;
@@ -456,6 +500,13 @@ void PlayState::handleEvent(const SDL_Event& event) {
                 const auto actionId = EntityHudLayout::actionId(*activated);
                 if (!actionId) return;
                 const std::vector<EntityId> targets = actionTargets(selectedEntity_, selectedUnits_);
+                if (actionId->starts_with("delivery-output:")) {
+                    const std::string output = actionId->substr(std::string{"delivery-output:"}.size());
+                    for (EntityId id : targets)
+                        session_.submit({localPlayer_, nextCommandSequence_++,
+                                         SetDeliveryOutputCommand{id, output}});
+                    return;
+                }
                 if (const RecipeDefinition* recipe =
                         context_.definitions.recipe(RecipeId{*actionId})) {
                     for (EntityId id : targets)
@@ -654,6 +705,8 @@ void PlayState::handlePauseEvent(const SDL_Event& event) {
 }
 
 void PlayState::update(float deltaSeconds) {
+    for (HudAlert& alert : hudAlerts_) alert.remaining -= deltaSeconds;
+    std::erase_if(hudAlerts_, [](const HudAlert& alert) { return alert.remaining <= 0.0F; });
     uiController_.advance(deltaSeconds);
     if (paused_) {
         return;
@@ -727,7 +780,15 @@ void PlayState::update(float deltaSeconds) {
             if (const Entity* entity = session_.world().findEntity(id);
                 entity && entity->authority.owner == localPlayer_ && entity->unitControl &&
                 entity->authority.directController == 0) {
-                if (target && target->resource)
+                if (target && target->processor && target->authority.owner == localPlayer_ &&
+                    entity->gatherer) {
+                    if (entity->gatherer.carriedAmount > 0.0F)
+                        session_.submit({localPlayer_, nextCommandSequence_++,
+                                         DeliverResourceCommand{id, target->id}});
+                    else
+                        session_.submit({localPlayer_, nextCommandSequence_++,
+                                         SetPreferredProcessorCommand{id, target->id}});
+                } else if (target && target->resource)
                     session_.submit({localPlayer_,
                                      nextCommandSequence_++,
                                      GatherResourceCommand{id, target->id}});
@@ -784,6 +845,39 @@ void PlayState::update(float deltaSeconds) {
         camera_.pan(forward, right, deltaSeconds);
     }
     session_.update(deltaSeconds);
+    for (const ResourceEvent& event : session_.consumeResourceEvents()) {
+        context_.events.enqueue(event);
+        switch (event.kind) {
+        case ResourceEventKind::gatheringStarted:
+            context_.events.enqueue(AudioEvent{AudioCue::gatherOrder});
+            break;
+        case ResourceEventKind::deliveryCompleted:
+            context_.events.enqueue(AudioEvent{AudioCue::deliveryComplete});
+            break;
+        case ResourceEventKind::conversionCompleted:
+            std::erase_if(hudAlerts_, [&](const HudAlert& alert) {
+                return alert.source == event.target;
+            });
+            context_.events.enqueue(AudioEvent{AudioCue::conversionComplete});
+            break;
+        case ResourceEventKind::waitingForPower:
+            if (std::none_of(hudAlerts_.begin(), hudAlerts_.end(), [&](const HudAlert& alert) {
+                    return alert.source == event.target;
+                }))
+                hudAlerts_.push_back({event.target,
+                                      Text::get("processor.alert.waiting_power"), 8.0F});
+            context_.events.enqueue(AudioEvent{AudioCue::resourceWarning});
+            break;
+        case ResourceEventKind::destinationLost:
+        case ResourceEventKind::sourceDepleted:
+        case ResourceEventKind::sourceInaccessible:
+        case ResourceEventKind::destinationInaccessible:
+            context_.events.enqueue(AudioEvent{AudioCue::resourceWarning});
+            break;
+        default:
+            break;
+        }
+    }
 }
 
 void PlayState::render(Renderer& renderer) const {
@@ -862,6 +956,10 @@ void PlayState::render(Renderer& renderer) const {
                                                        : TerrainFootprint{FootprintShape::circle,
                                                                           buildingRadius,
                                                                           {buildingRadius, buildingRadius}};
+        const SpatialShape placementShape = spatialShape(
+            context_.definitions, EntityArchetypeId{buildingId},
+            {position.x, position.z}, 0.0F);
+        const glm::vec2 placementBounds = axisAlignedHalfExtents(placementShape);
         const FootprintFit footprint = renderer.fitTerrainFootprint(
             position.x, position.z, buildingFootprint);
         if (local) {
@@ -873,15 +971,15 @@ void PlayState::render(Renderer& renderer) const {
             previouslyExplored = index < local->discovered.size() && local->discovered[index] != 0;
         }
         constructionPreviewValid_ = previouslyExplored;
+        const MapArea placementMap{session_.mapChunksPerSide()};
         constructionPreviewValid_ = constructionPreviewValid_ &&
-            MapArea{session_.mapChunksPerSide()}.contains(
-                {position.x, position.z}, buildingRadius);
+            std::abs(position.x) + placementBounds.x <= placementMap.halfExtent() &&
+            std::abs(position.z) + placementBounds.y <= placementMap.halfExtent();
         // Hidden enemy construction is resolved authoritatively by PlaceBuildingCommand.
         // Do not leak it through a red preview in previously explored fog.
         if (currentlyVisible)
             constructionPreviewValid_ = constructionPreviewValid_ &&
-                !overlapsObject(session_.world(), context_.definitions,
-                                {position.x, position.z}, buildingRadius);
+                !overlapsObject(session_.world(), context_.definitions, placementShape);
         constructionPreviewValid_ = constructionPreviewValid_ && footprint.valid;
         if (local)
             if (selectedRecipe)
@@ -973,7 +1071,7 @@ void PlayState::render(Renderer& renderer) const {
         const auto resources = context_.definitions.enabledResources();
         const std::size_t localCount = std::count_if(
             resources.begin(), resources.end(), [](const ResourceDefinition* resource) {
-                return resource->storage != ResourceStorageKind::network;
+                return resource->storage == ResourceStorageKind::stockpile;
             });
         const std::size_t deviceCount = std::count_if(
             session_.world().entities().begin(), session_.world().entities().end(),
@@ -987,6 +1085,12 @@ void PlayState::render(Renderer& renderer) const {
         uiController_.apply(resourceUi);
         renderer.drawResourceHud(*local, session_.world(), context_.definitions,
                                  powerOverlayVisible_, resourceUi);
+    }
+    if (!hudAlerts_.empty()) {
+        std::vector<std::string> messages;
+        for (const HudAlert& alert : hudAlerts_) messages.push_back(alert.text);
+        renderer.drawUi(GameHudLayout::alerts(messages, renderer.viewportWidth(),
+                                              renderer.viewportHeight(), config_.uiScale));
     }
     if (paused_) {
         UiDocument document = pauseUi(renderer.viewportWidth(), renderer.viewportHeight());

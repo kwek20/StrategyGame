@@ -19,6 +19,10 @@ enum class AudioCue {
     saveGame,
     loadGame,
     possessUnit,
+    gatherOrder,
+    deliveryComplete,
+    conversionComplete,
+    resourceWarning,
     count
 };
 class AudioSystem final {

@@ -19,6 +19,49 @@
 
 namespace strategy {
 
+namespace {
+float boundaryClearance(const DefinitionRegistry& definitions,
+                        const Entity& actor,
+                        const Entity& target) {
+    const glm::vec2 actorPosition{actor.transform.position.x, actor.transform.position.z};
+    return signedDistance(spatialShape(definitions, target), actorPosition) -
+           collisionRadius(definitions, actor.archetype);
+}
+
+float interactionRange(const DefinitionRegistry& definitions,
+                       const Entity& actor,
+                       std::string_view action) {
+    const EntityArchetype* definition = definitions.archetype(actor.archetype);
+    if (!definition) return 0.0F;
+    if (const auto found = definition->interactionRanges.find(std::string{action});
+        found != definition->interactionRanges.end()) return found->second;
+    return definition->interactionMargin;
+}
+
+void routeToInteraction(const DefinitionRegistry& definitions,
+                        Entity& actor,
+                        const Entity& target,
+                        float range) {
+    const glm::vec2 actorPosition{actor.transform.position.x, actor.transform.position.z};
+    const float actorRadius = collisionRadius(definitions, actor.archetype);
+    const SpatialShape approachBoundary =
+        expanded(spatialShape(definitions, target), actorRadius + std::max(0.0F, range * 0.5F));
+    const glm::vec2 destination = closestBoundaryPoint(approachBoundary, actorPosition);
+    const glm::vec2 previous{actor.unitControl.strategicDestination.x,
+                             actor.unitControl.strategicDestination.z};
+    actor.transient.navigationGoalEntity = target.id;
+    actor.transient.navigationInteractionRange = range;
+    if (!actor.unitControl.hasStrategicDestination ||
+        glm::dot(destination - previous, destination - previous) > 0.25F) {
+        actor.unitControl.strategicDestination = {destination.x, target.transform.position.y,
+                                                  destination.y};
+        actor.unitControl.hasStrategicDestination = true;
+        actor.transient.navigationPath.clear();
+        actor.transient.navigationWaypoint = 0;
+    }
+}
+} // namespace
+
 std::uint64_t GameSession::stateChecksum() const {
     return authoritativeStateChecksum(world_, players_, terrainSeed_, tick_, mapChunksPerSide_);
 }
@@ -44,6 +87,8 @@ void GameSession::beginRecharge(Entity& entity) {
     entity.unitControl.running = false;
     entity.transient.navigationPath.clear();
     entity.transient.navigationWaypoint = 0;
+    entity.transient.navigationGoalEntity = 0;
+    entity.transient.navigationInteractionRange = 0.0F;
 }
 
 void GameSession::finishRecharge(Entity& entity) {
@@ -74,6 +119,15 @@ void GameSession::stopUnit(Entity& entity) {
     entity.unitControl.running = false;
     entity.transient.navigationPath.clear();
     entity.transient.navigationWaypoint = 0;
+    entity.transient.navigationGoalEntity = 0;
+    entity.transient.navigationInteractionRange = 0.0F;
+    if (entity.gatherer) {
+        entity.gatherer.sourceTarget = 0;
+        entity.gatherer.deliveryTarget = 0;
+        entity.gatherer.preferredOutput.clear();
+        entity.gatherer.repeatGathering = false;
+        entity.gatherer.waitingForProcessor = false;
+    }
     if (entity.battery) {
         entity.battery.returningToCharge = false;
         entity.battery.hasSuspendedOrder = false;
@@ -100,9 +154,9 @@ GameSession::GameSession(const DefinitionRegistry& definitions,
     , gameplay_(definitions)
     , terrainSeed_(terrainSeed)
     , terrain_(terrainSeed)
-    , navigation_(terrain_, gameplay_)
     , mapChunksPerSide_(std::clamp(mapChunksPerSide, 10U,
                                   static_cast<std::uint32_t>(Terrain::chunksPerSide)))
+    , navigation_(terrain_, gameplay_, mapChunksPerSide_)
     , resourceAbundanceScale_(std::clamp(resourceAbundanceScale, 0.5F, 2.0F)) {
     for (Player& player : players_.players())
         for (const auto& [resource, amount] : gameplay_.matchRules().startingResources)
@@ -360,12 +414,105 @@ void GameSession::apply(const PlayerCommand& command) {
                 if (entity->unitControl && entity->gatherer && resource && resource->resource &&
                     resource->resource.remaining > 0 &&
                     (!entity->battery || !entity->battery.returningToCharge)) {
+                    if (entity->gatherer.carriedAmount > 0.0F &&
+                        entity->gatherer.carriedResource != resource->resource.type)
+                        return;
+                    if (payload.processor != 0) {
+                        const Entity* processor = world_.findEntity(payload.processor);
+                        if (!processor || processor->authority.owner != command.player ||
+                            !processor->processor || !isOperational(*processor) ||
+                            !gameplay_.acceptsResource(
+                                BuildingArchetypeId{processor->archetype.value},
+                                ResourceId{resource->resource.type}))
+                            return;
+                    }
+                    const float reach = interactionRange(gameplay_, *entity, "gather");
+                    if (!entity->flight && boundaryClearance(gameplay_, *entity, *resource) > reach &&
+                        navigation_.findPath(
+                            world_, entity->transform.position,
+                            NavigationGoalRegion{spatialShape(gameplay_, *resource), reach,
+                                {entity->transform.position.x, entity->transform.position.z},
+                                resource->id, entity->id},
+                            collisionRadius(gameplay_, entity->archetype), entity->id).empty()) {
+                        resourceEvents_.push_back({ResourceEventKind::sourceInaccessible, tick_,
+                                                   command.player, entity->id, resource->id,
+                                                   resource->resource.type, 0.0F});
+                        return;
+                    }
                     entity->unitControl.order = UnitOrderKind::gather;
                     entity->unitControl.orderTarget = resource->id;
+                    entity->gatherer.sourceTarget = resource->id;
+                    entity->gatherer.preferredProcessor = payload.processor;
+                    if (payload.processor != 0) {
+                        const Entity* processor = world_.findEntity(payload.processor);
+                        if (const auto* conversion = gameplay_.conversionFor(
+                                BuildingArchetypeId{processor->archetype.value},
+                                ResourceId{resource->resource.type}))
+                            entity->gatherer.preferredOutput = conversion->output.value;
+                    }
+                    entity->gatherer.deliveryTarget = 0;
+                    entity->gatherer.repeatGathering = true;
+                    entity->gatherer.waitingForProcessor = false;
                     entity->unitControl.strategicDestination = resource->transform.position;
                     entity->unitControl.hasStrategicDestination = true;
                     entity->transient.navigationPath.clear();
+                    resourceEvents_.push_back({ResourceEventKind::gatheringStarted, tick_,
+                                               command.player, entity->id, resource->id,
+                                               resource->resource.type, 0.0F});
                 }
+            } else if constexpr (std::is_same_v<Type, DeliverResourceCommand>) {
+                Entity* processor = world_.findEntity(payload.processor);
+                if (!entity->unitControl || !entity->gatherer ||
+                    entity->gatherer.carriedAmount <= 0.0F || !processor ||
+                    processor->authority.owner != command.player || !processor->processor ||
+                    !isOperational(*processor) ||
+                    !gameplay_.acceptsResource(BuildingArchetypeId{processor->archetype.value},
+                                               ResourceId{entity->gatherer.carriedResource}))
+                    return;
+                entity->gatherer.preferredProcessor = processor->id;
+                if (const auto* conversion = gameplay_.conversionFor(
+                        BuildingArchetypeId{processor->archetype.value},
+                        ResourceId{entity->gatherer.carriedResource}))
+                    entity->gatherer.preferredOutput = conversion->output.value;
+                entity->gatherer.deliveryTarget = processor->id;
+                entity->gatherer.waitingForProcessor = false;
+                entity->unitControl.order = UnitOrderKind::returnResources;
+                entity->unitControl.orderTarget = entity->gatherer.sourceTarget;
+                entity->unitControl.hasStrategicDestination = false;
+                entity->transient.navigationPath.clear();
+            } else if constexpr (std::is_same_v<Type, SetPreferredProcessorCommand>) {
+                if (!entity->gatherer) return;
+                if (payload.processor != 0) {
+                    const Entity* processor = world_.findEntity(payload.processor);
+                    if (!processor || processor->authority.owner != command.player ||
+                        !processor->processor || !isOperational(*processor))
+                        return;
+                }
+                entity->gatherer.preferredProcessor = payload.processor;
+                entity->gatherer.deliveryTarget = 0;
+            } else if constexpr (std::is_same_v<Type, SetDeliveryOutputCommand>) {
+                if (!entity->gatherer || payload.output.empty()) return;
+                const std::string input = !entity->gatherer.carriedResource.empty()
+                    ? entity->gatherer.carriedResource
+                    : [&]() {
+                        const Entity* source = world_.findEntity(entity->gatherer.sourceTarget);
+                        return source && source->resource ? source->resource.type : std::string{};
+                    }();
+                if (input != "synthetic") return;
+                bool validRoute = false;
+                for (const Entity& candidate : world_.entities()) {
+                    if (candidate.authority.owner != command.player || !candidate.processor) continue;
+                    const auto* conversion = gameplay_.conversionFor(
+                        BuildingArchetypeId{candidate.archetype.value}, ResourceId{input});
+                    if (conversion && conversion->output.value == payload.output) {
+                        validRoute = true;
+                        break;
+                    }
+                }
+                if (!validRoute) return;
+                entity->gatherer.preferredOutput = payload.output;
+                entity->gatherer.preferredProcessor = 0;
+                entity->gatherer.deliveryTarget = 0;
             } else if constexpr (std::is_same_v<Type, AttackEntityCommand>) {
                 Entity* target = world_.findEntity(payload.target);
                 if (entity->unitControl && entity->combat &&
@@ -413,17 +560,20 @@ void GameSession::apply(const PlayerCommand& command) {
                 const RecipeDefinition* recipe = gameplay_.recipe(RecipeId{payload.buildingId});
                 if (!player || !entity->flight || !recipe || recipe->product.kind != RecipeProductKind::building)
                     return;
-                const float footprintRadius = collisionRadius(gameplay_, recipe->product.id);
-                const MapArea map{mapChunksPerSide_};
-                if (!map.contains({payload.position.x, payload.position.z}, footprintRadius))
-                    return;
-                if (overlapsObject(world_, gameplay_, {payload.position.x, payload.position.z},
-                                   footprintRadius)) return;
                 const EntityArchetype* buildingDefinition = gameplay_.archetype(recipe->product.id);
+                const float footprintRadius = collisionRadius(gameplay_, recipe->product.id);
                 TerrainFootprint shape = buildingDefinition && buildingDefinition->footprint
                                              ? *buildingDefinition->footprint
                                              : TerrainFootprint{FootprintShape::circle, footprintRadius,
                                                                 {footprintRadius, footprintRadius}};
+                const SpatialShape placementShape = spatialShape(
+                    gameplay_, EntityArchetypeId{recipe->product.id},
+                    {payload.position.x, payload.position.z}, 0.0F);
+                const glm::vec2 bounds = axisAlignedHalfExtents(placementShape);
+                const MapArea map{mapChunksPerSide_};
+                if (std::abs(placementShape.center.x) + bounds.x > map.halfExtent() ||
+                    std::abs(placementShape.center.y) + bounds.y > map.halfExtent()) return;
+                if (overlapsObject(world_, gameplay_, placementShape)) return;
                 const FootprintFit footprint = terrain_.fitFootprint(payload.position.x,
                                                                      payload.position.z, shape);
                 if (!footprint.valid) return;
@@ -557,7 +707,91 @@ void GameSession::simulateTick() {
     };
     std::vector<CompletedCharacter> completed;
     std::vector<EntityId> destroyed;
+    // Player-wide allocation is the temporary topology. Stable priority/id ordering is already
+    // authoritative so connected grids can later allocate each component with identical rules.
+    for (Player& player : players_.players()) {
+        float remaining = 0.0F;
+        std::vector<Entity*> consumers;
+        for (Entity& candidate : world_.entities()) {
+            if (candidate.authority.owner != player.id || !candidate.power) continue;
+            candidate.power.supplied = 0.0F;
+            candidate.power.state = PowerOperationalState::offline;
+            if (!isOperational(candidate)) continue;
+            remaining += candidate.power.generation;
+            if (candidate.power.demand > 0.0F) consumers.push_back(&candidate);
+            else candidate.power.state = PowerOperationalState::powered;
+        }
+        std::sort(consumers.begin(), consumers.end(), [](const Entity* left, const Entity* right) {
+            return left->power.priority != right->power.priority
+                       ? left->power.priority < right->power.priority
+                       : left->id < right->id;
+        });
+        for (Entity* consumer : consumers) {
+            consumer->power.supplied = std::min(remaining, consumer->power.demand);
+            remaining -= consumer->power.supplied;
+            consumer->power.state = consumer->power.supplied >= consumer->power.demand
+                                        ? PowerOperationalState::powered
+                                        : consumer->power.supplied > 0.0F
+                                              ? PowerOperationalState::underpowered
+                                              : PowerOperationalState::offline;
+        }
+    }
     for (Entity& entity : world_.entities()) {
+        if (entity.resource && isOperational(entity)) {
+            const EntityArchetype* type = gameplay_.archetype(entity.archetype);
+            if (type && type->rawProductionPerTick > 0.0F && entity.power &&
+                entity.power.state == PowerOperationalState::powered)
+                entity.resource.remaining = std::min(
+                    type->resourceCapacity,
+                    entity.resource.remaining + type->rawProductionPerTick);
+        }
+        if (entity.processor && isOperational(entity)) {
+            Player* player = players_.find(entity.authority.owner);
+            if (entity.processor.activityTicksRemaining > 0)
+                --entity.processor.activityTicksRemaining;
+            bool blocked = false;
+            bool converted = false;
+            if (player)
+                for (auto input = entity.processor.bufferedInputs.begin();
+                     input != entity.processor.bufferedInputs.end();) {
+                    const ResourceConversionDefinition* conversion = gameplay_.conversionFor(
+                        BuildingArchetypeId{entity.archetype.value}, ResourceId{input->first});
+                    if (!conversion || !entity.power ||
+                        entity.power.supplied < conversion->requiredPower) {
+                        blocked = blocked || (conversion && entity.power &&
+                                              entity.power.supplied < conversion->requiredPower);
+                        if (blocked && !entity.processor.waitingForPower)
+                            resourceEvents_.push_back({ResourceEventKind::waitingForPower, tick_,
+                                                       entity.authority.owner, entity.id, entity.id,
+                                                       input->first, input->second});
+                        ++input;
+                        continue;
+                    }
+                    player->resources[conversion->output.value] +=
+                        input->second * conversion->outputPerInput;
+                    resourceEvents_.push_back({ResourceEventKind::conversionCompleted, tick_,
+                                               entity.authority.owner, entity.id, entity.id,
+                                               conversion->output.value,
+                                               input->second * conversion->outputPerInput});
+                    converted = true;
+                    entity.processor.lastConversionTick = tick_;
+                    entity.processor.activityTicksRemaining = 30;
+                    input = entity.processor.bufferedInputs.erase(input);
+                }
+            entity.processor.waitingForPower = blocked;
+            if (converted || entity.processor.activityTicksRemaining > 0)
+                entity.processor.state = ProcessorOperationalState::processing;
+            else if (blocked)
+                entity.processor.state = ProcessorOperationalState::blocked;
+            else if (!entity.power || entity.power.state == PowerOperationalState::offline)
+                entity.processor.state = ProcessorOperationalState::offline;
+            else if (entity.power.state == PowerOperationalState::underpowered)
+                entity.processor.state = ProcessorOperationalState::underpowered;
+            else if (entity.processor.bufferedInputs.empty())
+                entity.processor.state = ProcessorOperationalState::idle;
+            else
+                entity.processor.state = ProcessorOperationalState::powered;
+        }
         if (entity.flight && entity.battery && entity.battery.returningToCharge) {
             const Entity* chargerEntity = world_.findEntity(entity.battery.chargerTarget);
             const auto validCharger = [&](const Entity* candidate) {
@@ -576,8 +810,7 @@ void GameSession::simulateTick() {
                 float nearestDistance = std::numeric_limits<float>::max();
                 for (const Entity& candidate : world_.entities()) {
                     if (!validCharger(&candidate)) continue;
-                    const glm::vec3 offset = candidate.transform.position - entity.transform.position;
-                    const float distance = glm::dot(offset, offset);
+                    const float distance = boundaryClearance(gameplay_, entity, candidate);
                     if (distance < nearestDistance ||
                         (distance == nearestDistance && chargerEntity && candidate.id < chargerEntity->id)) {
                         nearestDistance = distance;
@@ -594,8 +827,8 @@ void GameSession::simulateTick() {
                 const EntityArchetype* chargerType = gameplay_.archetype(chargerEntity->archetype);
                 const PowerDeviceDefinition* charger =
                     gameplay_.powerDevice(*chargerType->powerDevice);
-                const glm::vec3 offset = chargerEntity->transform.position - entity.transform.position;
-                if (glm::dot(offset, offset) <= 4.0F) {
+                const float chargeRange = interactionRange(gameplay_, entity, "charge");
+                if (boundaryClearance(gameplay_, entity, *chargerEntity) <= chargeRange) {
                     entity.unitControl.order = UnitOrderKind::charging;
                     entity.unitControl.orderTarget = chargerEntity->id;
                     entity.unitControl.hasStrategicDestination = false;
@@ -606,8 +839,7 @@ void GameSession::simulateTick() {
                 } else {
                     entity.unitControl.order = UnitOrderKind::returningToCharge;
                     entity.unitControl.orderTarget = chargerEntity->id;
-                    entity.unitControl.strategicDestination = chargerEntity->transform.position;
-                    entity.unitControl.hasStrategicDestination = true;
+                    routeToInteraction(gameplay_, entity, *chargerEntity, chargeRange);
                 }
             }
         }
@@ -669,8 +901,11 @@ void GameSession::simulateTick() {
         if ((entity.unitControl.order == UnitOrderKind::construct || entity.unitControl.order == UnitOrderKind::repair) && entity.battery) {
             Entity* target = world_.findEntity(entity.unitControl.orderTarget);
             if (target) {
-                const glm::vec2 d{target->transform.position.x-entity.transform.position.x,target->transform.position.z-entity.transform.position.z};
-                if (glm::dot(d,d) <= 4.0F) {
+                const float range = interactionRange(
+                    gameplay_, entity,
+                    entity.unitControl.order == UnitOrderKind::construct ? "construct" : "repair");
+                if (boundaryClearance(gameplay_, entity, *target) <= range) {
+                    entity.unitControl.hasStrategicDestination = false;
                     if (entity.unitControl.order == UnitOrderKind::construct && target->construction) {
                         const RecipeDefinition* recipe = gameplay_.recipe(RecipeId{target->construction.recipeId});
                         if (recipe && entity.battery.charge >= recipe->dronePowerPerStep) {
@@ -711,40 +946,31 @@ void GameSession::simulateTick() {
                         if (entity.battery.charge <= 0.0F)
                             beginRecharge(entity);
                     }
-                }
+                } else routeToInteraction(gameplay_, entity, *target, range);
             } else {
                 stopUnit(entity);
             }
         }
         entity.transient.navigationRetrySeconds = std::max(
             0.0F, entity.transient.navigationRetrySeconds - static_cast<float>(fixedTickSeconds));
-        const auto routeTo = [this, &entity](glm::vec3 destination) {
-            const glm::vec2 change{destination.x - entity.unitControl.strategicDestination.x,
-                                   destination.z - entity.unitControl.strategicDestination.z};
-            if (!entity.unitControl.hasStrategicDestination || glm::dot(change, change) > 1.0F) {
-                entity.unitControl.strategicDestination = destination;
-                entity.unitControl.hasStrategicDestination = true;
-                entity.transient.navigationPath.clear();
-                entity.transient.navigationWaypoint = 0;
-            }
-        };
-        if (entity.authority.directController == 0 && entity.unitControl.directlyControllable) {
+        if (entity.authority.directController == 0) {
             if (entity.unitControl.order == UnitOrderKind::gather) {
                 Entity* node = world_.findEntity(entity.unitControl.orderTarget);
-                if (!node || node->resource.remaining <= 0.0F)
+                if (!node || !node->resource || node->resource.remaining <= 0.0F) {
+                    resourceEvents_.push_back({ResourceEventKind::sourceDepleted, tick_,
+                                               entity.authority.owner, entity.id,
+                                               node ? node->id : entity.gatherer.sourceTarget,
+                                               entity.gatherer.carriedResource, 0.0F});
+                    if (!node || !node->resource)
+                        entity.gatherer.sourceTarget = 0;
                     entity.unitControl.order = entity.gatherer.carriedAmount > 0
                                                    ? UnitOrderKind::returnResources
                                                    : UnitOrderKind::idle;
-                else if (entity.gatherer.carriedAmount >= stat(entity, GameplayStat::carryCapacity))
+                } else if (entity.gatherer.carriedAmount >= stat(entity, GameplayStat::carryCapacity))
                     entity.unitControl.order = UnitOrderKind::returnResources;
                 else {
-                    const float reach =
-                        collisionRadius(gameplay_, entity.archetype) +
-                        collisionRadius(gameplay_, node->archetype) +
-                        gameplay_.archetype(entity.archetype)->interactionMargin;
-                    const glm::vec2 delta{node->transform.position.x - entity.transform.position.x,
-                                          node->transform.position.z - entity.transform.position.z};
-                    if (glm::dot(delta, delta) <= reach * reach) {
+                    const float reach = interactionRange(gameplay_, entity, "gather");
+                    if (boundaryClearance(gameplay_, entity, *node) <= reach) {
                         entity.unitControl.hasStrategicDestination = false;
                         entity.gatherer.carriedResource = node->resource.type.empty()
                                                               ? node->archetype.value
@@ -758,58 +984,123 @@ void GameSession::simulateTick() {
                         node->resource.remaining -= amount;
                         entity.gatherer.carriedAmount += amount;
                         if (entity.gatherer.carriedAmount >= capacity ||
-                            node->resource.remaining <= 0)
+                            node->resource.remaining <= 0) {
+                            if (entity.gatherer.carriedAmount >= capacity)
+                                resourceEvents_.push_back({ResourceEventKind::cargoFull, tick_,
+                                                           entity.authority.owner, entity.id, node->id,
+                                                           entity.gatherer.carriedResource,
+                                                           entity.gatherer.carriedAmount});
                             entity.unitControl.order = UnitOrderKind::returnResources;
+                        }
                     } else
-                        routeTo(node->transform.position);
+                        routeToInteraction(gameplay_, entity, *node, reach);
                 }
             }
             if (entity.unitControl.order == UnitOrderKind::returnResources) {
                 Entity* hall = nullptr;
                 float nearest = std::numeric_limits<float>::max();
-                for (Entity& candidate : world_.entities())
-                    if (candidate.authority.owner == entity.authority.owner &&
-                        isOperational(candidate) &&
-                        gameplay_.archetype(candidate.archetype) &&
-                        gameplay_.archetype(candidate.archetype)->tags.contains("resource-dropoff")) {
-                        const glm::vec2 d{
-                            candidate.transform.position.x - entity.transform.position.x,
-                            candidate.transform.position.z - entity.transform.position.z};
-                        const float distance = glm::dot(d, d);
-                        if (distance < nearest) {
-                            nearest = distance;
-                            hall = &candidate;
-                        }
+                const auto compatible = [&](Entity& candidate) {
+                    const auto* conversion = gameplay_.conversionFor(
+                        BuildingArchetypeId{candidate.archetype.value},
+                        ResourceId{entity.gatherer.carriedResource});
+                    if (!conversion || (!entity.gatherer.preferredOutput.empty() &&
+                        conversion->output.value != entity.gatherer.preferredOutput)) return false;
+                    const EntityArchetype* definition = gameplay_.archetype(candidate.archetype);
+                    float buffered = 0.0F;
+                    if (candidate.processor)
+                        for (const auto& [resource, amount] : candidate.processor.bufferedInputs)
+                            buffered += amount;
+                    const bool hasCapacity = !definition || definition->processorCapacity <= 0.0F ||
+                                             buffered + 0.001F < definition->processorCapacity;
+                    return hasCapacity && candidate.authority.owner == entity.authority.owner &&
+                           isOperational(candidate) && candidate.processor &&
+                           conversion;
+                };
+                const float depositReach = interactionRange(gameplay_, entity, "deposit");
+                const auto reachable = [&](Entity& candidate) {
+                    if (entity.flight || boundaryClearance(gameplay_, entity, candidate) <= depositReach)
+                        return true;
+                    return !navigation_.findPath(
+                        world_, entity.transform.position,
+                        NavigationGoalRegion{spatialShape(gameplay_, candidate), depositReach,
+                            {entity.transform.position.x, entity.transform.position.z},
+                            candidate.id, entity.id},
+                        collisionRadius(gameplay_, entity.archetype), entity.id).empty();
+                };
+                if (entity.gatherer.preferredProcessor != 0) {
+                    Entity* preferred = world_.findEntity(entity.gatherer.preferredProcessor);
+                    if (preferred && compatible(*preferred) && reachable(*preferred)) {
+                        hall = preferred;
+                        nearest = boundaryClearance(gameplay_, entity, *preferred);
+                    } else {
+                        entity.gatherer.preferredProcessor = 0;
+                        entity.gatherer.deliveryTarget = 0;
+                        resourceEvents_.push_back({ResourceEventKind::destinationLost, tick_,
+                                                   entity.authority.owner, entity.id,
+                                                   preferred ? preferred->id : 0,
+                                                   entity.gatherer.carriedResource,
+                                                   entity.gatherer.carriedAmount});
                     }
-                if (!hall)
-                    entity.unitControl.order = UnitOrderKind::idle;
-                else {
-                    const float reach =
-                        collisionRadius(gameplay_, entity.archetype) +
-                        collisionRadius(gameplay_, hall->archetype) +
-                        gameplay_.archetype(entity.archetype)->interactionMargin;
-                    if (nearest <= reach * reach) {
-                        if (Player* player = players_.find(entity.authority.owner)) {
-                            player->resources[entity.gatherer.carriedResource] +=
-                                entity.gatherer.carriedAmount;
-                            if (entity.gatherer.carriedResource == "wood")
-                                player->wood += entity.gatherer.carriedAmount;
-                            else if (entity.gatherer.carriedResource == "materials")
-                                player->wood += entity.gatherer.carriedAmount;
-                            else if (entity.gatherer.carriedResource == "stone")
-                                player->stone += entity.gatherer.carriedAmount;
-                            else if (entity.gatherer.carriedResource == "gold")
-                                player->gold += entity.gatherer.carriedAmount;
+                }
+                if (!hall) {
+                    // Dedicated processors always win automatic selection. Distance is only
+                    // compared inside the dedicated or fallback-hub class.
+                    for (const bool allowHub : {false, true}) {
+                        for (Entity& candidate : world_.entities()) {
+                            if (!compatible(candidate) || !reachable(candidate)) continue;
+                            const bool isHub = candidate.archetype.value == "command_hub";
+                            if (isHub != allowHub) continue;
+                            const float distance = boundaryClearance(gameplay_, entity, candidate);
+                            if (!hall || distance < nearest - 0.001F ||
+                                (std::abs(distance - nearest) <= 0.001F && candidate.id < hall->id)) {
+                                nearest = distance;
+                                hall = &candidate;
+                            }
                         }
-                        entity.gatherer.carriedAmount = 0;
-                        entity.gatherer.carriedResource.clear();
-                        Entity* node = world_.findEntity(entity.unitControl.orderTarget);
-                        entity.unitControl.order = node && node->resource.remaining > 0
+                        if (hall) break;
+                    }
+                }
+                if (!hall) {
+                    entity.unitControl.order = UnitOrderKind::idle;
+                    entity.unitControl.hasStrategicDestination = false;
+                    entity.gatherer.deliveryTarget = 0;
+                    entity.gatherer.waitingForProcessor = true;
+                } else {
+                    entity.gatherer.deliveryTarget = hall->id;
+                    entity.gatherer.waitingForProcessor = false;
+                    const float reach = depositReach;
+                    if (nearest <= reach) {
+                        const EntityArchetype* hallDefinition = gameplay_.archetype(hall->archetype);
+                        float buffered = 0.0F;
+                        for (const auto& [resource, amount] : hall->processor.bufferedInputs)
+                            buffered += amount;
+                        const float available = !hallDefinition || hallDefinition->processorCapacity <= 0.0F
+                            ? entity.gatherer.carriedAmount
+                            : std::max(0.0F, hallDefinition->processorCapacity - buffered);
+                        const float deposited = std::min(entity.gatherer.carriedAmount, available);
+                        hall->processor.bufferedInputs[entity.gatherer.carriedResource] += deposited;
+                        resourceEvents_.push_back({ResourceEventKind::deliveryCompleted, tick_,
+                                                   entity.authority.owner, entity.id, hall->id,
+                                                   entity.gatherer.carriedResource,
+                                                   deposited});
+                        entity.gatherer.carriedAmount -= deposited;
+                        if (entity.gatherer.carriedAmount <= 0.001F) {
+                            entity.gatherer.carriedAmount = 0;
+                            entity.gatherer.carriedResource.clear();
+                        }
+                        entity.gatherer.deliveryTarget = 0;
+                        Entity* node = world_.findEntity(entity.gatherer.sourceTarget);
+                        entity.unitControl.order = entity.gatherer.carriedAmount > 0.0F
+                            ? UnitOrderKind::returnResources
+                            : entity.gatherer.repeatGathering && node &&
+                                                           node->resource && node->resource.remaining > 0
                                                        ? UnitOrderKind::gather
                                                        : UnitOrderKind::idle;
+                        entity.unitControl.orderTarget = entity.unitControl.order == UnitOrderKind::gather
+                                                             ? entity.gatherer.sourceTarget : 0;
                         entity.unitControl.hasStrategicDestination = false;
                     } else
-                        routeTo(hall->transform.position);
+                        routeToInteraction(gameplay_, entity, *hall, reach);
                 }
             }
             if (entity.unitControl.order == UnitOrderKind::attack) {
@@ -820,12 +1111,8 @@ void GameSession::simulateTick() {
                     target->authority.owner == entity.authority.owner)
                     entity.unitControl.order = UnitOrderKind::idle;
                 else {
-                    const glm::vec2 d{target->transform.position.x - entity.transform.position.x,
-                                      target->transform.position.z - entity.transform.position.z};
-                    const float range = collisionRadius(gameplay_, entity.archetype) +
-                                        collisionRadius(gameplay_, target->archetype) +
-                                        stat(entity, GameplayStat::attackRange);
-                    if (glm::dot(d, d) <= range * range) {
+                    const float range = stat(entity, GameplayStat::attackRange);
+                    if (boundaryClearance(gameplay_, entity, *target) <= range) {
                         entity.unitControl.hasStrategicDestination = false;
                         target->health.current -= stat(entity, GameplayStat::attackDamage) *
                                                   static_cast<float>(fixedTickSeconds);
@@ -835,7 +1122,7 @@ void GameSession::simulateTick() {
                         if (target->health.current <= 0)
                             destroyed.push_back(target->id);
                     } else
-                        routeTo(target->transform.position);
+                        routeToInteraction(gameplay_, entity, *target, range);
                 }
             }
         }
@@ -857,17 +1144,48 @@ void GameSession::simulateTick() {
             } else if (entity.transient.navigationWaypoint >= entity.transient.navigationPath.size()) {
                 if (entity.transient.navigationRetrySeconds > 0.0F)
                     continue;
-                entity.transient.navigationPath =
-                    navigation_.findPath(world_,
-                                         entity.transform.position,
-                                         entity.unitControl.strategicDestination,
-                                         collisionRadius(gameplay_, entity.archetype),
-                                         entity.id);
+                const Entity* navigationTarget =
+                    world_.findEntity(entity.transient.navigationGoalEntity);
+                if (navigationTarget) {
+                    entity.transient.navigationPath = navigation_.findPath(
+                        world_, entity.transform.position,
+                        NavigationGoalRegion{
+                            spatialShape(gameplay_, *navigationTarget),
+                            entity.transient.navigationInteractionRange,
+                            {entity.transform.position.x, entity.transform.position.z},
+                            navigationTarget->id,
+                            entity.id},
+                        collisionRadius(gameplay_, entity.archetype), entity.id);
+                } else {
+                    entity.transient.navigationPath = navigation_.findPath(
+                        world_, entity.transform.position,
+                        entity.unitControl.strategicDestination,
+                        collisionRadius(gameplay_, entity.archetype), entity.id);
+                }
                 entity.transient.navigationWaypoint = 0;
                 if (entity.transient.navigationPath.empty()) {
                     entity.unitControl.hasStrategicDestination = false;
                     entity.transient.navigationRetrySeconds = 0.5F;
-                    if (entity.unitControl.order == UnitOrderKind::move)
+                    if (entity.unitControl.order == UnitOrderKind::gather && entity.gatherer) {
+                        resourceEvents_.push_back({ResourceEventKind::sourceInaccessible, tick_,
+                                                   entity.authority.owner, entity.id,
+                                                   entity.gatherer.sourceTarget,
+                                                   entity.gatherer.carriedResource, 0.0F});
+                        entity.gatherer.sourceTarget = 0;
+                        entity.unitControl.order = entity.gatherer.carriedAmount > 0.0F
+                                                       ? UnitOrderKind::returnResources
+                                                       : UnitOrderKind::idle;
+                    } else if (entity.unitControl.order == UnitOrderKind::returnResources &&
+                               entity.gatherer) {
+                        resourceEvents_.push_back({ResourceEventKind::destinationInaccessible, tick_,
+                                                   entity.authority.owner, entity.id,
+                                                   entity.gatherer.deliveryTarget,
+                                                   entity.gatherer.carriedResource,
+                                                   entity.gatherer.carriedAmount});
+                        if (entity.gatherer.preferredProcessor == entity.gatherer.deliveryTarget)
+                            entity.gatherer.preferredProcessor = 0;
+                        entity.gatherer.deliveryTarget = 0;
+                    } else if (entity.unitControl.order == UnitOrderKind::move)
                         entity.unitControl.order = UnitOrderKind::idle;
                     continue;
                 }
@@ -1084,25 +1402,18 @@ void GameSession::replaceWorld(std::vector<Entity> entities, std::uint32_t terra
                                    static_cast<std::uint32_t>(Terrain::chunksPerSide));
     terrain_ = Terrain{terrainSeed};
     terrain_.rebuildFoundations(world_.foundations());
-    navigation_.rebuildTerrain(terrain_);
+    navigation_.rebuildTerrain(terrain_, mapChunksPerSide_);
     commands_.clear();
     lastSequence_.clear();
     updateExploration();
 }
 
 void GameSession::restorePlayerProgress(PlayerId id,
-                                        float wood,
-                                        float stone,
-                                        float gold,
                                         std::map<std::string, float> resources,
                                         std::vector<std::uint8_t> discovered,
                                         std::vector<LastKnownEntity> intelligence) {
     if (Player* player = players_.find(id)) {
-        player->wood = wood;
-        player->stone = stone;
-        player->gold = gold;
-        if (!resources.empty())
-            player->resources = std::move(resources);
+        player->resources = std::move(resources);
         if (discovered.size() == player->discovered.size())
             player->discovered = std::move(discovered);
         player->intelligence = std::move(intelligence);

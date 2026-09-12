@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <string>
+#include <vector>
 
 namespace strategy {
 
@@ -23,6 +24,9 @@ class GameHudLayout final {
                                             int viewportWidth,
                                             int viewportHeight,
                                             float uiScale = 1.0F);
+    [[nodiscard]] static UiDocument alerts(const std::vector<std::string>& messages,
+                                           int viewportWidth, int viewportHeight,
+                                           float uiScale = 1.0F);
 };
 
 } // namespace strategy

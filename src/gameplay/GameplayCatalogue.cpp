@@ -128,6 +128,19 @@ void DefinitionRegistry::loadArchetypes(const std::filesystem::path& path,
         if (item->value.HasMember("interactionMargin"))
             archetype.interactionMargin = requiredNumber(
                 item->value, "interactionMargin", "Definition '" + archetype.id + "'");
+        if (item->value.HasMember("interactionRanges")) {
+            const auto& ranges = item->value["interactionRanges"];
+            if (!ranges.IsObject())
+                throw std::runtime_error("Definition '" + archetype.id +
+                                         "' has invalid interactionRanges");
+            for (auto range = ranges.MemberBegin(); range != ranges.MemberEnd(); ++range) {
+                if (!range->value.IsNumber() || range->value.GetFloat() < 0.0F)
+                    throw std::runtime_error("Definition '" + archetype.id +
+                                             "' has invalid interaction range");
+                archetype.interactionRanges.emplace(range->name.GetString(),
+                                                    range->value.GetFloat());
+            }
+        }
         if (item->value.HasMember("spawn")) {
             const auto& spawn = item->value["spawn"];
             if (!spawn.IsObject() || !spawn.HasMember("clearance") ||
@@ -144,6 +157,21 @@ void DefinitionRegistry::loadArchetypes(const std::filesystem::path& path,
         if (item->value.HasMember("capacity"))
             archetype.resourceCapacity = requiredNumber(
                 item->value, "capacity", "Definition '" + archetype.id + "'");
+        if (item->value.HasMember("rawProductionPerTick")) {
+            archetype.rawProductionPerTick = requiredNumber(
+                item->value, "rawProductionPerTick", "Definition '" + archetype.id + "'");
+            if (archetype.rawProductionPerTick <= 0.0F || archetype.resourceCapacity <= 0.0F ||
+                archetype.resourceType.empty())
+                throw std::runtime_error("Definition '" + archetype.id +
+                                         "' has invalid raw resource production");
+        }
+        if (item->value.HasMember("processorCapacity")) {
+            archetype.processorCapacity = requiredNumber(
+                item->value, "processorCapacity", "Definition '" + archetype.id + "'");
+            if (archetype.processorCapacity <= 0.0F)
+                throw std::runtime_error("Definition '" + archetype.id +
+                                         "' has invalid processorCapacity");
+        }
         if (item->value.HasMember("generation")) {
             const auto& generation = item->value["generation"];
             if (!generation.IsObject() || !generation.HasMember("stream") ||
@@ -163,7 +191,18 @@ void DefinitionRegistry::loadArchetypes(const std::filesystem::path& path,
                 generation["nodesPerCluster"].GetUint(),
                 generation["attemptsPerCluster"].GetUint(),
                 generation["spread"].GetFloat(),
-                generation["centerExtent"].GetFloat()};
+                generation["centerExtent"].GetFloat(),
+                generation.HasMember("startingNodesPerPlayer") && generation["startingNodesPerPlayer"].IsUint()
+                    ? generation["startingNodesPerPlayer"].GetUint() : 0U,
+                generation.HasMember("startingMinimumDistance") && generation["startingMinimumDistance"].IsNumber()
+                    ? generation["startingMinimumDistance"].GetFloat() : 0.0F,
+                generation.HasMember("startingMaximumDistance") && generation["startingMaximumDistance"].IsNumber()
+                    ? generation["startingMaximumDistance"].GetFloat() : 0.0F};
+            if (archetype.generation->startingNodesPerPlayer > 0 &&
+                (archetype.generation->startingMinimumDistance <= 0.0F ||
+                 archetype.generation->startingMaximumDistance < archetype.generation->startingMinimumDistance))
+                throw std::runtime_error("Definition '" + archetype.id +
+                                         "' has invalid starting resource guarantee");
         }
         if (item->value.HasMember("nameKey") && item->value["nameKey"].IsString())
             archetype.nameKey = item->value["nameKey"].GetString();
@@ -183,6 +222,7 @@ void DefinitionRegistry::loadArchetypes(const std::filesystem::path& path,
                                                                      "gatherer",
                                                                      "combat",
                                                                      "resource",
+                                                                     "processor",
                                                                      "production",
                                                                      "buildingUpgrades",
                                                                      "upgrades"};
@@ -271,19 +311,64 @@ void DefinitionRegistry::loadResources(const std::filesystem::path& path) {
         for (const std::string& tag : strings(value, "tags"))
             definition.tags.insert(tag);
         const std::string storage = value["storage"].GetString();
-        if (storage == "stockpile")
+        if (storage == "cargo")
+            definition.storage = ResourceStorageKind::cargo;
+        else if (storage == "stockpile")
             definition.storage = ResourceStorageKind::stockpile;
         else if (storage == "network")
             definition.storage = ResourceStorageKind::network;
         else
             throw std::runtime_error("Resource '" + definition.id +
                                      "' has unknown storage kind '" + storage + "'");
+        if (!value.HasMember("category") || !value["category"].IsString())
+            throw std::runtime_error("Resource '" + definition.id + "' requires category");
+        const std::string category = value["category"].GetString();
+        if (category == "raw") definition.category = ResourceCategory::raw;
+        else if (category == "processed") definition.category = ResourceCategory::processed;
+        else if (category == "strategic") definition.category = ResourceCategory::strategic;
+        else if (category == "infrastructure") definition.category = ResourceCategory::infrastructure;
+        else throw std::runtime_error("Resource '" + definition.id +
+                                      "' has unknown category '" + category + "'");
+        if ((definition.storage == ResourceStorageKind::cargo) !=
+            (definition.category == ResourceCategory::raw))
+            throw std::runtime_error("Resource '" + definition.id +
+                                     "' must use cargo storage exactly when category is raw");
         if (value.HasMember("enabled") && value["enabled"].IsBool())
             definition.enabled = value["enabled"].GetBool();
         resourceOrder_.push_back(definition.id);
         if (!resourceTypes_.emplace(definition.id, std::move(definition)).second)
             throw std::runtime_error("Duplicate resource definition id '" +
                                      std::string(item->name.GetString()) + "'");
+    }
+}
+
+void DefinitionRegistry::loadConversions(const std::filesystem::path& path) {
+    const auto data = document(path);
+    if (!data.HasMember("conversions") || !data["conversions"].IsArray())
+        throw std::runtime_error("Conversion definitions require a conversions array: " + path.string());
+    for (const auto& value : data["conversions"].GetArray()) {
+        if (!value.IsObject() || !value.HasMember("id") || !value["id"].IsString() ||
+            !value.HasMember("processor") || !value["processor"].IsString() ||
+            !value.HasMember("input") || !value["input"].IsString() ||
+            !value.HasMember("output") || !value["output"].IsString())
+            throw std::runtime_error("Invalid resource conversion in " + path.string());
+        ResourceConversionDefinition definition;
+        definition.id = value["id"].GetString();
+        definition.processor = BuildingArchetypeId{value["processor"].GetString()};
+        definition.input = ResourceId{value["input"].GetString()};
+        definition.output = ResourceId{value["output"].GetString()};
+        definition.outputPerInput = requiredNumber(value, "outputPerInput", "Conversion '" + definition.id + "'");
+        definition.requiredPower = requiredNumber(value, "requiredPower", "Conversion '" + definition.id + "'");
+        if (value.HasMember("priority")) {
+            if (!value["priority"].IsInt())
+                throw std::runtime_error("Conversion '" + definition.id +
+                                         "' priority must be an integer");
+            definition.priority = value["priority"].GetInt();
+        }
+        if (definition.outputPerInput <= 0.0F || definition.requiredPower < 0.0F)
+            throw std::runtime_error("Conversion '" + definition.id + "' has invalid values");
+        if (!conversions_.emplace(definition.id, std::move(definition)).second)
+            throw std::runtime_error("Duplicate conversion definition id");
     }
 }
 
@@ -368,6 +453,11 @@ void DefinitionRegistry::loadPowerDevices(const std::filesystem::path& path) {
         definition.connectionRange = optional("connectionRange");
         definition.transferLimit = optional("transferLimit");
         definition.chargePerTick = optional("chargePerTick");
+        if (item->value.HasMember("priority")) {
+            if (!item->value["priority"].IsInt())
+                throw std::runtime_error("Power device priority must be an integer");
+            definition.priority = item->value["priority"].GetInt();
+        }
         if (definition.production < 0.0F || definition.consumption < 0.0F ||
             definition.storage < 0.0F || definition.connectionRange < 0.0F ||
             definition.transferLimit < 0.0F || definition.chargePerTick < 0.0F)
@@ -575,6 +665,25 @@ void DefinitionRegistry::validateReferences() const {
                                          resource + "'");
         }
     }
+    std::unordered_set<std::string> conversionRelationships;
+    for (const auto& [id, definition] : conversions_) {
+        if (!buildingIds_.contains(definition.processor.value))
+            throw std::runtime_error("Conversion '" + id + "' references unknown processor '" +
+                                     definition.processor.value + "'");
+        const EntityArchetype& processor = entities_.at(definition.processor.value);
+        if (!processor.components.contains("processor"))
+            throw std::runtime_error("Conversion '" + id + "' processor lacks processor component");
+        const auto input = resourceTypes_.find(definition.input.value);
+        const auto output = resourceTypes_.find(definition.output.value);
+        if (input == resourceTypes_.end() || input->second.storage != ResourceStorageKind::cargo)
+            throw std::runtime_error("Conversion '" + id + "' input must be a cargo resource");
+        if (output == resourceTypes_.end() || output->second.storage != ResourceStorageKind::stockpile)
+            throw std::runtime_error("Conversion '" + id + "' output must be a stockpile resource");
+        const std::string relationship = definition.processor.value + "\n" + definition.input.value;
+        if (!conversionRelationships.insert(relationship).second)
+            throw std::runtime_error("Duplicate processor/input conversion for '" +
+                                     definition.processor.value + "' and '" + definition.input.value + "'");
+    }
     for (const auto& [source, groups] : {std::pair{"country", &countries_},
                                         std::pair{"specialization", &specializations_}})
         for (const auto& [group, modifiers] : *groups)
@@ -755,7 +864,8 @@ DefinitionRegistry::DefinitionRegistry(const std::filesystem::path& unitPath,
                                        const std::filesystem::path& localizationPath,
                                        const std::filesystem::path& textureRoot,
                                        const std::filesystem::path& rulesPath,
-                                       const std::filesystem::path& upgradePath)
+                                       const std::filesystem::path& upgradePath,
+                                       const std::filesystem::path& conversionPath)
     : textureRoot_(textureRoot) {
     loadReferenceKeys(presentationPath, localizationPath);
     loadArchetypes(unitPath, "units", EntityKind::unit);
@@ -765,6 +875,7 @@ DefinitionRegistry::DefinitionRegistry(const std::filesystem::path& unitPath,
     loadWeapons(weaponPath);
     loadPowerDevices(powerDevicePath);
     loadRecipes(recipePath);
+    loadConversions(conversionPath);
     loadRules(rulesPath);
     loadUpgrades(upgradePath);
     const auto loadModifiers =
@@ -1043,6 +1154,40 @@ const RecipeDefinition* DefinitionRegistry::recipe(RecipeId id) const {
     return found == recipes_.end() ? nullptr : &found->second;
 }
 
+const ResourceConversionDefinition* DefinitionRegistry::conversion(ConversionId id) const {
+    const auto found = conversions_.find(id.value);
+    return found == conversions_.end() ? nullptr : &found->second;
+}
+
+const ResourceConversionDefinition*
+DefinitionRegistry::conversionFor(BuildingArchetypeId processor, ResourceId input) const {
+    const ResourceConversionDefinition* result = nullptr;
+    for (const auto& [id, definition] : conversions_) {
+        (void)id;
+        if (definition.processor == processor && definition.input == input) {
+            if (result) throw std::runtime_error("Ambiguous resource conversion for processor/input");
+            result = &definition;
+        }
+    }
+    return result;
+}
+
+bool DefinitionRegistry::acceptsResource(BuildingArchetypeId processor, ResourceId input) const {
+    return conversionFor(processor, input) != nullptr;
+}
+
+std::vector<const ResourceConversionDefinition*>
+DefinitionRegistry::conversionsForProcessor(BuildingArchetypeId processor) const {
+    std::vector<const ResourceConversionDefinition*> result;
+    for (const auto& [id, conversion] : conversions_)
+        if (conversion.processor == processor) result.push_back(&conversion);
+    std::sort(result.begin(), result.end(), [](const auto* left, const auto* right) {
+        if (left->priority != right->priority) return left->priority < right->priority;
+        return left->id < right->id;
+    });
+    return result;
+}
+
 const RecipeDefinition*
 DefinitionRegistry::productionRecipe(const std::string& producer,
                                      const std::string& product) const {
@@ -1140,7 +1285,24 @@ void DefinitionRegistry::initializeEntity(Entity& entity) const {
             resolve(GameplayStat::attackCooldown, {}, {}, type.id);
     }
     if (has("resource"))
+    {
         entity.resource.emplace();
+        entity.resource.type = type.resourceType;
+        entity.resource.remaining = type.rawProductionPerTick > 0.0F ? 0.0F : type.resourceCapacity;
+    }
+    if (has("processor"))
+        entity.processor.emplace();
+    if (type.powerDevice) {
+        if (const PowerDeviceDefinition* device = powerDevice(*type.powerDevice)) {
+            entity.power.emplace();
+            entity.power.generation = device->production;
+            entity.power.demand = device->consumption;
+            entity.power.priority = device->priority;
+            entity.power.state = device->consumption <= 0.0F
+                                     ? PowerOperationalState::powered
+                                     : PowerOperationalState::offline;
+        }
+    }
     if (has("production")) {
         entity.production.emplace();
     }

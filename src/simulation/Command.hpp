@@ -32,7 +32,11 @@ struct MoveUnitCommand {
 struct GatherResourceCommand {
     EntityId entity{0};
     EntityId resource{0};
+    EntityId processor{0};
 };
+struct DeliverResourceCommand { EntityId entity{0}; EntityId processor{0}; };
+struct SetPreferredProcessorCommand { EntityId entity{0}; EntityId processor{0}; };
+struct SetDeliveryOutputCommand { EntityId entity{0}; std::string output; };
 struct AttackEntityCommand {
     EntityId entity{0};
     EntityId target{0};
@@ -77,7 +81,11 @@ using CommandPayload = std::variant<PossessUnitCommand,
                                     RepairCommand,
                                     CancelProductionCommand,
                                     RechargeCommand,
-                                    StopUnitCommand>;
+                                    StopUnitCommand,
+                                    DeliverResourceCommand,
+                                    SetPreferredProcessorCommand,
+                                    SetDeliveryOutputCommand>;
+// Keep new commands appended so their serialized variant indices remain stable.
 
 struct PlayerCommand {
     PlayerId player{0};

@@ -49,7 +49,7 @@ void SaveGame::write(const std::filesystem::path& path,
     rapidjson::PrettyWriter<rapidjson::OStreamWrapper> writer{output};
     writer.StartObject();
     writer.Key("formatVersion");
-    writer.Uint(4);
+    writer.Uint(7);
     writer.Key("terrainSeed");
     writer.Uint(terrainSeed);
     writer.Key("mapChunksPerSide");
@@ -77,12 +77,6 @@ void SaveGame::write(const std::filesystem::path& path,
             writer.String(player.countryId.c_str());
             writer.Key("specialization");
             writer.String(player.specializationId.c_str());
-            writer.Key("wood");
-            writer.Double(player.wood);
-            writer.Key("stone");
-            writer.Double(player.stone);
-            writer.Key("gold");
-            writer.Double(player.gold);
             writer.Key("resources");
             writer.StartObject();
             for (const auto& [id, amount] : player.resources) {
@@ -182,6 +176,12 @@ void SaveGame::write(const std::filesystem::path& path,
             writer.String(entity.gatherer.carriedResource.c_str());
             writer.Key("carriedAmount");
             writer.Double(entity.gatherer.carriedAmount);
+            writer.Key("sourceTarget"); writer.Uint64(entity.gatherer.sourceTarget);
+            writer.Key("deliveryTarget"); writer.Uint64(entity.gatherer.deliveryTarget);
+            writer.Key("preferredProcessor"); writer.Uint64(entity.gatherer.preferredProcessor);
+            writer.Key("preferredOutput"); writer.String(entity.gatherer.preferredOutput.c_str());
+            writer.Key("repeatGathering"); writer.Bool(entity.gatherer.repeatGathering);
+            writer.Key("waitingForProcessor"); writer.Bool(entity.gatherer.waitingForProcessor);
             writer.EndObject();
         }
         if (entity.flight) {
@@ -219,6 +219,32 @@ void SaveGame::write(const std::filesystem::path& path,
             writer.String(entity.resource.type.c_str());
             writer.Key("remaining");
             writer.Double(entity.resource.remaining);
+            writer.EndObject();
+        }
+        if (entity.processor) {
+            writer.Key("processor");
+            writer.StartObject();
+            writer.Key("bufferedInputs");
+            writer.StartObject();
+            for (const auto& [id, amount] : entity.processor.bufferedInputs) {
+                writer.Key(id.c_str());
+                writer.Double(amount);
+            }
+            writer.EndObject();
+            writer.Key("waitingForPower"); writer.Bool(entity.processor.waitingForPower);
+            writer.Key("lastConversionTick"); writer.Uint64(entity.processor.lastConversionTick);
+            writer.Key("activityTicksRemaining"); writer.Uint(entity.processor.activityTicksRemaining);
+            writer.Key("state"); writer.Uint(static_cast<unsigned>(entity.processor.state));
+            writer.EndObject();
+        }
+        if (entity.power) {
+            writer.Key("power");
+            writer.StartObject();
+            writer.Key("generation"); writer.Double(entity.power.generation);
+            writer.Key("demand"); writer.Double(entity.power.demand);
+            writer.Key("supplied"); writer.Double(entity.power.supplied);
+            writer.Key("priority"); writer.Int(entity.power.priority);
+            writer.Key("state"); writer.Uint(static_cast<unsigned>(entity.power.state));
             writer.EndObject();
         }
         if (entity.construction) {
@@ -305,7 +331,7 @@ SaveData SaveGame::read(const std::filesystem::path& path) {
     rapidjson::Document document;
     document.ParseStream(input);
     if (document.HasParseError() || !document.IsObject() || !document.HasMember("formatVersion") ||
-        !document["formatVersion"].IsUint() || document["formatVersion"].GetUint() != 4 ||
+        !document["formatVersion"].IsUint() || document["formatVersion"].GetUint() != 7 ||
         !document.HasMember("terrainSeed") || !document["terrainSeed"].IsUint() ||
         !document.HasMember("mapChunksPerSide") || !document["mapChunksPerSide"].IsUint() ||
         !document.HasMember("players") || !document["players"].IsArray() ||
@@ -351,12 +377,6 @@ SaveData SaveGame::read(const std::filesystem::path& path) {
                 }
                 if (id >= 1 && id <= 2) {
                     const std::size_t index = static_cast<std::size_t>(id - 1);
-                    if (player.HasMember("wood") && player["wood"].IsNumber())
-                        result.wood[index] = player["wood"].GetFloat();
-                    if (player.HasMember("stone") && player["stone"].IsNumber())
-                        result.stone[index] = player["stone"].GetFloat();
-                    if (player.HasMember("gold") && player["gold"].IsNumber())
-                        result.gold[index] = player["gold"].GetFloat();
                     if (!player.HasMember("resources") || !player["resources"].IsObject())
                         throw std::runtime_error("Invalid player resources");
                     if (player.HasMember("resources") && player["resources"].IsObject())
@@ -457,10 +477,24 @@ SaveData SaveGame::read(const std::filesystem::path& path) {
                 entity.gatherer.emplace();
                 if (!item.IsObject() || !item.HasMember("carriedResource") ||
                     !item["carriedResource"].IsString() || !item.HasMember("carriedAmount") ||
-                    !item["carriedAmount"].IsNumber())
+                    !item["carriedAmount"].IsNumber() || !item.HasMember("sourceTarget") ||
+                    !item["sourceTarget"].IsUint64() || !item.HasMember("deliveryTarget") ||
+                    !item["deliveryTarget"].IsUint64() ||
+                    !item.HasMember("preferredProcessor") ||
+                    !item["preferredProcessor"].IsUint64() ||
+                    !item.HasMember("preferredOutput") || !item["preferredOutput"].IsString() ||
+                    !item.HasMember("repeatGathering") || !item["repeatGathering"].IsBool() ||
+                    !item.HasMember("waitingForProcessor") ||
+                    !item["waitingForProcessor"].IsBool())
                     throw std::runtime_error("Invalid gatherer component");
                 entity.gatherer.carriedResource = item["carriedResource"].GetString();
                 entity.gatherer.carriedAmount = item["carriedAmount"].GetFloat();
+                entity.gatherer.sourceTarget = item["sourceTarget"].GetUint64();
+                entity.gatherer.deliveryTarget = item["deliveryTarget"].GetUint64();
+                entity.gatherer.preferredProcessor = item["preferredProcessor"].GetUint64();
+                entity.gatherer.preferredOutput = item["preferredOutput"].GetString();
+                entity.gatherer.repeatGathering = item["repeatGathering"].GetBool();
+                entity.gatherer.waitingForProcessor = item["waitingForProcessor"].GetBool();
             }
             if (components.HasMember("flight")) {
                 const auto& item = components["flight"];
@@ -518,6 +552,49 @@ SaveData SaveGame::read(const std::filesystem::path& path) {
                     throw std::runtime_error("Invalid resource component");
                 entity.resource.type = item["type"].GetString();
                 entity.resource.remaining = item["remaining"].GetFloat();
+            }
+            if (components.HasMember("processor")) {
+                const auto& item = components["processor"];
+                if (!item.IsObject() || !item.HasMember("bufferedInputs") ||
+                    !item["bufferedInputs"].IsObject() ||
+                    !item.HasMember("waitingForPower") || !item["waitingForPower"].IsBool() ||
+                    !item.HasMember("lastConversionTick") || !item["lastConversionTick"].IsUint64() ||
+                    !item.HasMember("activityTicksRemaining") || !item["activityTicksRemaining"].IsUint() ||
+                    !item.HasMember("state") || !item["state"].IsUint() ||
+                    item["state"].GetUint() > static_cast<unsigned>(ProcessorOperationalState::offline))
+                    throw std::runtime_error("Invalid processor component");
+                entity.processor.emplace();
+                entity.processor.waitingForPower = item["waitingForPower"].GetBool();
+                entity.processor.lastConversionTick = item["lastConversionTick"].GetUint64();
+                entity.processor.activityTicksRemaining = item["activityTicksRemaining"].GetUint();
+                entity.processor.state = static_cast<ProcessorOperationalState>(item["state"].GetUint());
+                for (auto buffered = item["bufferedInputs"].MemberBegin();
+                     buffered != item["bufferedInputs"].MemberEnd(); ++buffered) {
+                    if (!buffered->value.IsNumber() || buffered->value.GetFloat() < 0.0F)
+                        throw std::runtime_error("Invalid processor buffered input");
+                    entity.processor.bufferedInputs[buffered->name.GetString()] =
+                        buffered->value.GetFloat();
+                }
+            }
+            if (components.HasMember("power")) {
+                const auto& item = components["power"];
+                if (!item.IsObject() || !item.HasMember("generation") ||
+                    !item["generation"].IsNumber() || !item.HasMember("demand") ||
+                    !item["demand"].IsNumber() || !item.HasMember("supplied") ||
+                    !item["supplied"].IsNumber() || !item.HasMember("priority") ||
+                    !item["priority"].IsInt() || !item.HasMember("state") ||
+                    !item["state"].IsUint() ||
+                    item["state"].GetUint() > static_cast<unsigned>(PowerOperationalState::offline))
+                    throw std::runtime_error("Invalid power component");
+                entity.power.emplace();
+                entity.power.generation = item["generation"].GetFloat();
+                entity.power.demand = item["demand"].GetFloat();
+                entity.power.supplied = item["supplied"].GetFloat();
+                entity.power.priority = item["priority"].GetInt();
+                entity.power.state = static_cast<PowerOperationalState>(item["state"].GetUint());
+                if (entity.power.generation < 0.0F || entity.power.demand < 0.0F ||
+                    entity.power.supplied < 0.0F || entity.power.supplied > entity.power.demand)
+                    throw std::runtime_error("Invalid saved power allocation");
             }
             if (components.HasMember("construction")) {
                 const auto& item = components["construction"];

@@ -14,7 +14,8 @@ UiDocument GameHudLayout::resources(std::size_t localResourceCount,
                                     float uiScale) {
     UiDocument ui;
     const UiLayout canvas(viewportWidth, viewportHeight, uiScale);
-    const UiRect resources = canvas.rect(UiAnchor::topLeft, 10, 10, 550, 34, 420, 34);
+    const float resourceWidth = 16.0F + static_cast<float>(localResourceCount) * 106.0F + 122.0F;
+    const UiRect resources = canvas.rect(UiAnchor::topLeft, 10, 10, resourceWidth, 34, 420, 34);
     ui.panel("resources.panel", resources,
              {0.018F, 0.028F, 0.038F});
     for (std::size_t i = 0; i < localResourceCount; ++i) {
@@ -65,6 +66,22 @@ UiDocument GameHudLayout::loading(float progress, const std::string& status,
         {content.left + canvas.value(50), content.top + canvas.value(88),
          content.right - canvas.value(50), content.top + canvas.value(108)},
         progress, {0.18F, 0.76F, 0.88F});
+    return ui;
+}
+
+UiDocument GameHudLayout::alerts(const std::vector<std::string>& messages,
+                                 int viewportWidth, int viewportHeight, float uiScale) {
+    UiDocument ui;
+    if (messages.empty()) return ui;
+    const UiLayout canvas(viewportWidth, viewportHeight, uiScale);
+    const UiRect panel = canvas.rect(UiAnchor::topRight, 20, 220, 360,
+                                     18.0F + 30.0F * messages.size(), 280, 48);
+    ui.panel("alerts.panel", panel, {0.08F, 0.035F, 0.025F});
+    for (std::size_t i = 0; i < messages.size(); ++i)
+        ui.label("alerts." + std::to_string(i),
+                 {panel.left + canvas.value(12), panel.top + canvas.value(10 + i * 30.0F),
+                  panel.right - canvas.value(12), panel.top + canvas.value(34 + i * 30.0F)},
+                 messages[i], 1.15F * canvas.scale(), {1.0F, 0.72F, 0.34F});
     return ui;
 }
 

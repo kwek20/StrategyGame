@@ -47,6 +47,14 @@ int main() {
     entity.production.emplace();
     entity.buildingUpgrades.emplace();
     entity.upgrades.emplace();
+    entity.processor.emplace();
+    entity.processor.bufferedInputs["scrap"] = 14.0F;
+    entity.power.emplace();
+    entity.power.generation = 0.0F;
+    entity.power.demand = 8.0F;
+    entity.power.supplied = 3.0F;
+    entity.power.priority = 40;
+    entity.power.state = strategy::PowerOperationalState::underpowered;
     entity.transform.position = {1.0F, 2.0F, 3.0F};
     entity.transform.rotationDegrees = {4.0F, 5.0F, 6.0F};
     entity.transform.scale = {2.0F, 2.0F, 2.0F};
@@ -84,11 +92,20 @@ int main() {
     drone.battery.suspendedDestination = entity.transform.position;
     drone.battery.suspendedHasDestination = true;
     drone.battery.chargerTarget = 77;
+    drone.gatherer.emplace();
+    drone.gatherer.carriedResource = "scrap";
+    drone.gatherer.carriedAmount = 8.0F;
+    drone.gatherer.sourceTarget = 91;
+    drone.gatherer.deliveryTarget = originalId;
+    drone.gatherer.preferredProcessor = originalId;
+    drone.gatherer.preferredOutput = "alloy";
+    drone.gatherer.repeatGathering = true;
+    drone.gatherer.waitingForProcessor = false;
     drone.unitControl.order = strategy::UnitOrderKind::returningToCharge;
     const strategy::EntityId droneId = drone.id;
     world.foundations().push_back({{1.0F, 6.0F, 3.0F}, 5.0F, 7.0F});
     strategy::PlayerRegistry players{"france", "brazil"};
-    players.find(1)->resources["materials"] = 125.0F;
+    players.find(1)->resources["alloy"] = 125.0F;
     players.find(1)->intelligence.push_back(
         {42, "town_center", {8, 0, 9}, {0, 45, 0}, {1, 1, 1}, true});
     strategy::SaveGame::write(savePath, 424242U, world, &players, 10);
@@ -126,7 +143,11 @@ int main() {
     valid = valid && loaded.entities[0].production.queue.front().remainingTicks == 135 &&
             loaded.entities[0].production.queue.front().recipeId ==
                 "town_center.train_construction_drone" &&
-            loaded.resources[0].at("materials") == 125.0F;
+            loaded.resources[0].at("alloy") == 125.0F && loaded.entities[0].processor &&
+            loaded.entities[0].processor.bufferedInputs.at("scrap") == 14.0F &&
+            loaded.entities[0].power && loaded.entities[0].power.supplied == 3.0F &&
+            loaded.entities[0].power.priority == 40 &&
+            loaded.entities[0].power.state == strategy::PowerOperationalState::underpowered;
     const auto loadedDrone = std::find_if(loaded.entities.begin(), loaded.entities.end(),
         [droneId](const strategy::Entity& candidate) { return candidate.id == droneId; });
     valid = valid && loadedDrone != loaded.entities.end() && loadedDrone->battery &&
@@ -136,7 +157,15 @@ int main() {
             loadedDrone->battery.hasSuspendedOrder &&
             loadedDrone->battery.suspendedOrder == strategy::UnitOrderKind::construct &&
             loadedDrone->battery.suspendedTarget == originalId &&
-            loadedDrone->battery.chargerTarget == 77;
+            loadedDrone->battery.chargerTarget == 77 && loadedDrone->gatherer &&
+            loadedDrone->gatherer.carriedResource == "scrap" &&
+            loadedDrone->gatherer.carriedAmount == 8.0F &&
+            loadedDrone->gatherer.sourceTarget == 91 &&
+            loadedDrone->gatherer.deliveryTarget == originalId &&
+            loadedDrone->gatherer.preferredProcessor == originalId &&
+            loadedDrone->gatherer.preferredOutput == "alloy" &&
+            loadedDrone->gatherer.repeatGathering &&
+            !loadedDrone->gatherer.waitingForProcessor;
 
     std::filesystem::remove_all(directory);
     if (!valid) {

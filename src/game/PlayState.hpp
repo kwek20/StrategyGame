@@ -51,6 +51,8 @@ class PlayState final : public GameState {
     bool paused_{false};
     bool detailedDebug_{false};
     bool powerOverlayVisible_{false};
+    struct HudAlert { EntityId source{0}; std::string text; float remaining{0.0F}; };
+    std::vector<HudAlert> hudAlerts_;
     StateRequest request_{StateRequest::none};
     GameConfig config_;
     mutable std::optional<std::uint32_t> pendingTerrainSeed_;

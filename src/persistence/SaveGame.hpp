@@ -23,7 +23,6 @@ struct SaveData {
     std::string playerTwoCountry{"japan"};
     std::string playerOneSpecialization{"unassigned"};
     std::string playerTwoSpecialization{"unassigned"};
-    std::array<float, 2> wood{0, 0}, stone{0, 0}, gold{0, 0};
     std::array<std::map<std::string, float>, 2> resources;
     std::array<std::vector<std::uint8_t>, 2> discovered;
     std::array<std::vector<LastKnownEntity>, 2> intelligence;

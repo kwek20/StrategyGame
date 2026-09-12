@@ -7,6 +7,10 @@ plan. It tracks outcomes rather than dates. A milestone is complete only when it
 persistence, deterministic simulation, interface, diagnostics, and tests meet the listed exit
 criteria.
 
+Detailed economic behavior and pacing are governed by [Resource system.md](Resource%20system.md)
+and [match progress.md](match%20progress.md). This roadmap schedules those rules; it does not
+redefine them.
+
 ## Current foundation
 
 The prototype already provides:
@@ -46,7 +50,7 @@ The repository currently has:
 
 Definitions, typed identity, recipe-backed upgrades, deterministic simulation boundaries,
 persistence, diagnostics, and automated coverage are implemented without legacy migration paths.
-The initial command hub, construction drone, materials, generator, relay, charging pad, extractor,
+The initial command hub, construction drone, placeholder materials economy, generator, relay, charging pad, extractor,
 factory, and sensor-tower archetypes are present and validated.
 
 ## Development loop
@@ -120,9 +124,9 @@ directly controlled, non-gathering ground worker.
 
 - Each player starts with one command hub, one construction drone, and one directly controlled
   ground worker that cannot gather.
-- The drone can gather materials into cargo, deposit them into the player's stockpile, construct
-  after an upfront material cost, recharge, and resume work.
-- Each construction recipe defines an upfront material cost, a power budget, and deterministic work
+- The drone can gather raw resources into cargo, deliver them to a compatible processor, construct
+  after an upfront Alloy cost, recharge, and resume work.
+- Each construction recipe defines an upfront Alloy cost, a power budget, and deterministic work
   steps; power is consumed per step while gathering continues to use drone cargo.
 - Identical command streams produce identical battery, cargo, construction-power, movement, and
   resource results.
@@ -178,27 +182,44 @@ Make connected energy infrastructure the main spatial constraint on expansion.
 - Power state survives save/load and participates in world checksums.
 - Large representative grids update within the simulation performance budget.
 
-## Milestone 5: modern materials economy
+## Milestone 5: physical processing economy
 
 ### Goal
 
-Create an enjoyable expansion loop using materials and power before increasing complexity.
+Implement the authoritative Harvest → Deliver → Instant Conversion → Spend loop. Establish Scrap
+and Alloy in the opening, introduce Oil and Fuel during expansion, and make logistics vulnerable
+without turning raw inputs into extra global currencies.
 
 ### Work
 
-- Replace placeholder wood, stone, and gold semantics with modern material deposits.
-- Add loose gathering and powered extraction as distinct economic stages.
-- Define carrying, storage, transfer, and spending rules.
-- Give each player clear material income, consumption, and capacity information.
-- Add resource deposit materials, icons, depletion states, and map indicators.
-- Balance initial expansion, second-drone timing, generator timing, and first factory timing.
+- Replace Wood, Stone, Gold, and Materials with Scrap, Oil, Uranium, Synthetic, Alloy, Fuel, Data,
+  Authority, and network Power definitions.
+- Keep Scrap, Oil, Uranium, and Synthetic as physical cargo; never expose them as player stockpiles.
+- Add Alloy and Fuel processors with local input buffers and power-gated instant conversion.
+- Convert Scrap to Alloy at a predictable baseline rate.
+- Convert Oil and Uranium to Fuel at source-specific yields.
+- Let powered Synthetic Mines produce finite raw Synthetic that can be routed to either an Alloy
+  Processor or Fuel Processor through independent, data-driven conversion definitions.
+- Select compatible delivery destinations and navigate harvesters to accessible interaction edges.
+- Add processor input, blocked-by-power, conversion, depletion, and delivery-route feedback.
+- Show Alloy and Fuel in the player economy while raw cargo remains visible on harvesters,
+  processors, resource nodes, and logistics overlays.
+- Generate deterministic starting Scrap access, ordinary Oil expansion sites, and contested
+  high-efficiency Uranium sites according to the intended 60–120 minute match progression.
+- Balance initial harvesting, processor placement, second-drone timing, generator timing, first
+  factory timing, and the economic cost of exposed forward processing.
 
 ### Exit criteria
 
-- Materials and power create at least two viable opening strategies.
+- Scrap, Alloy, and Power create at least two viable opening strategies.
+- Raw cargo cannot enter the player stockpile or convert at an incompatible processor.
+- Unpowered processors retain delivered input and convert it deterministically when power returns.
+- Synthetic can be deliberately routed to Alloy or Fuel and both outcomes use definition-backed
+  yields.
 - Players can understand why income or production has stopped.
 - Deposit generation is deterministic and produces fair starting access.
-- Resource state, reservations, and transfers survive save/load and replay.
+- Cargo, processor buffers, conversions, resource reservations, and transfers survive save/load
+  and replay checksums.
 
 ## Milestone 6: first combat slice
 
@@ -212,7 +233,7 @@ Create a complete short match with a small combined-arms roster.
 - Define health, armor class, damage type, range, cooldown, accuracy, and targeting rules.
 - Add attack, attack-move, guard, patrol, retreat, and hold-position commands as needed.
 - Make the command hub and power infrastructure valid combat targets.
-- Add repairs that consume materials and require an appropriate unit.
+- Add repairs that consume Alloy and require an appropriate unit.
 - Add unit-specific direct-control behavior and HUD information.
 - Add clear projectiles, impacts, selection icons, health bars, and audio events.
 - Implement command-hub destruction and match conclusion.
@@ -270,25 +291,28 @@ Validate the modular faction system with a small but strategically distinct sele
 - Current-schema saves fail clearly when their version or authoritative fields are invalid; no legacy
   save migration is planned before public release.
 
-## Milestone 9: logistics expansion
+## Milestone 9: strategic economy expansion
 
 ### Goal
 
-Add components and fuel only after the foundational economy and combat loop are stable.
+Add Data and Authority after physical processing, power, and the first combat loop are stable.
 
 ### Work
 
-- Add components for advanced electronics, units, and upgrades.
-- Add fuel for suitable vehicles and aircraft.
-- Add production, storage, delivery, and consumption rules.
-- Introduce cargo and logistics units where they create tactical choices.
-- Add warnings and automation controls that prevent avoidable micromanagement.
-- Rebalance existing recipes and operating costs.
+- Add Data generation, capture, reconnaissance, and hacking sources.
+- Let Data fund either permanent research or immediate cyber operations.
+- Add Authority rewards for objectives, territory, settlements, and battlefield success.
+- Let Authority fund either off-map support or longer-term strategic influence.
+- Extend cargo and logistics automation where it creates tactical choices without routine
+  micromanagement.
+- Rebalance Alloy and Fuel costs around the strategic options created by Data and Authority.
 
 ### Exit criteria
 
-- Components and fuel create new decisions rather than duplicate materials and power.
-- Logistics failures are visible, recoverable, and strategically exploitable.
+- Data and Authority create immediate-versus-long-term spending decisions.
+- Their sources reward information, objectives, and territorial success rather than duplicating
+  physical harvesting.
+- Logistics failures remain visible, recoverable, and strategically exploitable.
 - Automation handles routine delivery while allowing deliberate player intervention.
 
 ## Milestone 10: advanced combined arms
@@ -414,7 +438,7 @@ The immediate order of work is:
    charging, interruption-resume, persistence, and deterministic command loop.
 3. Build milestone 3 construction around that drone.
 4. Add the milestone 4 power grid.
-5. Balance the milestone 5 materials-and-power economy.
+5. Implement and balance the milestone 5 Scrap/Alloy and fuel-source/Fuel processing economy.
 6. Produce the milestone 6 first complete combat match.
 
 Work outside this sequence should be limited to defects, architectural blockers, and reusable

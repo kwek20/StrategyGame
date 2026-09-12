@@ -21,7 +21,7 @@ int main() {
     const strategy::EntityHudModel single = strategy::EntityHudModelBuilder::build(
         world, firstId, {}, definitions);
     bool valid = single.totalEntities == 1 && single.cards.empty() &&
-                 single.bars.size() == 2 && single.stats.size() == 5;
+                 single.bars.size() == 2 && single.stats.size() == 6;
 
     const strategy::EntityHudModel multiple = strategy::EntityHudModelBuilder::build(
         world, firstId, {firstId, secondId}, definitions);
@@ -44,7 +44,8 @@ int main() {
     const strategy::EntityHudModel buildingHud = strategy::EntityHudModelBuilder::build(
         world, buildingId, {}, definitions);
     valid = valid && buildingHud.totalEntities == 1 && !buildingHud.bars.empty() &&
-            buildingHud.stats.size() >= 3;
+            buildingHud.stats.size() >= 3 && !buildingHud.processorInputs.empty() &&
+            !buildingHud.processorState.empty();
 
     strategy::EntityHudModel interactive = buildingHud;
     interactive.actions.push_back(

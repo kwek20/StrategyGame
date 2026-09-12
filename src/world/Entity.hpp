@@ -84,6 +84,12 @@ struct GathererComponent {
     float carriedAmount{0.0F};
     float carryCapacity{0.0F};
     float gatherPerSecond{0.0F};
+    EntityId sourceTarget{0};
+    EntityId deliveryTarget{0};
+    EntityId preferredProcessor{0};
+    std::string preferredOutput;
+    bool repeatGathering{true};
+    bool waitingForProcessor{false};
 };
 struct FlightComponent {
     float altitude{6.0F};
@@ -128,6 +134,25 @@ struct ResourceComponent {
     std::string type;
     float remaining{0.0F};
 };
+enum class ProcessorOperationalState : std::uint8_t {
+    idle, powered, underpowered, blocked, processing, offline
+};
+struct ProcessorComponent {
+    // Raw cargo is authoritative and remains local until a powered conversion succeeds.
+    std::map<std::string, float> bufferedInputs;
+    bool waitingForPower{false};
+    std::uint64_t lastConversionTick{0};
+    std::uint32_t activityTicksRemaining{0};
+    ProcessorOperationalState state{ProcessorOperationalState::idle};
+};
+enum class PowerOperationalState : std::uint8_t { notApplicable, powered, underpowered, offline };
+struct PowerComponent {
+    float generation{0.0F};
+    float demand{0.0F};
+    float supplied{0.0F};
+    std::int32_t priority{100};
+    PowerOperationalState state{PowerOperationalState::offline};
+};
 struct UpgradeComponent {
     std::map<std::string, std::uint32_t> levels;
 };
@@ -137,6 +162,8 @@ struct EntityTransientState {
     std::vector<glm::vec3> navigationPath;
     std::size_t navigationWaypoint{0};
     float navigationRetrySeconds{0.0F};
+    EntityId navigationGoalEntity{0};
+    float navigationInteractionRange{0.0F};
 };
 
 enum class ProductionKind : std::uint8_t { trainCharacter, upgradeBuilding, improveTraining, processResource };
@@ -206,6 +233,8 @@ struct Entity {
     Component<ConstructionComponent> construction;
     Component<CombatComponent> combat;
     Component<ResourceComponent> resource;
+    Component<ProcessorComponent> processor;
+    Component<PowerComponent> power;
     Component<ProductionComponent> production;
     Component<BuildingUpgradeComponent> buildingUpgrades;
     Component<UpgradeComponent> upgrades;

@@ -19,7 +19,11 @@ const std::pair<const char*, AudioCue> cueNames[] = {
     {"train_unit", AudioCue::trainUnit},
     {"save_game", AudioCue::saveGame},
     {"load_game", AudioCue::loadGame},
-    {"possess_unit", AudioCue::possessUnit}};
+    {"possess_unit", AudioCue::possessUnit},
+    {"gather_order", AudioCue::gatherOrder},
+    {"delivery_complete", AudioCue::deliveryComplete},
+    {"conversion_complete", AudioCue::conversionComplete},
+    {"resource_warning", AudioCue::resourceWarning}};
 }
 void AudioSystem::load(const std::filesystem::path& manifest) {
     assets_.assign(static_cast<std::size_t>(AudioCue::count), AudioSlot{});

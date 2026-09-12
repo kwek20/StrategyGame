@@ -4,12 +4,19 @@
 
 #include <algorithm>
 #include <charconv>
+#include <iomanip>
+#include <sstream>
 
 namespace strategy {
 namespace {
 constexpr std::string_view actionPrefix = "action:";
 constexpr std::string_view queuePrefix = "queue:";
 constexpr std::string_view selectionPrefix = "selection:";
+std::string decimal(float value) {
+    std::ostringstream output;
+    output << std::fixed << std::setprecision(1) << value;
+    return output.str();
+}
 }
 
 std::string EntityHudLayout::selectionElementId(std::string_view archetype) {
@@ -67,7 +74,8 @@ UiDocument EntityHudLayout::actions(const EntityHudModel& model, int width, int 
                                     float uiScale) {
     UiDocument document;
     const UiLayout canvas(width, height, uiScale);
-    const UiRect panel = canvas.rect(UiAnchor::bottomLeft, 18, 18, 622, 340, 420, 250);
+    const float desiredHeight = model.processorInputs.empty() ? 340.0F : 410.0F;
+    const UiRect panel = canvas.rect(UiAnchor::bottomLeft, 18, 18, 622, desiredHeight, 420, 250);
     document.panel("entity.panel", panel,
                    {0.025F, 0.04F, 0.06F});
     document.label("entity.title", {panel.left + canvas.value(12), panel.top + canvas.value(12), 0, 0},
@@ -118,15 +126,29 @@ UiDocument EntityHudLayout::actions(const EntityHudModel& model, int width, int 
         stats += (stats.empty() ? "" : "   ") + stat.label + " " + stat.value;
     document.label("entity.stats", {panel.left + canvas.value(100), panel.top + canvas.value(112), 0, 0},
                    stats, 1.0F * canvas.scale(), {0.75F, 0.84F, 0.88F});
+    const std::size_t processorRows = std::min<std::size_t>(model.processorInputs.size(), 4);
+    for (std::size_t i = 0; i < processorRows; ++i) {
+        const auto& row = model.processorInputs[i];
+        const float y = panel.top + canvas.value(140.0F + i * 24.0F);
+        const std::string capacity = row.capacity > 0.0F
+            ? decimal(row.buffered) + "/" + decimal(row.capacity)
+            : decimal(row.buffered);
+        document.label("entity.processor." + std::to_string(i),
+            {panel.left + canvas.value(100), y, panel.right - canvas.value(12), y + canvas.value(20)},
+            row.inputName + " " + capacity + "  ->  " + row.outputName + " " +
+                decimal(row.expectedOutput) + "  (x" + decimal(row.outputPerInput) + ")",
+            1.0F * canvas.scale(), {0.78F, 0.90F, 0.94F});
+    }
     document.label("entity.footer", {panel.left + canvas.value(384), panel.top + canvas.value(86), 0, 0},
                    model.footer, 1.05F * canvas.scale(), {0.82F, 0.88F, 0.90F});
-    document.label("entity.tooltip", {panel.left + canvas.value(12), panel.top + canvas.value(137),
-                   panel.right - canvas.value(12), panel.top + canvas.value(160)},
+    const float contentShift = model.processorInputs.empty() ? 0.0F : 70.0F;
+    document.label("entity.tooltip", {panel.left + canvas.value(12), panel.top + canvas.value(137 + contentShift),
+                   panel.right - canvas.value(12), panel.top + canvas.value(160 + contentShift)},
                    {}, 1.25F * canvas.scale(), {0.96F, 0.90F, 0.58F});
     const std::size_t queueCount = std::min<std::size_t>(model.queue.size(), 9);
-    const UiRect queueArea{panel.left + canvas.value(12), panel.top + canvas.value(170),
+    const UiRect queueArea{panel.left + canvas.value(12), panel.top + canvas.value(170 + contentShift),
                            panel.left + canvas.value(12 + static_cast<float>(queueCount) * 54),
-                           panel.top + canvas.value(214)};
+                           panel.top + canvas.value(214 + contentShift)};
     const auto queueCells = canvas.row(queueArea, queueCount, 10, 44);
     for (std::size_t i = 0; i < queueCount; ++i) {
         document.queueSlot(queueElementId(i), queueCells[i],
@@ -136,8 +158,8 @@ UiDocument EntityHudLayout::actions(const EntityHudModel& model, int width, int 
     }
     if (!model.queue.empty())
         document.progressBar("entity.queue.progress",
-            {panel.left + canvas.value(12), panel.top + canvas.value(224),
-             panel.right - canvas.value(20), panel.top + canvas.value(234)},
+            {panel.left + canvas.value(12), panel.top + canvas.value(224 + contentShift),
+             panel.right - canvas.value(20), panel.top + canvas.value(234 + contentShift)},
             model.queue.front().progress);
     const std::size_t actionCount = std::min<std::size_t>(model.actions.size(), 6);
     const UiRect actionArea{panel.left + canvas.value(12), panel.bottom - canvas.value(68),

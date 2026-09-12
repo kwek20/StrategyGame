@@ -1094,7 +1094,8 @@ void Renderer::drawResourceHud(const Player& player,
     glEnable(GL_CULL_FACE);
     glEnable(GL_DEPTH_TEST);
     float generation = 0.0F, demand = 0.0F, storage = 0.0F;
-    struct DeviceLine { std::string name; float production; float consumption; };
+    struct DeviceLine { std::string name; float production; float demand; float supplied;
+                        std::string status; float waitingCargo; };
     std::vector<DeviceLine> devices;
     for (const Entity& entity : world.entities()) {
         if (entity.authority.owner != player.id) continue;
@@ -1108,7 +1109,23 @@ void Renderer::drawResourceHud(const Player& player,
         generation += produced;
         demand += consumed;
         storage += device->storage;
-        devices.push_back({entity.name, produced, consumed});
+        std::string status = active ? "IDLE" : "OFFLINE";
+        float waitingCargo = 0.0F;
+        if (entity.processor && active) {
+            for (const auto& [resource, bufferedAmount] : entity.processor.bufferedInputs)
+                waitingCargo += bufferedAmount;
+            switch (entity.processor.state) {
+            case ProcessorOperationalState::processing: status = "PROCESSING"; break;
+            case ProcessorOperationalState::blocked: status = "BLOCKED"; break;
+            case ProcessorOperationalState::underpowered: status = "UNDERPOWERED"; break;
+            case ProcessorOperationalState::offline: status = "OFFLINE"; break;
+            case ProcessorOperationalState::powered: status = "POWERED"; break;
+            default: status = "IDLE"; break;
+            }
+        }
+        devices.push_back({entity.name, produced, consumed,
+                           active && entity.power ? entity.power.supplied : 0.0F,
+                           std::move(status), waitingCargo});
     }
     const auto powerText = [](float used, float capacity) {
         float scale = 1.0F;
@@ -1123,7 +1140,7 @@ void Renderer::drawResourceHud(const Player& player,
     };
     std::size_t localIndex = 0;
     for (const ResourceDefinition* resource : definitions.enabledResources()) {
-        if (resource->storage == ResourceStorageKind::network) continue;
+        if (resource->storage != ResourceStorageKind::stockpile) continue;
         const UiElement* slot = layout.find("resources.local." + std::to_string(localIndex++));
         if (!slot) continue;
         const float iconSize = slot->bounds.bottom - slot->bounds.top;
@@ -1159,8 +1176,13 @@ void Renderer::drawResourceHud(const Player& player,
     for (const DeviceLine& device : devices) {
         const std::string value = device.production > 0.0F
             ? "+" + std::to_string(static_cast<int>(device.production)) + " kW"
-            : "-" + std::to_string(static_cast<int>(device.consumption)) + " kW";
-        drawText(device.name + "  " + value, textLeft, y, 1.1F,
+            : std::to_string(static_cast<int>(device.supplied)) + "/" +
+                  std::to_string(static_cast<int>(device.demand)) + " kW";
+        const std::string waiting = device.waitingCargo > 0.0F
+            ? "  " + std::to_string(static_cast<int>(device.waitingCargo)) + " RAW WAITING"
+            : std::string{};
+        drawText(device.name + "  " + value + "  " + device.status + waiting,
+                 textLeft, y, 1.1F,
                  device.production > 0.0F ? glm::vec3{0.35F, 0.92F, 0.45F}
                                           : glm::vec3{0.95F, 0.72F, 0.28F});
         y += 22.0F;
@@ -1618,10 +1640,13 @@ void Renderer::drawOrderMarkers(const World& world,
                                 const CameraView& camera) const {
     renderGraph_.enter(RenderPassKind::overlay);
     std::vector<glm::vec2> destinations;
+    std::vector<const Entity*> cargoEntities;
     const auto add = [&](EntityId id) {
         const Entity* entity = world.findEntity(id);
-        if (!entity || !entity->unitControl || !entity->unitControl.hasStrategicDestination)
-            return;
+        if (!entity) return;
+        if (entity->gatherer && entity->gatherer.carriedAmount > 0.0F)
+            cargoEntities.push_back(entity);
+        if (!entity->unitControl || !entity->unitControl.hasStrategicDestination) return;
         const glm::vec2 destination{entity->unitControl.strategicDestination.x,
                                     entity->unitControl.strategicDestination.z};
         for (const glm::vec2& existing : destinations)
@@ -1634,9 +1659,9 @@ void Renderer::drawOrderMarkers(const World& world,
     else
         for (EntityId id : selection)
             add(id);
-    if (destinations.empty())
+    if (destinations.empty() && cargoEntities.empty())
         return;
-    std::vector<glm::vec2> poles, flags;
+    std::vector<glm::vec2> poles, flags, cargo;
     const auto screen = [this](glm::vec4 clip) {
         const glm::vec3 ndc = glm::vec3(clip) / clip.w;
         return glm::vec2{(ndc.x + 1.0F) * 0.5F * viewportWidth_,
@@ -1665,9 +1690,20 @@ void Renderer::drawOrderMarkers(const World& world,
         flags.insert(flags.end(),
                      {ndc({base.x + 1.5F, base.y - 30.0F}),
                       ndc({base.x + 20.0F, base.y - 24.0F}),
-                      ndc({base.x + 1.5F, base.y - 18.0F})});
+                     ndc({base.x + 1.5F, base.y - 18.0F})});
     }
-    if (poles.empty())
+    for (const Entity* entity : cargoEntities) {
+        const glm::vec4 clip = camera.viewProjection() *
+            glm::vec4{entity->transform.position.x,
+                      entity->transform.position.y + 2.2F,
+                      entity->transform.position.z, 1.0F};
+        if (clip.w <= 0.0F) continue;
+        const glm::vec2 point = screen(clip);
+        appendHudRectangle(cargo, point.x - 5.0F, point.y - 5.0F,
+                           point.x + 5.0F, point.y + 5.0F,
+                           viewportWidth_, viewportHeight_);
+    }
+    if (poles.empty() && cargo.empty())
         return;
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
@@ -1686,6 +1722,7 @@ void Renderer::drawOrderMarkers(const World& world,
     };
     draw(poles, {0.92F, 0.92F, 0.82F});
     draw(flags, {1.0F, 0.72F, 0.05F});
+    draw(cargo, {0.20F, 0.85F, 0.95F});
     glBindVertexArray(0);
     glEnable(GL_CULL_FACE);
     glEnable(GL_DEPTH_TEST);

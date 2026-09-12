@@ -77,6 +77,7 @@ add_library(strategy_world STATIC
     src/world/World.cpp
     src/world/Collision.cpp
     src/world/Navigation.cpp
+    src/world/SpatialShape.cpp
     src/world/WorldGeneration.cpp
 )
 strategy_target(strategy_world)
@@ -220,6 +221,11 @@ if(STRATEGY_BUILD_TESTS)
     )
     add_test(NAME game_systems COMMAND game_system_tests)
     set_tests_properties(game_systems PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
+    add_executable(spatial_shape_tests tests/SpatialShapeTests.cpp)
+    strategy_target(spatial_shape_tests)
+    target_link_libraries(spatial_shape_tests PRIVATE strategy_world)
+    add_test(NAME spatial_shapes COMMAND spatial_shape_tests)
 
     add_executable(entity_hud_model_tests tests/EntityHudModelTests.cpp)
     strategy_target(entity_hud_model_tests)

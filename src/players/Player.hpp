@@ -27,7 +27,6 @@ struct Player {
     std::string name;
     std::string countryId{"unassigned"};
     std::string specializationId{"unassigned"};
-    float wood{0.0F}, stone{0.0F}, gold{0.0F};
     std::map<std::string, float> resources;
     std::vector<std::uint8_t> discovered =
         std::vector<std::uint8_t>(explorationCells * explorationCells, 0);

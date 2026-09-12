@@ -38,7 +38,7 @@ bool readString(std::span<const std::byte>& input, std::string& value) {
 
 std::vector<std::byte> CommandCodec::encode(const PlayerCommand& command) {
     std::vector<std::byte> result;
-    result.push_back(std::byte{6});
+    result.push_back(std::byte{8});
     write(result, command.player);
     write(result, command.sequence);
     result.push_back(static_cast<std::byte>(command.payload.index()));
@@ -52,7 +52,12 @@ std::vector<std::byte> CommandCodec::encode(const PlayerCommand& command) {
         } else if constexpr (std::is_same_v<T, MoveUnitCommand>) {
             write(result, payload.destination.x); write(result, payload.destination.y);
             write(result, payload.destination.z);
-        } else if constexpr (std::is_same_v<T, GatherResourceCommand>) write(result, payload.resource);
+        } else if constexpr (std::is_same_v<T, GatherResourceCommand>) {
+            write(result, payload.resource); write(result, payload.processor);
+        }
+        else if constexpr (std::is_same_v<T, DeliverResourceCommand>) write(result, payload.processor);
+        else if constexpr (std::is_same_v<T, SetPreferredProcessorCommand>) write(result, payload.processor);
+        else if constexpr (std::is_same_v<T, SetDeliveryOutputCommand>) writeString(result, payload.output);
         else if constexpr (std::is_same_v<T, AttackEntityCommand>) write(result, payload.target);
         else if constexpr (std::is_same_v<T, StartRecipeCommand>) writeString(result, payload.recipeId.value);
         else if constexpr (std::is_same_v<T, StartUpgradeCommand>) writeString(result, payload.upgradeId);
@@ -70,7 +75,7 @@ std::vector<std::byte> CommandCodec::encode(const PlayerCommand& command) {
 }
 
 std::optional<PlayerCommand> CommandCodec::decode(std::span<const std::byte> input) {
-    if (input.empty() || input.front() != std::byte{6}) return std::nullopt;
+    if (input.empty() || input.front() != std::byte{8}) return std::nullopt;
     input = input.subspan(1);
     PlayerCommand result;
     if (!read(input, result.player) || !read(input, result.sequence) || input.empty()) return std::nullopt;
@@ -84,7 +89,7 @@ std::optional<PlayerCommand> CommandCodec::decode(std::span<const std::byte> inp
         value.running=input.front()!=std::byte{0}; input=input.subspan(1);
         if(!read(input,value.facingDegrees)) return std::nullopt; result.payload=value; break; }
     case 3: { MoveUnitCommand value{entity}; if(!read(input,value.destination.x)||!read(input,value.destination.y)||!read(input,value.destination.z)) return std::nullopt; result.payload=value; break; }
-    case 4: { EntityId target{}; if(!read(input,target)) return std::nullopt; result.payload=GatherResourceCommand{entity,target}; break; }
+    case 4: { EntityId target{}, processor{}; if(!read(input,target)||!read(input,processor)) return std::nullopt; result.payload=GatherResourceCommand{entity,target,processor}; break; }
     case 5: { EntityId target{}; if(!read(input,target)) return std::nullopt; result.payload=AttackEntityCommand{entity,target}; break; }
     case 6: {
         StartRecipeCommand value;
@@ -122,6 +127,9 @@ std::optional<PlayerCommand> CommandCodec::decode(std::span<const std::byte> inp
     case 13: { std::uint32_t index{}; if(!read(input,index)) return std::nullopt; result.payload=CancelProductionCommand{entity,index}; break; }
     case 14: result.payload=RechargeCommand{entity}; break;
     case 15: result.payload=StopUnitCommand{entity}; break;
+    case 16: { EntityId processor{}; if(!read(input,processor)) return std::nullopt; result.payload=DeliverResourceCommand{entity,processor}; break; }
+    case 17: { EntityId processor{}; if(!read(input,processor)) return std::nullopt; result.payload=SetPreferredProcessorCommand{entity,processor}; break; }
+    case 18: { std::string output; if(!readString(input,output)) return std::nullopt; result.payload=SetDeliveryOutputCommand{entity,std::move(output)}; break; }
     default: return std::nullopt;
     }
     return input.empty() ? std::optional<PlayerCommand>{std::move(result)} : std::nullopt;

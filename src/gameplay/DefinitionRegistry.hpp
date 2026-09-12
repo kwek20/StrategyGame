@@ -21,6 +21,7 @@ struct ResourceTag;
 struct WeaponTag;
 struct PowerDeviceTag;
 struct RecipeTag;
+struct ConversionTag;
 using UnitArchetypeId = DefinitionId<EntityArchetypeTag>;
 using BuildingArchetypeId = DefinitionId<EntityArchetypeTag>;
 using ResourceArchetypeId = DefinitionId<EntityArchetypeTag>;
@@ -28,6 +29,7 @@ using ResourceId = DefinitionId<ResourceTag>;
 using WeaponId = DefinitionId<WeaponTag>;
 using PowerDeviceId = DefinitionId<PowerDeviceTag>;
 using RecipeId = DefinitionId<RecipeTag>;
+using ConversionId = DefinitionId<ConversionTag>;
 struct PresentationTag;
 using PresentationId = DefinitionId<PresentationTag>;
 
@@ -80,13 +82,26 @@ struct UpgradeDefinition {
     std::vector<GameplayModifier> modifiers;
 };
 
-enum class ResourceStorageKind { stockpile, network };
+enum class ResourceStorageKind { cargo, stockpile, network };
+
+enum class ResourceCategory { raw, processed, strategic, infrastructure };
 
 struct ResourceDefinition {
     std::string id, nameKey, icon;
     std::unordered_set<std::string> tags;
     ResourceStorageKind storage{ResourceStorageKind::stockpile};
+    ResourceCategory category{ResourceCategory::processed};
     bool enabled{true};
+};
+
+struct ResourceConversionDefinition {
+    std::string id;
+    BuildingArchetypeId processor;
+    ResourceId input;
+    ResourceId output;
+    float outputPerInput{1.0F};
+    float requiredPower{0.0F};
+    std::int32_t priority{100};
 };
 
 struct WeaponDefinition {
@@ -104,6 +119,7 @@ struct PowerDeviceDefinition {
     std::unordered_set<std::string> tags;
     float production{0.0F}, consumption{0.0F}, storage{0.0F};
     float connectionRange{0.0F}, transferLimit{0.0F}, chargePerTick{0.0F};
+    std::int32_t priority{100};
 };
 
 enum class RecipeProductKind { unit, building, resource };
@@ -144,13 +160,18 @@ struct EntityArchetype {
     EntityKind kind{EntityKind::decoration};
     float collisionRadius{1.0F};
     float interactionMargin{0.0F}, spawnClearance{0.0F};
+    std::unordered_map<std::string, float> interactionRanges;
     std::uint32_t spawnCandidateCount{0};
     std::string resourceType, upgradeTo;
     float resourceCapacity{0.0F};
+    float rawProductionPerTick{0.0F};
+    float processorCapacity{0.0F}; // zero means unlimited
     struct Generation {
         std::string stream;
         std::uint32_t clusterPairs{0}, nodesPerCluster{0}, attemptsPerCluster{0};
         float spread{0.0F}, centerExtent{0.0F};
+        std::uint32_t startingNodesPerPlayer{0};
+        float startingMinimumDistance{0.0F}, startingMaximumDistance{0.0F};
     };
     std::optional<Generation> generation;
     MovementDefinition movement;
@@ -200,7 +221,8 @@ class DefinitionRegistry final {
         const std::filesystem::path& localization = "assets/text/en_us.json",
         const std::filesystem::path& textures = "assets/textures",
         const std::filesystem::path& rules = "assets/gameplay/rules.json",
-        const std::filesystem::path& upgrades = "assets/gameplay/upgrades.json");
+        const std::filesystem::path& upgrades = "assets/gameplay/upgrades.json",
+        const std::filesystem::path& conversions = "assets/gameplay/conversions.json");
 
     [[nodiscard]] float resolve(GameplayStat stat,
                                 const std::string& country,
@@ -226,6 +248,12 @@ class DefinitionRegistry final {
     [[nodiscard]] const WeaponDefinition* weapon(WeaponId id) const;
     [[nodiscard]] const PowerDeviceDefinition* powerDevice(PowerDeviceId id) const;
     [[nodiscard]] const RecipeDefinition* recipe(RecipeId id) const;
+    [[nodiscard]] const ResourceConversionDefinition* conversion(ConversionId id) const;
+    [[nodiscard]] const ResourceConversionDefinition*
+    conversionFor(BuildingArchetypeId processor, ResourceId input) const;
+    [[nodiscard]] bool acceptsResource(BuildingArchetypeId processor, ResourceId input) const;
+    [[nodiscard]] std::vector<const ResourceConversionDefinition*>
+    conversionsForProcessor(BuildingArchetypeId processor) const;
     [[nodiscard]] const RecipeDefinition*
     productionRecipe(const std::string& producer, const std::string& product) const;
     [[nodiscard]] std::vector<const RecipeDefinition*> recipesForProducer(const std::string& producer) const;
@@ -247,6 +275,7 @@ class DefinitionRegistry final {
     std::unordered_map<std::string, PowerDeviceDefinition> powerDevices_;
     std::unordered_map<std::string, std::string> presentationIcons_;
     std::unordered_map<std::string, RecipeDefinition> recipes_;
+    std::unordered_map<std::string, ResourceConversionDefinition> conversions_;
     std::vector<CountryDefinition> countryList_;
     std::unordered_map<std::string, std::vector<GameplayModifier>> countries_, specializations_;
     std::unordered_set<std::string> modifierIds_;
@@ -260,6 +289,7 @@ class DefinitionRegistry final {
     void loadWeapons(const std::filesystem::path&);
     void loadPowerDevices(const std::filesystem::path&);
     void loadRecipes(const std::filesystem::path&);
+    void loadConversions(const std::filesystem::path&);
     void loadReferenceKeys(const std::filesystem::path&, const std::filesystem::path&);
     void loadRules(const std::filesystem::path&);
     void loadUpgrades(const std::filesystem::path&);

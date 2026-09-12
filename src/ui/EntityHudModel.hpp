@@ -56,6 +56,11 @@ struct HudQueueItemModel {
     bool cancellable{false};
 };
 
+struct HudProcessorInputModel {
+    std::string inputIcon, inputName, outputIcon, outputName;
+    float buffered{0.0F}, capacity{0.0F}, outputPerInput{1.0F}, expectedOutput{0.0F};
+};
+
 struct EntityHudModel {
     std::string title;
     std::string portraitIcon;
@@ -64,6 +69,8 @@ struct EntityHudModel {
     std::vector<HudEntityCardModel> cards;
     std::vector<HudActionModel> actions;
     std::vector<HudQueueItemModel> queue;
+    std::vector<HudProcessorInputModel> processorInputs;
+    std::string processorState;
     std::vector<HudSelectionGroupModel> selectionGroups;
     std::string footer;
     std::size_t totalEntities{0};

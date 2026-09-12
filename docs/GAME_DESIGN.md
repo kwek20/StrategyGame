@@ -10,6 +10,10 @@ remain subject to playtesting.
 Concrete implementation order, dependencies, and completion criteria are maintained in the
 [project roadmap](ROADMAP.md).
 
+The detailed economy rules and match pacing are defined by [Resource system.md](Resource%20system.md)
+and [match progress.md](match%20progress.md). Those documents are authoritative if a summarized
+description in this document becomes outdated.
+
 ## High concept
 
 The game is a deterministic 1v1 modern real-time strategy game inspired by the economic
@@ -90,8 +94,9 @@ Economic depth should produce strategic choices without becoming spreadsheet man
 
 Each player begins with a command hub, a construction drone, a directly controlled
 non-gathering ground worker, limited stored power, and a
-partially unexplored map. The drone scouts, collects loose materials, constructs foundational
-buildings, repairs structures, and returns to powered facilities to recharge.
+partially unexplored map. The drone scouts, collects raw Scrap, delivers it to an Alloy Processor,
+constructs foundational buildings, repairs structures, and returns to powered facilities to
+recharge.
 
 Early choices include:
 
@@ -116,18 +121,34 @@ not simply mass-producing the highest-tier unit.
 
 ## Economy and resources
 
-The initial resource model is:
+The economy separates physical raw cargo, spendable stockpiles, strategic currencies, and
+infrastructure capacity:
 
-| Resource | Primary uses |
-| --- | --- |
-| Materials | Buildings, basic units, repairs, and ammunition |
-| Components | Electronics, advanced units, and upgrades |
-| Fuel | Combustion vehicles, aircraft, and logistics |
-| Power | Building operation, production, sensors, and unit charging |
+| System | Storage | Primary role |
+| --- | --- | --- |
+| Scrap | Physical cargo | Common raw input for Alloy |
+| Oil | Physical cargo | Reliable raw input for Fuel |
+| Uranium | Physical cargo | Rare, efficient raw input for Fuel |
+| Synthetic | Physical cargo | Powered, flexible input for either Alloy or Fuel |
+| Alloy | Player stockpile | Buildings, basic equipment, repairs, and mechanical production |
+| Fuel | Player stockpile | Mechanized units, aircraft, and advanced military production |
+| Data | Player stockpile | Permanent research or immediate cyber operations |
+| Authority | Player stockpile | Reinforcements or strategic influence |
+| Power | Network capacity | Operating processors, production, sensors, defenses, and chargers |
 
-Materials should initially combine construction supplies and common metals. Components and
-fuel should be introduced only after the materials-and-power economy is enjoyable. Resource
-specificity is valuable only when it creates meaningful choices.
+Raw resources never become global currencies. Harvesters carry them to a compatible processor.
+If sufficient power is available, delivery converts the cargo immediately. Otherwise the raw
+input remains buffered at the processor until power becomes available. Only the processed result
+is added to the owning player's stockpile.
+
+Synthetic deliberately supports two routes. Delivery to an Alloy Processor produces Alloy;
+delivery to a Fuel Processor produces Fuel. This creates a responsive economic choice while
+natural Scrap, Oil, and Uranium retain their efficiency and territorial importance.
+
+Fuel is paid when producing mechanized units or activating explicitly fuel-powered systems. It is
+not continuously drained by ordinary vehicle movement. Data and Authority are acquired through
+map control, objectives, infrastructure, reconnaissance, and conflict rather than conventional
+harvesting.
 
 Each player owns an independent economy. Economic values, gathering rates, production
 rates, and modifiers must remain deterministic and belong to authoritative simulation state.
@@ -141,16 +162,16 @@ the identity of the game and replaces the traditional starting worker.
 
 - Fly across rough terrain and low obstacles
 - Discover terrain and enemy activity
-- Gather and carry loose resources, then deposit them into the player's resource stockpile
+- Gather and carry raw resources, then deliver them to a compatible processor
 - Construct foundational buildings
-- Repair damaged structures using materials
+- Repair damaged structures using Alloy
 - Recharge at a command hub or charging facility
 - Operate automatically or under direct control
 
 ### Constraints
 
 - Limited battery capacity
-- Construction uses an upfront material cost from the player's stockpile, followed by powered
+- Construction uses an upfront Alloy cost from the player's stockpile, followed by powered
   drone work; gathered resources still use the drone's normal cargo inventory
 - Vulnerability to weapons and interception
 - Dependence on charging infrastructure
@@ -174,14 +195,15 @@ Construction requires:
 
 Placement previews must communicate collision, terrain suitability, grid connectivity, cost,
 construction power budget, work steps, and expected power state. Cancellation and refund rules
-must be deterministic and explicit. Materials are deducted from the player's resources when
+must be deterministic and explicit. Alloy is deducted from the player's resources when
 construction begins (or reserved according to the recipe), while construction power is consumed
 as each drone work step runs. Resource gathering remains a separate cargo-and-deposit loop.
 
 ## Power grid
 
-Power is both an economic resource and a spatial network. Generators supply connected
-consumers through pylons or relay stations. Connections are visible and vulnerable.
+Power is infrastructure capacity expressed through a spatial network, not a stockpiled economic
+resource. Generators supply connected consumers through pylons or relay stations. Connections are
+visible and vulnerable.
 
 ### Building power state
 
@@ -305,7 +327,7 @@ Likely damage families include kinetic, explosive, incendiary, and electronic da
 anti-air targeting restrictions. Directional armor, detailed penetration, suppression, and
 subsystem damage should be added only if the simpler model cannot create the desired tactics.
 
-Buildings do not regenerate health automatically. Repairs require materials and an
+Buildings do not regenerate health automatically. Repairs require Alloy and an
 appropriate drone or engineer.
 
 ## Countries and specializations
@@ -358,19 +380,21 @@ The first representative gameplay slice should include:
 
 1. Two players with independent resources and fog of war.
 2. One command hub, one construction drone, and one non-gathering ground worker per player.
-3. Materials and power as functional resources.
-4. Resource deposits gathered by drones.
-5. A generator, relay pylon, charging pad, extractor, factory, and sensor tower.
-6. A connected, visible, destructible power grid.
-7. Construction costs, placement rules, and build time.
-8. Drone battery use, automatic return, and recharging.
-9. One infantry unit, one scout vehicle, and one combat drone.
-10. Strategy control and direct unit control.
-11. Basic combat and command-hub destruction.
-12. Complete save/load support for authoritative systems.
+3. Scrap delivery, Alloy processing, and network Power as functional opening systems.
+4. Oil and Fuel processing as the first expansion economy.
+5. Resource deposits gathered by drones and physically delivered to compatible processors.
+6. An Alloy Processor, Fuel Processor, generator, relay pylon, charging pad, extractor, factory,
+   and sensor tower.
+7. A connected, visible, destructible power grid.
+8. Construction costs, placement rules, and build time.
+9. Drone battery use, automatic return, and recharging.
+10. One infantry unit, one scout vehicle, and one combat drone.
+11. Strategy control and direct unit control.
+12. Basic combat and command-hub destruction.
+13. Complete save/load support for authoritative systems.
 
-Tanks, aircraft, fuel, advanced components, and a broad faction roster follow only after this
-loop is playable and enjoyable.
+Data, Authority, tanks, aircraft, advanced cyberwarfare, and a broad faction roster expand the
+match after this physical economy and combat loop is playable and enjoyable.
 
 ## Technical design constraints
 
@@ -408,8 +432,10 @@ network recalculation, grid visualization, and persistence.
 
 ### Phase 5: establish the modern economy
 
-Balance materials and power first. Add components and fuel only when they support new
-strategic decisions rather than additional bookkeeping.
+Balance Scrap delivery, Alloy processing, construction, and power first. Introduce Oil and Fuel
+as expansion begins, then Data and Authority as territorial and information systems come online.
+Synthetic production should arrive as a powered, flexible supplement rather than a replacement
+for map control.
 
 ### Phase 6: create the first combat slice
 

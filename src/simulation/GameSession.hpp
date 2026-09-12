@@ -3,6 +3,7 @@
 #include "gameplay/GameplayCatalogue.hpp"
 #include "players/PlayerRegistry.hpp"
 #include "simulation/Command.hpp"
+#include "simulation/ResourceEvent.hpp"
 #include "terrain/Terrain.hpp"
 #include "world/Navigation.hpp"
 #include "world/World.hpp"
@@ -34,9 +35,6 @@ class GameSession final {
                       std::vector<TerrainFoundation> foundations = {},
                       std::uint32_t mapChunksPerSide = Terrain::chunksPerSide);
     void restorePlayerProgress(PlayerId player,
-                               float wood,
-                               float stone,
-                               float gold,
                                std::map<std::string, float> resources,
                                std::vector<std::uint8_t> discovered,
                                std::vector<LastKnownEntity> intelligence = {});
@@ -62,6 +60,11 @@ class GameSession final {
     [[nodiscard]] bool canStartRecipe(PlayerId player, EntityId producer, RecipeId recipe) const;
     [[nodiscard]] bool canStartUpgrade(PlayerId player, EntityId researcher,
                                        const std::string& upgrade) const;
+    [[nodiscard]] std::vector<ResourceEvent> consumeResourceEvents() {
+        auto result = std::move(resourceEvents_);
+        resourceEvents_.clear();
+        return result;
+    }
 
   private:
     PlayerRegistry players_;
@@ -73,9 +76,10 @@ class GameSession final {
     std::uint32_t terrainSeed_{0};
     double accumulator_{0.0};
     Terrain terrain_;
-    Navigation navigation_;
     std::uint32_t mapChunksPerSide_{15};
+    Navigation navigation_;
     float resourceAbundanceScale_{1.0F};
+    std::vector<ResourceEvent> resourceEvents_;
 
     void simulateTick();
     void apply(const PlayerCommand& command);

@@ -214,21 +214,22 @@ void BuildState::render(Renderer& renderer) const {
         TerrainFootprint shape{FootprintShape::circle, radius, {radius, radius}};
         if (type->kind == EntityKind::building && type->footprint)
             shape = *type->footprint;
-        shape.rotationDegrees = team_ == 2 ? 180.0F : 0.0F;
+        const float entityRotation = team_ == 2 ? 180.0F : 0.0F;
+        shape.rotationDegrees += entityRotation;
         const FootprintFit footprint = type->kind == EntityKind::building
                                            ? renderer.fitTerrainFootprint(position.x, position.z, shape)
                                            : renderer.fitTerrainFootprint(position.x, position.z, radius, 90.0F);
-        if (!footprint.valid || overlapsObject(world_,
-                           gameplay_,
-                           {position.x, position.z},
-                           radius)) {
+        const SpatialShape placementShape = spatialShape(
+            gameplay_, EntityArchetypeId{entityType}, {position.x, position.z},
+            entityRotation);
+        if (!footprint.valid || overlapsObject(world_, gameplay_, placementShape)) {
             status_ = Text::get("status.blocked");
         } else {
             Entity& entity =
                 world_.createEntity(Text::get(type->nameKey), entityType, team_);
             gameplay_.initializeEntity(entity);
             entity.transform.position = {position.x, 0.0F, position.z};
-            entity.transform.rotationDegrees.y = shape.rotationDegrees;
+            entity.transform.rotationDegrees.y = entityRotation;
             if (entity.kind == EntityKind::building) {
                 world_.foundations().push_back(TerrainFoundation{
                     entity.id, {position.x, footprint.height, position.z}, shape,

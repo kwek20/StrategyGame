@@ -10,7 +10,30 @@ The economy is built around two raw resource chains, two strategic resources, an
 
 Raw resources are not intended to become additional stockpiled currencies. They exist physically on the map, are collected, and are delivered to the appropriate processor.
 
+The starting Command Hub provides inefficient emergency processing so the opening economy cannot
+deadlock before dedicated infrastructure is constructed. It accepts Scrap, Oil, and Uranium at
+half of their dedicated-processor output yields. It does **not** accept Synthetic. Synthetic must
+always be delivered to an Alloy Processor or Fuel Processor.
+
+Automatic delivery always prefers the closest compatible non-hub processor, even when the
+Command Hub is nearer. The hub is selected automatically only when no compatible dedicated
+processor is available. An explicit player delivery order may still choose the hub for Scrap,
+Oil, or Uranium when shorter travel time matters more than conversion efficiency.
+
 Once delivered, conversion happens **instantly** if power allows it, otherwise during new power generation.
+
+Processors expose their local input inventory, expected output ratios, supplied power, and current
+operational state. A powered conversion briefly reports Processing; insufficient partial supply is
+Underpowered, while raw cargo that cannot meet its route's power requirement is Blocked and raises
+a deduplicated player alert.
+
+Synthetic harvesters retain an explicit desired output route: Alloy or Fuel. Automatic processor
+replacement preserves this output choice if a destination is destroyed or becomes inaccessible;
+right-clicking a particular compatible processor remains an explicit destination override.
+
+Processor input capacity is definition-backed. Current capacities are 200 raw units for the
+Command Hub and 400 for dedicated processors. Partial deliveries fill the available space and keep
+the remainder aboard the drone, preventing cargo loss during congestion or power outages.
 
 The player's actual economic stockpiles are primarily **Alloy** and **Fuel**.
 
@@ -101,9 +124,27 @@ They can support powerful late-game economies but should not completely replace 
 
 ### Synthetic
 
-A third source is a mine that can be placed. 
-This will turn up fixed amount of synthetic while the machine remains powered. 
-Produced synthetic inside the mine can be picked up by a harvesting unit and delivered to either the fuel or alloy processor to exchange in 1:1 rates.
+Synthetic feedstock is produced by a placeable **Synthetic Mine** while that building is
+powered. Production accumulates a finite amount of raw Synthetic inside the mine. A harvester
+must collect it and physically deliver it before it has economic value.
+
+Unlike naturally occurring raw resources, Synthetic is flexible. It can be delivered to either:
+
+- an **Alloy Processor**, which converts it into Alloy; or
+- a **Fuel Processor**, which converts it into Fuel.
+
+These are separate conversion routes selected by the delivery destination. Synthetic never
+enters the player's global stockpile in raw form. The initial balance targets are:
+
+`100 Synthetic → 100 Alloy`
+
+or:
+
+`100 Synthetic → 150 Fuel`
+
+The different yields make Synthetic useful for responding to shortages without allowing it to
+replace efficient access to both Scrap and high-value natural fuel sources. Its production rate,
+finite local capacity, power demand, and both conversion ratios remain data-driven balance values.
 
 ---
 
@@ -121,12 +162,12 @@ For example:
 
 Different source types simply determine how much Fuel the delivery produces.
 
-An illustrative balance could be:
+An illustrative Fuel Processor balance could be:
 
 | Raw source | Example conversion | Availability |
 |---|---:|---|
 | Oil | 1.0 Fuel per unit | Common |
-| Synthetic | 1.5 Fuel per unit | Uncommon |
+| Synthetic | 1.5 Fuel per unit | Produced feedstock |
 | Uranium | 2.5 Fuel per unit | Rare |
 
 These numbers are balance variables rather than fixed rules.
@@ -139,7 +180,7 @@ A player sees a Uranium deposit and immediately understands that controlling it 
 
 **Resource chain:**
 
-`Fuel Source → Harvester → Fuel Processor → Fuel`
+`Oil / Uranium / Synthetic → Harvester → Fuel Processor → Fuel`
 
 ---
 
@@ -147,7 +188,7 @@ A player sees a Uranium deposit and immediately understands that controlling it 
 
 Alloy is the primary construction currency.
 
-It is created instantly whenever Scrap is delivered to an Alloy Processor.
+It is created instantly whenever Scrap or Synthetic is delivered to an Alloy Processor.
 
 Alloy is used for:
 
@@ -177,7 +218,7 @@ A processor built close to a large Scrap field increases economic efficiency but
 
 **Resource chain:**
 
-`Scrap → Alloy → Base / Army`
+`Scrap / Synthetic → Alloy Processor → Alloy → Base / Army`
 
 ---
 
@@ -214,7 +255,7 @@ A player controlling several ordinary Oil deposits may have a stable economy, wh
 
 **Resource chain:**
 
-`Oil / Uranium / Feedstock → Fuel → Heavy Military`
+`Oil / Uranium / Synthetic → Fuel Processor → Fuel → Heavy Military`
 
 ---
 
