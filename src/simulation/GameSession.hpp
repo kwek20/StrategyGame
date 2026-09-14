@@ -3,6 +3,7 @@
 #include "gameplay/GameplayCatalogue.hpp"
 #include "players/PlayerRegistry.hpp"
 #include "simulation/Command.hpp"
+#include "simulation/PowerEvent.hpp"
 #include "simulation/ResourceEvent.hpp"
 #include "terrain/Terrain.hpp"
 #include "world/Navigation.hpp"
@@ -65,6 +66,11 @@ class GameSession final {
         resourceEvents_.clear();
         return result;
     }
+    [[nodiscard]] std::vector<PowerEvent> consumePowerEvents() {
+        auto result = std::move(powerEvents_);
+        powerEvents_.clear();
+        return result;
+    }
 
   private:
     PlayerRegistry players_;
@@ -80,6 +86,9 @@ class GameSession final {
     Navigation navigation_;
     float resourceAbundanceScale_{1.0F};
     std::vector<ResourceEvent> resourceEvents_;
+    std::vector<PowerEvent> powerEvents_;
+    std::map<PlayerId, std::uint64_t> powerTopologySignatures_;
+    std::map<PlayerId, std::vector<std::vector<EntityId>>> cachedPowerComponents_;
 
     void simulateTick();
     void apply(const PlayerCommand& command);

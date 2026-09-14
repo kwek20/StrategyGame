@@ -5,6 +5,7 @@
 #include "terrain/Terrain.hpp"
 
 #include <string>
+#include <unordered_map>
 #include <vector>
 #include <utility>
 
@@ -42,6 +43,7 @@ class World final {
     EntityId nextId_{1};
     std::vector<TerrainFoundation> foundations_;
     PowerGridTopology powerGrid_;
+    std::unordered_map<EntityId, std::size_t> entityIndices_;
 };
 
 } // namespace strategy

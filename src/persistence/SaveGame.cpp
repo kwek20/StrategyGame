@@ -243,7 +243,17 @@ void SaveGame::write(const std::filesystem::path& path,
             writer.Key("generation"); writer.Double(entity.power.generation);
             writer.Key("demand"); writer.Double(entity.power.demand);
             writer.Key("supplied"); writer.Double(entity.power.supplied);
+            writer.Key("stored"); writer.Double(entity.power.stored);
+            writer.Key("storageCapacity"); writer.Double(entity.power.storageCapacity);
+            writer.Key("connectionRange"); writer.Double(entity.power.connectionRange);
+            writer.Key("transferLimit"); writer.Double(entity.power.transferLimit);
+            writer.Key("maximumConnections"); writer.Uint(entity.power.maximumConnections);
+            writer.Key("gridId"); writer.Uint64(entity.power.gridId);
+            writer.Key("connections"); writer.StartArray();
+            for (EntityId connection : entity.power.connections) writer.Uint64(connection);
+            writer.EndArray();
             writer.Key("priority"); writer.Int(entity.power.priority);
+            writer.Key("enabled"); writer.Bool(entity.power.enabled);
             writer.Key("state"); writer.Uint(static_cast<unsigned>(entity.power.state));
             writer.EndObject();
         }
@@ -264,6 +274,8 @@ void SaveGame::write(const std::filesystem::path& path,
             writer.Double(entity.production.productionSpeedMultiplier);
             writer.Key("speedUpgrades");
             writer.Uint(entity.production.productionSpeedUpgrades);
+            writer.Key("powerProgressPermille");
+            writer.Uint(entity.production.powerProgressPermille);
             writer.Key("queue");
             writer.StartArray();
             for (const ProductionOrder& order : entity.production.queue) {
@@ -581,8 +593,16 @@ SaveData SaveGame::read(const std::filesystem::path& path) {
                 if (!item.IsObject() || !item.HasMember("generation") ||
                     !item["generation"].IsNumber() || !item.HasMember("demand") ||
                     !item["demand"].IsNumber() || !item.HasMember("supplied") ||
-                    !item["supplied"].IsNumber() || !item.HasMember("priority") ||
-                    !item["priority"].IsInt() || !item.HasMember("state") ||
+                    !item["supplied"].IsNumber() || !item.HasMember("stored") ||
+                    !item["stored"].IsNumber() || !item.HasMember("storageCapacity") ||
+                    !item["storageCapacity"].IsNumber() || !item.HasMember("connectionRange") ||
+                    !item["connectionRange"].IsNumber() || !item.HasMember("transferLimit") ||
+                    !item["transferLimit"].IsNumber() || !item.HasMember("maximumConnections") ||
+                    !item["maximumConnections"].IsUint() || !item.HasMember("gridId") ||
+                    !item["gridId"].IsUint64() || !item.HasMember("connections") ||
+                    !item["connections"].IsArray() || !item.HasMember("priority") ||
+                    !item["priority"].IsInt() || !item.HasMember("enabled") ||
+                    !item["enabled"].IsBool() || !item.HasMember("state") ||
                     !item["state"].IsUint() ||
                     item["state"].GetUint() > static_cast<unsigned>(PowerOperationalState::offline))
                     throw std::runtime_error("Invalid power component");
@@ -590,10 +610,30 @@ SaveData SaveGame::read(const std::filesystem::path& path) {
                 entity.power.generation = item["generation"].GetFloat();
                 entity.power.demand = item["demand"].GetFloat();
                 entity.power.supplied = item["supplied"].GetFloat();
+                entity.power.stored = item["stored"].GetFloat();
+                entity.power.storageCapacity = item["storageCapacity"].GetFloat();
+                entity.power.connectionRange = item["connectionRange"].GetFloat();
+                entity.power.transferLimit = item["transferLimit"].GetFloat();
+                entity.power.maximumConnections = item["maximumConnections"].GetUint();
+                entity.power.gridId = item["gridId"].GetUint64();
+                for (const auto& connection : item["connections"].GetArray()) {
+                    if (!connection.IsUint64()) throw std::runtime_error("Invalid power connection");
+                    entity.power.connections.push_back(connection.GetUint64());
+                }
+                std::sort(entity.power.connections.begin(), entity.power.connections.end());
+                if (std::adjacent_find(entity.power.connections.begin(), entity.power.connections.end()) !=
+                    entity.power.connections.end())
+                    throw std::runtime_error("Duplicate power connection");
                 entity.power.priority = item["priority"].GetInt();
+                entity.power.enabled = item["enabled"].GetBool();
                 entity.power.state = static_cast<PowerOperationalState>(item["state"].GetUint());
                 if (entity.power.generation < 0.0F || entity.power.demand < 0.0F ||
-                    entity.power.supplied < 0.0F || entity.power.supplied > entity.power.demand)
+                    entity.power.supplied < 0.0F || entity.power.supplied > entity.power.demand ||
+                    entity.power.stored < 0.0F ||
+                    entity.power.stored > entity.power.storageCapacity ||
+                    entity.power.storageCapacity < 0.0F || entity.power.connectionRange < 0.0F ||
+                    entity.power.transferLimit < 0.0F ||
+                    entity.power.connections.size() > entity.power.maximumConnections)
                     throw std::runtime_error("Invalid saved power allocation");
             }
             if (components.HasMember("construction")) {
@@ -620,11 +660,15 @@ SaveData SaveGame::read(const std::filesystem::path& path) {
                 entity.production.emplace();
                 if (!item.IsObject() || !item.HasMember("speedMultiplier") ||
                     !item["speedMultiplier"].IsNumber() || !item.HasMember("speedUpgrades") ||
-                    !item["speedUpgrades"].IsUint() || !item.HasMember("queue") ||
+                    !item["speedUpgrades"].IsUint() || !item.HasMember("powerProgressPermille") ||
+                    !item["powerProgressPermille"].IsUint() || !item.HasMember("queue") ||
                     !item["queue"].IsArray())
                     throw std::runtime_error("Invalid production component");
                 entity.production.productionSpeedMultiplier = item["speedMultiplier"].GetFloat();
                 entity.production.productionSpeedUpgrades = item["speedUpgrades"].GetUint();
+                entity.production.powerProgressPermille = item["powerProgressPermille"].GetUint();
+                if (entity.production.powerProgressPermille >= 1000)
+                    throw std::runtime_error("Invalid production power progress");
                 for (const auto& order : item["queue"].GetArray()) {
                     if (!order.IsObject() || !order.HasMember("kind") || !order["kind"].IsUint())
                         throw std::runtime_error("Invalid production order");
@@ -690,6 +734,18 @@ SaveData SaveGame::read(const std::filesystem::path& path) {
                                 upgrade->value.GetUint();
             }
             result.entities.push_back(std::move(entity));
+        }
+    }
+    for (const Entity& entity : result.entities) {
+        if (!entity.power) continue;
+        for (EntityId connection : entity.power.connections) {
+            const auto target = std::find_if(result.entities.begin(), result.entities.end(),
+                [connection](const Entity& candidate) { return candidate.id == connection; });
+            if (connection == entity.id || target == result.entities.end() || !target->power ||
+                target->authority.owner != entity.authority.owner ||
+                !std::binary_search(target->power.connections.begin(),
+                                    target->power.connections.end(), entity.id))
+                throw std::runtime_error("Invalid saved power-grid connection");
         }
     }
     return result;

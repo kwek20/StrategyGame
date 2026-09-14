@@ -150,7 +150,15 @@ struct PowerComponent {
     float generation{0.0F};
     float demand{0.0F};
     float supplied{0.0F};
+    float stored{0.0F};
+    float storageCapacity{0.0F};
+    float connectionRange{0.0F};
+    float transferLimit{0.0F};
+    std::uint32_t maximumConnections{0};
+    std::uint64_t gridId{0};
+    std::vector<EntityId> connections;
     std::int32_t priority{100};
+    bool enabled{true};
     PowerOperationalState state{PowerOperationalState::offline};
 };
 struct UpgradeComponent {
@@ -183,6 +191,7 @@ struct ProductionOrder {
 struct ProductionComponent {
     float productionSpeedMultiplier{1.0F};
     std::uint32_t productionSpeedUpgrades{0};
+    std::uint32_t powerProgressPermille{0};
     std::deque<ProductionOrder> queue;
 };
 

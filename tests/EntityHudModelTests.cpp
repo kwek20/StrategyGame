@@ -74,7 +74,26 @@ int main() {
     const strategy::UiElement* entityPanel = layout.find("entity.panel");
     valid = valid && queue && queuePanel && entityPanel &&
             queuePanel->bounds.bottom < entityPanel->bounds.top &&
+            queue->bounds.right - queue->bounds.left == 44.0F &&
+            queue->bounds.bottom - queue->bounds.top == 44.0F &&
             strategy::EntityHudLayout::queueIndex(queue->id) == 0;
+
+    interactive.queue.push_back({"unit_worker", "Worker", 0.0F, true});
+    interactive.queue.push_back({"upgrade_efficient_training", "Upgrade", 0.0F, true});
+    const strategy::UiDocument multiQueueLayout =
+        strategy::EntityHudLayout::actions(interactive, 1280, 720);
+    const strategy::UiElement* multiQueuePanel = multiQueueLayout.find("entity.queue.panel");
+    const strategy::UiElement* secondQueue =
+        multiQueueLayout.find(strategy::EntityHudLayout::queueElementId(1));
+    const strategy::UiElement* thirdQueue =
+        multiQueueLayout.find(strategy::EntityHudLayout::queueElementId(2));
+    valid = valid && multiQueuePanel && secondQueue && thirdQueue &&
+            multiQueuePanel->bounds.left == queuePanel->bounds.left &&
+            multiQueuePanel->bounds.right == queuePanel->bounds.right &&
+            secondQueue->bounds.right - secondQueue->bounds.left == 44.0F &&
+            thirdQueue->bounds.right - thirdQueue->bounds.left == 44.0F &&
+            secondQueue->bounds.left - queue->bounds.left == 52.0F &&
+            thirdQueue->bounds.left - secondQueue->bounds.left == 52.0F;
     layout.pointerMoved(center(action));
     valid = valid && layout.hoveredElement() &&
             layout.hoveredElement()->id == action->id;
@@ -106,8 +125,11 @@ int main() {
 
     strategy::UiDocument resources = strategy::GameHudLayout::resources(3, 2, true, 1280, 720);
     valid = valid && resources.find("resources.panel") && resources.find("resources.power") &&
+            resources.find("hud.menu") &&
             resources.find("power.panel") &&
-            resources.hitTest({345.0F, 25.0F})->id == "resources.power";
+            resources.hitTest({345.0F, 25.0F})->id == "resources.power" &&
+            resources.hitTest({1220.0F, 25.0F})->id == "hud.menu" &&
+            resources.find("resources.panel")->color == glm::vec3{0.16F, 0.17F, 0.18F};
 
     const strategy::UiLayout wideCanvas(1920, 1080, 1.0F);
     const strategy::UiRect anchored = wideCanvas.rect(

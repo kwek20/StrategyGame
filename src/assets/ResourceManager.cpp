@@ -59,8 +59,6 @@ void ResourceManager::loadEntityDefinitions(const std::filesystem::path& path) {
                 definition.foundationRadius = grounding["foundationRadius"].GetFloat();
             if (grounding.HasMember("maximumFoundationSlope") && grounding["maximumFoundationSlope"].IsNumber())
                 definition.maximumFoundationSlope = grounding["maximumFoundationSlope"].GetFloat();
-            if (grounding.HasMember("sinkVariance") && grounding["sinkVariance"].IsNumber())
-                definition.sinkVariance = grounding["sinkVariance"].GetFloat();
         }
         if (member.value.HasMember("selection") && member.value["selection"].IsObject()) {
             const auto& selection = member.value["selection"];

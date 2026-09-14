@@ -453,6 +453,13 @@ void DefinitionRegistry::loadPowerDevices(const std::filesystem::path& path) {
         definition.connectionRange = optional("connectionRange");
         definition.transferLimit = optional("transferLimit");
         definition.chargePerTick = optional("chargePerTick");
+        definition.storageChargePerTick = optional("storageChargePerTick");
+        definition.storageDischargePerTick = optional("storageDischargePerTick");
+        if (item->value.HasMember("maximumConnections")) {
+            if (!item->value["maximumConnections"].IsUint())
+                throw std::runtime_error("Power device maximumConnections must be unsigned");
+            definition.maximumConnections = item->value["maximumConnections"].GetUint();
+        }
         if (item->value.HasMember("priority")) {
             if (!item->value["priority"].IsInt())
                 throw std::runtime_error("Power device priority must be an integer");
@@ -460,8 +467,13 @@ void DefinitionRegistry::loadPowerDevices(const std::filesystem::path& path) {
         }
         if (definition.production < 0.0F || definition.consumption < 0.0F ||
             definition.storage < 0.0F || definition.connectionRange < 0.0F ||
-            definition.transferLimit < 0.0F || definition.chargePerTick < 0.0F)
+            definition.transferLimit < 0.0F || definition.chargePerTick < 0.0F ||
+            definition.storageChargePerTick < 0.0F ||
+            definition.storageDischargePerTick < 0.0F)
             throw std::runtime_error("Power device '" + definition.id + "' has a negative value");
+        if (definition.connectionRange > 0.0F && definition.maximumConnections == 0)
+            throw std::runtime_error("Power device '" + definition.id +
+                                     "' requires maximumConnections when connectable");
         if (!powerDevices_.emplace(definition.id, std::move(definition)).second)
             throw std::runtime_error("Duplicate power device definition id '" +
                                      std::string(item->name.GetString()) + "'");
@@ -813,6 +825,18 @@ void DefinitionRegistry::loadRules(const std::filesystem::path& path) {
     matchRules_.trainingUpgradeProduct = data["trainingUpgradeProduct"].GetString();
     matchRules_.buildPalette = strings(data, "buildPalette");
     matchRules_.generatedResourceNodes = strings(data, "generatedResourceNodes");
+    if (!data.HasMember("startingPlacement") || !data["startingPlacement"].IsObject())
+        throw std::runtime_error("Match rules require startingPlacement object");
+    const auto& placement = data["startingPlacement"];
+    if (!placement.HasMember("edgeInsetChunks") || !placement["edgeInsetChunks"].IsNumber() ||
+        placement["edgeInsetChunks"].GetFloat() < 0.0F ||
+        !placement.HasMember("lateralNormalized") ||
+        !placement["lateralNormalized"].IsNumber() ||
+        placement["lateralNormalized"].GetFloat() < 0.0F ||
+        placement["lateralNormalized"].GetFloat() > 1.0F)
+        throw std::runtime_error("Match rules have invalid startingPlacement");
+    matchRules_.startingEdgeInsetChunks = placement["edgeInsetChunks"].GetFloat();
+    matchRules_.startingLateralNormalized = placement["lateralNormalized"].GetFloat();
     if (!data.HasMember("startingResources") || !data["startingResources"].IsObject())
         throw std::runtime_error("Match rules require startingResources object");
     for (auto item = data["startingResources"].MemberBegin();
@@ -1298,6 +1322,10 @@ void DefinitionRegistry::initializeEntity(Entity& entity) const {
             entity.power.generation = device->production;
             entity.power.demand = device->consumption;
             entity.power.priority = device->priority;
+            entity.power.storageCapacity = device->storage;
+            entity.power.connectionRange = device->connectionRange;
+            entity.power.transferLimit = device->transferLimit;
+            entity.power.maximumConnections = device->maximumConnections;
             entity.power.state = device->consumption <= 0.0F
                                      ? PowerOperationalState::powered
                                      : PowerOperationalState::offline;

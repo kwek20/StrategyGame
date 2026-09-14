@@ -56,6 +56,9 @@ class Renderer final {
                          const DefinitionRegistry& definitions,
                          bool powerOverlayVisible,
                          const UiDocument& layout) const;
+    void drawPowerConnections(const World& world,
+                              const CameraView& camera,
+                              PlayerId owner) const;
     void drawDebugHud(const RtsCamera& camera, std::size_t entityCount) const;
     void drawDetailedDebugHud(const CameraView& camera,
                               const Entity* entity,

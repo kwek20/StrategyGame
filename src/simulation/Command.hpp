@@ -37,6 +37,10 @@ struct GatherResourceCommand {
 struct DeliverResourceCommand { EntityId entity{0}; EntityId processor{0}; };
 struct SetPreferredProcessorCommand { EntityId entity{0}; EntityId processor{0}; };
 struct SetDeliveryOutputCommand { EntityId entity{0}; std::string output; };
+struct ConnectPowerCommand { EntityId entity{0}; EntityId target{0}; };
+struct DisconnectPowerCommand { EntityId entity{0}; EntityId target{0}; };
+struct SetPowerPriorityCommand { EntityId entity{0}; std::int32_t priority{100}; };
+struct SetPowerEnabledCommand { EntityId entity{0}; bool enabled{true}; };
 struct AttackEntityCommand {
     EntityId entity{0};
     EntityId target{0};
@@ -84,7 +88,11 @@ using CommandPayload = std::variant<PossessUnitCommand,
                                     StopUnitCommand,
                                     DeliverResourceCommand,
                                     SetPreferredProcessorCommand,
-                                    SetDeliveryOutputCommand>;
+                                    SetDeliveryOutputCommand,
+                                    ConnectPowerCommand,
+                                    DisconnectPowerCommand,
+                                    SetPowerPriorityCommand,
+                                    SetPowerEnabledCommand>;
 // Keep new commands appended so their serialized variant indices remain stable.
 
 struct PlayerCommand {

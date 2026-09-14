@@ -6,6 +6,7 @@
 #include "terrain/Terrain.hpp"
 #include "world/Collision.hpp"
 #include "world/MapArea.hpp"
+#include "world/StartingPlacement.hpp"
 #include "world/World.hpp"
 
 #include <algorithm>
@@ -30,17 +31,22 @@ bool suitable(const Terrain& terrain, const MatchRulesDefinition& rules,
 
 bool clearOfStarts(const MatchRulesDefinition& rules,
                    const DefinitionRegistry& definitions,
+                   std::uint32_t mapChunksPerSide,
                    float x,
                    float z) {
     const glm::vec2 point{x, z};
-    for (const auto* starts : {&rules.playerOne, &rules.playerTwo})
-        for (const StartingEntityDefinition& start : *starts) {
+    for (PlayerId player = 1; player <= 2; ++player) {
+        const auto& starts = player == 1 ? rules.playerOne : rules.playerTwo;
+        for (const StartingEntityDefinition& start : starts) {
             const EntityArchetype* archetype = definitions.archetype(start.archetype);
             if (archetype && archetype->tags.contains("headquarters"))
-            if (glm::distance(point, glm::vec2{start.position.x, start.position.z}) <=
-                rules.baseExclusionRadius)
-                return false;
+                if (const glm::vec3 position = startingEntityPosition(
+                        start, player, rules, mapChunksPerSide);
+                    glm::distance(point, glm::vec2{position.x, position.z}) <=
+                    rules.baseExclusionRadius)
+                    return false;
         }
+    }
     return true;
 }
 
@@ -81,14 +87,14 @@ void clusters(World& world,
         const float centerZ = random.range(-settings.centerExtent, settings.centerExtent);
         if (centerX < 0.0F || !suitable(terrain, rules, mapChunksPerSide, centerX, centerZ) ||
             !suitable(terrain, rules, mapChunksPerSide, -centerX, -centerZ) ||
-            !clearOfStarts(rules, definitions, centerX, centerZ) ||
-            !clearOfStarts(rules, definitions, -centerX, -centerZ))
+            !clearOfStarts(rules, definitions, mapChunksPerSide, centerX, centerZ) ||
+            !clearOfStarts(rules, definitions, mapChunksPerSide, -centerX, -centerZ))
             continue;
         for (std::uint32_t member = 0; member < settings.nodesPerCluster; ++member) {
             const float x = centerX + random.range(-settings.spread, settings.spread);
             const float z = centerZ + random.range(-settings.spread, settings.spread);
             if (!suitable(terrain, rules, mapChunksPerSide, x, z) ||
-                !clearOfStarts(rules, definitions, x, z))
+                !clearOfStarts(rules, definitions, mapChunksPerSide, x, z))
                 continue;
             const float angle = random.range(0.0F, 360.0F);
             if (!overlapsObject(world, definitions, {x, z}, type.collisionRadius) &&
@@ -116,16 +122,18 @@ void guaranteedStartingNodes(World& world,
         if (archetype && archetype->tags.contains("headquarters")) { headquarters = &start; break; }
     }
     if (!headquarters) return;
+    const glm::vec3 headquartersPosition = startingEntityPosition(
+        *headquarters, 1, rules, mapChunksPerSide);
     std::uint32_t made = 0;
-    const float centerDirection = std::atan2(-headquarters->position.z, -headquarters->position.x);
+    const float centerDirection = std::atan2(-headquartersPosition.z, -headquartersPosition.x);
     for (std::uint32_t attempt = 0;
          attempt < settings.attemptsPerCluster && made < settings.startingNodesPerPlayer;
          ++attempt) {
         const float distance = random.range(settings.startingMinimumDistance,
                                             settings.startingMaximumDistance);
         const float angle = centerDirection + random.range(-0.85F, 0.85F);
-        const float x = headquarters->position.x + std::cos(angle) * distance;
-        const float z = headquarters->position.z + std::sin(angle) * distance;
+        const float x = headquartersPosition.x + std::cos(angle) * distance;
+        const float z = headquartersPosition.z + std::sin(angle) * distance;
         const MapArea map{mapChunksPerSide};
         // Starting gatherers are flying drones. Preserve a guaranteed, mirrored opening
         // supply even when a seed has unusually steep terrain around a headquarters.

@@ -81,6 +81,7 @@
   "hud.fps": "FPS {0}",
   "hud.camera": "CAMERA X {0} Z {1}",
   "hud.counts": "ENTITIES {0} MODELS {1}",
+  "hud.menu": "MENU",
   "debug.title": "DIAGNOSTICS  F3 TO CLOSE",
   "debug.camera": "CAMERA  X {0}  Y {1}  Z {2}",
   "debug.target": "TARGET  X {0}  Y {1}  Z {2}",

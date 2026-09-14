@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstddef>
 #include <functional>
+#include <limits>
 namespace strategy {
 namespace {
 template <class K> std::size_t before(const std::vector<K>& k, double t) {
@@ -70,12 +71,19 @@ Model::Model(std::shared_ptr<ModelAsset> asset) {
     root_ = std::move(asset->root);
     globalInverse_ = asset->globalInverse;
 
+    float minimumY = std::numeric_limits<float>::max();
     std::unordered_map<const ModelTextureAsset*, std::uint32_t> uploadedTextures;
     for (ModelMeshAsset& source : asset->meshes) {
         Mesh mesh;
         mesh.indexCount = static_cast<std::uint32_t>(source.indices.size());
         mesh.nodeTransform = source.nodeTransform;
         mesh.skinned = source.skinned;
+        for (const ModelVertex& vertex : source.vertices) {
+            const glm::vec4 positioned =
+                (source.skinned ? glm::mat4{1.0F} : source.nodeTransform) *
+                glm::vec4{vertex.position, 1.0F};
+            minimumY = std::min(minimumY, positioned.y);
+        }
         mesh.material.diffuse = source.material.diffuse;
         mesh.material.opacity = source.material.opacity;
         if (source.material.baseColorTexture) {
@@ -129,6 +137,7 @@ Model::Model(std::shared_ptr<ModelAsset> asset) {
         glBindVertexArray(0);
         meshes_.push_back(mesh);
     }
+    if (std::isfinite(minimumY)) baseY_ = minimumY;
 }
 
 Model::~Model() {

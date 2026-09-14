@@ -38,6 +38,7 @@ class Model final {
         return meshes_.size();
     }
     [[nodiscard]] bool hasAnimation(const std::string& name) const;
+    [[nodiscard]] float baseY() const { return baseY_; }
 
   private:
     static constexpr std::size_t maxBones = ModelAsset::maxBones;
@@ -63,6 +64,7 @@ class Model final {
     std::unordered_map<std::string, Animation> animations_;
     Node root_;
     glm::mat4 globalInverse_{1};
+    float baseY_{0.0F};
     void evaluateAnimation(const Animation&, double, std::array<glm::mat4, maxBones>&) const;
 };
 } // namespace strategy

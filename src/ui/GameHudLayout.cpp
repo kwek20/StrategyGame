@@ -17,7 +17,7 @@ UiDocument GameHudLayout::resources(std::size_t localResourceCount,
     const float resourceWidth = 16.0F + static_cast<float>(localResourceCount) * 106.0F + 122.0F;
     const UiRect resources = canvas.rect(UiAnchor::topLeft, 10, 10, resourceWidth, 34, 420, 34);
     ui.panel("resources.panel", resources,
-             {0.018F, 0.028F, 0.038F});
+             {0.16F, 0.17F, 0.18F});
     for (std::size_t i = 0; i < localResourceCount; ++i) {
         const float left = resources.left + canvas.value(8 + i * 106.0F);
         ui.label("resources.local." + std::to_string(i),
@@ -28,8 +28,12 @@ UiDocument GameHudLayout::resources(std::size_t localResourceCount,
     auto& power = ui.iconButton("resources.power", {powerLeft, resources.top,
                                 powerLeft + canvas.value(122), resources.bottom},
                                 "resource_power", "Power grid");
-    power.color = {0.018F, 0.028F, 0.038F};
-    power.hoverColor = {0.08F, 0.15F, 0.20F};
+    power.color = {0.16F, 0.17F, 0.18F};
+    power.hoverColor = {0.27F, 0.29F, 0.31F};
+    const UiRect menuBounds = canvas.rect(UiAnchor::topRight, 10, 10, 112, 34, 96, 34);
+    auto& menu = ui.button("hud.menu", menuBounds, Text::get("hud.menu"),
+                           {0.16F, 0.17F, 0.18F}, {0.27F, 0.29F, 0.31F});
+    menu.textScale = 1.6F * canvas.scale();
     if (powerOverlayVisible) {
         const float desiredHeight = 102.0F + static_cast<float>(powerDeviceCount) * 22.0F;
         const UiRect overlay = canvas.rect(UiAnchor::topLeft, 330, 52, 320,
@@ -43,7 +47,7 @@ UiDocument GameHudLayout::resources(std::size_t localResourceCount,
 UiDocument GameHudLayout::minimap(int viewportWidth, int viewportHeight, float uiScale) {
     UiDocument ui;
     const UiLayout canvas(viewportWidth, viewportHeight, uiScale);
-    const UiRect map = canvas.rect(UiAnchor::topRight, 20, 20, 190, 190, 150, 150);
+    const UiRect map = canvas.rect(UiAnchor::topRight, 20, 56, 190, 190, 150, 150);
     ui.panel("strategy.minimap", map, {0.008F, 0.012F, 0.016F});
     ui.label("strategy.minimap.title",
              {map.left + canvas.value(8), map.top + canvas.value(4), 0, 0},

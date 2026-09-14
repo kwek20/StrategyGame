@@ -234,6 +234,48 @@ EntityHudModel PlayState::buildEntityActionHudModel(const Entity& selected,
         if (!action.enabled) action.disabledReason = Text::get("entity_hud.action_unavailable");
         hud.actions.push_back(std::move(action));
     }
+    if (selected.power) {
+        HudActionModel connect;
+        connect.id = "power.connect";
+        connect.name = Text::get("power.action.connect");
+        connect.description = Text::get("power.action.connect.description");
+        connect.icon = "action_power_connect";
+        connect.cost = Text::get("entity_hud.free");
+        connect.enabled = targets.size() == 1 && isOperational(selected) && selected.power.enabled &&
+                          selected.power.connections.size() < selected.power.maximumConnections;
+        if (!connect.enabled) connect.disabledReason = Text::get("entity_hud.action_unavailable");
+        hud.actions.push_back(std::move(connect));
+
+        HudActionModel disconnect;
+        disconnect.id = "power.disconnect";
+        disconnect.name = Text::get("power.action.disconnect");
+        disconnect.description = Text::get("power.action.disconnect.description");
+        disconnect.icon = "action_power_disconnect";
+        disconnect.cost = Text::get("entity_hud.free");
+        disconnect.enabled = targets.size() == 1 && !selected.power.connections.empty();
+        if (!disconnect.enabled) disconnect.disabledReason = Text::get("entity_hud.action_unavailable");
+        hud.actions.push_back(std::move(disconnect));
+
+        HudActionModel priority;
+        priority.id = "power.priority";
+        priority.name = Text::get("power.action.priority");
+        priority.description = Text::format("power.action.priority.description",
+                                            {std::to_string(selected.power.priority)});
+        priority.icon = "action_power_priority";
+        priority.cost = Text::get("entity_hud.free");
+        priority.enabled = true;
+        hud.actions.push_back(std::move(priority));
+
+        HudActionModel toggle;
+        toggle.id = "power.toggle";
+        toggle.name = selected.power.enabled ? Text::get("power.action.disable")
+                                             : Text::get("power.action.enable");
+        toggle.description = Text::get("power.action.toggle.description");
+        toggle.icon = selected.power.enabled ? "status_powered" : "status_unpowered";
+        toggle.cost = Text::get("entity_hud.free");
+        toggle.enabled = true;
+        hud.actions.push_back(std::move(toggle));
+    }
     appendSyntheticRoutes(hud, session_.world(), context_.definitions, localPlayer_, targets);
     return hud;
 }
@@ -323,6 +365,11 @@ void PlayState::handleEvent(const SDL_Event& event) {
     }
     if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == bound("pause", SDLK_ESCAPE) &&
         !event.key.repeat) {
+        if (powerLinkMode_ != PowerLinkMode::none) {
+            powerLinkMode_ = PowerLinkMode::none;
+            powerLinkSource_ = 0;
+            return;
+        }
         if (constructionPlacementMode_) {
             constructionPlacementMode_ = false;
             pendingConstructionScreen_.reset();
@@ -368,11 +415,23 @@ void PlayState::handleEvent(const SDL_Event& event) {
         UiDocument resourceUi = GameHudLayout::resources(
             localResourceCount, powerDeviceCount, powerOverlayVisible_, width, height,
             config_.uiScale);
-        if (uiController_.press(resourceUi, {event.button.x, event.button.y}) == "resources.power") {
+        const std::optional<std::string> hudAction =
+            uiController_.press(resourceUi, {event.button.x, event.button.y});
+        if (hudAction == "hud.menu") {
+            paused_ = true;
+            forward_ = backward_ = left_ = right_ = running_ = false;
+            orbiting_ = false;
+            mousePanning_ = false;
+            return;
+        }
+        if (hudAction == "resources.power") {
             powerOverlayVisible_ = !powerOverlayVisible_;
             return;
         }
         if (const UiElement* panel = resourceUi.find("power.panel");
+            panel && panel->bounds.contains({event.button.x, event.button.y}))
+            return;
+        if (const UiElement* panel = resourceUi.find("resources.panel");
             panel && panel->bounds.contains({event.button.x, event.button.y}))
             return;
     }
@@ -419,6 +478,13 @@ void PlayState::handleEvent(const SDL_Event& event) {
             layout.find("entity.panel")->bounds.contains(point)) return;
     }
     // Right-click always cancels an active placement preview, including invalid (red) previews.
+    if (powerLinkMode_ != PowerLinkMode::none &&
+        event.type == SDL_EVENT_MOUSE_BUTTON_DOWN &&
+        event.button.button == SDL_BUTTON_RIGHT) {
+        powerLinkMode_ = PowerLinkMode::none;
+        powerLinkSource_ = 0;
+        return;
+    }
     if (constructionPlacementMode_ && event.type == SDL_EVENT_MOUSE_BUTTON_DOWN &&
         event.button.button == SDL_BUTTON_RIGHT) {
         constructionPlacementMode_ = false;
@@ -500,6 +566,29 @@ void PlayState::handleEvent(const SDL_Event& event) {
                 const auto actionId = EntityHudLayout::actionId(*activated);
                 if (!actionId) return;
                 const std::vector<EntityId> targets = actionTargets(selectedEntity_, selectedUnits_);
+                if (*actionId == "power.connect" || *actionId == "power.disconnect") {
+                    powerLinkMode_ = *actionId == "power.connect" ? PowerLinkMode::connect
+                                                                  : PowerLinkMode::disconnect;
+                    powerLinkSource_ = selectedHall->id;
+                    powerOverlayVisible_ = true;
+                    return;
+                }
+                if (*actionId == "power.priority") {
+                    const int nextPriority = selectedHall->power && selectedHall->power.priority >= 100
+                                                 ? 10
+                                                 : selectedHall->power->priority + 10;
+                    for (EntityId id : targets)
+                        session_.submit({localPlayer_, nextCommandSequence_++,
+                                         SetPowerPriorityCommand{id, nextPriority}});
+                    return;
+                }
+                if (*actionId == "power.toggle") {
+                    const bool enabled = selectedHall->power && !selectedHall->power->enabled;
+                    for (EntityId id : targets)
+                        session_.submit({localPlayer_, nextCommandSequence_++,
+                                         SetPowerEnabledCommand{id, enabled}});
+                    return;
+                }
                 if (actionId->starts_with("delivery-output:")) {
                     const std::string output = actionId->substr(std::string{"delivery-output:"}.size());
                     for (EntityId id : targets)
@@ -714,7 +803,20 @@ void PlayState::update(float deltaSeconds) {
     if (pickedEntity_) {
         const EntityId clicked = *pickedEntity_;
         pickedEntity_.reset();
-        if (pickedEntityAdditive_) {
+        if (powerLinkMode_ != PowerLinkMode::none) {
+            if (clicked != 0 && clicked != powerLinkSource_) {
+                if (powerLinkMode_ == PowerLinkMode::connect)
+                    session_.submit({localPlayer_, nextCommandSequence_++,
+                                     ConnectPowerCommand{powerLinkSource_, clicked}});
+                else
+                    session_.submit({localPlayer_, nextCommandSequence_++,
+                                     DisconnectPowerCommand{powerLinkSource_, clicked}});
+            }
+            powerLinkMode_ = PowerLinkMode::none;
+            powerLinkSource_ = 0;
+            pickedEntityAdditive_ = false;
+            pickedEntityDoubleClick_ = false;
+        } else if (pickedEntityAdditive_) {
             if (clicked == 0) {
                 pickedEntityAdditive_ = false;
                 pickedEntityDoubleClick_ = false;
@@ -878,6 +980,31 @@ void PlayState::update(float deltaSeconds) {
             break;
         }
     }
+    for (const PowerEvent& event : session_.consumePowerEvents()) {
+        if (event.player != localPlayer_) continue;
+        std::string message;
+        switch (event.kind) {
+        case PowerEventKind::connectionCreated: message = Text::get("power.alert.connected"); break;
+        case PowerEventKind::connectionRemoved: message = Text::get("power.alert.disconnected"); break;
+        case PowerEventKind::shortage: message = Text::get("power.alert.shortage"); break;
+        case PowerEventKind::recovered: message = Text::get("power.alert.recovered"); break;
+        case PowerEventKind::shutdown: message = Text::get("power.alert.shutdown"); break;
+        case PowerEventKind::commandRejected:
+            powerLinkMode_ = PowerLinkMode::connect;
+            powerLinkSource_ = event.source;
+            switch (event.reason) {
+            case PowerFailureReason::outOfRange: message = Text::get("power.alert.out_of_range"); break;
+            case PowerFailureReason::connectionLimit: message = Text::get("power.alert.connection_limit"); break;
+            case PowerFailureReason::notConnected:
+                powerLinkMode_ = PowerLinkMode::disconnect;
+                message = Text::get("power.alert.not_connected");
+                break;
+            default: message = Text::get("power.alert.invalid_target"); break;
+            }
+            break;
+        }
+        hudAlerts_.push_back({event.source, std::move(message), 3.5F});
+    }
 }
 
 void PlayState::render(Renderer& renderer) const {
@@ -1004,6 +1131,8 @@ void PlayState::render(Renderer& renderer) const {
         renderer.drawEntityOutline(session_.world(), selectedEntity_, view, local);
     if (hoveredEntity_ != 0 && viewMode_ == ViewMode::strategy)
         renderer.drawEntityOutline(session_.world(), hoveredEntity_, view, local);
+    if (powerOverlayVisible_)
+        renderer.drawPowerConnections(session_.world(), view, localPlayer_);
     if (draggingSelection_ && viewMode_ == ViewMode::strategy)
         renderer.drawSelectionBox(selectionStart_, selectionEnd_);
     if (detailedDebug_) {

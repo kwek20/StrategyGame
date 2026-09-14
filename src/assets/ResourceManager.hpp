@@ -27,7 +27,6 @@ struct EntityDefinition {
     float maximumTilt{0.0F};
     float foundationRadius{0.0F};
     float maximumFoundationSlope{8.0F};
-    float sinkVariance{0.0F};
     std::unordered_map<std::string, std::string> animations;
 };
 

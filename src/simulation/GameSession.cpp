@@ -4,6 +4,7 @@
 #include "localization/Text.hpp"
 #include "terrain/Terrain.hpp"
 #include "world/Collision.hpp"
+#include "world/StartingPlacement.hpp"
 #include "world/Navigation.hpp"
 #include "world/MapArea.hpp"
 #include "world/WorldGeneration.hpp"
@@ -169,7 +170,8 @@ GameSession::GameSession(const DefinitionRegistry& definitions,
             Entity& entity =
                 world_.createEntity(Text::get(start.nameKey), start.archetype, player);
             initializeEntity(entity);
-            entity.transform.position = start.position;
+            entity.transform.position = startingEntityPosition(
+                start, player, gameplay_.matchRules(), mapChunksPerSide_);
             if (!entity.flight)
                 entity.transform.position.y = 0.0F;
             else
@@ -513,6 +515,76 @@ void GameSession::apply(const PlayerCommand& command) {
                 entity->gatherer.preferredOutput = payload.output;
                 entity->gatherer.preferredProcessor = 0;
                 entity->gatherer.deliveryTarget = 0;
+            } else if constexpr (std::is_same_v<Type, ConnectPowerCommand>) {
+                Entity* target = world_.findEntity(payload.target);
+                const auto reject = [&](PowerFailureReason reason) {
+                    powerEvents_.push_back({PowerEventKind::commandRejected, tick_, command.player,
+                                            entity->id, payload.target, 0, reason});
+                };
+                if (!entity->power || !target || !target->power || target->id == entity->id) {
+                    reject(PowerFailureReason::invalidTarget);
+                    return;
+                }
+                if (target->authority.owner != command.player) {
+                    reject(PowerFailureReason::enemyTarget);
+                    return;
+                }
+                if (!isOperational(*entity) || !isOperational(*target)) {
+                    reject(PowerFailureReason::notOperational);
+                    return;
+                }
+                if (entity->power.maximumConnections == 0 || target->power.maximumConnections == 0)
+                    return;
+                auto& sourceConnections = entity->power.connections;
+                auto& targetConnections = target->power.connections;
+                std::sort(sourceConnections.begin(), sourceConnections.end());
+                std::sort(targetConnections.begin(), targetConnections.end());
+                if (std::binary_search(sourceConnections.begin(), sourceConnections.end(), target->id) ||
+                    sourceConnections.size() >= entity->power.maximumConnections ||
+                    targetConnections.size() >= target->power.maximumConnections)
+                {
+                    reject(PowerFailureReason::connectionLimit);
+                    return;
+                }
+                const glm::vec2 sourcePosition{entity->transform.position.x, entity->transform.position.z};
+                const glm::vec2 targetPosition{target->transform.position.x, target->transform.position.z};
+                const float maximumRange = std::min(entity->power.connectionRange,
+                                                    target->power.connectionRange);
+                if (maximumRange <= 0.0F || glm::distance(sourcePosition, targetPosition) > maximumRange)
+                {
+                    reject(PowerFailureReason::outOfRange);
+                    return;
+                }
+                sourceConnections.insert(std::lower_bound(sourceConnections.begin(), sourceConnections.end(),
+                                                          target->id), target->id);
+                targetConnections.insert(std::lower_bound(targetConnections.begin(), targetConnections.end(),
+                                                          entity->id), entity->id);
+                powerEvents_.push_back({PowerEventKind::connectionCreated, tick_, command.player,
+                                        entity->id, target->id, 0});
+            } else if constexpr (std::is_same_v<Type, DisconnectPowerCommand>) {
+                Entity* target = world_.findEntity(payload.target);
+                if (!entity->power || !target || !target->power ||
+                    target->authority.owner != command.player)
+                    return;
+                if (std::find(entity->power.connections.begin(), entity->power.connections.end(),
+                              target->id) == entity->power.connections.end() ||
+                    std::find(target->power.connections.begin(), target->power.connections.end(),
+                              entity->id) == target->power.connections.end()) {
+                    powerEvents_.push_back({PowerEventKind::commandRejected, tick_, command.player,
+                                            entity->id, payload.target, 0,
+                                            PowerFailureReason::notConnected});
+                    return;
+                }
+                std::erase(entity->power.connections, target->id);
+                std::erase(target->power.connections, entity->id);
+                powerEvents_.push_back({PowerEventKind::connectionRemoved, tick_, command.player,
+                                        entity->id, target->id, 0});
+            } else if constexpr (std::is_same_v<Type, SetPowerPriorityCommand>) {
+                if (entity->power)
+                    entity->power.priority = std::clamp(payload.priority, 0, 1000);
+            } else if constexpr (std::is_same_v<Type, SetPowerEnabledCommand>) {
+                if (entity->power)
+                    entity->power.enabled = payload.enabled;
             } else if constexpr (std::is_same_v<Type, AttackEntityCommand>) {
                 Entity* target = world_.findEntity(payload.target);
                 if (entity->unitControl && entity->combat &&
@@ -707,34 +779,228 @@ void GameSession::simulateTick() {
     };
     std::vector<CompletedCharacter> completed;
     std::vector<EntityId> destroyed;
-    // Player-wide allocation is the temporary topology. Stable priority/id ordering is already
-    // authoritative so connected grids can later allocate each component with identical rules.
-    for (Player& player : players_.players()) {
-        float remaining = 0.0F;
-        std::vector<Entity*> consumers;
-        for (Entity& candidate : world_.entities()) {
-            if (candidate.authority.owner != player.id || !candidate.power) continue;
-            candidate.power.supplied = 0.0F;
-            candidate.power.state = PowerOperationalState::offline;
-            if (!isOperational(candidate)) continue;
-            remaining += candidate.power.generation;
-            if (candidate.power.demand > 0.0F) consumers.push_back(&candidate);
-            else candidate.power.state = PowerOperationalState::powered;
-        }
-        std::sort(consumers.begin(), consumers.end(), [](const Entity* left, const Entity* right) {
-            return left->power.priority != right->power.priority
-                       ? left->power.priority < right->power.priority
-                       : left->id < right->id;
+    struct PreviousPowerState {
+        EntityId entity{0};
+        PowerOperationalState state{PowerOperationalState::offline};
+        std::uint64_t gridId{0};
+    };
+    std::vector<PreviousPowerState> previousPowerStates;
+    for (Entity& entity : world_.entities()) {
+        if (!entity.power) continue;
+        previousPowerStates.push_back({entity.id, entity.power.state, entity.power.gridId});
+        auto& connections = entity.power.connections;
+        std::sort(connections.begin(), connections.end());
+        connections.erase(std::unique(connections.begin(), connections.end()), connections.end());
+        std::erase_if(connections, [&](EntityId connectedId) {
+            const Entity* connected = world_.findEntity(connectedId);
+            if (connectedId == entity.id || !connected || !connected->power ||
+                connected->authority.owner != entity.authority.owner)
+                return true;
+            auto reverse = connected->power.connections;
+            std::sort(reverse.begin(), reverse.end());
+            return !std::binary_search(reverse.begin(), reverse.end(), entity.id);
         });
-        for (Entity* consumer : consumers) {
-            consumer->power.supplied = std::min(remaining, consumer->power.demand);
-            remaining -= consumer->power.supplied;
-            consumer->power.state = consumer->power.supplied >= consumer->power.demand
-                                        ? PowerOperationalState::powered
-                                        : consumer->power.supplied > 0.0F
-                                              ? PowerOperationalState::underpowered
-                                              : PowerOperationalState::offline;
+        entity.power.supplied = 0.0F;
+        entity.power.gridId = 0;
+        entity.power.state = PowerOperationalState::offline;
+    }
+    for (Player& player : players_.players()) {
+        std::vector<Entity*> devices;
+        std::uint64_t topologySignature = 1469598103934665603ULL;
+        const auto mixTopology = [&](std::uint64_t value) {
+            topologySignature ^= value;
+            topologySignature *= 1099511628211ULL;
+        };
+        for (Entity& candidate : world_.entities()) {
+            if (candidate.authority.owner == player.id && candidate.power) {
+                mixTopology(candidate.id);
+                mixTopology(candidate.power.enabled);
+                mixTopology(isOperational(candidate));
+                for (EntityId adjacent : candidate.power.connections) mixTopology(adjacent);
+            }
+            if (candidate.authority.owner == player.id && candidate.power &&
+                candidate.power.enabled && isOperational(candidate))
+                devices.push_back(&candidate);
         }
+        std::sort(devices.begin(), devices.end(), [](const Entity* left, const Entity* right) {
+            return left->id < right->id;
+        });
+        if (!powerTopologySignatures_.contains(player.id) ||
+            powerTopologySignatures_[player.id] != topologySignature) {
+            powerTopologySignatures_[player.id] = topologySignature;
+            auto& cached = cachedPowerComponents_[player.id];
+            cached.clear();
+            std::vector<EntityId> visited;
+            for (Entity* root : devices) {
+                if (std::binary_search(visited.begin(), visited.end(), root->id)) continue;
+                std::vector<EntityId> component;
+                std::vector<EntityId> pending{root->id};
+                while (!pending.empty()) {
+                    const EntityId currentId = pending.front();
+                    pending.erase(pending.begin());
+                    if (std::binary_search(visited.begin(), visited.end(), currentId)) continue;
+                    Entity* current = world_.findEntity(currentId);
+                    if (!current || !current->power || !current->power.enabled ||
+                        !isOperational(*current) || current->authority.owner != player.id)
+                        continue;
+                    visited.insert(std::lower_bound(visited.begin(), visited.end(), currentId), currentId);
+                    component.push_back(currentId);
+                    for (EntityId adjacent : current->power.connections)
+                        if (!std::binary_search(visited.begin(), visited.end(), adjacent) &&
+                            !std::binary_search(pending.begin(), pending.end(), adjacent))
+                            pending.insert(std::upper_bound(pending.begin(), pending.end(), adjacent), adjacent);
+                }
+                if (!component.empty()) cached.push_back(std::move(component));
+            }
+        }
+        for (const auto& cachedComponent : cachedPowerComponents_[player.id]) {
+            std::vector<Entity*> component;
+            component.reserve(cachedComponent.size());
+            for (EntityId id : cachedComponent)
+                if (Entity* entity = world_.findEntity(id)) component.push_back(entity);
+            if (component.empty()) continue;
+            const std::uint64_t gridId = component.front()->id;
+            std::vector<Entity*> consumers;
+            std::vector<Entity*> storage;
+            std::map<EntityId, float> generationRemaining;
+            std::map<EntityId, float> storageDischargeRemaining;
+            std::map<EntityId, float> throughputRemaining;
+            std::map<std::pair<EntityId, EntityId>, float> edgeRemaining;
+            for (Entity* device : component) {
+                device->power.gridId = gridId;
+                generationRemaining[device->id] = device->power.generation;
+                throughputRemaining[device->id] = device->power.transferLimit > 0.0F
+                    ? device->power.transferLimit : std::numeric_limits<float>::max();
+                if (device->power.demand > 0.0F) consumers.push_back(device);
+                if (device->power.storageCapacity > 0.0F) {
+                    storage.push_back(device);
+                    const EntityArchetype* type = gameplay_.archetype(device->archetype);
+                    const PowerDeviceDefinition* definition =
+                        type && type->powerDevice ? gameplay_.powerDevice(*type->powerDevice) : nullptr;
+                    storageDischargeRemaining[device->id] =
+                        definition ? definition->storageDischargePerTick : 0.0F;
+                }
+                if (device->power.demand <= 0.0F)
+                    device->power.state = PowerOperationalState::powered;
+                for (EntityId adjacent : device->power.connections) {
+                    if (adjacent <= device->id) continue;
+                    const Entity* target = world_.findEntity(adjacent);
+                    if (!target || !target->power || !target->power.enabled ||
+                        target->authority.owner != player.id || !isOperational(*target)) continue;
+                    const float sourceLimit = device->power.transferLimit > 0.0F
+                                                  ? device->power.transferLimit
+                                                  : std::numeric_limits<float>::max();
+                    const float targetLimit = target->power.transferLimit > 0.0F
+                                                  ? target->power.transferLimit
+                                                  : std::numeric_limits<float>::max();
+                    edgeRemaining[{device->id, adjacent}] = std::min(sourceLimit, targetLimit);
+                }
+            }
+            std::sort(consumers.begin(), consumers.end(), [](const Entity* left, const Entity* right) {
+                return left->power.priority != right->power.priority
+                           ? left->power.priority < right->power.priority
+                           : left->id < right->id;
+            });
+            const auto route = [&](EntityId source, EntityId target) {
+                std::map<EntityId, EntityId> parent;
+                std::vector<EntityId> frontier{source};
+                parent[source] = 0;
+                for (std::size_t cursor = 0; cursor < frontier.size(); ++cursor) {
+                    const EntityId currentId = frontier[cursor];
+                    if (currentId == target) break;
+                    const Entity* current = world_.findEntity(currentId);
+                    if (!current || !current->power) continue;
+                    for (EntityId adjacent : current->power.connections) {
+                        const auto edge = std::minmax(currentId, adjacent);
+                        const auto capacity = edgeRemaining.find(edge);
+                        if (capacity == edgeRemaining.end() || capacity->second <= 0.0F ||
+                            parent.contains(adjacent) || !throughputRemaining.contains(adjacent) ||
+                            (adjacent != target && throughputRemaining.at(adjacent) <= 0.0F))
+                            continue;
+                        parent[adjacent] = currentId;
+                        frontier.push_back(adjacent);
+                    }
+                }
+                std::vector<EntityId> path;
+                if (!parent.contains(target)) return path;
+                for (EntityId current = target; current != source; current = parent.at(current))
+                    path.push_back(current);
+                path.push_back(source);
+                std::reverse(path.begin(), path.end());
+                return path;
+            };
+            const auto deliver = [&](EntityId target, float requested, bool allowStorage) {
+                float delivered = 0.0F;
+                for (Entity* source : component) {
+                    if (delivered >= requested) break;
+                    float sourceAvailable = generationRemaining[source->id];
+                    if (allowStorage)
+                        sourceAvailable += std::min(source->power.stored,
+                                                    storageDischargeRemaining[source->id]);
+                    while (sourceAvailable > 0.0F && delivered < requested) {
+                        const auto path = route(source->id, target);
+                        if (path.empty()) break;
+                        float amount = std::min(sourceAvailable, requested - delivered);
+                        amount = std::min(amount, throughputRemaining[source->id]);
+                        amount = std::min(amount, throughputRemaining[target]);
+                        for (std::size_t index = 1; index < path.size(); ++index)
+                            amount = std::min(amount, edgeRemaining[std::minmax(path[index - 1], path[index])]);
+                        for (std::size_t index = 1; index + 1 < path.size(); ++index)
+                            amount = std::min(amount, throughputRemaining[path[index]]);
+                        if (amount <= 0.0F) break;
+                        const float generated = std::min(amount, generationRemaining[source->id]);
+                        generationRemaining[source->id] -= generated;
+                        const float discharged = amount - generated;
+                        source->power.stored -= discharged;
+                        storageDischargeRemaining[source->id] -= discharged;
+                        sourceAvailable -= amount;
+                        delivered += amount;
+                        for (std::size_t index = 1; index < path.size(); ++index)
+                            edgeRemaining[std::minmax(path[index - 1], path[index])] -= amount;
+                        throughputRemaining[source->id] -= amount;
+                        if (target != source->id) throughputRemaining[target] -= amount;
+                        for (std::size_t index = 1; index + 1 < path.size(); ++index)
+                            throughputRemaining[path[index]] -= amount;
+                    }
+                }
+                return delivered;
+            };
+            for (Entity* consumer : consumers) {
+                const float intakeLimit = consumer->power.transferLimit > 0.0F
+                                              ? consumer->power.transferLimit
+                                              : consumer->power.demand;
+                const float requested = std::min(consumer->power.demand, intakeLimit);
+                consumer->power.supplied = deliver(consumer->id, requested, true);
+                consumer->power.state = consumer->power.supplied >= consumer->power.demand
+                                            ? PowerOperationalState::powered
+                                            : consumer->power.supplied > 0.0F
+                                                  ? PowerOperationalState::underpowered
+                                                  : PowerOperationalState::offline;
+            }
+            for (Entity* battery : storage) {
+                const EntityArchetype* type = gameplay_.archetype(battery->archetype);
+                const PowerDeviceDefinition* definition =
+                    type && type->powerDevice ? gameplay_.powerDevice(*type->powerDevice) : nullptr;
+                const float rate = definition ? definition->storageChargePerTick : 0.0F;
+                const float request = std::min(rate,
+                    battery->power.storageCapacity - battery->power.stored);
+                const float charged = deliver(battery->id, std::max(0.0F, request), false);
+                battery->power.stored += charged;
+            }
+        }
+    }
+    for (const PreviousPowerState& previous : previousPowerStates) {
+        const Entity* entity = world_.findEntity(previous.entity);
+        if (!entity || !entity->power || entity->power.demand <= 0.0F || tick_ == 0)
+            continue;
+        if (previous.state == entity->power.state) continue;
+        PowerEventKind event = PowerEventKind::shortage;
+        if (entity->power.state == PowerOperationalState::powered)
+            event = PowerEventKind::recovered;
+        else if (entity->power.state == PowerOperationalState::offline)
+            event = PowerEventKind::shutdown;
+        powerEvents_.push_back({event, tick_, entity->authority.owner, entity->id, 0,
+                                entity->power.gridId});
     }
     for (Entity& entity : world_.entities()) {
         if (entity.resource && isOperational(entity)) {
@@ -800,10 +1066,10 @@ void GameSession::simulateTick() {
                 const EntityArchetype* type = gameplay_.archetype(candidate->archetype);
                 if (!type || !type->powerDevice) return false;
                 const PowerDeviceDefinition* device = gameplay_.powerDevice(*type->powerDevice);
-                // Until grid connectivity is implemented, the integrated headquarters charger
-                // is the only device that can prove it has an authoritative power supply.
                 return device && device->tags.contains("charger") &&
-                       device->tags.contains("headquarters") && device->chargePerTick > 0.0F;
+                       device->chargePerTick > 0.0F && candidate->power &&
+                       candidate->power.enabled &&
+                       candidate->power.state != PowerOperationalState::offline;
             };
             if (!validCharger(chargerEntity)) {
                 chargerEntity = nullptr;
@@ -832,8 +1098,13 @@ void GameSession::simulateTick() {
                     entity.unitControl.order = UnitOrderKind::charging;
                     entity.unitControl.orderTarget = chargerEntity->id;
                     entity.unitControl.hasStrategicDestination = false;
+                    const float powerRatio = chargerEntity->power->demand > 0.0F
+                        ? std::clamp(chargerEntity->power->supplied /
+                                         chargerEntity->power->demand, 0.0F, 1.0F)
+                        : 1.0F;
                     entity.battery.charge = std::min(
-                        entity.battery.capacity, entity.battery.charge + charger->chargePerTick);
+                        entity.battery.capacity,
+                        entity.battery.charge + charger->chargePerTick * powerRatio);
                     if (entity.battery.charge >= entity.battery.capacity)
                         finishRecharge(entity);
                 } else {
@@ -845,8 +1116,16 @@ void GameSession::simulateTick() {
         }
         if (entity.production && isOperational(entity) && !entity.production.queue.empty()) {
             ProductionOrder& order = entity.production.queue.front();
-            if (order.remainingTicks > 0)
+            std::uint32_t progress = 1000;
+            if (entity.power && entity.power.demand > 0.0F)
+                progress = static_cast<std::uint32_t>(std::clamp(
+                    std::lround(entity.power.supplied / entity.power.demand * 1000.0F),
+                    0L, 1000L));
+            entity.production.powerProgressPermille += progress;
+            while (order.remainingTicks > 0 && entity.production.powerProgressPermille >= 1000) {
                 --order.remainingTicks;
+                entity.production.powerProgressPermille -= 1000;
+            }
             if (order.remainingTicks == 0) {
                 if (order.kind == ProductionKind::trainCharacter)
                     completed.push_back({entity.authority.owner,
@@ -1320,10 +1599,16 @@ void GameSession::updateExploration() {
         for (const Entity& entity : world_.entities()) {
             if (entity.authority.owner != player.id || !entity.vision || !isOperational(entity))
                 continue;
+            float powerFactor = 1.0F;
+            if (entity.power && entity.power.demand > 0.0F) {
+                if (!entity.power.enabled || entity.power.state == PowerOperationalState::offline)
+                    continue;
+                powerFactor = std::clamp(entity.power.supplied / entity.power.demand, 0.0F, 1.0F);
+            }
             const float elevation =
                 terrain_.heightAt(entity.transform.position.x, entity.transform.position.z);
             const float radius =
-                effectiveSightRange(stat(entity, GameplayStat::sightRange), elevation);
+                effectiveSightRange(stat(entity, GameplayStat::sightRange), elevation) * powerFactor;
             const glm::ivec2 center = map.gridCell(
                 {entity.transform.position.x, entity.transform.position.z},
                 Player::explorationCells);
@@ -1405,6 +1690,9 @@ void GameSession::replaceWorld(std::vector<Entity> entities, std::uint32_t terra
     navigation_.rebuildTerrain(terrain_, mapChunksPerSide_);
     commands_.clear();
     lastSequence_.clear();
+    powerTopologySignatures_.clear();
+    cachedPowerComponents_.clear();
+    powerEvents_.clear();
     updateExploration();
 }
 
