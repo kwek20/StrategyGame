@@ -9,6 +9,7 @@ namespace strategy {
 
 class UiController final {
   public:
+    static constexpr float tooltipDelaySeconds = 0.15F;
     void pointerMoved(glm::vec2 position);
     void advance(float deltaSeconds);
     void apply(UiDocument& document);
@@ -22,7 +23,7 @@ class UiController final {
     bool moveFocus(UiDocument& document, int direction);
     [[nodiscard]] std::optional<std::string> activateFocused(const UiDocument& document) const;
     [[nodiscard]] std::optional<std::string> visibleTooltip(const UiDocument& document,
-                                                            float delaySeconds = 0.45F) const;
+                                                            float delaySeconds = tooltipDelaySeconds) const;
 
     [[nodiscard]] glm::vec2 pointer() const { return pointer_; }
     [[nodiscard]] const std::string& hoveredId() const { return hoveredId_; }

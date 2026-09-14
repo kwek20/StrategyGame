@@ -73,9 +73,13 @@ int main() {
     const strategy::UiElement* queuePanel = layout.find("entity.queue.panel");
     const strategy::UiElement* entityPanel = layout.find("entity.panel");
     valid = valid && queue && queuePanel && entityPanel &&
-            queuePanel->bounds.bottom < entityPanel->bounds.top &&
+            entityPanel->bounds.left == 0.0F && entityPanel->bounds.bottom == 720.0F &&
+            queuePanel->bounds.left == entityPanel->bounds.left &&
+            queuePanel->bounds.right == entityPanel->bounds.right &&
+            queuePanel->bounds.bottom == entityPanel->bounds.top &&
             queue->bounds.right - queue->bounds.left == 44.0F &&
             queue->bounds.bottom - queue->bounds.top == 44.0F &&
+            queue->tooltip == "Construction drone - CANCEL" &&
             strategy::EntityHudLayout::queueIndex(queue->id) == 0;
 
     interactive.queue.push_back({"unit_worker", "Worker", 0.0F, true});
@@ -104,7 +108,11 @@ int main() {
         world, firstId, {firstId, mixedBuilding.id}, definitions);
     strategy::UiDocument selectionLayout =
         strategy::EntityHudLayout::selection(mixed, 1280, 720);
-    const strategy::UiElement* selectionRow = selectionLayout.hitTest({40.0F, 620.0F});
+    const strategy::UiElement* expectedSelectionRow =
+        selectionLayout.find(strategy::EntityHudLayout::selectionElementId("construction_drone"));
+    const strategy::UiElement* selectionRow = expectedSelectionRow
+        ? selectionLayout.hitTest(center(expectedSelectionRow))
+        : nullptr;
     valid = valid && mixed.selectionGroups.size() == 2 && selectionRow &&
             strategy::EntityHudLayout::selectionArchetype(selectionRow->id).has_value();
 
@@ -112,7 +120,7 @@ int main() {
     controller.pointerMoved(center(action));
     controller.apply(layout);
     valid = valid && controller.hoveredId() == action->id;
-    controller.advance(0.5F);
+    controller.advance(strategy::UiController::tooltipDelaySeconds);
     valid = valid && controller.visibleTooltip(layout).has_value();
     controller.apply(layout);
     valid = valid && layout.find("entity.tooltip") &&
@@ -165,6 +173,12 @@ int main() {
                 unitPanel->bounds.right - unitPanel->bounds.left &&
             directPanel->bounds.bottom - directPanel->bounds.top ==
                 unitPanel->bounds.bottom - unitPanel->bounds.top;
+
+    const strategy::UiDocument mixedLayout =
+        strategy::EntityHudLayout::selection(mixed, 1280, 720);
+    const strategy::UiElement* mixedPanel = mixedLayout.find("selection.panel");
+    valid = valid && mixedPanel && mixedPanel->bounds.left == 0.0F &&
+            mixedPanel->bounds.bottom == 720.0F;
 
     if (!valid) std::cerr << "Entity HUD component presentation failed\n";
     return valid ? 0 : 1;

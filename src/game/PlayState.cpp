@@ -86,6 +86,7 @@ void appendSyntheticRoutes(EntityHudModel& hud,
         action.name = Text::get(output == "alloy" ? "processor.route.synthetic_alloy"
                                                    : "processor.route.synthetic_fuel");
         action.description = "x" + std::to_string(bestRatio);
+        action.cost = Text::get("entity_hud.free");
         action.enabled = available;
         if (!available) action.disabledReason = Text::get("entity_hud.no_compatible_processor");
         hud.actions.push_back(std::move(action));
@@ -226,6 +227,11 @@ EntityHudModel PlayState::buildEntityActionHudModel(const Entity& selected,
         if (research)
             for (const auto& [resource, amount] : research->cost)
                 action.cost += resource + ": " + std::to_string(static_cast<int>(amount)) + " ";
+        if (research)
+            action.description = Text::format(
+                "entity_hud.time_seconds",
+                {std::to_string(static_cast<int>(
+                    research->durationTicks * GameSession::fixedTickSeconds))});
         if (action.cost.empty()) action.cost = Text::get("entity_hud.free");
         action.enabled = canAffordForAll(player, research, targets.size()) &&
                          std::all_of(targets.begin(), targets.end(), [&](EntityId id) {

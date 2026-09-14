@@ -33,7 +33,7 @@ void UiController::apply(UiDocument& document) {
     if (document.find("entity.tooltip")) {
         const UiElement* source = document.find(hoveredId_);
         document.setText("entity.tooltip",
-            source && hoverSeconds_ >= 0.45F ? source->tooltip : std::string{});
+            source && hoverSeconds_ >= tooltipDelaySeconds ? source->tooltip : std::string{});
     }
 }
 

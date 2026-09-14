@@ -106,6 +106,15 @@ void FontRenderer::draw(const std::string& text,
     drawBatch({TextDraw{text, x, top, pixelHeight, color}}, width, height);
 }
 
+float FontRenderer::measureWidth(const std::string& text, float pixelHeight) const {
+    const float scale = pixelHeight / 48.0F;
+    float width = 0.0F;
+    for (unsigned char character : text) {
+        if (character < glyphs_.size()) width += glyphs_[character].advance * scale;
+    }
+    return width;
+}
+
 void FontRenderer::drawBatch(const std::vector<TextDraw>& draws, int width, int height) const {
     std::vector<Vertex> shadows;
     std::vector<Vertex> glyphs;

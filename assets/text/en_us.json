@@ -195,6 +195,7 @@
   ,"entity_hud.time_seconds": "TIME: {0}s"
   ,"entity_hud.free": "FREE"
   ,"entity_hud.cancel_refund": "CLICK TO CANCEL AND REFUND"
+  ,"entity_hud.cancel": "CANCEL"
   ,"entity_hud.loop_stage": "LOOP"
   ,"entity_hud.task_idle": "IDLE"
   ,"entity_hud.task_gathering": "GATHERING"

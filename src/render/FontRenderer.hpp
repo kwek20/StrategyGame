@@ -27,6 +27,7 @@ class FontRenderer final {
               int viewportWidth,
               int viewportHeight) const;
     void drawBatch(const std::vector<TextDraw>& draws, int viewportWidth, int viewportHeight) const;
+    [[nodiscard]] float measureWidth(const std::string& text, float pixelHeight) const;
 
   private:
     struct Glyph {

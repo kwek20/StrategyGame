@@ -17,6 +17,20 @@ std::string decimal(float value) {
     output << std::fixed << std::setprecision(1) << value;
     return output.str();
 }
+
+std::string tooltip(const HudActionModel& action) {
+    std::string result;
+    const auto append = [&](const std::string& value) {
+        if (value.empty()) return;
+        if (!result.empty()) result += " - ";
+        result += value;
+    };
+    append(action.name);
+    append(action.cost);
+    append(action.description);
+    if (!action.enabled) append(action.disabledReason);
+    return result;
+}
 }
 
 std::string EntityHudLayout::selectionElementId(std::string_view archetype) {
@@ -60,7 +74,7 @@ UiDocument EntityHudLayout::actions(const EntityHudModel& model, int width, int 
     UiDocument document;
     const UiLayout canvas(width, height, uiScale);
     const std::size_t actionCount = std::min<std::size_t>(model.actions.size(), 9);
-    const UiRect panel = canvas.rect(UiAnchor::bottomLeft, 18, 18, 800, 300, 560, 260);
+    const UiRect panel = canvas.rect(UiAnchor::bottomLeft, 0, 0, 800, 300, 560, 260);
     const float inset = canvas.value(10);
     const float actionWidth = canvas.value(250);
     const UiRect actionPanel{panel.left + inset, panel.top + inset,
@@ -87,9 +101,7 @@ UiDocument EntityHudLayout::actions(const EntityHudModel& model, int width, int 
         const HudActionModel& action = model.actions[i];
         auto& button = document.iconButton(actionElementId(action.id),
             {left, top, left + actionCellWidth, top + actionCellHeight}, action.icon,
-            action.name + "  " + action.cost + "  " + action.description +
-                (!action.enabled && !action.disabledReason.empty()
-                    ? "  " + action.disabledReason : ""), action.enabled);
+            tooltip(action), action.enabled);
         button.focused = action.active;
     }
 
@@ -100,8 +112,7 @@ UiDocument EntityHudLayout::actions(const EntityHudModel& model, int width, int 
 
     // Queues are a separate strip above the entity menu and never resize its contents.
     if (!model.queue.empty()) {
-        const UiRect queuePanel{panel.left, panel.top - canvas.value(66),
-                                panel.right, panel.top - canvas.value(8)};
+        const UiRect queuePanel{panel.left, panel.top - canvas.value(58), panel.right, panel.top};
         document.panel("entity.queue.panel", queuePanel, {0.025F, 0.040F, 0.058F});
         const std::size_t queueCount = std::min<std::size_t>(model.queue.size(), 9);
         const float queueSlotSize = canvas.value(44);
@@ -113,7 +124,7 @@ UiDocument EntityHudLayout::actions(const EntityHudModel& model, int width, int 
             document.queueSlot(queueElementId(i),
                                {left, queueTop, left + queueSlotSize,
                                 queueTop + queueSlotSize}, model.queue[i].icon,
-                               model.queue[i].name + "  " + Text::get("entity_hud.cancel_refund"),
+                               model.queue[i].name + " - " + Text::get("entity_hud.cancel"),
                                model.queue[i].cancellable);
         }
         document.progressBar("entity.queue.progress",
@@ -211,7 +222,7 @@ UiDocument EntityHudLayout::selection(const EntityHudModel& model, int width, in
     const UiLayout canvas(width, height, uiScale);
     const std::size_t visible = std::min<std::size_t>(model.selectionGroups.size(), 6);
     const float panelHeight = 58.0F + static_cast<float>(visible) * 34.0F;
-    const UiRect panel = canvas.rect(UiAnchor::bottomLeft, 18, 18, 392, panelHeight, 300, 100);
+    const UiRect panel = canvas.rect(UiAnchor::bottomLeft, 0, 0, 392, panelHeight, 300, 100);
     document.panel("selection.panel", panel,
                    {0.025F, 0.04F, 0.06F});
     document.label("selection.title", {panel.left + canvas.value(12),

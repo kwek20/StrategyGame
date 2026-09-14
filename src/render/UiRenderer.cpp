@@ -164,13 +164,21 @@ void UiRenderer::draw(const UiDocument& document, int width, int height) const {
             const float luminance = textColor.r * 0.2126F + textColor.g * 0.7152F +
                                     textColor.b * 0.0722F;
             if (luminance < 0.48F) textColor = UiTheme::text;
-            labels.push_back({displayText,
-                              element.bounds.left +
-                                  (element.kind == UiElementKind::label ? 0.0F : 12.0F),
-                              element.bounds.top +
-                                  (element.kind == UiElementKind::label ? 0.0F : 10.0F),
-                              fontPixels,
-                              textColor});
+            const bool centered = element.kind == UiElementKind::button;
+            const float textWidth = centered ? font_.measureWidth(displayText, fontPixels) : 0.0F;
+            const float x = centered
+                                ? element.bounds.left +
+                                      ((element.bounds.right - element.bounds.left) - textWidth) *
+                                          0.5F
+                                : element.bounds.left +
+                                      (element.kind == UiElementKind::label ? 0.0F : 12.0F);
+            const float top = centered
+                                  ? element.bounds.top +
+                                        ((element.bounds.bottom - element.bounds.top) - fontPixels) *
+                                            0.5F
+                                  : element.bounds.top +
+                                        (element.kind == UiElementKind::label ? 0.0F : 10.0F);
+            labels.push_back({displayText, x, top, fontPixels, textColor});
         }
     }
 
