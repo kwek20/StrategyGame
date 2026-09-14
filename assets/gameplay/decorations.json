@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "decorations": {
+    "grass_fresh": {
+      "presentation": "grass_fresh",
+      "nameKey": "entity.grass_fresh",
+      "collisionRadius": 0,
+      "components": [],
+      "tags": ["decoration", "vegetation", "grass", "clear-on-build"],
+      "stats": {}
+    },
+    "grass_tall": {
+      "presentation": "grass_tall",
+      "nameKey": "entity.grass_tall",
+      "collisionRadius": 0,
+      "components": [],
+      "tags": ["decoration", "vegetation", "grass", "clear-on-build"],
+      "stats": {}
+    },
+    "wild_tree": {
+      "presentation": "grass_tall",
+      "nameKey": "entity.wild_tree",
+      "collisionRadius": 1.2,
+      "components": [],
+      "tags": ["decoration", "vegetation", "tree", "clear-on-build"],
+      "stats": {}
+    }
+  }
+}

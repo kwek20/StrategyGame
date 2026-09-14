@@ -1,0 +1,89 @@
+{
+  "version": 1,
+  "effects": {
+    "processing.alloy": {
+      "quality": "medium", "maximumDistance": 140,
+      "emission": {"mode":"continuous", "ratePerSecond":18, "maximumParticles":96},
+      "spawn": {"shape":"box", "radius":0, "extents":[0.45,0.15,0.45]},
+      "particle": {"lifetimeSeconds":[0.45,1.1], "speed":[0.8,2.4], "startSize":[0.06,0.13], "endSize":[0.02,0.06], "gravity":[0,-2.2,0], "drag":0.8, "turbulence":0.25, "startColor":[1,0.55,0.12,1], "endColor":[0.25,0.08,0.02,0]},
+      "render": {"texture":"particles/kenney/spark", "billboard":"velocity", "blend":"additive", "softParticles":false}
+    },
+    "processing.fuel": {
+      "quality": "medium", "maximumDistance": 140,
+      "emission": {"mode":"continuous", "ratePerSecond":10, "maximumParticles":72},
+      "spawn": {"shape":"cone", "radius":0.25, "extents":[0.2,0.5,0.2]},
+      "particle": {"lifetimeSeconds":[1.0,2.4], "speed":[0.35,0.9], "startSize":[0.18,0.35], "endSize":[0.7,1.25], "gravity":[0,0.3,0], "drag":0.35, "turbulence":0.5, "startColor":[0.32,0.34,0.35,0.55], "endColor":[0.12,0.13,0.14,0]},
+      "render": {"texture":"particles/kenney/smoke", "billboard":"camera", "blend":"premultiplied", "softParticles":true}
+    },
+    "mining.scrap": {
+      "quality": "medium", "maximumDistance": 110,
+      "emission": {"mode":"continuous", "ratePerSecond":28, "maximumParticles":96},
+      "spawn": {"shape":"sphere", "radius":0.55, "extents":[0,0,0]},
+      "particle": {"lifetimeSeconds":[0.4,1.0], "speed":[1.0,3.2], "startSize":[0.18,0.34], "endSize":[0.05,0.12], "gravity":[0,-3.8,0], "drag":0.6, "turbulence":0.15, "startColor":[1,0.58,0.16,1], "endColor":[0.2,0.16,0.12,0]},
+      "render": {"texture":"particles/kenney/spark", "billboard":"velocity", "blend":"additive", "softParticles":false}
+    },
+    "mining.dust": {
+      "quality": "medium", "maximumDistance": 110,
+      "emission": {"mode":"continuous", "ratePerSecond":12, "maximumParticles":48},
+      "spawn": {"shape":"sphere", "radius":0.65, "extents":[0,0,0]},
+      "particle": {"lifetimeSeconds":[0.7,1.5], "speed":[0.25,0.8], "startSize":[0.28,0.5], "endSize":[0.65,1.05], "gravity":[0,0.25,0], "drag":0.8, "turbulence":0.2, "startColor":[0.5,0.38,0.24,0.55], "endColor":[0.22,0.16,0.1,0]},
+      "render": {"texture":"particles/kenney/dust", "billboard":"camera", "blend":"alpha", "softParticles":true}
+    },
+    "mining.oil": {
+      "quality": "medium", "maximumDistance": 110,
+      "emission": {"mode":"continuous", "ratePerSecond":16, "maximumParticles":72},
+      "spawn": {"shape":"sphere", "radius":0.5, "extents":[0,0,0]},
+      "particle": {"lifetimeSeconds":[0.6,1.3], "speed":[0.4,1.15], "startSize":[0.2,0.4], "endSize":[0.08,0.18], "gravity":[0,-2.4,0], "drag":0.7, "turbulence":0.1, "startColor":[0.16,0.14,0.11,0.9], "endColor":[0.05,0.04,0.03,0]},
+      "render": {"texture":"particles/kenney/droplet", "billboard":"velocity", "blend":"alpha", "softParticles":true}
+    },
+    "construction.drone_beam": {
+      "quality": "medium", "maximumDistance": 150,
+      "emission": {"mode":"continuous", "ratePerSecond":72, "maximumParticles":240},
+      "spawn": {"shape":"line", "radius":0.08, "extents":[0,0,1.8]},
+      "particle": {"lifetimeSeconds":[0.25,0.55], "speed":[0.4,1.1], "startSize":[0.18,0.32], "endSize":[0.05,0.12], "gravity":[0,0,0], "drag":0.2, "turbulence":0.08, "startColor":[0.15,0.88,1,1], "endColor":[0.05,0.35,0.65,0]},
+      "render": {"texture":"particles/kenney/energy", "billboard":"camera", "blend":"additive", "softParticles":false}
+    },
+    "construction.contact": {
+      "quality": "medium", "maximumDistance": 150,
+      "emission": {"mode":"continuous", "ratePerSecond":36, "maximumParticles":120},
+      "spawn": {"shape":"sphere", "radius":0.8, "extents":[0,0,0]},
+      "particle": {"lifetimeSeconds":[0.35,0.8], "speed":[0.8,2.8], "startSize":[0.16,0.3], "endSize":[0.04,0.1], "gravity":[0,-2.0,0], "drag":0.45, "turbulence":0.18, "startColor":[0.25,0.9,1,1], "endColor":[0.05,0.3,0.65,0]},
+      "render": {"texture":"particles/kenney/spark", "billboard":"velocity", "blend":"additive", "softParticles":false}
+    },
+    "weapon.muzzle_kinetic": {
+      "quality": "low", "maximumDistance": 180,
+      "emission": {"mode":"burst", "burstCount":5, "maximumParticles":8},
+      "spawn": {"shape":"cone", "radius":0.04, "extents":[0.08,0.08,0.25]},
+      "particle": {"lifetimeSeconds":[0.035,0.09], "speed":[1.5,4.0], "startSize":[0.08,0.16], "endSize":[0.01,0.04], "gravity":[0,0,0], "drag":1.2, "turbulence":0, "startColor":[1,0.72,0.24,1], "endColor":[1,0.18,0.02,0]},
+      "render": {"texture":"particles/kenney/muzzle_flash", "billboard":"camera", "blend":"additive", "softParticles":false}
+    },
+    "weapon.tracer_kinetic": {
+      "quality": "low", "maximumDistance": 220,
+      "emission": {"mode":"timed_loop", "ratePerSecond":60, "durationSeconds":0.12, "maximumParticles":12},
+      "spawn": {"shape":"line", "radius":0, "extents":[0,0,1]},
+      "particle": {"lifetimeSeconds":[0.05,0.12], "speed":[18,28], "startSize":[0.025,0.045], "endSize":[0.01,0.02], "gravity":[0,0,0], "drag":0, "turbulence":0, "startColor":[1,0.8,0.34,1], "endColor":[1,0.3,0.05,0]},
+      "render": {"texture":"particles/kenney/tracer", "billboard":"velocity", "blend":"additive", "softParticles":false}
+    },
+    "impact.kinetic": {
+      "quality": "medium", "maximumDistance": 180,
+      "emission": {"mode":"burst", "burstCount":14, "maximumParticles":20},
+      "spawn": {"shape":"cone", "radius":0.12, "extents":[0.2,0.2,0.2]},
+      "particle": {"lifetimeSeconds":[0.15,0.55], "speed":[1.2,5.5], "startSize":[0.035,0.09], "endSize":[0.01,0.035], "gravity":[0,-5.5,0], "drag":0.8, "turbulence":0.08, "startColor":[1,0.62,0.18,1], "endColor":[0.32,0.12,0.03,0]},
+      "render": {"texture":"particles/kenney/spark", "billboard":"velocity", "blend":"additive", "softParticles":false}
+    },
+    "explosion.small": {
+      "quality": "medium", "maximumDistance": 240,
+      "emission": {"mode":"burst", "burstCount":42, "maximumParticles":56},
+      "spawn": {"shape":"sphere", "radius":0.35, "extents":[0,0,0]},
+      "particle": {"lifetimeSeconds":[0.35,1.4], "speed":[1.5,7.0], "startSize":[0.16,0.42], "endSize":[0.5,1.5], "gravity":[0,-2.8,0], "drag":0.75, "turbulence":0.4, "startColor":[1,0.48,0.08,1], "endColor":[0.16,0.14,0.13,0]},
+      "render": {"texture":"particles/kenney/explosion", "billboard":"camera", "blend":"premultiplied", "softParticles":true}
+    },
+    "explosion.large": {
+      "quality": "high", "maximumDistance": 360,
+      "emission": {"mode":"burst", "burstCount":120, "maximumParticles":160},
+      "spawn": {"shape":"sphere", "radius":0.8, "extents":[0,0,0]},
+      "particle": {"lifetimeSeconds":[0.7,3.2], "speed":[2.0,11.0], "startSize":[0.3,0.85], "endSize":[1.2,3.8], "gravity":[0,-2.1,0], "drag":0.6, "turbulence":0.75, "startColor":[1,0.42,0.06,1], "endColor":[0.12,0.11,0.1,0]},
+      "render": {"texture":"particles/kenney/explosion", "billboard":"camera", "blend":"premultiplied", "softParticles":true}
+    }
+  }
+}

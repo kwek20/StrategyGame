@@ -65,6 +65,22 @@
       "selection": { "radius": 1.5, "height": 5.0 },
       "animations": {}
     },
+    "grass_fresh": {
+      "icon": "status_asset_ready",
+      "model": "environment/grass_pack/grass_fresh",
+      "scale": 2.4,
+      "grounding": { "groundOffset": -0.02, "alignToTerrain": true, "maximumTilt": 18.0, "foundationRadius": 0.0 },
+      "selection": { "radius": 0.0, "height": 0.8 },
+      "animations": {}
+    },
+    "grass_tall": {
+      "icon": "status_asset_ready",
+      "model": "environment/grass_pack/grass_tall",
+      "scale": 2.0,
+      "grounding": { "groundOffset": -0.02, "alignToTerrain": true, "maximumTilt": 18.0, "foundationRadius": 0.0 },
+      "selection": { "radius": 0.0, "height": 1.4 },
+      "animations": {}
+    },
     "stone": {
       "icon": "resource_stone",
       "model": "buildings/Resource_Rock_1",
