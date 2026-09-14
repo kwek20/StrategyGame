@@ -23,6 +23,7 @@ bool imports(const std::filesystem::path& path, bool expectAnimations) {
 int main() {
     const bool townCenter =
         imports("assets/models/buildings/TownCenter_FirstAge_Level1.gltf", false);
+    const bool electricityPole = imports("assets/models/gen/electricity_pole.glb", false);
     const bool worker = imports("assets/models/units/Worker_Male.gltf", true);
-    return townCenter && worker ? 0 : 1;
+    return townCenter && electricityPole && worker ? 0 : 1;
 }

@@ -54,16 +54,28 @@ int main() {
         {"locked.action", "status_asset_failed", "Locked", {}, {}, {}, false});
     interactive.queue.push_back({"unit_drone", "Construction drone", 0.5F, true});
     strategy::UiDocument layout = strategy::EntityHudLayout::actions(interactive, 1280, 720);
-    const strategy::UiElement* action = layout.hitTest({40.0F, 660.0F});
-    valid = valid && action &&
-            strategy::EntityHudLayout::actionId(action->id) ==
+    const strategy::UiElement* actionPanel = layout.find("entity.actions.panel");
+    const strategy::UiElement* infoPanel = layout.find("entity.info.panel");
+    const strategy::UiElement* action = layout.find(strategy::EntityHudLayout::actionElementId(
+        "command_hub.train_construction_drone"));
+    const auto center = [](const strategy::UiElement* element) {
+        return glm::vec2{(element->bounds.left + element->bounds.right) * 0.5F,
+                         (element->bounds.top + element->bounds.bottom) * 0.5F};
+    };
+    valid = valid && actionPanel && infoPanel && actionPanel->bounds.right < infoPanel->bounds.left &&
+            action && strategy::EntityHudLayout::actionId(action->id) ==
                 std::optional<std::string>{"command_hub.train_construction_drone"};
-    const strategy::UiElement* disabled = layout.hitTest({150.0F, 660.0F});
+    const strategy::UiElement* disabled =
+        layout.find(strategy::EntityHudLayout::actionElementId("locked.action"));
     valid = valid && disabled && !disabled->enabled &&
-            !layout.activate({150.0F, 660.0F});
-    const strategy::UiElement* queue = layout.hitTest({40.0F, 550.0F});
-    valid = valid && queue && strategy::EntityHudLayout::queueIndex(queue->id) == 0;
-    layout.pointerMoved({40.0F, 660.0F});
+            !layout.activate(center(disabled));
+    const strategy::UiElement* queue = layout.find(strategy::EntityHudLayout::queueElementId(0));
+    const strategy::UiElement* queuePanel = layout.find("entity.queue.panel");
+    const strategy::UiElement* entityPanel = layout.find("entity.panel");
+    valid = valid && queue && queuePanel && entityPanel &&
+            queuePanel->bounds.bottom < entityPanel->bounds.top &&
+            strategy::EntityHudLayout::queueIndex(queue->id) == 0;
+    layout.pointerMoved(center(action));
     valid = valid && layout.hoveredElement() &&
             layout.hoveredElement()->id == action->id;
 
@@ -78,7 +90,7 @@ int main() {
             strategy::EntityHudLayout::selectionArchetype(selectionRow->id).has_value();
 
     strategy::UiController controller;
-    controller.pointerMoved({40.0F, 660.0F});
+    controller.pointerMoved(center(action));
     controller.apply(layout);
     valid = valid && controller.hoveredId() == action->id;
     controller.advance(0.5F);
@@ -86,9 +98,9 @@ int main() {
     controller.apply(layout);
     valid = valid && layout.find("entity.tooltip") &&
             layout.find("entity.tooltip")->text.starts_with("Train drone");
-    valid = valid && controller.press(layout, {40.0F, 660.0F}) == action->id &&
+    valid = valid && controller.press(layout, center(action)) == action->id &&
             controller.pressedId() == action->id;
-    valid = valid && !controller.press(layout, {150.0F, 660.0F});
+    valid = valid && !controller.press(layout, center(disabled));
     valid = valid && controller.moveFocus(layout, 1) &&
             controller.activateFocused(layout).has_value();
 
@@ -111,6 +123,22 @@ int main() {
     const strategy::UiElement* responsivePanel = responsiveHud.find("entity.panel");
     valid = valid && responsivePanel && responsivePanel->bounds.left >= 0.0F &&
             responsivePanel->bounds.bottom <= 1080.0F;
+
+    const strategy::UiDocument unitLayout =
+        strategy::EntityHudLayout::actions(single, 1280, 720);
+    const strategy::UiDocument directLayout =
+        strategy::EntityHudLayout::directControl(single, 1280, 720);
+    const strategy::UiElement* unitPanel = unitLayout.find("entity.panel");
+    const strategy::UiElement* directPanel = directLayout.find("entity.panel");
+    valid = valid && unitPanel && directPanel && entityPanel &&
+            unitPanel->bounds.right - unitPanel->bounds.left ==
+                entityPanel->bounds.right - entityPanel->bounds.left &&
+            unitPanel->bounds.bottom - unitPanel->bounds.top ==
+                entityPanel->bounds.bottom - entityPanel->bounds.top &&
+            directPanel->bounds.right - directPanel->bounds.left ==
+                unitPanel->bounds.right - unitPanel->bounds.left &&
+            directPanel->bounds.bottom - directPanel->bounds.top ==
+                unitPanel->bounds.bottom - unitPanel->bounds.top;
 
     if (!valid) std::cerr << "Entity HUD component presentation failed\n";
     return valid ? 0 : 1;

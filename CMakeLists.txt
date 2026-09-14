@@ -145,6 +145,7 @@ add_library(strategy_assets STATIC
     src/assets/Texture.cpp
 )
 strategy_target(strategy_assets)
+target_include_directories(strategy_assets PRIVATE ${Stb_INCLUDE_DIR})
 target_link_libraries(strategy_assets PUBLIC strategy_asset_data strategy_core glad::glad RapidJSON)
 
 add_library(strategy_camera STATIC

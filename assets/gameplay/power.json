@@ -8,48 +8,76 @@
       "storage": 200,
       "connectionRange": 24,
       "transferLimit": 50,
-      "chargePerTick": 2
+      "chargePerTick": 2,
+      "storageChargePerTick": 2,
+      "storageDischargePerTick": 2,
+      "maximumConnections": 8
     },
     "basic_generator": {
       "tags": ["producer", "generator"],
-      "production": 20
+      "production": 20,
+      "connectionRange": 24,
+      "transferLimit": 20,
+      "maximumConnections": 4
     },
     "basic_relay": {
       "tags": ["relay", "grid"],
       "connectionRange": 24,
-      "transferLimit": 50
+      "transferLimit": 50,
+      "maximumConnections": 6
     },
     "basic_charger": {
       "tags": ["consumer", "charger"],
       "consumption": 5,
-      "chargePerTick": 2
+      "chargePerTick": 2,
+      "connectionRange": 24,
+      "transferLimit": 10,
+      "maximumConnections": 2
     },
     "alloy_processor": {
       "tags": ["consumer", "processor"],
       "consumption": 8,
-      "priority": 40
+      "priority": 40,
+      "connectionRange": 24,
+      "transferLimit": 10,
+      "maximumConnections": 2
     },
     "fuel_processor": {
       "tags": ["consumer", "processor"],
       "consumption": 8,
-      "priority": 40
+      "priority": 40,
+      "connectionRange": 24,
+      "transferLimit": 10,
+      "maximumConnections": 2
     },
     "synthetic_mine": {
       "tags": ["consumer", "extractor", "synthetic"],
       "consumption": 6,
-      "priority": 60
+      "priority": 60,
+      "connectionRange": 24,
+      "transferLimit": 8,
+      "maximumConnections": 2
     },
     "resource_extractor": {
       "tags": ["consumer", "extractor", "economic"],
-      "consumption": 6
+      "consumption": 6,
+      "connectionRange": 24,
+      "transferLimit": 8,
+      "maximumConnections": 2
     },
     "drone_factory": {
       "tags": ["consumer", "factory", "production"],
-      "consumption": 12
+      "consumption": 12,
+      "connectionRange": 24,
+      "transferLimit": 14,
+      "maximumConnections": 2
     },
     "sensor_tower": {
       "tags": ["consumer", "sensor", "information"],
-      "consumption": 4
+      "consumption": 4,
+      "connectionRange": 24,
+      "transferLimit": 6,
+      "maximumConnections": 2
     }
   }
 }

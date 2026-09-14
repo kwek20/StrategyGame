@@ -5,6 +5,7 @@
 #include "simulation/CommandCodec.hpp"
 #include "terrain/Terrain.hpp"
 #include "world/Collision.hpp"
+#include "world/MapArea.hpp"
 #include "world/Navigation.hpp"
 #include "world/World.hpp"
 
@@ -338,6 +339,29 @@ int main() {
         std::cerr << "Starting roster validation failed\n";
     valid = valid && session.players().players().size() == 2;
 
+    const auto verifyOpposingStarts = [&](std::uint32_t chunks) {
+        strategy::GameSession sized{gameplay, 123U, "spain", "japan", "unassigned",
+                                    "unassigned", chunks};
+        const strategy::Entity* firstHub = nullptr;
+        const strategy::Entity* secondHub = nullptr;
+        for (const strategy::Entity& entity : sized.world().entities()) {
+            if (entity.archetype.value != "command_hub") continue;
+            if (entity.authority.owner == 1) firstHub = &entity;
+            if (entity.authority.owner == 2) secondHub = &entity;
+        }
+        if (!firstHub || !secondHub) return false;
+        const strategy::MapArea map{chunks};
+        const float inset = gameplay.matchRules().startingEdgeInsetChunks *
+                            strategy::Terrain::chunkCellCount * strategy::Terrain::spacing;
+        return firstHub->transform.position.x < 0.0F &&
+               secondHub->transform.position.x > 0.0F &&
+               std::abs(firstHub->transform.position.z) < 0.001F &&
+               std::abs(secondHub->transform.position.z) < 0.001F &&
+               std::abs((-map.halfExtent() + inset) - firstHub->transform.position.x) < 0.001F &&
+               std::abs((map.halfExtent() - inset) - secondHub->transform.position.x) < 0.001F;
+    };
+    valid = valid && verifyOpposingStarts(10) && verifyOpposingStarts(20);
+
     strategy::GameSession replayA{gameplay, 123U}, replayB{gameplay, 123U};
     valid = valid && replayA.stateChecksum() == replayB.stateChecksum();
     const strategy::PlayerCommand wireCommand{
@@ -413,6 +437,19 @@ int main() {
             std::get<strategy::DeliverResourceCommand>(decodedDelivery->payload).processor == 90 &&
             std::get<strategy::SetPreferredProcessorCommand>(decodedPreference->payload).processor == 90 &&
             std::get<strategy::SetDeliveryOutputCommand>(decodedOutput->payload).output == "fuel";
+    const auto decodedConnect = strategy::CommandCodec::decode(strategy::CommandCodec::encode(
+        {1, 61, strategy::ConnectPowerCommand{7, 90}}));
+    const auto decodedDisconnect = strategy::CommandCodec::decode(strategy::CommandCodec::encode(
+        {1, 62, strategy::DisconnectPowerCommand{7, 90}}));
+    const auto decodedPriority = strategy::CommandCodec::decode(strategy::CommandCodec::encode(
+        {1, 63, strategy::SetPowerPriorityCommand{7, 25}}));
+    const auto decodedEnabled = strategy::CommandCodec::decode(strategy::CommandCodec::encode(
+        {1, 64, strategy::SetPowerEnabledCommand{7, false}}));
+    valid = valid && decodedConnect && decodedDisconnect && decodedPriority && decodedEnabled &&
+            std::get<strategy::ConnectPowerCommand>(decodedConnect->payload).target == 90 &&
+            std::get<strategy::DisconnectPowerCommand>(decodedDisconnect->payload).target == 90 &&
+            std::get<strategy::SetPowerPriorityCommand>(decodedPriority->payload).priority == 25 &&
+            !std::get<strategy::SetPowerEnabledCommand>(decodedEnabled->payload).enabled;
     std::size_t resourceCount = 0;
     for (const strategy::Entity& resource : session.world().entities()) {
         if (resource.authority.owner != 0)
@@ -709,6 +746,8 @@ int main() {
     activeDeliveryDrone->gatherer.carriedResource = "scrap";
     activeDeliveryDrone->gatherer.carriedAmount = 10.0F;
     activeDeliveryDrone->unitControl.order = strategy::UnitOrderKind::returnResources;
+    valid = conversionSession.submit(
+                {1, 90, strategy::ConnectPowerCommand{conversionHubId, alloyProcessorId}}) && valid;
     conversionSession.advanceTicks();
     const strategy::Entity* activeAlloyProcessor = conversionSession.world().findEntity(alloyProcessorId);
     valid = valid && activeAlloyProcessor && activeAlloyProcessor->processor &&
@@ -854,6 +893,7 @@ int main() {
     strategy::Entity& allocationHub = powerAllocationSession.world().createEntity(
         "Grid source", "command_hub", 1);
     gameplay.initializeEntity(allocationHub);
+    const strategy::EntityId allocationHubId = allocationHub.id;
     strategy::Entity& firstProcessor = powerAllocationSession.world().createEntity(
         "First processor", "alloy_processor", 1);
     gameplay.initializeEntity(firstProcessor);
@@ -862,13 +902,23 @@ int main() {
         "Second processor", "fuel_processor", 1);
     gameplay.initializeEntity(secondProcessor);
     const strategy::EntityId secondProcessorId = secondProcessor.id;
+    valid = powerAllocationSession.submit(
+                {1, 1, strategy::ConnectPowerCommand{allocationHubId, firstProcessorId}}) && valid;
+    valid = powerAllocationSession.submit(
+                {1, 2, strategy::ConnectPowerCommand{allocationHubId, secondProcessorId}}) && valid;
     powerAllocationSession.advanceTicks();
     const strategy::Entity* allocatedFirst = powerAllocationSession.world().findEntity(firstProcessorId);
     const strategy::Entity* allocatedSecond = powerAllocationSession.world().findEntity(secondProcessorId);
-    valid = valid && allocatedFirst->power.state == strategy::PowerOperationalState::powered &&
+    const bool allocationValid = allocatedFirst->power.state == strategy::PowerOperationalState::powered &&
             allocatedFirst->power.supplied == 8.0F &&
             allocatedSecond->power.state == strategy::PowerOperationalState::underpowered &&
-            allocatedSecond->power.supplied == 2.0F;
+            allocatedSecond->power.supplied == 2.0F &&
+            allocatedFirst->power.gridId == allocationHubId &&
+            allocatedSecond->power.gridId == allocationHubId;
+    if (!allocationValid)
+        std::cerr << "Power priority allocation validation failed: first="
+                  << allocatedFirst->power.supplied << " second=" << allocatedSecond->power.supplied << '\n';
+    valid = valid && allocationValid;
     powerAllocationSession.world().findEntity(secondProcessorId)->processor.bufferedInputs["oil"] = 4.0F;
     powerAllocationSession.advanceTicks();
     allocatedSecond = powerAllocationSession.world().findEntity(secondProcessorId);
@@ -909,15 +959,97 @@ int main() {
     strategy::Entity& syntheticHub = syntheticSession.world().createEntity(
         "Grid source", "command_hub", 1);
     gameplay.initializeEntity(syntheticHub);
+    const strategy::EntityId syntheticHubId = syntheticHub.id;
     strategy::Entity& syntheticMine = syntheticSession.world().createEntity(
         "Synthetic Mine", "synthetic_mine", 1);
     gameplay.initializeEntity(syntheticMine);
     const strategy::EntityId syntheticMineId = syntheticMine.id;
+    valid = syntheticSession.submit(
+                {1, 1, strategy::ConnectPowerCommand{syntheticHubId, syntheticMineId}}) && valid;
     syntheticSession.advanceTicks(5);
     const strategy::Entity* activeSyntheticMine = syntheticSession.world().findEntity(syntheticMineId);
     valid = valid && activeSyntheticMine->resource.type == "synthetic" &&
             std::abs(activeSyntheticMine->resource.remaining - 0.5F) < 0.001F &&
             activeSyntheticMine->power.state == strategy::PowerOperationalState::powered;
+
+    valid = powerAllocationSession.submit(
+                {1, 3, strategy::DisconnectPowerCommand{allocationHubId, firstProcessorId}}) && valid;
+    powerAllocationSession.advanceTicks();
+    allocatedFirst = powerAllocationSession.world().findEntity(firstProcessorId);
+    allocatedSecond = powerAllocationSession.world().findEntity(secondProcessorId);
+    const bool splitValid = allocatedFirst->power.gridId == firstProcessorId &&
+            allocatedFirst->power.state == strategy::PowerOperationalState::offline &&
+            allocatedSecond->power.state == strategy::PowerOperationalState::powered;
+    if (!splitValid) std::cerr << "Power grid split validation failed\n";
+    valid = valid && splitValid;
+    valid = powerAllocationSession.submit(
+                {1, 4, strategy::SetPowerEnabledCommand{allocationHubId, false}}) && valid;
+    powerAllocationSession.advanceTicks();
+    valid = valid &&
+            powerAllocationSession.world().findEntity(secondProcessorId)->power.state ==
+                strategy::PowerOperationalState::offline;
+
+    strategy::GameSession storageBudgetSession{gameplay, 901U};
+    storageBudgetSession.replaceWorld({}, 901U);
+    auto makePowerEntity = [&](strategy::GameSession& targetSession, const char* name,
+                               float generation, float demand, float transfer) {
+        strategy::Entity& created = targetSession.world().createEntity(name, "", 1);
+        created.power.emplace();
+        created.power.generation = generation;
+        created.power.demand = demand;
+        created.power.transferLimit = transfer;
+        created.power.connectionRange = 200.0F;
+        created.power.maximumConnections = 8;
+        return created.id;
+    };
+    const auto batteryId = makePowerEntity(storageBudgetSession, "Battery", 0, 0, 100);
+    const auto storageConsumerA = makePowerEntity(storageBudgetSession, "Consumer A", 0, 2, 100);
+    const auto storageConsumerB = makePowerEntity(storageBudgetSession, "Consumer B", 0, 2, 100);
+    auto* battery = storageBudgetSession.world().findEntity(batteryId);
+    battery->power.stored = 10.0F;
+    battery->power.storageCapacity = 10.0F;
+    battery->power.connections = {storageConsumerA, storageConsumerB};
+    storageBudgetSession.world().findEntity(storageConsumerA)->power.connections = {batteryId};
+    storageBudgetSession.world().findEntity(storageConsumerB)->power.connections = {batteryId};
+    // This test device uses the command-hub storage policy: at most two units per tick.
+    battery->archetype = strategy::EntityArchetypeId{"command_hub"};
+    storageBudgetSession.advanceTicks();
+    const bool storageBudgetValid = std::abs(battery->power.stored - 8.0F) < 0.001F &&
+        std::abs(storageBudgetSession.world().findEntity(storageConsumerA)->power.supplied +
+                 storageBudgetSession.world().findEntity(storageConsumerB)->power.supplied - 2.0F) < 0.001F;
+    if (!storageBudgetValid) std::cerr << "Power storage discharge-budget validation failed\n";
+    valid = valid && storageBudgetValid;
+
+    strategy::GameSession relayBudgetSession{gameplay, 902U};
+    relayBudgetSession.replaceWorld({}, 902U);
+    const auto sourceId = makePowerEntity(relayBudgetSession, "Source", 10, 0, 100);
+    const auto relayId = makePowerEntity(relayBudgetSession, "Relay", 0, 0, 3);
+    const auto relayConsumerId = makePowerEntity(relayBudgetSession, "Consumer", 0, 10, 100);
+    relayBudgetSession.world().findEntity(sourceId)->power.connections = {relayId};
+    relayBudgetSession.world().findEntity(relayId)->power.connections = {sourceId, relayConsumerId};
+    relayBudgetSession.world().findEntity(relayConsumerId)->power.connections = {relayId};
+    relayBudgetSession.advanceTicks();
+    const bool relayBudgetValid =
+        std::abs(relayBudgetSession.world().findEntity(relayConsumerId)->power.supplied - 3.0F) < 0.001F;
+    if (!relayBudgetValid) std::cerr << "Power relay throughput validation failed\n";
+    valid = valid && relayBudgetValid;
+
+    strategy::GameSession rejectionSession{gameplay, 903U};
+    rejectionSession.replaceWorld({}, 903U);
+    const auto nearId = makePowerEntity(rejectionSession, "Near", 10, 0, 10);
+    const auto farId = makePowerEntity(rejectionSession, "Far", 0, 5, 10);
+    rejectionSession.world().findEntity(farId)->transform.position.x = 500.0F;
+    valid = rejectionSession.submit(
+                {1, 1, strategy::ConnectPowerCommand{nearId, farId}}) && valid;
+    rejectionSession.advanceTicks();
+    const auto rejectionEvents = rejectionSession.consumePowerEvents();
+    const bool rejectionValid = std::any_of(rejectionEvents.begin(), rejectionEvents.end(),
+        [](const strategy::PowerEvent& event) {
+            return event.kind == strategy::PowerEventKind::commandRejected &&
+                   event.reason == strategy::PowerFailureReason::outOfRange;
+        });
+    if (!rejectionValid) std::cerr << "Power command-rejection validation failed\n";
+    valid = valid && rejectionValid;
 
     strategy::GameSession intelligenceSession{gameplay, 777U};
     strategy::Entity* scout = nullptr;

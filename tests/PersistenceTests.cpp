@@ -53,6 +53,13 @@ int main() {
     entity.power.generation = 0.0F;
     entity.power.demand = 8.0F;
     entity.power.supplied = 3.0F;
+    entity.power.stored = 15.0F;
+    entity.power.storageCapacity = 50.0F;
+    entity.power.connectionRange = 24.0F;
+    entity.power.transferLimit = 10.0F;
+    entity.power.maximumConnections = 4;
+    entity.power.gridId = entity.id;
+    entity.power.enabled = false;
     entity.power.priority = 40;
     entity.power.state = strategy::PowerOperationalState::underpowered;
     entity.transform.position = {1.0F, 2.0F, 3.0F};
@@ -146,6 +153,13 @@ int main() {
             loaded.resources[0].at("alloy") == 125.0F && loaded.entities[0].processor &&
             loaded.entities[0].processor.bufferedInputs.at("scrap") == 14.0F &&
             loaded.entities[0].power && loaded.entities[0].power.supplied == 3.0F &&
+            loaded.entities[0].power.stored == 15.0F &&
+            loaded.entities[0].power.storageCapacity == 50.0F &&
+            loaded.entities[0].power.connectionRange == 24.0F &&
+            loaded.entities[0].power.transferLimit == 10.0F &&
+            loaded.entities[0].power.maximumConnections == 4 &&
+            loaded.entities[0].power.gridId == originalId &&
+            !loaded.entities[0].power.enabled &&
             loaded.entities[0].power.priority == 40 &&
             loaded.entities[0].power.state == strategy::PowerOperationalState::underpowered;
     const auto loadedDrone = std::find_if(loaded.entities.begin(), loaded.entities.end(),

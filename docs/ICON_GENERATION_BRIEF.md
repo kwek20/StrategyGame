@@ -42,6 +42,9 @@ badges. Gameplay IDs remain stable; definitions will be changed from `ui/placeho
 - No text, letters, numbers, flags, country emblems, watermark, scenery, baked background,
   baked button frame, or shadow outside the silhouette.
 - Use true transparency. Avoid details thinner than two pixels at 64x64.
+- The complete silhouette must fit inside the source canvas, including feet, foundations,
+  antennas, pipes, rotors, and shadows that belong to the subject. Do not accept an icon with
+  detached edge pixels or geometry clipped by any canvas edge.
 
 ## Deliverable and atlas format
 
@@ -54,9 +57,12 @@ After approval, downsample and pack the reviewed sources deterministically:
 - Target atlas: 512x512, eight columns by eight rows, capacity 64 icons.
 - Runtime texture: `assets/textures/icons/icons_atlas.png`.
 - Metadata: `assets/icons_atlas.json`.
-- Preserve transparent padding and extrude edge pixels during packing to prevent neighboring
-  regions bleeding under linear filtering.
+- Preserve transparent padding inside every complete 64x64 region. The safe transparent border
+  prevents neighboring regions bleeding under linear filtering.
 - Use stable semantic region IDs, never numeric indexes in gameplay code.
+- Rebuild normalized sources and the runtime sheet with `tools/rebuild_icons_atlas.ps1`. The
+  original generated contact sheet has non-uniform row spacing and must never be split as an
+  equal-height grid.
 
 ## Set A: required by active code
 
@@ -342,6 +348,8 @@ retain the current procedural rectangles rather than stretching generated button
 6. Confirm power, battery, and charging remain distinct.
 7. Desaturate the contact sheet and verify core silhouettes remain identifiable.
 8. Reject false transparency, baked checkerboards, stray pixels, and cropped edges.
+   Inspect the non-transparent bounding box automatically: it must not touch a source edge and
+   must retain at least the requested clear margin after the 64x64 downsample.
 9. Confirm connected, disconnected, underpowered, blocked, and isolated-grid badges remain
    distinguishable without color.
 10. Confirm connection actions read as commands while power-state badges read as conditions.
