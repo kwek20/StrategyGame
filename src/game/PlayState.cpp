@@ -1066,7 +1066,7 @@ void PlayState::render(Renderer& renderer) const {
         hoverPosition_.reset();
     }
     renderer.drawTerrain(view, local);
-    renderer.drawWorld(session_.world(), view, local);
+    renderer.drawWorld(session_.world(), view, local, powerOverlayVisible_);
     if (constructionPlacementMode_ && constructionCursorScreen_) {
         const RecipeDefinition* selectedRecipe =
             context_.definitions.recipe(RecipeId{constructionRecipeId_});

@@ -652,7 +652,10 @@ void Renderer::drawTerrain(const CameraView& camera, const Player* player) const
     glBindVertexArray(0);
 }
 
-void Renderer::drawWorld(const World& world, const CameraView& camera, const Player* player) const {
+void Renderer::drawWorld(const World& world,
+                         const CameraView& camera,
+                         const Player* player,
+                         bool powerOverlayVisible) const {
     renderGraph_.enter(RenderPassKind::world);
     ProfileScope profile(profiler_, "render.world");
     RenderPass pass(RenderPassKind::world);
@@ -691,15 +694,30 @@ void Renderer::drawWorld(const World& world, const CameraView& camera, const Pla
         const double animationSeconds =
             std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch())
                 .count();
+        glm::vec3 tint = entity.construction && !isOperational(entity)
+            ? (entity.construction.placementValid ? glm::vec3{0.45F}
+                                                  : glm::vec3{0.85F, 0.12F, 0.10F})
+            : glm::vec3{1.0F};
+        // Power information is presentation-only. It is derived from authoritative power
+        // state and shown only for the local player's devices, so the overlay cannot reveal
+        // hidden enemy infrastructure.
+        if (powerOverlayVisible && player && entity.authority.owner == player->id && entity.power) {
+            if (!entity.power.enabled || entity.power.gridId == 0 ||
+                entity.power.state == PowerOperationalState::offline) {
+                tint = {0.62F, 0.20F, 0.16F};
+            } else if (entity.power.state == PowerOperationalState::underpowered) {
+                tint = {0.96F, 0.62F, 0.12F};
+            } else {
+                tint = {0.18F, 0.88F, 0.30F};
+            }
+        }
         commandQueue_.submit(
             {handle,
              worldMaterial_,
              transform,
              std::move(animation),
              animationSeconds,
-             entity.construction && !isOperational(entity)
-                 ? (entity.construction.placementValid ? glm::vec3{0.45F} : glm::vec3{0.85F, 0.12F, 0.10F})
-                 : glm::vec3{1.0F},
+             tint,
              player && entity.authority.owner != player->id ? 1 : 0});
     }
     if (player)
@@ -1268,7 +1286,7 @@ void Renderer::drawPowerConnections(const World& world,
                                     const CameraView& camera,
                                     PlayerId owner) const {
     renderGraph_.enter(RenderPassKind::overlay);
-    std::vector<glm::vec2> powered, failed;
+    std::vector<glm::vec2> powered, underpowered, failed;
     const auto screen = [this, &camera](const Entity& entity) -> std::optional<glm::vec2> {
         const float ground = terrain_.heightAt(entity.transform.position.x, entity.transform.position.z);
         const glm::vec4 clip = camera.viewProjection() *
@@ -1293,15 +1311,21 @@ void Renderer::drawPowerConnections(const World& world,
             if (!clipScreenLine(clippedStart, clippedEnd,
                                 static_cast<float>(viewportWidth_),
                                 static_cast<float>(viewportHeight_))) continue;
-            auto& vertices = source.power.enabled && target->power.enabled &&
-                                     source.power.gridId != 0 &&
-                                     source.power.gridId == target->power.gridId
-                                 ? powered : failed;
-            appendHudLine(vertices, clippedStart, clippedEnd, 3.0F,
+            std::vector<glm::vec2>* vertices = &failed;
+            const bool connected = source.power.enabled && target->power.enabled &&
+                                   source.power.gridId != 0 &&
+                                   source.power.gridId == target->power.gridId;
+            if (connected) {
+                vertices = source.power.state == PowerOperationalState::underpowered ||
+                                   target->power.state == PowerOperationalState::underpowered
+                               ? &underpowered
+                               : &powered;
+            }
+            appendHudLine(*vertices, clippedStart, clippedEnd, 3.0F,
                           viewportWidth_, viewportHeight_);
         }
     }
-    if (powered.empty() && failed.empty()) return;
+    if (powered.empty() && underpowered.empty() && failed.empty()) return;
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
     shaders_.use(hudProgram_);
@@ -1316,7 +1340,8 @@ void Renderer::drawPowerConnections(const World& world,
                      vertices.data(), GL_DYNAMIC_DRAW);
         glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(vertices.size()));
     };
-    draw(powered, {0.15F, 0.78F, 0.95F});
+    draw(powered, {0.18F, 0.90F, 0.32F});
+    draw(underpowered, {0.96F, 0.62F, 0.12F});
     draw(failed, {0.95F, 0.28F, 0.18F});
     glBindVertexArray(0);
     glEnable(GL_CULL_FACE);

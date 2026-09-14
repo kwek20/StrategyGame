@@ -49,8 +49,10 @@ class Renderer final {
     void drawUi(const UiDocument& document) const;
     void drawLoadingScreen(float progress, const std::string& status) const;
     void drawTerrain(const CameraView& camera, const Player* player = nullptr) const;
-    void
-    drawWorld(const World& world, const CameraView& camera, const Player* player = nullptr) const;
+    void drawWorld(const World& world,
+                   const CameraView& camera,
+                   const Player* player = nullptr,
+                   bool powerOverlayVisible = false) const;
     void drawResourceHud(const Player& player,
                          const World& world,
                          const DefinitionRegistry& definitions,
