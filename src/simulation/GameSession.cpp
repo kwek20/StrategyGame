@@ -39,6 +39,11 @@ float interactionRange(const DefinitionRegistry& definitions,
     return definition->interactionMargin;
 }
 
+bool canReceiveCargo(const Entity& entity) {
+    return entity.processor && entity.power && entity.power.enabled && isOperational(entity) &&
+           entity.power.state == PowerOperationalState::powered;
+}
+
 void routeToInteraction(const DefinitionRegistry& definitions,
                         Entity& actor,
                         const Entity& target,
@@ -203,6 +208,7 @@ GameSession::GameSession(const DefinitionRegistry& definitions,
     }
     populateResources(world_, terrain_, gameplay_, terrainSeed,
                       mapChunksPerSide_, resourceAbundanceScale_);
+    populateVegetation(world_, terrain_, gameplay_, terrainSeed_, mapChunksPerSide_);
     updateExploration();
 }
 
@@ -645,13 +651,14 @@ void GameSession::apply(const PlayerCommand& command) {
                 const MapArea map{mapChunksPerSide_};
                 if (std::abs(placementShape.center.x) + bounds.x > map.halfExtent() ||
                     std::abs(placementShape.center.y) + bounds.y > map.halfExtent()) return;
-                if (overlapsObject(world_, gameplay_, placementShape)) return;
+                if (overlapsObject(world_, gameplay_, placementShape, 0, true)) return;
                 const FootprintFit footprint = terrain_.fitFootprint(payload.position.x,
                                                                      payload.position.z, shape);
                 if (!footprint.valid) return;
                 for (const auto& [resource, amount] : recipe->cost)
                     if (player->resources[resource] < amount) return;
                 for (const auto& [resource, amount] : recipe->cost) player->resources[resource] -= amount;
+                clearVegetationWithin(world_, gameplay_, placementShape);
                 Entity& building = world_.createEntity(recipe->product.id, recipe->product.id, command.player);
                 gameplay_.initializeEntity(building);
                 building.transform.position = {payload.position.x, 0.0F, payload.position.z};
@@ -1282,18 +1289,19 @@ void GameSession::simulateTick() {
                     const auto* conversion = gameplay_.conversionFor(
                         BuildingArchetypeId{candidate.archetype.value},
                         ResourceId{entity.gatherer.carriedResource});
-                    if (!conversion || (!entity.gatherer.preferredOutput.empty() &&
-                        conversion->output.value != entity.gatherer.preferredOutput)) return false;
+                    return conversion && candidate.processor && isOperational(candidate) &&
+                           candidate.authority.owner == entity.authority.owner &&
+                           (entity.gatherer.preferredOutput.empty() ||
+                            conversion->output.value == entity.gatherer.preferredOutput);
+                };
+                const auto hasCapacity = [&](const Entity& candidate) {
                     const EntityArchetype* definition = gameplay_.archetype(candidate.archetype);
                     float buffered = 0.0F;
                     if (candidate.processor)
                         for (const auto& [resource, amount] : candidate.processor.bufferedInputs)
                             buffered += amount;
-                    const bool hasCapacity = !definition || definition->processorCapacity <= 0.0F ||
-                                             buffered + 0.001F < definition->processorCapacity;
-                    return hasCapacity && candidate.authority.owner == entity.authority.owner &&
-                           isOperational(candidate) && candidate.processor &&
-                           conversion;
+                    return !definition || definition->processorCapacity <= 0.0F ||
+                           buffered + 0.001F < definition->processorCapacity;
                 };
                 const float depositReach = interactionRange(gameplay_, entity, "deposit");
                 const auto reachable = [&](Entity& candidate) {
@@ -1306,9 +1314,28 @@ void GameSession::simulateTick() {
                             candidate.id, entity.id},
                         collisionRadius(gameplay_, entity.archetype), entity.id).empty();
                 };
-                if (entity.gatherer.preferredProcessor != 0) {
+                if (entity.gatherer.deliveryTarget != 0) {
+                    Entity* committed = world_.findEntity(entity.gatherer.deliveryTarget);
+                    if (committed && compatible(*committed) && hasCapacity(*committed) &&
+                        reachable(*committed)) {
+                        hall = committed;
+                        nearest = boundaryClearance(gameplay_, entity, *committed);
+                    } else {
+                        const EntityId lost = entity.gatherer.deliveryTarget;
+                        if (entity.gatherer.preferredProcessor == lost)
+                            entity.gatherer.preferredProcessor = 0;
+                        entity.gatherer.deliveryTarget = 0;
+                        if (!committed || !compatible(*committed) || !reachable(*committed))
+                            resourceEvents_.push_back({ResourceEventKind::destinationLost, tick_,
+                                                       entity.authority.owner, entity.id, lost,
+                                                       entity.gatherer.carriedResource,
+                                                       entity.gatherer.carriedAmount});
+                    }
+                }
+                if (!hall && entity.gatherer.preferredProcessor != 0) {
                     Entity* preferred = world_.findEntity(entity.gatherer.preferredProcessor);
-                    if (preferred && compatible(*preferred) && reachable(*preferred)) {
+                    if (preferred && compatible(*preferred) && hasCapacity(*preferred) &&
+                        reachable(*preferred)) {
                         hall = preferred;
                         nearest = boundaryClearance(gameplay_, entity, *preferred);
                     } else {
@@ -1326,7 +1353,9 @@ void GameSession::simulateTick() {
                     // compared inside the dedicated or fallback-hub class.
                     for (const bool allowHub : {false, true}) {
                         for (Entity& candidate : world_.entities()) {
-                            if (!compatible(candidate) || !reachable(candidate)) continue;
+                            if (!compatible(candidate) || !hasCapacity(candidate) ||
+                                !canReceiveCargo(candidate) || !reachable(candidate))
+                                continue;
                             const bool isHub = candidate.archetype.value == "command_hub";
                             if (isHub != allowHub) continue;
                             const float distance = boundaryClearance(gameplay_, entity, candidate);
@@ -1349,6 +1378,13 @@ void GameSession::simulateTick() {
                     entity.gatherer.waitingForProcessor = false;
                     const float reach = depositReach;
                     if (nearest <= reach) {
+                        if (!canReceiveCargo(*hall)) {
+                            entity.gatherer.waitingForProcessor = true;
+                            entity.unitControl.hasStrategicDestination = false;
+                            entity.transient.navigationPath.clear();
+                            entity.transient.navigationWaypoint = 0;
+                            continue;
+                        }
                         const EntityArchetype* hallDefinition = gameplay_.archetype(hall->archetype);
                         float buffered = 0.0F;
                         for (const auto& [resource, amount] : hall->processor.bufferedInputs)

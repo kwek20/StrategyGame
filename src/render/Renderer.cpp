@@ -5,6 +5,7 @@
 #include "diagnostics/Logger.hpp"
 #include "gameplay/DefinitionRegistry.hpp"
 #include "render/RenderPass.hpp"
+#include "particles/ParticleSystem.hpp"
 #include "render/UiRenderer.hpp"
 #include "ui/UiDocument.hpp"
 #include "ui/EntityHudLayout.hpp"
@@ -240,11 +241,14 @@ Renderer::Renderer(Logger* logger)
     }
     uiRenderer_ = std::make_unique<UiRenderer>(shaders_);
     iconAtlas_ = IconAtlas::load("assets/icons_atlas.json");
+    particleEffects_ = ParticleEffectCatalogue::load();
+    particleSystem_ = std::make_unique<ParticleSystem>(particleEffects_);
 
     program_ = createTerrainProgram(shaders_);
     modelProgram_ = createModelProgram(shaders_);
     outlineProgram_ = createOutlineProgram(shaders_);
     hudProgram_ = createHudProgram(shaders_);
+    particleRenderer_ = std::make_unique<ParticleRenderer>(shaders_, resources_);
     worldMaterial_ = materials_.create({"world", modelProgram_});
     RenderMaterial remembered{"remembered", modelProgram_};
     remembered.blending = true;
@@ -363,6 +367,32 @@ Renderer::Renderer(Logger* logger)
             terrainChunks_.push_back(chunk);
         }
     }
+}
+
+ParticleEmitterHandle Renderer::emitParticle(const ParticleEmitterDesc& description) {
+    return particleSystem_->emit(description);
+}
+
+void Renderer::stopParticle(ParticleEmitterHandle emitter, bool removeParticles) {
+    particleSystem_->stop(emitter, removeParticles);
+}
+
+void Renderer::setParticleEmitterTransform(ParticleEmitterHandle emitter,
+                                           glm::vec3 position,
+                                           glm::vec3 direction) {
+    particleSystem_->setTransform(emitter, position, direction);
+}
+
+void Renderer::updateParticles(float deltaSeconds) {
+    particleSystem_->update(deltaSeconds);
+}
+
+void Renderer::drawParticles(const CameraView& camera) const {
+    particleRenderer_->draw(*particleSystem_, particleEffects_, camera);
+}
+
+void Renderer::clearParticles() {
+    particleSystem_->clear();
 }
 
 void Renderer::drawUi(const UiDocument& document) const {
@@ -1351,6 +1381,7 @@ void Renderer::drawPowerConnections(const World& world,
 
 
 void Renderer::regenerateTerrain(std::uint32_t seed, std::uint32_t chunksPerSide) {
+    clearParticles();
     terrainSeed_ = seed;
     activeTerrainChunksPerSide_ = std::clamp(
         chunksPerSide, 10U, static_cast<std::uint32_t>(Terrain::chunksPerSide));
@@ -1941,6 +1972,8 @@ EntityId Renderer::pickEntity(float pixelX,
     EntityId best = 0;
     float bestDistance = std::numeric_limits<float>::max();
     for (const Entity& entity : world.entities()) {
+        if (entity.kind == EntityKind::decoration)
+            continue;
         if (entity.resource && entity.resource.remaining <= 0.0F)
             continue;
         glm::vec3 pickPosition = entity.transform.position;

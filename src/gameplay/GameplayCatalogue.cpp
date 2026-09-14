@@ -598,6 +598,14 @@ void DefinitionRegistry::validateReferences() const {
     for (const std::string& id : matchRules_.generatedResourceNodes)
         if (!resourceIds_.contains(id) || !entities_.at(id).generation)
             throw std::runtime_error("Generated resource list references invalid node '" + id + "'");
+    for (const VegetationGenerationDefinition& vegetation : matchRules_.vegetation) {
+        const auto found = entities_.find(vegetation.archetype);
+        if (found == entities_.end() || found->second.kind != EntityKind::decoration ||
+            !found->second.tags.contains("vegetation") ||
+            !found->second.tags.contains("clear-on-build"))
+            throw std::runtime_error("Vegetation rules reference invalid clearable decoration '" +
+                                     vegetation.archetype + "'");
+    }
     for (const auto* starts : {&matchRules_.playerOne, &matchRules_.playerTwo})
         for (const StartingEntityDefinition& start : *starts) {
             if (!entities_.contains(start.archetype))
@@ -825,6 +833,39 @@ void DefinitionRegistry::loadRules(const std::filesystem::path& path) {
     matchRules_.trainingUpgradeProduct = data["trainingUpgradeProduct"].GetString();
     matchRules_.buildPalette = strings(data, "buildPalette");
     matchRules_.generatedResourceNodes = strings(data, "generatedResourceNodes");
+    if (!data.HasMember("vegetation") || !data["vegetation"].IsArray())
+        throw std::runtime_error("Match rules require vegetation array");
+    for (const auto& value : data["vegetation"].GetArray()) {
+        if (!value.IsObject() || !value.HasMember("archetype") ||
+            !value["archetype"].IsString() || !value.HasMember("stream") ||
+            !value["stream"].IsString())
+            throw std::runtime_error("Match rules contain invalid vegetation definition");
+        VegetationGenerationDefinition vegetation;
+        vegetation.archetype = value["archetype"].GetString();
+        vegetation.stream = value["stream"].GetString();
+        const auto field = [&](const char* name) {
+            if (!value.HasMember(name) || !value[name].IsNumber())
+                throw std::runtime_error("Vegetation '" + vegetation.archetype +
+                                         "' requires numeric " + name);
+            return value[name].GetFloat();
+        };
+        vegetation.instancesPerChunk = field("instancesPerChunk");
+        vegetation.minimumHeight = field("minimumHeight");
+        vegetation.maximumHeight = field("maximumHeight");
+        vegetation.maximumSlope = field("maximumSlope");
+        vegetation.minimumSpacing = field("minimumSpacing");
+        vegetation.minimumScale = field("minimumScale");
+        vegetation.maximumScale = field("maximumScale");
+        if (vegetation.instancesPerChunk < 0.0F || vegetation.minimumHeight < 0.0F ||
+            vegetation.maximumHeight > 1.0F ||
+            vegetation.maximumHeight < vegetation.minimumHeight ||
+            vegetation.maximumSlope < 0.0F || vegetation.minimumSpacing < 0.0F ||
+            vegetation.minimumScale <= 0.0F ||
+            vegetation.maximumScale < vegetation.minimumScale)
+            throw std::runtime_error("Vegetation '" + vegetation.archetype +
+                                     "' has invalid ranges");
+        matchRules_.vegetation.push_back(std::move(vegetation));
+    }
     if (!data.HasMember("startingPlacement") || !data["startingPlacement"].IsObject())
         throw std::runtime_error("Match rules require startingPlacement object");
     const auto& placement = data["startingPlacement"];
@@ -889,12 +930,14 @@ DefinitionRegistry::DefinitionRegistry(const std::filesystem::path& unitPath,
                                        const std::filesystem::path& textureRoot,
                                        const std::filesystem::path& rulesPath,
                                        const std::filesystem::path& upgradePath,
-                                       const std::filesystem::path& conversionPath)
+                                       const std::filesystem::path& conversionPath,
+                                       const std::filesystem::path& decorationPath)
     : textureRoot_(textureRoot) {
     loadReferenceKeys(presentationPath, localizationPath);
     loadArchetypes(unitPath, "units", EntityKind::unit);
     loadArchetypes(buildingPath, "buildings", EntityKind::building);
     loadArchetypes(resourceNodePath, "resourceNodes", EntityKind::resource);
+    loadArchetypes(decorationPath, "decorations", EntityKind::decoration);
     loadResources(resourcePath);
     loadWeapons(weaponPath);
     loadPowerDevices(powerDevicePath);

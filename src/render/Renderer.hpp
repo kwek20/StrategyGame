@@ -2,12 +2,14 @@
 
 #include "assets/ResourceManager.hpp"
 #include "assets/IconAtlas.hpp"
+#include "assets/ParticleEffectDefinitions.hpp"
 #include "diagnostics/FrameProfiler.hpp"
 #include "persistence/GameConfig.hpp"
 #include "players/Player.hpp"
 #include "render/CameraView.hpp"
 #include "render/FontRenderer.hpp"
 #include "render/MaterialManager.hpp"
+#include "render/ParticleRenderer.hpp"
 #include "render/RenderCommandQueue.hpp"
 #include "render/RenderGraph.hpp"
 #include "render/ShaderManager.hpp"
@@ -22,6 +24,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace strategy {
@@ -32,6 +35,8 @@ class UiRenderer;
 class Logger;
 class World;
 class DefinitionRegistry;
+class ParticleSystem;
+struct ParticleEmitterDesc;
 struct EntityHudModel;
 
 class Renderer final {
@@ -53,6 +58,17 @@ class Renderer final {
                    const CameraView& camera,
                    const Player* player = nullptr,
                    bool powerOverlayVisible = false) const;
+    [[nodiscard]] ParticleEmitterHandle emitParticle(const ParticleEmitterDesc& description);
+    [[nodiscard]] ParticleEffectHandle particleEffect(ParticleEffectId id) const {
+        return particleEffects_.handle(std::move(id));
+    }
+    void stopParticle(ParticleEmitterHandle emitter, bool removeParticles = false);
+    void setParticleEmitterTransform(ParticleEmitterHandle emitter,
+                                     glm::vec3 position,
+                                     glm::vec3 direction);
+    void updateParticles(float deltaSeconds);
+    void drawParticles(const CameraView& camera) const;
+    void clearParticles();
     void drawResourceHud(const Player& player,
                          const World& world,
                          const DefinitionRegistry& definitions,
@@ -151,6 +167,9 @@ class Renderer final {
     };
 
     ShaderManager shaders_;
+    ParticleEffectCatalogue particleEffects_;
+    std::unique_ptr<ParticleSystem> particleSystem_;
+    std::unique_ptr<ParticleRenderer> particleRenderer_;
     MaterialManager materials_;
     ShaderHandle program_;
     ShaderHandle modelProgram_;

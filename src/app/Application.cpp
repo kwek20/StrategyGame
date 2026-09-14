@@ -296,6 +296,7 @@ int Application::run() {
         renderer_->beginProfileFrame();
         const auto simulationStart = Clock::now();
         states_->current()->update(delta);
+        renderer_->updateParticles(delta);
         renderer_->recordProfile(
             "simulation", std::chrono::duration<double, std::milli>(Clock::now() - simulationStart).count());
 

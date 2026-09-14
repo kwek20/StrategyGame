@@ -3,6 +3,9 @@
 #include "gameplay/DefinitionRegistry.hpp"
 #include "world/World.hpp"
 
+#include <algorithm>
+#include <vector>
+
 #include <glm/geometric.hpp>
 namespace strategy {
 float collisionRadius(const DefinitionRegistry& definitions, const std::string& archetypeId) {
@@ -40,10 +43,17 @@ SpatialShape spatialShape(const DefinitionRegistry& definitions, const Entity& e
 bool overlapsObject(const World& world,
                     const DefinitionRegistry& definitions,
                     const SpatialShape& shape,
-                    EntityId ignored) {
+                    EntityId ignored,
+                    bool ignoreClearableVegetation) {
     for (const Entity& entity : world.entities()) {
         if (entity.id == ignored || entity.flight ||
             (entity.resource && entity.resource.remaining <= 0.0F))
+            continue;
+        const EntityArchetype* definition = definitions.archetype(entity.archetype);
+        if (definition && definition->collisionRadius <= 0.0F)
+            continue;
+        if (ignoreClearableVegetation && definition &&
+            definition->tags.contains("clear-on-build"))
             continue;
         if (overlaps(shape, spatialShape(definitions, entity)))
             return true;
@@ -55,10 +65,26 @@ bool overlapsObject(const World& world,
                     const DefinitionRegistry& definitions,
                     glm::vec2 position,
                     float radius,
-                    EntityId ignored) {
+                    EntityId ignored,
+                    bool ignoreClearableVegetation) {
     return overlapsObject(world,
                           definitions,
                           SpatialShape{FootprintShape::circle, position, radius},
-                          ignored);
+                          ignored,
+                          ignoreClearableVegetation);
+}
+
+void clearVegetationWithin(World& world,
+                           const DefinitionRegistry& definitions,
+                           const SpatialShape& shape) {
+    std::vector<EntityId> removed;
+    for (const Entity& entity : world.entities()) {
+        const EntityArchetype* definition = definitions.archetype(entity.archetype);
+        if (definition && definition->tags.contains("clear-on-build") &&
+            overlaps(shape, spatialShape(definitions, entity)))
+            removed.push_back(entity.id);
+    }
+    std::sort(removed.begin(), removed.end());
+    for (EntityId id : removed) world.destroyEntity(id);
 }
 } // namespace strategy

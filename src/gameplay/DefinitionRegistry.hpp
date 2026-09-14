@@ -193,6 +193,18 @@ struct StartingEntityDefinition {
     bool gatheringEnabled{true};
 };
 
+struct VegetationGenerationDefinition {
+    std::string archetype;
+    std::string stream;
+    float instancesPerChunk{0.0F};
+    float minimumHeight{0.0F};
+    float maximumHeight{1.0F};
+    float maximumSlope{1.0F};
+    float minimumSpacing{0.0F};
+    float minimumScale{1.0F};
+    float maximumScale{1.0F};
+};
+
 struct MatchRulesDefinition {
     std::vector<StartingEntityDefinition> playerOne, playerTwo;
     std::vector<std::string> buildPalette, generatedResourceNodes;
@@ -202,6 +214,7 @@ struct MatchRulesDefinition {
     float startingEdgeInsetChunks{1.5F}, startingLateralNormalized{0.5F};
     float terrainEdgeMargin{0.0F}, minimumResourceHeight{0.0F}, maximumResourceHeight{1.0F};
     float maximumResourceSlope{0.0F}, baseExclusionRadius{0.0F};
+    std::vector<VegetationGenerationDefinition> vegetation;
 };
 
 using UnitDefinition = EntityArchetype;
@@ -225,7 +238,8 @@ class DefinitionRegistry final {
         const std::filesystem::path& textures = "assets/textures",
         const std::filesystem::path& rules = "assets/gameplay/rules.json",
         const std::filesystem::path& upgrades = "assets/gameplay/upgrades.json",
-        const std::filesystem::path& conversions = "assets/gameplay/conversions.json");
+        const std::filesystem::path& conversions = "assets/gameplay/conversions.json",
+        const std::filesystem::path& decorations = "assets/gameplay/decorations.json");
 
     [[nodiscard]] float resolve(GameplayStat stat,
                                 const std::string& country,

@@ -3,6 +3,7 @@
 #include "app/GameState.hpp"
 #include "game/RtsCamera.hpp"
 #include "game/ThirdPersonCamera.hpp"
+#include "game/GameplayParticlePresenter.hpp"
 #include "persistence/GameConfig.hpp"
 #include "persistence/SaveGame.hpp"
 #include "simulation/GameSession.hpp"
@@ -87,6 +88,7 @@ class PlayState final : public GameState {
     mutable std::optional<glm::vec3> pendingConstructionPosition_;
     mutable std::optional<glm::vec2> constructionCursorScreen_;
     mutable bool constructionPreviewValid_{false};
+    mutable GameplayParticlePresenter particlePresenter_;
 
     void setMouseCaptured(bool captured);
 

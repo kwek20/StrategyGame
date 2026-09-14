@@ -175,4 +175,55 @@ void populateResources(World& world,
                  std::clamp(abundanceScale, 0.5F, 2.0F));
     }
 }
+
+void populateVegetation(World& world,
+                        const Terrain& terrain,
+                        const DefinitionRegistry& definitions,
+                        std::uint32_t terrainSeed,
+                        std::uint32_t mapChunksPerSide) {
+    const MapArea map{mapChunksPerSide};
+    for (const VegetationGenerationDefinition& settings : definitions.matchRules().vegetation) {
+        const EntityArchetype* type = definitions.archetype(settings.archetype);
+        if (!type) continue;
+        DeterministicRandom random(terrainSeed, settings.stream);
+        const std::uint32_t desired = static_cast<std::uint32_t>(std::round(
+            settings.instancesPerChunk * static_cast<float>(mapChunksPerSide * mapChunksPerSide)));
+        const std::uint32_t attempts = std::max(64U, desired * 30U);
+        std::uint32_t made = 0;
+        for (std::uint32_t attempt = 0; attempt < attempts && made < desired; ++attempt) {
+            const float extent = map.halfExtent() - definitions.matchRules().terrainEdgeMargin;
+            const float x = random.range(-extent, extent);
+            const float z = random.range(-extent, extent);
+            const float normalized = terrain.heightAt(x, z) / Terrain::heightScale;
+            if (normalized < settings.minimumHeight || normalized > settings.maximumHeight)
+                continue;
+            const float sample = Terrain::spacing * 2.0F;
+            const float dx = terrain.heightAt(x + sample, z) - terrain.heightAt(x - sample, z);
+            const float dz = terrain.heightAt(x, z + sample) - terrain.heightAt(x, z - sample);
+            if (std::sqrt(dx * dx + dz * dz) > settings.maximumSlope)
+                continue;
+            if (overlapsObject(world, definitions, {x, z}, std::max(0.2F, type->collisionRadius)))
+                continue;
+            bool spaced = true;
+            for (const Entity& existing : world.entities()) {
+                const EntityArchetype* existingType = definitions.archetype(existing.archetype);
+                if (!existingType || !existingType->tags.contains("vegetation")) continue;
+                const glm::vec2 delta{x - existing.transform.position.x,
+                                      z - existing.transform.position.z};
+                if (glm::dot(delta, delta) < settings.minimumSpacing * settings.minimumSpacing) {
+                    spaced = false;
+                    break;
+                }
+            }
+            if (!spaced) continue;
+            Entity& entity = world.createEntity(Text::get(type->nameKey), type->id, 0);
+            definitions.initializeEntity(entity);
+            entity.transform.position = {x, 0.0F, z};
+            entity.transform.rotationDegrees.y = random.range(0.0F, 360.0F);
+            const float scale = random.range(settings.minimumScale, settings.maximumScale);
+            entity.transform.scale = {scale, scale, scale};
+            ++made;
+        }
+    }
+}
 } // namespace strategy

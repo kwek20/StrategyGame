@@ -452,7 +452,7 @@ int main() {
             !std::get<strategy::SetPowerEnabledCommand>(decodedEnabled->payload).enabled;
     std::size_t resourceCount = 0;
     for (const strategy::Entity& resource : session.world().entities()) {
-        if (resource.authority.owner != 0)
+        if (resource.authority.owner != 0 || !resource.resource)
             continue;
         ++resourceCount;
         bool mirrored = false;
@@ -488,7 +488,7 @@ int main() {
             configuredMatch.players().find(2)->resources.at("alloy") == 300.0F;
     std::size_t configuredResourceCount = 0;
     for (const strategy::Entity& entity : configuredMatch.world().entities())
-        if (entity.authority.owner == 0) ++configuredResourceCount;
+        if (entity.authority.owner == 0 && entity.resource) ++configuredResourceCount;
     valid = valid && configuredResourceCount > resourceCount;
     const auto playerOneStart = playerOneUnit->transform.position;
     valid = session.submit({1, 1, strategy::PossessUnitCommand{playerTwoUnit->id}}) && valid;
@@ -780,15 +780,23 @@ int main() {
     gameplay.initializeEntity(selectionDrone);
     const strategy::EntityId selectionDroneId = selectionDrone.id;
     deliverySelectionSession.world().findEntity(nearbyHubId)->transform.position = {0, 0, 0};
-    deliverySelectionSession.world().findEntity(distantProcessorId)->transform.position = {30, 0, 0};
+    deliverySelectionSession.world().findEntity(distantProcessorId)->transform.position = {20, 0, 0};
     strategy::Entity* selectedDeliveryDrone = deliverySelectionSession.world().findEntity(selectionDroneId);
     selectedDeliveryDrone->transform.position = {0, 6, 0};
     selectedDeliveryDrone->gatherer.carriedResource = "scrap";
     selectedDeliveryDrone->gatherer.carriedAmount = 10.0F;
     selectedDeliveryDrone->unitControl.order = strategy::UnitOrderKind::returnResources;
+    valid = deliverySelectionSession.submit(
+                {1, 1, strategy::ConnectPowerCommand{nearbyHubId, distantProcessorId}}) && valid;
     deliverySelectionSession.advanceTicks();
     selectedDeliveryDrone = deliverySelectionSession.world().findEntity(selectionDroneId);
     valid = valid && selectedDeliveryDrone->gatherer.deliveryTarget == distantProcessorId;
+    valid = deliverySelectionSession.submit(
+                {1, 2, strategy::SetPowerEnabledCommand{distantProcessorId, false}}) && valid;
+    deliverySelectionSession.advanceTicks();
+    selectedDeliveryDrone = deliverySelectionSession.world().findEntity(selectionDroneId);
+    valid = valid && selectedDeliveryDrone->gatherer.deliveryTarget == distantProcessorId &&
+            selectedDeliveryDrone->gatherer.carriedAmount == 10.0F;
     deliverySelectionSession.world().destroyEntity(distantProcessorId);
     deliverySelectionSession.advanceTicks(2);
     selectedDeliveryDrone = deliverySelectionSession.world().findEntity(selectionDroneId);
@@ -823,7 +831,9 @@ int main() {
     activeSyntheticDelivery = deliverySelectionSession.world().findEntity(syntheticDeliveryDroneId);
     activeSyntheticDelivery->unitControl.order = strategy::UnitOrderKind::returnResources;
     valid = deliverySelectionSession.submit(
-        {1, 2, strategy::SetDeliveryOutputCommand{syntheticDeliveryDroneId, "fuel"}}) && valid;
+        {1, 3, strategy::SetDeliveryOutputCommand{syntheticDeliveryDroneId, "fuel"}}) && valid;
+    valid = deliverySelectionSession.submit(
+                {1, 4, strategy::ConnectPowerCommand{nearbyHubId, routeFuelId}}) && valid;
     deliverySelectionSession.advanceTicks();
     activeSyntheticDelivery = deliverySelectionSession.world().findEntity(syntheticDeliveryDroneId);
     valid = valid && activeSyntheticDelivery->gatherer.preferredOutput == "fuel" &&
@@ -938,7 +948,7 @@ int main() {
         "Capped", "alloy_processor", 1);
     gameplay.initializeEntity(cappedProcessor);
     const strategy::EntityId cappedProcessorId = cappedProcessor.id;
-    cappedProcessor.processor.bufferedInputs["scrap"] = 399.0F;
+    cappedProcessor.processor.bufferedInputs["blocked_input"] = 399.0F;
     strategy::Entity& capacityDrone = capacitySession.world().createEntity(
         "Capacity Drone", "construction_drone", 1);
     gameplay.initializeEntity(capacityDrone);
@@ -950,9 +960,31 @@ int main() {
     capacityDrone.unitControl.order = strategy::UnitOrderKind::returnResources;
     capacitySession.advanceTicks();
     valid = valid && std::abs(capacitySession.world().findEntity(cappedProcessorId)
-                                  ->processor.bufferedInputs.at("scrap") - 400.0F) < 0.001F &&
+                                  ->processor.bufferedInputs.at("blocked_input") - 399.0F) < 0.001F &&
+            std::abs(capacitySession.world().findEntity(capacityDroneId)
+                                  ->gatherer.carriedAmount - 10.0F) < 0.001F;
+    strategy::Entity& capacityHub = capacitySession.world().createEntity(
+        "Capacity grid source", "command_hub", 1);
+    gameplay.initializeEntity(capacityHub);
+    const strategy::EntityId capacityHubId = capacityHub.id;
+    capacityHub.transform.position = {0, 0, 0};
+    capacitySession.world().findEntity(capacityDroneId)->unitControl.order =
+        strategy::UnitOrderKind::returnResources;
+    valid = capacitySession.submit(
+                {1, 1, strategy::ConnectPowerCommand{capacityHubId, cappedProcessorId}}) && valid;
+    capacitySession.advanceTicks();
+    valid = valid && std::abs(capacitySession.world().findEntity(cappedProcessorId)
+                                  ->processor.bufferedInputs.at("blocked_input") - 399.0F) < 0.001F &&
+            std::abs(capacitySession.world().findEntity(cappedProcessorId)
+                                  ->processor.bufferedInputs.at("scrap") - 1.0F) < 0.001F &&
             std::abs(capacitySession.world().findEntity(capacityDroneId)
                                   ->gatherer.carriedAmount - 9.0F) < 0.001F;
+    valid = capacitySession.submit(
+                {1, 2, strategy::SetPowerEnabledCommand{cappedProcessorId, false}}) && valid;
+    capacitySession.advanceTicks();
+    valid = valid && capacitySession.world().findEntity(capacityDroneId)->gatherer.carriedAmount == 0.0F &&
+            std::abs(capacitySession.world().findEntity(capacityHubId)
+                                  ->processor.bufferedInputs.at("scrap") - 9.0F) < 0.001F;
 
     strategy::GameSession syntheticSession{gameplay, 324U};
     syntheticSession.replaceWorld({}, 324U);

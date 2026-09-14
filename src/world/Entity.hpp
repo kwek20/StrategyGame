@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/DefinitionId.hpp"
 #include "players/Player.hpp"
 
 #include <algorithm>
@@ -17,13 +18,6 @@ namespace strategy {
 
 struct EntityArchetypeTag;
 struct PresentationTag;
-template <typename Tag> struct DefinitionId {
-    std::string value;
-    DefinitionId() = default;
-    explicit DefinitionId(std::string_view identifier) : value(identifier) {}
-    [[nodiscard]] bool empty() const { return value.empty(); }
-    friend bool operator==(const DefinitionId&, const DefinitionId&) = default;
-};
 using EntityArchetypeId = DefinitionId<EntityArchetypeTag>;
 using PresentationId = DefinitionId<PresentationTag>;
 

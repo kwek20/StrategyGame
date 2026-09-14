@@ -434,6 +434,9 @@ void PlayState::handleEvent(const SDL_Event& event) {
         if (const UiElement* panel = resourceUi.find("resources.panel");
             panel && panel->bounds.contains({event.button.x, event.button.y}))
             return;
+        if (const UiElement* panel = resourceUi.find("hud.top_bar");
+            panel && panel->bounds.contains({event.button.x, event.button.y}))
+            return;
     }
     const Entity* droneForBuildHud = session_.world().findEntity(selectedEntity_);
     const bool homogeneousSelection =
@@ -1066,7 +1069,9 @@ void PlayState::render(Renderer& renderer) const {
         hoverPosition_.reset();
     }
     renderer.drawTerrain(view, local);
+    particlePresenter_.sync(renderer, session_.world(), local, session_.mapChunksPerSide());
     renderer.drawWorld(session_.world(), view, local, powerOverlayVisible_);
+    renderer.drawParticles(view);
     if (constructionPlacementMode_ && constructionCursorScreen_) {
         const RecipeDefinition* selectedRecipe =
             context_.definitions.recipe(RecipeId{constructionRecipeId_});
@@ -1106,7 +1111,7 @@ void PlayState::render(Renderer& renderer) const {
         // Do not leak it through a red preview in previously explored fog.
         if (currentlyVisible)
             constructionPreviewValid_ = constructionPreviewValid_ &&
-                !overlapsObject(session_.world(), context_.definitions, placementShape);
+                !overlapsObject(session_.world(), context_.definitions, placementShape, 0, true);
         constructionPreviewValid_ = constructionPreviewValid_ && footprint.valid;
         if (local)
             if (selectedRecipe)

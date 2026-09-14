@@ -14,6 +14,11 @@ UiDocument GameHudLayout::resources(std::size_t localResourceCount,
                                     float uiScale) {
     UiDocument ui;
     const UiLayout canvas(viewportWidth, viewportHeight, uiScale);
+    // One continuous background keeps resources, empty space, and the menu control in the
+    // same top-level HUD region at every resolution.
+    ui.panel("hud.top_bar",
+             {0.0F, 0.0F, static_cast<float>(viewportWidth), canvas.value(54.0F)},
+             {0.16F, 0.17F, 0.18F});
     const float resourceWidth = 16.0F + static_cast<float>(localResourceCount) * 106.0F + 122.0F;
     const UiRect resources = canvas.rect(UiAnchor::topLeft, 10, 10, resourceWidth, 34, 420, 34);
     ui.panel("resources.panel", resources,

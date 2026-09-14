@@ -19,11 +19,17 @@ struct TextureResourceTag;
 struct AudioResourceTag;
 struct ShaderResourceTag;
 struct MaterialResourceTag;
+struct ParticleEffectResourceTag;
+struct ParticleTextureResourceTag;
+struct ParticleEmitterResourceTag;
 using ModelHandle = ResourceHandle<ModelResourceTag>;
 using TextureHandle = ResourceHandle<TextureResourceTag>;
 using AudioHandle = ResourceHandle<AudioResourceTag>;
 using ShaderHandle = ResourceHandle<ShaderResourceTag>;
 using MaterialHandle = ResourceHandle<MaterialResourceTag>;
+using ParticleEffectHandle = ResourceHandle<ParticleEffectResourceTag>;
+using ParticleTextureHandle = ResourceHandle<ParticleTextureResourceTag>;
+using ParticleEmitterHandle = ResourceHandle<ParticleEmitterResourceTag>;
 
 enum class ResourceState : std::uint8_t { invalid, queued, importing, uploading, ready, failed };
 
