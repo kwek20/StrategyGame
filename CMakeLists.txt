@@ -141,11 +141,18 @@ add_library(strategy_assets STATIC
     src/assets/AssetManifest.cpp
     src/assets/IconAtlas.cpp
     src/assets/Model.cpp
+    src/assets/ParticleEffectDefinitions.cpp
     src/assets/ResourceManager.cpp
     src/assets/Texture.cpp
 )
 strategy_target(strategy_assets)
 target_link_libraries(strategy_assets PUBLIC strategy_asset_data strategy_core glad::glad RapidJSON)
+
+add_library(strategy_particles STATIC
+    src/particles/ParticleSystem.cpp
+)
+strategy_target(strategy_particles)
+target_link_libraries(strategy_particles PUBLIC strategy_assets strategy_core)
 
 add_library(strategy_camera STATIC
     src/game/RtsCamera.cpp
@@ -157,6 +164,7 @@ target_link_libraries(strategy_camera PUBLIC strategy_core)
 add_library(strategy_render STATIC
     src/render/FontRenderer.cpp
     src/render/MaterialManager.cpp
+    src/render/ParticleRenderer.cpp
     src/render/RenderCommandQueue.cpp
     src/render/RenderGraph.cpp
     src/render/RenderPass.cpp
@@ -169,13 +177,14 @@ target_compile_definitions(strategy_render PRIVATE
     $<$<CONFIG:Debug>:STRATEGY_SHADER_HOT_RELOAD=1>
 )
 target_link_libraries(strategy_render
-    PUBLIC strategy_assets strategy_camera strategy_diagnostics strategy_persistence strategy_players
+    PUBLIC strategy_assets strategy_camera strategy_diagnostics strategy_particles strategy_persistence strategy_players
            strategy_terrain strategy_world SDL3::SDL3 glad::glad Freetype::Freetype
     PRIVATE strategy_localization strategy_ui_model
 )
 
 # Interactive states compose engine subsystems but own no platform loop.
 add_library(strategy_states STATIC
+    src/game/GameplayParticlePresenter.cpp
     src/game/PlayState.cpp
     src/game/BuildState.cpp
     src/game/StartMenuState.cpp
@@ -222,10 +231,24 @@ if(STRATEGY_BUILD_TESTS)
     add_test(NAME game_systems COMMAND game_system_tests)
     set_tests_properties(game_systems PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
+    add_executable(resource_delivery_tests tests/ResourceDeliveryTests.cpp)
+    strategy_target(resource_delivery_tests)
+    target_link_libraries(resource_delivery_tests
+        PRIVATE strategy_gameplay strategy_simulation strategy_world
+    )
+    add_test(NAME resource_delivery_routing COMMAND resource_delivery_tests)
+    set_tests_properties(resource_delivery_routing PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
     add_executable(spatial_shape_tests tests/SpatialShapeTests.cpp)
     strategy_target(spatial_shape_tests)
     target_link_libraries(spatial_shape_tests PRIVATE strategy_world)
     add_test(NAME spatial_shapes COMMAND spatial_shape_tests)
+
+    add_executable(vegetation_tests tests/VegetationTests.cpp)
+    strategy_target(vegetation_tests)
+    target_link_libraries(vegetation_tests PRIVATE strategy_gameplay strategy_world)
+    add_test(NAME vegetation_generation COMMAND vegetation_tests)
+    set_tests_properties(vegetation_generation PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
     add_executable(entity_hud_model_tests tests/EntityHudModelTests.cpp)
     strategy_target(entity_hud_model_tests)
@@ -251,6 +274,20 @@ if(STRATEGY_BUILD_TESTS)
     target_link_libraries(asset_import_tests PRIVATE strategy_asset_data)
     add_test(NAME asset_imports COMMAND asset_import_tests)
     set_tests_properties(asset_imports PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
+    add_executable(particle_effect_definition_tests tests/ParticleEffectDefinitionTests.cpp)
+    strategy_target(particle_effect_definition_tests)
+    target_link_libraries(particle_effect_definition_tests PRIVATE strategy_assets)
+    add_test(NAME particle_effect_definitions COMMAND particle_effect_definition_tests)
+    set_tests_properties(particle_effect_definitions
+        PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
+    add_executable(particle_system_tests tests/ParticleSystemTests.cpp)
+    strategy_target(particle_system_tests)
+    target_link_libraries(particle_system_tests PRIVATE strategy_particles)
+    add_test(NAME particle_system_runtime COMMAND particle_system_tests)
+    set_tests_properties(particle_system_runtime
+        PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
     add_executable(state_stack_tests tests/StateStackTests.cpp)
     strategy_target(state_stack_tests)

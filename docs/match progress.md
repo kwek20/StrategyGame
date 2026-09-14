@@ -1,6 +1,10 @@
 
 # Match Progression
 
+> Status: this document defines intended pacing and balance targets. The current prototype has
+> the opening physical economy and infrastructure foundations, but the listed timings, combat
+> roster, Data, Authority, and late-game progression have not yet been validated in playtests.
+
 The resource system is designed around matches lasting approximately **60–120 minutes**.
 
 The economy should become operational quickly, with complexity emerging through territorial competition rather than through increasingly complicated resource management.
@@ -21,7 +25,10 @@ A nearby Scrap field should allow each player to establish a functioning economy
 
 Harvesters collect Scrap and physically deliver it to the processor.
 
-Because conversion is instant, the player receives Alloy immediately when the harvester arrives.
+When a fully powered destination has free capacity, the player receives Alloy immediately after
+the harvester unloads and conversion resolves. A drone committed to a destination that loses power
+waits there with its cargo; a full destination causes selection of another powered processor or
+the Command Hub fallback.
 
 Players should begin encountering ordinary Oil resources during this phase or shortly afterward.
 
@@ -35,7 +42,7 @@ Players begin competing for:
 
 - Larger Scrap fields
 - Oil deposits
-- Industrial Feedstock
+- Synthetic feedstock and its required power infrastructure
 - Data infrastructure
 - Settlements
 - Communications objectives

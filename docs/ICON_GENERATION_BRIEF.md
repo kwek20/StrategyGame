@@ -19,6 +19,12 @@ badges. Gameplay IDs remain stable; definitions will be changed from `ui/placeho
   their icon through distinct presentation definitions.
 - Dynamic recipe buttons should normally inherit the product icon. Research should inherit
   its upgrade icon.
+- Grid action icons are wired into selected power-device menus. The top power value opens an
+  in-game power overview, and powered/underpowered/offline state is also communicated through
+  world overlays rather than icon color alone.
+- The particle renderer and Kenney particle textures are integrated separately from this atlas;
+  gathering, processing, construction, weapon, impact, and explosion effects do not consume icon
+  regions.
 - Hovered, disabled, selected, queued, and team-colored states belong in UI rendering and
   should not be baked into duplicate image files.
 
@@ -372,19 +378,21 @@ retain the current procedural rectangles rather than stretching generated button
 ## Integrated content and remaining wiring
 
 The atlas loader, texture upload, semantic-region lookup, and 512x512 runtime atlas are integrated.
-The refreshed set contains 50 primary regions plus compatibility aliases. Remaining work belongs
-to feature wiring as the connected grid is implemented:
+The refreshed set contains 50 primary regions plus compatibility aliases. Grid connect,
+disconnect, priority, enable-state, and Power-HUD icons are wired. Remaining icon work is:
 
-1. Use `action_power_connect`, `action_power_disconnect`, and `action_power_priority` in the grid interaction tools.
-2. Use the connected, underpowered, blocked, isolated, and storage-flow badges from authoritative grid state.
-3. Keep processor and Synthetic Mine presentations on their distinct refreshed keys.
-4. Keep recipe and queue icon resolution based on the product or linked upgrade definition.
-5. Ensure only Alloy, Fuel, Data, Authority, and Power appear in the persistent resource HUD.
-6. Show raw-resource icons on deposits, harvester cargo, processor buffers, tooltips, and
+1. Wire authoritative connected, underpowered, blocked, isolated, and storage-flow badges wherever
+   text-only grid state remains.
+2. Keep processor and Synthetic Mine presentations on their distinct refreshed keys.
+3. Keep recipe and queue icon resolution based on the product or linked upgrade definition.
+4. Ensure only Alloy, Fuel, Data, Authority, and Power appear in the persistent resource HUD.
+5. Show raw-resource icons consistently on deposits, drone cargo, processor buffers, tooltips, and
    logistics overlays.
-7. Render destination feedback when Synthetic is assigned to Alloy versus Fuel processing.
-8. Validate hover, disabled, affordability, queued, selected, and team-tint states.
-9. Run asset-import, definition-registry, renderer-integration, and complete CTest validation after grid wiring.
+6. Strengthen destination feedback when Synthetic is assigned to Alloy versus Fuel processing and
+   when a committed processor is unpowered or full.
+7. Validate hover, disabled, affordability, queued, selected, fixed queue-slot sizing, and team-tint states.
+8. Run asset-import, definition-registry, renderer-integration, and complete CTest validation after
+   each atlas or UI wiring change.
 
 ## Menu and branding implementation order
 

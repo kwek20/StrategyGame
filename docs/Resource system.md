@@ -15,12 +15,20 @@ deadlock before dedicated infrastructure is constructed. It accepts Scrap, Oil, 
 half of their dedicated-processor output yields. It does **not** accept Synthetic. Synthetic must
 always be delivered to an Alloy Processor or Fuel Processor.
 
-Automatic delivery always prefers the closest compatible non-hub processor, even when the
-Command Hub is nearer. The hub is selected automatically only when no compatible dedicated
-processor is available. An explicit player delivery order may still choose the hub for Scrap,
-Oil, or Uranium when shorter travel time matters more than conversion efficiency.
+Fresh automatic delivery selection prefers the closest powered compatible non-hub processor,
+even when the Command Hub is nearer. The hub is selected only when no powered compatible dedicated
+processor is available. An explicit player delivery order may choose the hub for Scrap, Oil, or
+Uranium when shorter travel time matters more than conversion efficiency.
 
-Once delivered, conversion happens **instantly** if power allows it, otherwise during new power generation.
+Destination selection is sticky. Once a drone has a selected delivery target, it keeps travelling
+to that target through a later power loss and waits there with its cargo. Loss of power does not
+reroute the drone. A full target releases the commitment; the drone then selects the nearest proper
+powered destination and falls back to the Command Hub. Destroyed, incompatible, or inaccessible
+targets are treated as lost destinations and trigger normal replacement behavior.
+
+Cargo unloads only while the destination is fully powered and has capacity. Once unloaded,
+conversion happens **instantly** if its conversion route's power requirement is satisfied.
+Buffered cargo remains local through a later shortage and converts after sufficient power returns.
 
 Processors expose their local input inventory, expected output ratios, supplied power, and current
 operational state. A powered conversion briefly reports Processing; insufficient partial supply is
@@ -33,11 +41,27 @@ right-clicking a particular compatible processor remains an explicit destination
 
 Processor input capacity is definition-backed. Current capacities are 200 raw units for the
 Command Hub and 400 for dedicated processors. Partial deliveries fill the available space and keep
-the remainder aboard the drone, preventing cargo loss during congestion or power outages.
+the remainder aboard the drone. On the following routing decision, a full target is abandoned for
+the nearest powered compatible destination, with the hub used as fallback.
 
 The player's actual economic stockpiles are primarily **Alloy** and **Fuel**.
 
 This keeps the harvesting system visually important without forcing the player to manage unnecessary intermediate inventories.
+
+## Current implementation contract
+
+- Raw cargo: Scrap, Oil, Uranium, and Synthetic.
+- Global stockpiles: Alloy, Fuel, Data, and Authority. Data and Authority are defined but do not
+  yet have their full acquisition/spending loops.
+- Network quantity: Power, displayed as supply/demand rather than spendable inventory.
+- Dedicated processor capacity: 400 raw units. Command Hub emergency capacity: 200.
+- Dedicated conversion demand: 8 power for the currently defined routes.
+- Command Hub yields: 0.5 Alloy per Scrap, 0.5 Fuel per Oil, and 1.25 Fuel per Uranium.
+- Dedicated yields: 1 Alloy per Scrap or Synthetic, 1 Fuel per Oil, 1.5 Fuel per Synthetic,
+  and 2.5 Fuel per Uranium.
+- Synthetic cannot be delivered to the Command Hub.
+
+The values above mirror the current JSON definitions and remain balance data, not code constants.
 
 ---
 
@@ -425,3 +449,9 @@ Possible penalties include:
 - Reduced cyberwarfare capability
 
 Power infrastructure therefore becomes an important military target without becoming another currency the player constantly spends.
+
+The current deterministic grid already models explicit connections, relays, generation, demand,
+command-hub storage, transfer limits, maximum connections, priorities, enable/disable state,
+connected components, and powered/underpowered/offline allocation. Processor delivery currently
+uses an all-or-nothing rule: only a fully powered processor accepts new cargo. Broader graceful
+degradation remains system-specific future work.

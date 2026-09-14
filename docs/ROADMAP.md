@@ -28,8 +28,23 @@ The prototype already provides:
 - Renderer passes, UI framework, audio event foundations, logging, and diagnostics
 - Fixed simulation ticks, serializable commands, deterministic random streams, and checksums
 
-This foundation should be preserved while the placeholder medieval gameplay is replaced with
-the modern drone, infrastructure, and power-grid loop.
+The modern drone, construction, physical-processing, vegetation, particle, and connected-grid
+foundations now run on top of this architecture. Remaining medieval presentation aliases are
+compatibility artwork, not the intended economy.
+
+## Milestone status at a glance
+
+| Milestone | Status | Remaining emphasis |
+| --- | --- | --- |
+| 0 — prototype stabilization | Active | Navigation performance, congestion, large-map profiling, visual diagnostics |
+| 2 — construction drone | Feature-complete foundation | Edge-case validation, stranded/recovery UX, long-running task-loop tests |
+| 3 — construction | Feature-complete foundation | Placement polish, incremental terrain-foundation performance, broader recipe validation |
+| 4 — deterministic power grid | Feature-complete foundation | Storage/failure stress tests, allocation tuning, overlay clarity, large-grid profiling |
+| 5 — physical processing economy | Playable foundation | Opening-loop balance, fair resource placement, logistics feedback, pacing validation |
+| 6 and later | Planned | Combat slice, information warfare, factions, strategic resources, networking, polish |
+
+"Feature-complete foundation" means the authoritative path and UI exist; it does not mean the
+milestone has passed every exit criterion or balance target.
 
 ## Completed definition foundation
 
@@ -50,8 +65,8 @@ The repository currently has:
 
 Definitions, typed identity, recipe-backed upgrades, deterministic simulation boundaries,
 persistence, diagnostics, and automated coverage are implemented without legacy migration paths.
-The initial command hub, construction drone, placeholder materials economy, generator, relay, charging pad, extractor,
-factory, and sensor-tower archetypes are present and validated.
+The initial command hub, construction drone, Scrap/Alloy and fuel-processing economy, generator,
+relay, charging pad, extractor, factory, and sensor-tower archetypes are present and validated.
 
 ## Development loop
 
@@ -64,9 +79,9 @@ Each content change should follow this loop:
 5. Verify renderer/UI consumption through presentation data without adding gameplay constants.
 6. Run the complete CTest suite before moving to the next definition or gameplay system.
 
-Current work continues with the construction-drone milestone:
-drone definition → flight/battery components → gather/return commands → charger/power state →
-save/checksum tests → HUD and presentation integration.
+Current work is integration and stabilization of milestones 2–5: drone task routing → powered
+delivery and processor capacity → construction and progressive terrain foundations → connected
+grid failure handling → complete opening-loop tests and performance profiling.
 
 ## Working rules
 
@@ -84,7 +99,7 @@ Every gameplay milestone follows these rules:
 
 ### Goal
 
-Establish a reliable baseline before replacing the starting worker and economy.
+Maintain a reliable baseline while the modern drone economy and infrastructure systems expand.
 
 ### Work
 
@@ -104,6 +119,8 @@ Establish a reliable baseline before replacing the starting worker and economy.
 
 ## Milestone 2: starting construction drone
 
+**Status: feature-complete foundation; validation remains.**
+
 ### Goal
 
 Establish the construction drone as the defining economic unit while retaining one
@@ -114,11 +131,12 @@ directly controlled, non-gathering ground worker.
 - Add a flight-capable navigation mode with altitude and valid operating bounds.
 - Add authoritative battery, cargo/gathering, construction, and repair components.
 - Add serializable commands for gather, construct, repair, recharge, and generic stop.
-- Implement automatic return to an available charger at a configurable reserve level.
+- Implement automatic return to an available charger. The current policy triggers at zero charge;
+  the stored reserve threshold is reserved for a later configurable policy.
 - Handle unreachable, destroyed, occupied, or disconnected charging destinations.
 - Preserve interrupted work while charging and resume it deterministically afterward.
 - Keep construction drones indirect-control only and provide a drone-specific HUD.
-- Add readable battery, task, route, construction-power, and work-step indicators.
+- Add readable health, battery, cargo, route, construction-power, and work-step indicators.
 
 ### Exit criteria
 
@@ -135,6 +153,8 @@ directly controlled, non-gathering ground worker.
 
 ## Milestone 3: construction gameplay
 
+**Status: feature-complete foundation; polish and performance validation remain.**
+
 ### Goal
 
 Allow the drone to establish a functional base through clear, deterministic construction.
@@ -149,6 +169,10 @@ Allow the drone to establish a functional base through clear, deterministic cons
 - Add planned, under-construction, operational, damaged, and destroyed states.
 - Prevent unfinished structures from providing unintended full functionality.
 - Add construction audio and interface events.
+- Use definition-backed circular or rotated rectangular footprints, plane fitting, slope limits,
+  shape-aware falloff, and the same evaluation for preview and final placement.
+- Apply foundation influence progressively as drones contribute construction work and clear
+  decorative vegetation when placement is accepted.
 
 ### Exit criteria
 
@@ -158,6 +182,8 @@ Allow the drone to establish a functional base through clear, deterministic cons
 - Cancellation, destruction, save/load, and insufficient-resource cases are tested.
 
 ## Milestone 4: deterministic power grid
+
+**Status: feature-complete foundation; stress testing and tuning remain.**
 
 ### Goal
 
@@ -174,6 +200,11 @@ Make connected energy infrastructure the main spatial constraint on expansion.
 - Show supply, demand, storage, transfer, overload, and disconnected state.
 - Emit simulation events for connection, disconnection, shortage, recovery, and shutdown.
 
+The current implementation includes serializable connect/disconnect/priority/enable commands,
+stable topology discovery, connection and transfer limits, generation, command-hub storage,
+consumer allocation, grid IDs, checksums, persistence, interaction buttons, world tinting, and a
+clickable HUD power overview.
+
 ### Exit criteria
 
 - Destroying or rebuilding a relay deterministically divides or reconnects networks.
@@ -183,6 +214,8 @@ Make connected energy infrastructure the main spatial constraint on expansion.
 - Large representative grids update within the simulation performance budget.
 
 ## Milestone 5: physical processing economy
+
+**Status: playable foundation; opening balance and logistics polish remain.**
 
 ### Goal
 
@@ -195,13 +228,15 @@ without turning raw inputs into extra global currencies.
 - Replace Wood, Stone, Gold, and Materials with Scrap, Oil, Uranium, Synthetic, Alloy, Fuel, Data,
   Authority, and network Power definitions.
 - Keep Scrap, Oil, Uranium, and Synthetic as physical cargo; never expose them as player stockpiles.
-- Add Alloy and Fuel processors with local input buffers and power-gated instant conversion.
+- Add Alloy and Fuel processors with local input buffers and power-gated delivery/conversion.
 - Convert Scrap to Alloy at a predictable baseline rate.
 - Convert Oil and Uranium to Fuel at source-specific yields.
 - Let powered Synthetic Mines produce finite raw Synthetic that can be routed to either an Alloy
   Processor or Fuel Processor through independent, data-driven conversion definitions.
 - Select compatible delivery destinations and navigate harvesters to accessible interaction edges.
 - Add processor input, blocked-by-power, conversion, depletion, and delivery-route feedback.
+- Keep an explicitly selected target committed through power loss; unload only when fully powered.
+  When full, choose the nearest powered compatible dedicated processor and then the command hub.
 - Show Alloy and Fuel in the player economy while raw cargo remains visible on harvesters,
   processors, resource nodes, and logistics overlays.
 - Generate deterministic starting Scrap access, ordinary Oil expansion sites, and contested
@@ -213,7 +248,8 @@ without turning raw inputs into extra global currencies.
 
 - Scrap, Alloy, and Power create at least two viable opening strategies.
 - Raw cargo cannot enter the player stockpile or convert at an incompatible processor.
-- Unpowered processors retain delivered input and convert it deterministically when power returns.
+- Unpowered processors retain previously buffered input and convert it deterministically when
+  power returns. New cargo remains aboard its drone until the destination is fully powered.
 - Synthetic can be deliberately routed to Alloy or Fuel and both outcomes use definition-backed
   yields.
 - Players can understand why income or production has stopped.
@@ -433,13 +469,15 @@ These tracks continue throughout all milestones rather than waiting for a final 
 
 The immediate order of work is:
 
-1. Complete milestone 0 navigation and visual stabilization.
-2. Finish milestone 2 validation for the implemented construction-drone task, battery,
-   charging, interruption-resume, persistence, and deterministic command loop.
-3. Build milestone 3 construction around that drone.
-4. Add the milestone 4 power grid.
-5. Implement and balance the milestone 5 Scrap/Alloy and fuel-source/Fuel processing economy.
-6. Produce the milestone 6 first complete combat match.
+1. Stabilize milestone 0 navigation, shared-destination behavior, and large-map performance.
+2. Finish focused and long-running validation for drone battery, charging, cargo commitment,
+   full-processor fallback, interrupted work, persistence, and checksums.
+3. Profile progressive terrain-foundation rebuilds and validate placement across every footprint.
+4. Stress deterministic grids under relay destruction, storage use, shortages, reconnection, and
+   many consumers; improve overlay explanations where tests expose ambiguity.
+5. Playtest and balance the complete Scrap → Alloy → powered construction opening, then Oil,
+   Uranium, Synthetic, and Fuel routing.
+6. Begin milestone 6 with one representative combat unit and command-hub victory flow.
 
 Work outside this sequence should be limited to defects, architectural blockers, and reusable
 assets needed by the active milestone.

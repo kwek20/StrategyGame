@@ -137,9 +137,13 @@ infrastructure capacity:
 | Power | Network capacity | Operating processors, production, sensors, defenses, and chargers |
 
 Raw resources never become global currencies. Harvesters carry them to a compatible processor.
-If sufficient power is available, delivery converts the cargo immediately. Otherwise the raw
-input remains buffered at the processor until power becomes available. Only the processed result
-is added to the owning player's stockpile.
+Cargo can unload only into a fully powered processor with free input capacity. A drone committed
+to a selected destination keeps travelling there if that destination loses power, waits with its
+cargo, and unloads when full power returns. If the destination becomes full, the drone releases
+that commitment, chooses the nearest powered compatible dedicated processor, and falls back to
+the command hub when no dedicated destination is available. Cargo already buffered before a
+power loss remains local and converts when power returns. Only processed output enters the
+owning player's stockpile.
 
 Synthetic deliberately supports two routes. Delivery to an Alloy Processor produces Alloy;
 delivery to a Fuel Processor produces Fuel. This creates a responsive economic choice while
@@ -155,8 +159,10 @@ rates, and modifiers must remain deterministic and belong to authoritative simul
 
 ## Starting drone
 
-The first controllable entity is a flying construction and gathering drone. It establishes
-the identity of the game and replaces the traditional starting worker.
+The construction drone is the first economic entity and establishes the identity of the game.
+It is selected at match start but uses indirect RTS orders rather than third-person possession.
+Each player also starts with one directly controllable ground worker; that worker currently
+cannot gather and cannot be trained.
 
 ### Capabilities
 
@@ -164,9 +170,10 @@ the identity of the game and replaces the traditional starting worker.
 - Discover terrain and enemy activity
 - Gather and carry raw resources, then deliver them to a compatible processor
 - Construct foundational buildings
-- Repair damaged structures using Alloy
+- Repair damaged structures; the current prototype consumes drone battery, while an Alloy repair
+  cost remains intended economy work
 - Recharge at a command hub or charging facility
-- Operate automatically or under direct control
+- Operate through explicit and automatic RTS task orders
 
 ### Constraints
 
@@ -177,8 +184,10 @@ the identity of the game and replaces the traditional starting worker.
 - Dependence on charging infrastructure
 - Reduced effectiveness when operating far from the grid
 
-An automatic return-to-charge behavior should be configurable. A drone must not silently
-strand itself because of insufficient battery.
+The current automatic return-to-charge trigger is zero battery. The configured reserve value is
+retained as data and debug information for later policy work, but it does not currently force an
+early return. A zero-charge drone cannot move manually; it seeks the nearest valid powered charger,
+recharges at that charger's definition-backed rate, and resumes a suspended order deterministically.
 
 ## Construction
 
@@ -215,20 +224,27 @@ Each applicable building has:
 - Priority
 - Connection status
 
-Power states are:
+Implemented power states are:
 
 - Fully powered
 - Underpowered
-- Operating from stored energy
 - Offline
 
-Underpowered buildings degrade gracefully where possible:
+Storage is authoritative grid state, but "operating from stored energy" is not exposed as a
+separate operational-state enum. Stored energy is allocated through the same deterministic supply
+path before a consumer is classified.
+
+The intended long-term behavior is graceful degradation where useful:
 
 - Production becomes slower.
 - Sensors lose range or update less frequently.
 - Charging facilities recharge more slowly.
 - Defensive weapons fire less frequently.
 - Buildings shut down when minimum operating requirements are not met.
+
+The current processor contract is stricter: processors accept new cargo and convert only while
+fully powered. Underpowered and offline processors retain existing buffered input but accept no
+new delivery. Other consumer-specific degradation policies remain future balance work.
 
 ### Grid usability
 
@@ -411,31 +427,28 @@ by the engine:
 - Resource, unit, building, weapon, country, and specialization definitions are data-driven.
 - Save formats version every new authoritative component.
 
-## Development roadmap
+## Current implementation snapshot
 
-### Phase 2: implement the starting drone
+The prototype now implements the foundations of the starting-drone, construction, connected-grid,
+and physical-processing milestones:
 
-Make the construction drone the starting economic entity while retaining the worker as a
-directly controlled, non-gathering unit. Add flying navigation, battery charge, gathering with
-cargo and deposit, upfront-cost construction with power-budgeted drone work, explicit charging,
-automatic return, stranded-state reporting, and deterministic resumption of interrupted work.
+- Flying zero-collision construction drones with battery drain, charging, cargo, gathering,
+  delivery commitment, construction, repair, and suspended-order resumption.
+- Definition-backed building placement, shape-aware terrain foundations, progressive foundation
+  influence during construction, up-front Alloy costs, deterministic work steps, cancellation,
+  health-as-progress, and vegetation clearing.
+- Serializable grid connection, disconnection, priority, and enable commands; deterministic
+  topology, transfer constraints, generation, storage, consumer allocation, grid IDs, events,
+  persistence, checksums, interaction tools, and a power overlay.
+- Scrap, Oil, Uranium, and Synthetic cargo; command-hub emergency conversion; Alloy and Fuel
+  processors; Synthetic routing; processor capacity and state UI; and deterministic resource
+  generation.
+- Data-driven particles for gathering, processing, construction, weapons, impacts, and explosions,
+  plus deterministic decorative grass and small-tree scattering.
 
-### Phase 3: complete construction
-
-Add placement previews, construction costs, resource reservation, build progress,
-drone-assisted construction, cancellation, refunds, and building-state transitions.
-
-### Phase 4: implement deterministic power grids
-
-Add generators, relays, network connections, consumer priorities, batteries, deterministic
-network recalculation, grid visualization, and persistence.
-
-### Phase 5: establish the modern economy
-
-Balance Scrap delivery, Alloy processing, construction, and power first. Introduce Oil and Fuel
-as expansion begins, then Data and Authority as territorial and information systems come online.
-Synthetic production should arrive as a powered, flexible supplement rather than a replacement
-for map control.
+Combat content, meaningful country differentiation, Data and Authority acquisition, network
+transport, and final balance remain future milestones. See [ROADMAP.md](ROADMAP.md) for current
+completion status and ordered work.
 
 ### Phase 6: create the first combat slice
 
@@ -455,7 +468,8 @@ Every new gameplay system must pass deterministic replay, persistence, and simul
 
 ## Immediate next milestone
 
-The current implementation milestone is validating the construction drone's complete task and
-battery loop: gathering, construction, repair, explicit recharge, automatic return, charging,
-stranded handling, save/load, and deterministic task resumption. This is the foundation for
-power-grid expansion and logistics before the unit roster grows.
+The immediate focus is stabilization and integration of the implemented economic slice: finish
+fast focused tests for drone logistics and grid failure cases, profile large-map navigation and
+vegetation, make all processor/power stoppages legible, then validate a complete opening loop from
+Scrap gathering through powered construction. The first representative combat slice follows that
+validation rather than adding more economy systems immediately.
