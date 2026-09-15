@@ -956,6 +956,7 @@ void PlayState::update(float deltaSeconds) {
         camera_.pan(forward, right, deltaSeconds);
     }
     session_.update(deltaSeconds);
+    sanitizeEntityReferences();
     for (const ResourceEvent& event : session_.consumeResourceEvents()) {
         context_.events.enqueue(event);
         switch (event.kind) {
@@ -1014,6 +1015,50 @@ void PlayState::update(float deltaSeconds) {
         }
         hudAlerts_.push_back({event.source, std::move(message), 3.5F});
     }
+}
+
+void PlayState::sanitizeEntityReferences() {
+    const World& world = session_.world();
+    const auto missing = [&](EntityId id) {
+        return id != 0 && world.findEntity(id) == nullptr;
+    };
+
+    std::erase_if(selectedUnits_, missing);
+    if (missing(selectedEntity_))
+        selectedEntity_ = selectedUnits_.empty() ? 0 : selectedUnits_.front();
+    if (selectedUnits_.size() == 1) {
+        selectedEntity_ = selectedUnits_.front();
+        selectedUnits_.clear();
+    }
+
+    if (missing(hoveredEntity_))
+        hoveredEntity_ = 0;
+    if (pickedEntity_ && missing(*pickedEntity_))
+        pickedEntity_.reset();
+    if (pickedEntities_)
+        std::erase_if(*pickedEntities_, missing);
+    if (missing(lastWorldClickEntity_))
+        lastWorldClickEntity_ = 0;
+    if (missing(pendingOrderTarget_))
+        pendingOrderTarget_ = 0;
+
+    if (missing(powerLinkSource_)) {
+        powerLinkSource_ = 0;
+        powerLinkMode_ = PowerLinkMode::none;
+    }
+
+    if (missing(possessedEntity_)) {
+        possessedEntity_ = 0;
+        viewMode_ = ViewMode::strategy;
+        orbiting_ = false;
+        mousePanning_ = false;
+        forward_ = backward_ = left_ = right_ = running_ = false;
+        setMouseCaptured(false);
+    }
+
+    std::erase_if(hudAlerts_, [&](const HudAlert& alert) {
+        return missing(alert.source);
+    });
 }
 
 void PlayState::render(Renderer& renderer) const {

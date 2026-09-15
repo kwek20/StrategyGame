@@ -28,7 +28,9 @@ all prose, IDs, and paths below as context to verify, not as permission to disca
 3. `docs/match progress.md` is authoritative for intended pacing.
 4. `docs/GAME_DESIGN.md` defines product direction.
 5. `docs/ROADMAP.md` distinguishes implemented foundations from unfinished validation/content.
-6. `docs/ICON_GENERATION_BRIEF.md` defines icon and UI-art production.
+6. `docs/TERRAIN_GENERATION.md` defines the planned terrain, biome, water, traversal, resource
+   distribution, and decorative-scatter overhaul.
+7. `docs/ICON_GENERATION_BRIEF.md` defines icon and UI-art production.
 
 If documentation and code disagree, identify the discrepancy explicitly. Do not silently preserve
 legacy behavior. There are no public save files and no requirement for legacy save migration.

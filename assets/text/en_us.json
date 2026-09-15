@@ -230,7 +230,7 @@
   ,"power.alert.connection_limit": "POWER CONNECTION LIMIT REACHED"
   ,"power.alert.not_connected": "DEVICES ARE NOT CONNECTED"
   ,"power.alert.invalid_target": "INVALID POWER CONNECTION TARGET"
-  ,"entity.grass_fresh": "GRASS"
-  ,"entity.grass_tall": "TALL GRASS"
-  ,"entity.wild_tree": "SMALL TREE"
+  ,"entity.grass_dry": "DRY GRASS"
+  ,"entity.grass_aged": "AGED GRASS"
+  ,"entity.grass_fresh": "FRESH GRASS"
 }

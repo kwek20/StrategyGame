@@ -23,9 +23,9 @@
   "buildPalette": ["command_hub", "alloy_processor", "fuel_processor", "synthetic_mine", "basic_generator", "storage_silo", "electricity_pole", "charging_pad", "resource_extractor", "drone_factory", "sensor_tower"],
   "generatedResourceNodes": ["scrap_field", "oil_deposit", "uranium_deposit"],
   "vegetation": [
-    { "archetype": "grass_fresh", "stream": "vegetation.grass_fresh", "instancesPerChunk": 0.55, "minimumHeight": 0.38, "maximumHeight": 0.72, "maximumSlope": 0.9, "minimumSpacing": 2.3, "minimumScale": 0.85, "maximumScale": 1.35 },
-    { "archetype": "grass_tall", "stream": "vegetation.grass_tall", "instancesPerChunk": 0.20, "minimumHeight": 0.46, "maximumHeight": 0.72, "maximumSlope": 0.75, "minimumSpacing": 3.8, "minimumScale": 0.8, "maximumScale": 1.2 },
-    { "archetype": "wild_tree", "stream": "vegetation.trees", "instancesPerChunk": 0.24, "minimumHeight": 0.12, "maximumHeight": 0.76, "maximumSlope": 1.2, "minimumSpacing": 6.0, "minimumScale": 1.8, "maximumScale": 2.8 }
+    { "archetype": "grass_dry", "stream": "vegetation.grass_dry", "instancesPerChunk": 0.22, "minimumHeight": 0.20, "maximumHeight": 0.40, "maximumSlope": 1.0, "minimumSpacing": 2.3, "minimumScale": 0.85, "maximumScale": 1.35 },
+    { "archetype": "grass_aged", "stream": "vegetation.grass_aged", "instancesPerChunk": 0.22, "minimumHeight": 0.34, "maximumHeight": 0.56, "maximumSlope": 0.95, "minimumSpacing": 2.3, "minimumScale": 0.85, "maximumScale": 1.35 },
+    { "archetype": "grass_fresh", "stream": "vegetation.grass_fresh", "instancesPerChunk": 0.24, "minimumHeight": 0.50, "maximumHeight": 0.72, "maximumSlope": 0.9, "minimumSpacing": 2.3, "minimumScale": 0.85, "maximumScale": 1.35 }
   ],
   "trainingUpgradeProduct": "construction_drone",
   "unitLimit": 100,

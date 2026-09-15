@@ -8,8 +8,9 @@ persistence, deterministic simulation, interface, diagnostics, and tests meet th
 criteria.
 
 Detailed economic behavior and pacing are governed by [Resource system.md](Resource%20system.md)
-and [match progress.md](match%20progress.md). This roadmap schedules those rules; it does not
-redefine them.
+and [match progress.md](match%20progress.md). The planned biome, water, traversal, resource-region,
+and decorative-scatter overhaul is defined in [TERRAIN_GENERATION.md](TERRAIN_GENERATION.md).
+This roadmap schedules those rules; it does not redefine them.
 
 ## Current foundation
 

@@ -91,6 +91,7 @@ class PlayState final : public GameState {
     mutable GameplayParticlePresenter particlePresenter_;
 
     void setMouseCaptured(bool captured);
+    void sanitizeEntityReferences();
 
     void handlePauseEvent(const SDL_Event& event);
     [[nodiscard]] UiDocument pauseUi(int width, int height) const;

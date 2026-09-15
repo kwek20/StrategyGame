@@ -4,7 +4,9 @@
 #include "world/World.hpp"
 #include "world/WorldGeneration.hpp"
 
+#include <algorithm>
 #include <iostream>
+#include <map>
 #include <vector>
 
 namespace {
@@ -25,25 +27,28 @@ int main() {
     strategy::populateVegetation(second, terrain, definitions, 0x13572468U, 15);
 
     bool valid = !first.entities().empty() && positions(first) == positions(second);
-    std::size_t grass = 0;
-    std::size_t trees = 0;
+    std::map<std::string, std::size_t> grassVariants;
     for (const strategy::Entity& entity : first.entities()) {
         const auto* type = definitions.archetype(entity.archetype);
         valid = valid && entity.kind == strategy::EntityKind::decoration && type &&
                 type->tags.contains("clear-on-build");
         if (type && type->tags.contains("grass")) {
-            ++grass;
-            valid = valid && terrain.heightAt(entity.transform.position.x,
-                                               entity.transform.position.z) /
-                                     strategy::Terrain::heightScale >=
-                                 0.38F;
-        }
-        if (type && type->tags.contains("tree")) {
-            ++trees;
-            valid = valid && entity.presentation == strategy::PresentationId{"grass_tall"};
+            ++grassVariants[entity.archetype.value];
+            const auto& vegetation = definitions.matchRules().vegetation;
+            const auto rule = std::find_if(vegetation.begin(), vegetation.end(), [&](const auto& item) {
+                return item.archetype == entity.archetype.value;
+            });
+            const float normalizedHeight = terrain.heightAt(entity.transform.position.x,
+                                                             entity.transform.position.z) /
+                                           strategy::Terrain::heightScale;
+            valid = valid && rule != vegetation.end() &&
+                    normalizedHeight >= rule->minimumHeight &&
+                    normalizedHeight <= rule->maximumHeight;
         }
     }
-    valid = valid && grass > 0 && trees > 0;
+    valid = valid && grassVariants["grass_dry"] > 0 &&
+            grassVariants["grass_aged"] > 0 &&
+            grassVariants["grass_fresh"] > 0;
 
     const strategy::EntityId removed = first.entities().front().id;
     const glm::vec3 center = first.entities().front().transform.position;
