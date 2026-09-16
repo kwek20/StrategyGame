@@ -9,12 +9,31 @@
 #include <glm/geometric.hpp>
 #include <vector>
 #include <utility>
+#include <string_view>
 
 namespace strategy {
 
 enum class FootprintShape { circle, rectangle };
 enum class TerrainTraversalClass { open, difficult, impassable };
 enum class TerrainBuildabilityClass { buildable, restricted, forbidden };
+enum class TerrainTag : std::uint32_t {
+    land = 1U << 0U,
+    water = 1U << 1U,
+    shallowWater = 1U << 2U,
+    deepWater = 1U << 3U,
+    shoreline = 1U << 4U,
+    submerged = 1U << 5U,
+    dry = 1U << 6U,
+    vegetated = 1U << 7U,
+    rocky = 1U << 8U,
+    buildable = 1U << 9U,
+    noBuild = 1U << 10U
+};
+using TerrainTagMask = std::uint32_t;
+constexpr TerrainTagMask terrainTagBit(TerrainTag tag) {
+    return static_cast<TerrainTagMask>(tag);
+}
+[[nodiscard]] TerrainTagMask terrainTagFromName(std::string_view name);
 enum class TerrainPlacementDomain : std::uint8_t { land = 0, shallowWater = 1, deepWater = 2 };
 using TerrainPlacementDomainMask = std::uint8_t;
 constexpr TerrainPlacementDomainMask terrainPlacementBit(TerrainPlacementDomain domain) {
@@ -36,6 +55,7 @@ struct TerrainSample {
     float temperature{0.0F};
     float waterDepth{0.0F};
     bool submerged{false};
+    TerrainTagMask tags{0};
     TerrainBiomeId biome;
     TerrainSurfaceId surface;
     glm::vec3 surfaceColor{1.0F};

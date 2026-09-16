@@ -11,7 +11,9 @@
 
 #include <cstdint>
 #include <deque>
+#include <glm/vec2.hpp>
 #include <map>
+#include <vector>
 
 namespace strategy {
 
@@ -57,6 +59,9 @@ class GameSession final {
         return terrainSeed_;
     }
     [[nodiscard]] std::uint32_t mapChunksPerSide() const { return mapChunksPerSide_; }
+    [[nodiscard]] const std::vector<glm::vec2>& startingAnchors() const {
+        return startingAnchors_;
+    }
     [[nodiscard]] std::uint64_t stateChecksum() const;
     [[nodiscard]] bool canStartRecipe(PlayerId player, EntityId producer, RecipeId recipe) const;
     [[nodiscard]] bool canStartUpgrade(PlayerId player, EntityId researcher,
@@ -85,6 +90,7 @@ class GameSession final {
     std::uint32_t mapChunksPerSide_{15};
     Navigation navigation_;
     float resourceAbundanceScale_{1.0F};
+    std::vector<glm::vec2> startingAnchors_;
     std::vector<ResourceEvent> resourceEvents_;
     std::vector<PowerEvent> powerEvents_;
     std::map<PlayerId, std::uint64_t> powerTopologySignatures_;

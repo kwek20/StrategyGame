@@ -176,6 +176,9 @@ struct EntityArchetype {
         float spread{0.0F}, centerExtent{0.0F};
         std::uint32_t startingNodesPerPlayer{0};
         float startingMinimumDistance{0.0F}, startingMaximumDistance{0.0F};
+        TerrainTagMask requiredTerrainTags{terrainTagBit(TerrainTag::land)};
+        TerrainTagMask forbiddenTerrainTags{0};
+        float minimumHeight{-1.0F}, maximumHeight{-1.0F}, maximumSlope{-1.0F};
     };
     std::optional<Generation> generation;
     MovementDefinition movement;

@@ -636,6 +636,7 @@ void Renderer::drawTerrain(const CameraView& camera,
     glUniform1i(shaders_.uniform(program_, "dryGroundTexture"), 3);
     glUniform1i(shaders_.uniform(program_, "useFoundationTexture"), 0);
     glUniform1i(shaders_.uniform(program_, "terrainDebug"), terrainDebug ? 1 : 0);
+    glUniform1f(shaders_.uniform(program_, "waterLevel"), terrain_.waterLevel());
     const GLint location = shaders_.uniform(program_, "viewProjection");
     glUniformMatrix4fv(location, 1, GL_FALSE, glm::value_ptr(viewProjection));
     glUniform3fv(

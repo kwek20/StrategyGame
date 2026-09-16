@@ -16,16 +16,25 @@
 namespace strategy {
 namespace {
 bool suitable(const Terrain& terrain, const MatchRulesDefinition& rules,
+              const ResourceNodeDefinition& type,
               std::uint32_t mapChunksPerSide,
               float x, float z) {
     if (!MapArea{mapChunksPerSide}.contains({x, z}, rules.terrainEdgeMargin))
         return false;
     const TerrainSample& sample = terrain.sampleAt(x, z);
-    if (sample.traversal == TerrainTraversalClass::impassable)
+    const auto& generation = *type.generation;
+    if ((sample.tags & generation.requiredTerrainTags) != generation.requiredTerrainTags ||
+        (sample.tags & generation.forbiddenTerrainTags) != 0)
         return false;
     const float normalized = terrain.heightAt(x, z) / Terrain::heightScale;
-    if (normalized < rules.minimumResourceHeight || normalized > rules.maximumResourceHeight)
+    const float minimumHeight = generation.minimumHeight >= 0.0F
+                                    ? generation.minimumHeight : rules.minimumResourceHeight;
+    const float maximumHeight = generation.maximumHeight >= 0.0F
+                                    ? generation.maximumHeight : rules.maximumResourceHeight;
+    if (normalized < minimumHeight || normalized > maximumHeight)
         return false;
+    if (generation.maximumSlope >= 0.0F)
+        return sample.slopeDegrees <= generation.maximumSlope;
     const float step = Terrain::spacing * 2.0F;
     const float dx = terrain.heightAt(x + step, z) - terrain.heightAt(x - step, z);
     const float dz = terrain.heightAt(x, z + step) - terrain.heightAt(x, z - step);
@@ -33,23 +42,13 @@ bool suitable(const Terrain& terrain, const MatchRulesDefinition& rules,
 }
 
 bool clearOfStarts(const MatchRulesDefinition& rules,
-                   const DefinitionRegistry& definitions,
-                   std::uint32_t mapChunksPerSide,
+                   const std::vector<glm::vec2>& startingAnchors,
                    float x,
                    float z) {
     const glm::vec2 point{x, z};
-    for (PlayerId player = 1; player <= 2; ++player) {
-        const auto& starts = player == 1 ? rules.playerOne : rules.playerTwo;
-        for (const StartingEntityDefinition& start : starts) {
-            const EntityArchetype* archetype = definitions.archetype(start.archetype);
-            if (archetype && archetype->tags.contains("headquarters"))
-                if (const glm::vec3 position = startingEntityPosition(
-                        start, player, rules, mapChunksPerSide);
-                    glm::distance(point, glm::vec2{position.x, position.z}) <=
-                    rules.baseExclusionRadius)
-                    return false;
-        }
-    }
+    for (const glm::vec2 anchor : startingAnchors)
+        if (glm::distance(point, anchor) <= rules.baseExclusionRadius)
+            return false;
     return true;
 }
 
@@ -76,7 +75,8 @@ void clusters(World& world,
               std::uint32_t seed,
               const ResourceNodeDefinition& type,
               std::uint32_t mapChunksPerSide,
-              float abundanceScale) {
+              float abundanceScale,
+              const std::vector<glm::vec2>& startingAnchors) {
     const auto& rules = definitions.matchRules();
     const auto& settings = *type.generation;
     DeterministicRandom random(seed, settings.stream);
@@ -88,16 +88,16 @@ void clusters(World& world,
          ++attempt) {
         const float centerX = random.range(-settings.centerExtent, settings.centerExtent);
         const float centerZ = random.range(-settings.centerExtent, settings.centerExtent);
-        if (centerX < 0.0F || !suitable(terrain, rules, mapChunksPerSide, centerX, centerZ) ||
-            !suitable(terrain, rules, mapChunksPerSide, -centerX, -centerZ) ||
-            !clearOfStarts(rules, definitions, mapChunksPerSide, centerX, centerZ) ||
-            !clearOfStarts(rules, definitions, mapChunksPerSide, -centerX, -centerZ))
+        if (centerX < 0.0F || !suitable(terrain, rules, type, mapChunksPerSide, centerX, centerZ) ||
+            !suitable(terrain, rules, type, mapChunksPerSide, -centerX, -centerZ) ||
+            !clearOfStarts(rules, startingAnchors, centerX, centerZ) ||
+            !clearOfStarts(rules, startingAnchors, -centerX, -centerZ))
             continue;
         for (std::uint32_t member = 0; member < settings.nodesPerCluster; ++member) {
             const float x = centerX + random.range(-settings.spread, settings.spread);
             const float z = centerZ + random.range(-settings.spread, settings.spread);
-            if (!suitable(terrain, rules, mapChunksPerSide, x, z) ||
-                !clearOfStarts(rules, definitions, mapChunksPerSide, x, z))
+            if (!suitable(terrain, rules, type, mapChunksPerSide, x, z) ||
+                !clearOfStarts(rules, startingAnchors, x, z))
                 continue;
             const float angle = random.range(0.0F, 360.0F);
             if (!overlapsObject(world, definitions, {x, z}, type.collisionRadius) &&
@@ -115,59 +115,17 @@ void guaranteedStartingNodes(World& world,
                              const DefinitionRegistry& definitions,
                              std::uint32_t seed,
                              const ResourceNodeDefinition& type,
-                             std::uint32_t mapChunksPerSide) {
+                             std::uint32_t mapChunksPerSide,
+                             const std::vector<glm::vec2>& startingAnchors) {
     const auto& settings = *type.generation;
-    if (settings.startingNodesPerPlayer == 0) return;
+    if (settings.startingNodesPerPlayer == 0 || startingAnchors.empty()) return;
     const auto& rules = definitions.matchRules();
-    DeterministicRandom random(seed, settings.stream + ".starting");
-    const auto headquartersFor = [&](const auto& starts) -> const StartingEntityDefinition* {
-        for (const auto& start : starts) {
-            const EntityArchetype* archetype =
-                definitions.archetype(EntityArchetypeId{start.archetype});
-            if (archetype && archetype->tags.contains("headquarters")) return &start;
-        }
-        return nullptr;
-    };
-    const StartingEntityDefinition* headquarters = headquartersFor(rules.playerOne);
-    const StartingEntityDefinition* opposingHeadquarters = headquartersFor(rules.playerTwo);
-    if (!headquarters || !opposingHeadquarters) return;
-    const glm::vec3 headquartersPosition = startingEntityPosition(
-        *headquarters, 1, rules, mapChunksPerSide);
-    const glm::vec3 opposingPosition = startingEntityPosition(
-        *opposingHeadquarters, 2, rules, mapChunksPerSide);
-    std::uint32_t made = 0;
-    const float centerDirection = std::atan2(-headquartersPosition.z, -headquartersPosition.x);
-    for (std::uint32_t attempt = 0;
-         attempt < settings.attemptsPerCluster && made < settings.startingNodesPerPlayer;
-         ++attempt) {
-        const float distance = random.range(settings.startingMinimumDistance,
-                                            settings.startingMaximumDistance);
-        const float angle = centerDirection + random.range(-0.85F, 0.85F);
-        const float x = headquartersPosition.x + std::cos(angle) * distance;
-        const float z = headquartersPosition.z + std::sin(angle) * distance;
-        const glm::vec2 mirrored{-x, -z};
-        if (suitable(terrain, rules, mapChunksPerSide, x, z) &&
-            suitable(terrain, rules, mapChunksPerSide, mirrored.x, mirrored.y) &&
-            !overlapsObject(world, definitions, {x, z}, type.collisionRadius) &&
-            !overlapsObject(world, definitions, mirrored, type.collisionRadius)) {
-            const float rotation = random.range(0.0F, 360.0F);
-            add(world, definitions, type, x, z, rotation);
-            add(world, definitions, type, mirrored.x, mirrored.y, rotation + 180.0F);
-            ++made;
-        }
-    }
-
-    // Water and mountain regions need not be rotationally symmetric. Preserve mirrored opening
-    // nodes where possible, then deterministically search each player's nearby land independently
-    // instead of failing an otherwise playable map.
-    DeterministicRandom firstFallback(seed, settings.stream + ".starting.fallback.player1");
-    DeterministicRandom secondFallback(seed, settings.stream + ".starting.fallback.player2");
-    const auto findNear = [&](glm::vec3 origin, DeterministicRandom& candidateRandom)
+    const auto findNear = [&](glm::vec2 origin, DeterministicRandom& candidateRandom)
         -> std::optional<glm::vec2> {
         constexpr float goldenAngle = 2.39996323F;
         const std::uint32_t attempts = std::max(512U, settings.attemptsPerCluster * 8U);
         const float phase = candidateRandom.range(-3.14159265F, 3.14159265F);
-        const float center = std::atan2(-origin.z, -origin.x);
+        const float center = std::atan2(-origin.y, -origin.x);
         for (std::uint32_t attempt = 0; attempt < attempts; ++attempt) {
             const float progress = attempts > 1
                                        ? static_cast<float>(attempt) /
@@ -178,26 +136,28 @@ void guaranteedStartingNodes(World& world,
                  settings.startingMinimumDistance) * std::sqrt(progress);
             const float angle = center + phase + goldenAngle * static_cast<float>(attempt);
             const glm::vec2 candidate{origin.x + std::cos(angle) * distance,
-                                      origin.z + std::sin(angle) * distance};
-            if (suitable(terrain, rules, mapChunksPerSide, candidate.x, candidate.y) &&
+                                      origin.y + std::sin(angle) * distance};
+            if (suitable(terrain, rules, type, mapChunksPerSide, candidate.x, candidate.y) &&
                 !overlapsObject(world, definitions, candidate, type.collisionRadius))
                 return candidate;
         }
         return std::nullopt;
     };
-    while (made < settings.startingNodesPerPlayer) {
-        const auto first = findNear(headquartersPosition, firstFallback);
-        const auto second = findNear(opposingPosition, secondFallback);
-        if (!first || !second) break;
-        add(world, definitions, type, first->x, first->y,
-            firstFallback.range(0.0F, 360.0F));
-        add(world, definitions, type, second->x, second->y,
-            secondFallback.range(0.0F, 360.0F));
-        ++made;
+    for (std::size_t player = 0; player < startingAnchors.size(); ++player) {
+        DeterministicRandom random(
+            seed, settings.stream + ".starting.player." + std::to_string(player + 1));
+        std::uint32_t made = 0;
+        while (made < settings.startingNodesPerPlayer) {
+            const auto candidate = findNear(startingAnchors[player], random);
+            if (!candidate) break;
+            if (add(world, definitions, type, candidate->x, candidate->y,
+                    random.range(0.0F, 360.0F)))
+                ++made;
+        }
+        if (made != settings.startingNodesPerPlayer)
+            throw std::runtime_error("Unable to place guaranteed starting resource nodes for " +
+                                     type.id + " near player " + std::to_string(player + 1));
     }
-    if (made != settings.startingNodesPerPlayer)
-        throw std::runtime_error("Unable to place guaranteed starting resource nodes on valid "
-                                 "terrain for " + type.id);
 }
 } // namespace
 
@@ -206,13 +166,20 @@ void populateResources(World& world,
                        const DefinitionRegistry& definitions,
                        std::uint32_t terrainSeed,
                        std::uint32_t mapChunksPerSide,
-                       float abundanceScale) {
+                       float abundanceScale,
+                       const std::vector<glm::vec2>& providedStartingAnchors) {
+    std::vector<glm::vec2> startingAnchors = providedStartingAnchors;
+    if (startingAnchors.empty())
+        for (const StartingRegion& region :
+             selectStartingRegions(terrain, definitions, mapChunksPerSide, 2))
+            startingAnchors.push_back(region.anchor);
     for (const std::string& id : definitions.matchRules().generatedResourceNodes)
     {
         const ResourceNodeDefinition& type = *definitions.resource(ResourceArchetypeId{id});
         guaranteedStartingNodes(world, terrain, definitions, terrainSeed, type,
                                 std::clamp(mapChunksPerSide, 10U,
-                                           static_cast<std::uint32_t>(Terrain::chunksPerSide)));
+                                           static_cast<std::uint32_t>(Terrain::chunksPerSide)),
+                                startingAnchors);
         clusters(world,
                  terrain,
                  definitions,
@@ -220,7 +187,7 @@ void populateResources(World& world,
                  type,
                  std::clamp(mapChunksPerSide, 10U,
                             static_cast<std::uint32_t>(Terrain::chunksPerSide)),
-                 std::clamp(abundanceScale, 0.5F, 2.0F));
+                 std::clamp(abundanceScale, 0.5F, 2.0F), startingAnchors);
     }
 }
 
@@ -243,7 +210,8 @@ void populateVegetation(World& world,
             const float x = random.range(-extent, extent);
             const float z = random.range(-extent, extent);
             const TerrainSample& terrainSample = terrain.sampleAt(x, z);
-            if (std::find(settings.allowedBiomes.begin(),
+            if (terrainSample.submerged ||
+                std::find(settings.allowedBiomes.begin(),
                           settings.allowedBiomes.end(),
                           terrainSample.biome) == settings.allowedBiomes.end() ||
                 std::find(settings.allowedSurfaces.begin(),

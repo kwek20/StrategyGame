@@ -10,6 +10,20 @@
 #include <stdexcept>
 
 namespace strategy {
+TerrainTagMask terrainTagFromName(std::string_view name) {
+    if (name == "land") return terrainTagBit(TerrainTag::land);
+    if (name == "water") return terrainTagBit(TerrainTag::water);
+    if (name == "shallow-water") return terrainTagBit(TerrainTag::shallowWater);
+    if (name == "deep-water") return terrainTagBit(TerrainTag::deepWater);
+    if (name == "shoreline") return terrainTagBit(TerrainTag::shoreline);
+    if (name == "submerged") return terrainTagBit(TerrainTag::submerged);
+    if (name == "dry") return terrainTagBit(TerrainTag::dry);
+    if (name == "vegetated") return terrainTagBit(TerrainTag::vegetated);
+    if (name == "rocky") return terrainTagBit(TerrainTag::rocky);
+    if (name == "buildable") return terrainTagBit(TerrainTag::buildable);
+    if (name == "no-build") return terrainTagBit(TerrainTag::noBuild);
+    return 0;
+}
 namespace {
 
 float smoothstep(float edge0, float edge1, float value) {
@@ -203,6 +217,9 @@ void Terrain::generateSemantics(std::uint32_t seed,
             if (surface == definitions.surfaces().end())
                 throw std::runtime_error("Terrain sample references an unknown surface");
             sample.surfaceColor = {surface->color[0], surface->color[1], surface->color[2]};
+            sample.tags = 0;
+            for (const std::string& tag : surface->tags)
+                sample.tags |= terrainTagFromName(tag);
             sample.materialWeights = {surface->materialWeights[0],
                                       surface->materialWeights[1],
                                       surface->materialWeights[2],
@@ -212,8 +229,38 @@ void Terrain::generateSemantics(std::uint32_t seed,
             sample.traversal = traversalClass(biome.traversal);
             sample.buildability = buildabilityClass(biome.buildability);
             sample.movementCosts = biome.movementCosts;
+            if (sample.submerged) {
+                sample.tags |= terrainTagBit(TerrainTag::water) |
+                               terrainTagBit(TerrainTag::submerged);
+                sample.tags |= biome.id.value == "deep_water"
+                                   ? terrainTagBit(TerrainTag::deepWater)
+                                   : terrainTagBit(TerrainTag::shallowWater);
+                sample.tags &= ~terrainTagBit(TerrainTag::land);
+            } else {
+                sample.tags |= terrainTagBit(TerrainTag::land);
+                sample.tags &= ~(terrainTagBit(TerrainTag::water) |
+                                 terrainTagBit(TerrainTag::submerged));
+            }
         }
     }
+    for (int z = 0; z < semanticCellCount; ++z)
+        for (int x = 0; x < semanticCellCount; ++x) {
+            TerrainSample& sample = semanticSamples_[static_cast<std::size_t>(
+                z * semanticCellCount + x)];
+            bool oppositeMedium = false;
+            for (const glm::ivec2 offset : {glm::ivec2{-1, 0}, glm::ivec2{1, 0},
+                                            glm::ivec2{0, -1}, glm::ivec2{0, 1}}) {
+                const int nx = x + offset.x, nz = z + offset.y;
+                if (nx < 0 || nz < 0 || nx >= semanticCellCount || nz >= semanticCellCount)
+                    continue;
+                if (semanticSamples_[static_cast<std::size_t>(nz * semanticCellCount + nx)]
+                        .submerged != sample.submerged) {
+                    oppositeMedium = true;
+                    break;
+                }
+            }
+            if (oppositeMedium) sample.tags |= terrainTagBit(TerrainTag::shoreline);
+        }
 }
 
 float Terrain::normalizedHeight(int x, int z) const {

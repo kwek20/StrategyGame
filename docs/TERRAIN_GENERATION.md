@@ -205,8 +205,11 @@ amphibious units, aircraft, and drones.
 
 ### 7. Select fair starting regions
 
-Replace fixed opposite-edge coordinates with candidate-region scoring while retaining opposite-side
-separation.
+The fixed opposite-edge formula has been replaced by deterministic candidate-region selection.
+Every candidate is centered in an interior chunk; the outermost chunk ring is never eligible.
+For two players, the globally farthest valid pair is selected. For larger future matches, each
+additional player maximizes its distance to its nearest already-selected opponent. Distance is the
+primary comparison; terrain and economic quality only break equal-distance choices.
 
 A valid starting region requires:
 
@@ -226,12 +229,26 @@ opening-playability validator and retry using the next deterministic candidate p
 Resources should be driven by biome suitability, independent potential fields, and local cluster
 rules. The result should contain rich areas, sparse areas, and occasional absence where permitted.
 
+Resource placement now has a typed terrain-tag boundary. Existing Scrap, Oil, and Uranium nodes
+explicitly require `land`, so ordinary resources cannot be generated under water. Definitions may
+require or forbid any combination of `land`, `water`, `shallow-water`, `deep-water`, `shoreline`,
+`submerged`, `dry`, `vegetated`, `rocky`, `buildable`, and `no-build`. Shoreline is derived on both
+sides of a land/water boundary rather than tied to one biome. This prepares later coastal and
+water-specific resources without special-casing their IDs in world generation. Per-resource
+height and slope limits may override the global fallback rules.
+
+Vegetation generation always rejects submerged samples independently of its biome and surface
+allowlists. Grass and trees therefore remain land-only even if a future data edit accidentally
+adds a water biome to one of those lists.
+
 Each resource definition should support:
 
 ```json
 {
   "generation": {
     "stream": "resources.scrap",
+    "requiredTerrainTags": ["land"],
+    "forbiddenTerrainTags": ["deep-water"],
     "allowedBiomes": ["dry_lowland", "temperate_plain"],
     "heightRange": [0.16, 0.62],
     "maximumSlopeDegrees": 12,
@@ -480,6 +497,10 @@ Completed in the first terrain-rewrite slice:
 Terrain rendering, water rendering, navigation, and decorative grass now consume the semantic
 biome/surface layer. More advanced hydrology and the remaining world-generation stages remain in
 the following phases.
+Water presentation uses semantic depth for a shallow-to-deep color gradient, a narrow animated
+shore tint and broken foam band, procedural wave normals with view-dependent highlights, and a
+matching depth tint on the underwater terrain bed. The fine terrain topology remains fixed for
+water at every camera distance, so the enhanced surface does not reintroduce crawling coastlines.
 An F4 terrain-debug view renders semantic colors and cell boundaries without fog and reports the
 biome, surface, traversal/buildability, slope, and regional fields beneath the cursor.
 
@@ -509,7 +530,9 @@ biome, surface, traversal/buildability, slope, and regional fields beneath the c
 
 ### Phase C: starts and resources
 
-10. Replace fixed start coordinates with candidate scoring and pair selection.
+10. ~~Replace fixed start coordinates with candidate scoring and pair selection.~~ Complete.
+    Headquarters require a dry, slope-valid footprint, sufficient connected local land, and viable
+    nearby opening-resource sites. Guaranteed resources consume the selected anchors directly.
 11. Extend resource-node definitions with biome, field, variable cluster, density, and capacity rules.
 12. Replace mirrored pair generation with resource regions and irregular clusters.
 13. Add path-cost fairness validation and deterministic compensation/retry.

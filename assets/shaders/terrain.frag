@@ -15,6 +15,7 @@ uniform sampler2D foundationTexture;
 uniform bool useExploration;
 uniform bool useFoundationTexture;
 uniform bool terrainDebug;
+uniform float waterLevel;
 out vec4 outColor;
 
 float terrainHash(vec2 point) {
@@ -91,6 +92,13 @@ void main() {
     vec3 lit = surface * (0.46 + diffuse * 0.64);
     float fog = smoothstep(fogRange.x, fogRange.y, cameraDistance);
     vec3 atmospheric = mix(lit, vec3(0.32, 0.36, 0.38), fog * 0.72);
+    float waterDepth = max(waterLevel - worldPosition.y, 0.0);
+    if (waterDepth > 0.0) {
+        float underwater = smoothstep(0.02, 2.8, waterDepth);
+        vec3 underwaterTint = mix(vec3(0.12, 0.29, 0.31),
+                                  vec3(0.025, 0.105, 0.16), underwater);
+        atmospheric = mix(atmospheric, underwaterTint, 0.40 + underwater * 0.35);
+    }
     float explored = useExploration
         ? texture(explorationMap, worldPosition.xz / explorationExtent + 0.5).r
         : 1.0;

@@ -7,6 +7,7 @@
 #include "world/Collision.hpp"
 #include "world/MapArea.hpp"
 #include "world/Navigation.hpp"
+#include "world/StartingPlacement.hpp"
 #include "world/World.hpp"
 
 #include <cmath>
@@ -34,6 +35,15 @@ int main() {
     const auto* workerWeapon = gameplay.weapon(strategy::WeaponId{"worker_unarmed"});
     const auto* constructionDrone =
         gameplay.unit(strategy::UnitArchetypeId{"construction_drone"});
+    const auto* scrapField = gameplay.resource(strategy::ResourceArchetypeId{"scrap_field"});
+    const auto* oilDeposit = gameplay.resource(strategy::ResourceArchetypeId{"oil_deposit"});
+    const auto* uraniumDeposit = gameplay.resource(strategy::ResourceArchetypeId{"uranium_deposit"});
+    for (const auto* resource : {scrapField, oilDeposit, uraniumDeposit})
+        valid = valid && resource && resource->generation &&
+                (resource->generation->requiredTerrainTags &
+                 strategy::terrainTagBit(strategy::TerrainTag::land)) != 0 &&
+                (resource->generation->requiredTerrainTags &
+                 strategy::terrainTagBit(strategy::TerrainTag::water)) == 0;
     const auto* commandHub = gameplay.building(strategy::BuildingArchetypeId{"command_hub"});
     const auto* chargingPad = gameplay.building(strategy::BuildingArchetypeId{"charging_pad"});
     const auto* extractor =
@@ -271,6 +281,24 @@ int main() {
         valid = valid && navigationTerrain.traversalAt(point.x, point.z) !=
                            strategy::TerrainTraversalClass::impassable;
     }
+    const glm::vec3 blockedDestination{navigationOrigin.x, 0.0F, navigationOrigin.y};
+    const glm::vec3 blockedStart{navigationOrigin.x - 30.0F, 0.0F, navigationOrigin.y};
+    const auto nearestReachableRoute = navigation.findPath(
+        navigationWorld, blockedStart, blockedDestination,
+        strategy::collisionRadius(gameplay, "worker"), 999);
+    valid = valid && !nearestReachableRoute.empty();
+    if (!nearestReachableRoute.empty()) {
+        const glm::vec3 endpoint = nearestReachableRoute.back();
+        valid = valid && strategy::signedDistance(
+                strategy::spatialShape(gameplay, navigationObstacle),
+                {endpoint.x, endpoint.z}) >= strategy::collisionRadius(gameplay, "worker") -
+                                                0.01F;
+        valid = valid && glm::distance(glm::vec2{endpoint.x, endpoint.z},
+                                      glm::vec2{blockedDestination.x, blockedDestination.z}) <
+                             glm::distance(glm::vec2{blockedStart.x, blockedStart.z},
+                                           glm::vec2{blockedDestination.x,
+                                                     blockedDestination.z});
+    }
     const strategy::SpatialShape navigationTarget =
         strategy::spatialShape(gameplay, navigationObstacle);
     for (const glm::vec3 start : std::array<glm::vec3, 4>{
@@ -318,6 +346,25 @@ int main() {
     navigation.rebuildTerrain(navigationTerrain, 20);
     const strategy::Terrain waterTerrain{0x5EED1234U};
     strategy::Navigation waterNavigation{waterTerrain, gameplay, 20};
+    const auto fourPlayerRegions = strategy::selectStartingRegions(
+        waterTerrain, gameplay, 20, 4);
+    valid = valid && fourPlayerRegions.size() == 4;
+    const float startChunkWidth = static_cast<float>(strategy::Terrain::chunkCellCount) *
+                                  strategy::Terrain::spacing;
+    const strategy::MapArea fourPlayerMap{20};
+    for (std::size_t left = 0; left < fourPlayerRegions.size(); ++left) {
+        valid = valid && fourPlayerRegions[left].chunk.x > 0 &&
+                fourPlayerRegions[left].chunk.y > 0 &&
+                fourPlayerRegions[left].chunk.x < 19 &&
+                fourPlayerRegions[left].chunk.y < 19 &&
+                std::abs(fourPlayerRegions[left].anchor.x) <=
+                    fourPlayerMap.halfExtent() - startChunkWidth &&
+                std::abs(fourPlayerRegions[left].anchor.y) <=
+                    fourPlayerMap.halfExtent() - startChunkWidth;
+        for (std::size_t right = left + 1; right < fourPlayerRegions.size(); ++right)
+            valid = valid && glm::distance(fourPlayerRegions[left].anchor,
+                                           fourPlayerRegions[right].anchor) >= startChunkWidth * 3.0F;
+    }
     glm::vec3 shoreLand{0.0F}, shoreWater{0.0F};
     bool foundShore = false;
     const strategy::MapArea waterNavigationMap{20};
@@ -356,8 +403,16 @@ int main() {
         const auto airCrossing = waterNavigation.findPath(
             navigationWorld, shoreLand, shoreWater, 0.0F, 999,
             {strategy::movementDomainBit(strategy::MovementDomain::air), true});
-        valid = valid && landIntoWater.empty() && waterIntoLand.empty() &&
+        valid = valid && !landIntoWater.empty() && !waterIntoLand.empty() &&
                 !amphibiousCrossing.empty() && !airCrossing.empty();
+        if (!landIntoWater.empty())
+            valid = valid && waterTerrain.movementCostAt(
+                    landIntoWater.back().x, landIntoWater.back().z,
+                    strategy::movementDomainBit(strategy::MovementDomain::land)) > 0.0F;
+        if (!waterIntoLand.empty())
+            valid = valid && waterTerrain.movementCostAt(
+                    waterIntoLand.back().x, waterIntoLand.back().z,
+                    strategy::movementDomainBit(strategy::MovementDomain::water)) > 0.0F;
     }
     glm::vec3 impassableDestination{0.0F};
     bool foundImpassable = false;
@@ -381,7 +436,11 @@ int main() {
             strategy::NavigationProfile{strategy::movementDomainBit(
                                             strategy::MovementDomain::air),
                                         true});
-        valid = valid && droneRoute.empty();
+        valid = valid && !droneRoute.empty();
+        if (!droneRoute.empty())
+            valid = valid && navigationTerrain.movementCostAt(
+                    droneRoute.back().x, droneRoute.back().z,
+                    strategy::movementDomainBit(strategy::MovementDomain::air)) > 0.0F;
     }
 
     navigation.rebuildTerrain(navigationTerrain, 17);
@@ -458,23 +517,17 @@ int main() {
     const auto verifyOpposingStarts = [&](std::uint32_t chunks) {
         strategy::GameSession sized{gameplay, 123U, "spain", "japan", "unassigned",
                                     "unassigned", chunks};
-        const strategy::Entity* firstHub = nullptr;
-        const strategy::Entity* secondHub = nullptr;
-        for (const strategy::Entity& entity : sized.world().entities()) {
-            if (entity.archetype.value != "command_hub") continue;
-            if (entity.authority.owner == 1) firstHub = &entity;
-            if (entity.authority.owner == 2) secondHub = &entity;
-        }
-        if (!firstHub || !secondHub) return false;
+        if (sized.startingAnchors().size() != 2) return false;
         const strategy::MapArea map{chunks};
-        const float inset = gameplay.matchRules().startingEdgeInsetChunks *
-                            strategy::Terrain::chunkCellCount * strategy::Terrain::spacing;
-        return firstHub->transform.position.x < 0.0F &&
-               secondHub->transform.position.x > 0.0F &&
-               std::abs(firstHub->transform.position.z) < 0.001F &&
-               std::abs(secondHub->transform.position.z) < 0.001F &&
-               std::abs((-map.halfExtent() + inset) - firstHub->transform.position.x) < 0.001F &&
-               std::abs((map.halfExtent() - inset) - secondHub->transform.position.x) < 0.001F;
+        const float edgeChunk = static_cast<float>(strategy::Terrain::chunkCellCount) *
+                                strategy::Terrain::spacing;
+        const glm::vec2 delta = sized.startingAnchors()[0] - sized.startingAnchors()[1];
+        return glm::length(delta) >= map.extent() * 0.60F &&
+               std::all_of(sized.startingAnchors().begin(), sized.startingAnchors().end(),
+                           [&](glm::vec2 anchor) {
+                               return std::abs(anchor.x) <= map.halfExtent() - edgeChunk &&
+                                      std::abs(anchor.y) <= map.halfExtent() - edgeChunk;
+                           });
     };
     valid = valid && verifyOpposingStarts(10) && verifyOpposingStarts(20);
 
@@ -571,31 +624,30 @@ int main() {
         if (resource.authority.owner != 0 || !resource.resource)
             continue;
         ++resourceCount;
-        bool mirrored = false;
-        for (const strategy::Entity& candidate : session.world().entities()) {
-            if (candidate.authority.owner == 0 && candidate.archetype.value == resource.archetype.value &&
-                std::abs(candidate.transform.position.x + resource.transform.position.x) < 0.001F &&
-                std::abs(candidate.transform.position.z + resource.transform.position.z) < 0.001F) {
-                mirrored = true;
-                break;
-            }
-        }
-        valid = valid && mirrored;
     }
     valid = valid && resourceCount >= 20;
-    for (const glm::vec2 base : {glm::vec2{-28.0F, -28.0F}, glm::vec2{28.0F, 28.0F}}) {
+    valid = valid && session.startingAnchors().size() == 2;
+    const float chunkWidth = static_cast<float>(strategy::Terrain::chunkCellCount) *
+                             strategy::Terrain::spacing;
+    const strategy::MapArea sessionMap{session.mapChunksPerSide()};
+    for (const glm::vec2 base : session.startingAnchors()) {
+        // A selected anchor and the headquarters footprint must remain outside every edge chunk.
+        valid = valid && std::abs(base.x) <= sessionMap.halfExtent() - chunkWidth &&
+                std::abs(base.y) <= sessionMap.halfExtent() - chunkWidth;
         std::size_t nearbyScrap = 0;
         float nearbyCapacity = 0.0F;
         for (const strategy::Entity& resource : session.world().entities()) {
             if (resource.archetype.value != "scrap_field" || !resource.resource) continue;
             const glm::vec2 position{resource.transform.position.x, resource.transform.position.z};
-            if (glm::distance(position, base) <= 24.01F) {
+            if (glm::distance(position, base) <= 42.01F) {
                 ++nearbyScrap;
                 nearbyCapacity += resource.resource.remaining;
             }
         }
         valid = valid && nearbyScrap >= 3 && nearbyCapacity >= 480.0F;
     }
+    const glm::vec2 anchorDelta = session.startingAnchors()[0] - session.startingAnchors()[1];
+    valid = valid && glm::length(anchorDelta) >= sessionMap.extent() * 0.65F;
 
     strategy::GameSession configuredMatch{gameplay, 123U, "spain", "japan",
         "unassigned", "unassigned", 20, 2.0F, 1.5F};

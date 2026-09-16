@@ -69,6 +69,7 @@ int main() {
 
     std::size_t buildableSamples = 0;
     std::size_t submergedSamples = 0;
+    std::size_t shorelineSamples = 0;
     for (int z = 0; z < strategy::Terrain::semanticCellCount; ++z) {
         for (int x = 0; x < strategy::Terrain::semanticCellCount; ++x) {
             const float worldX = -halfExtent +
@@ -104,11 +105,20 @@ int main() {
             if (sample.submerged) {
                 ++submergedSamples;
                 valid = valid && (sample.biome.value == "deep_water" ||
-                                  sample.biome.value == "shallow_water");
+                                  sample.biome.value == "shallow_water") &&
+                        (sample.tags & strategy::terrainTagBit(strategy::TerrainTag::water)) != 0 &&
+                        (sample.tags & strategy::terrainTagBit(strategy::TerrainTag::submerged)) != 0 &&
+                        (sample.tags & strategy::terrainTagBit(strategy::TerrainTag::land)) == 0;
+            } else {
+                valid = valid &&
+                        (sample.tags & strategy::terrainTagBit(strategy::TerrainTag::land)) != 0 &&
+                        (sample.tags & strategy::terrainTagBit(strategy::TerrainTag::water)) == 0;
             }
+            if ((sample.tags & strategy::terrainTagBit(strategy::TerrainTag::shoreline)) != 0)
+                ++shorelineSamples;
         }
     }
-    valid = valid && buildableSamples > 0 && submergedSamples > 0;
+    valid = valid && buildableSamples > 0 && submergedSamples > 0 && shorelineSamples > 0;
 
     bool checkedWaterPlacement = false;
     for (int z = 0; z < strategy::Terrain::semanticCellCount && !checkedWaterPlacement; ++z)

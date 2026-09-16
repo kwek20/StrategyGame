@@ -8,6 +8,7 @@
 #include <array>
 #include <bit>
 #include <cmath>
+#include <deque>
 #include <glm/common.hpp>
 #include <limits>
 #include <queue>
@@ -165,10 +166,71 @@ std::vector<glm::vec3> Navigation::findPath(
     const World& world, glm::vec3 start, glm::vec3 destination, float radius, EntityId ignored,
     NavigationProfile profile) {
     const int target = indexOf(gridCoordinate(destination.x), gridCoordinate(destination.z));
-    auto result = pathFromGoals(world, start, {target}, {destination.x, destination.z}, radius,
-                                ignored, static_cast<std::uint64_t>(target),
-                                profile);
-    if (!result.empty()) result.back() = destination;
+    const auto& cached = occupancy(world, radius, profile);
+    const int source = indexOf(gridCoordinate(start.x), gridCoordinate(start.z));
+    const SpatialShape actorAtDestination{FootprintShape::circle,
+                                          {destination.x, destination.z}, radius,
+                                          glm::vec2{radius}, 0.0F};
+    const bool preciseDestinationValid =
+        cached[target] != 0 && map_.contains({destination.x, destination.z}, radius) &&
+        (profile.ignoresEntityObstacles ||
+         !overlapsObject(world, definitions_, actorAtDestination, ignored));
+    auto direct = pathFromGoals(world, start, {target}, {destination.x, destination.z}, radius,
+                                ignored, static_cast<std::uint64_t>(target), profile);
+    if (!direct.empty() && cached[target] != 0) {
+        if (preciseDestinationValid) direct.back() = destination;
+        return direct;
+    }
+
+    std::vector<std::uint8_t> passable = cached;
+    passable[source] = 1;
+
+    // An order may point into water, a cliff, a building, outside the map, or a
+    // disconnected region. Search the actor's connected component and choose the
+    // reachable cell closest to the requested world-space point. Stable index
+    // tie-breaking keeps this authoritative choice deterministic.
+    std::vector<std::uint8_t> visited(passable.size(), 0);
+    std::deque<int> open;
+    open.push_back(source);
+    visited[source] = 1;
+    int resolved = source;
+    auto distanceSquared = [&](int index) {
+        const glm::vec3 position = positionOf(index % side_, index / side_);
+        const glm::vec2 offset{position.x - destination.x, position.z - destination.z};
+        return glm::dot(offset, offset);
+    };
+    float bestDistance = distanceSquared(source);
+    while (!open.empty()) {
+        const int current = open.front();
+        open.pop_front();
+        const float candidateDistance = distanceSquared(current);
+        if (candidateDistance < bestDistance ||
+            (candidateDistance == bestDistance && current < resolved)) {
+            resolved = current;
+            bestDistance = candidateDistance;
+        }
+        const int x = current % side_, z = current / side_;
+        for (const auto& direction : directions) {
+            const int nx = x + direction[0], nz = z + direction[1];
+            if (nx < 0 || nz < 0 || nx >= side_ || nz >= side_) continue;
+            const int next = indexOf(nx, nz);
+            if (visited[next] || !passable[next]) continue;
+            if (direction[0] && direction[1] &&
+                (!passable[indexOf(x + direction[0], z)] ||
+                 !passable[indexOf(x, z + direction[1])]))
+                continue;
+            visited[next] = 1;
+            open.push_back(next);
+        }
+    }
+
+    if (resolved == source) return {start};
+    std::uint64_t goalKey = static_cast<std::uint64_t>(target);
+    mix(goalKey, static_cast<std::uint64_t>(resolved));
+    auto result = pathFromGoals(world, start, {resolved}, {destination.x, destination.z}, radius,
+                                ignored, goalKey, profile);
+    if (!result.empty() && resolved == target && preciseDestinationValid)
+        result.back() = destination;
     return result;
 }
 

@@ -41,6 +41,9 @@ int main() {
             const strategy::TerrainSample& terrainSample = terrain.sampleAt(
                 entity.transform.position.x, entity.transform.position.z);
             valid = valid && rule != vegetation.end() &&
+                    !terrainSample.submerged &&
+                    (terrainSample.tags &
+                     strategy::terrainTagBit(strategy::TerrainTag::land)) != 0 &&
                     std::find(rule->allowedBiomes.begin(),
                               rule->allowedBiomes.end(),
                               terrainSample.biome) != rule->allowedBiomes.end() &&

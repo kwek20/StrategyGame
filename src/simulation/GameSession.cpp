@@ -176,6 +176,9 @@ GameSession::GameSession(const DefinitionRegistry& definitions,
         for (const auto& [resource, amount] : gameplay_.matchRules().startingResources)
             player.resources[resource] =
                 amount * std::clamp(startingResourcesScale, 0.0F, 4.0F);
+    for (const StartingRegion& region : selectStartingRegions(
+             terrain_, gameplay_, mapChunksPerSide_, players_.players().size()))
+        startingAnchors_.push_back(region.anchor);
     const auto createStartingEntities = [this](PlayerId player,
                                                const auto& starts,
                                                float rotation) {
@@ -184,7 +187,7 @@ GameSession::GameSession(const DefinitionRegistry& definitions,
                 world_.createEntity(Text::get(start.nameKey), start.archetype, player);
             initializeEntity(entity);
             entity.transform.position = startingEntityPosition(
-                start, player, gameplay_.matchRules(), mapChunksPerSide_);
+                start, startingAnchors_.at(static_cast<std::size_t>(player - 1)));
             if (!entity.flight)
                 entity.transform.position.y = 0.0F;
             else
@@ -215,7 +218,7 @@ GameSession::GameSession(const DefinitionRegistry& definitions,
         terrain_.applyFoundation(foundation);
     }
     populateResources(world_, terrain_, gameplay_, terrainSeed,
-                      mapChunksPerSide_, resourceAbundanceScale_);
+                      mapChunksPerSide_, resourceAbundanceScale_, startingAnchors_);
     populateVegetation(world_, terrain_, gameplay_, terrainSeed_, mapChunksPerSide_);
     updateExploration();
 }
@@ -420,8 +423,15 @@ void GameSession::apply(const PlayerCommand& command) {
                                          entity->id,
                                          navigationProfile(gameplay_, *entity));
                 entity->transient.navigationWaypoint = 0;
-                entity->transient.navigationRetrySeconds =
-                    entity->transient.navigationPath.empty() ? 0.5F : 0.0F;
+                if (!entity->transient.navigationPath.empty()) {
+                    entity->unitControl.strategicDestination =
+                        entity->transient.navigationPath.back();
+                    entity->transient.navigationRetrySeconds = 0.0F;
+                } else {
+                    entity->unitControl.hasStrategicDestination = false;
+                    entity->unitControl.order = UnitOrderKind::idle;
+                    entity->transient.navigationRetrySeconds = 0.0F;
+                }
             } else if constexpr (std::is_same_v<Type, GatherResourceCommand>) {
                 Entity* resource = world_.findEntity(payload.resource);
                 if (entity->battery && entity->battery.charge <= 0.0F) {

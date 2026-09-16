@@ -27,6 +27,25 @@ std::vector<std::string> strings(const rapidjson::Value& object, const char* key
     return result;
 }
 
+TerrainTagMask terrainTags(const rapidjson::Value& object,
+                           const char* key,
+                           const std::string& context) {
+    TerrainTagMask result = 0;
+    if (!object.HasMember(key)) return result;
+    if (!object[key].IsArray())
+        throw std::runtime_error(context + " requires an array field '" + key + "'");
+    for (const auto& value : object[key].GetArray()) {
+        if (!value.IsString())
+            throw std::runtime_error(context + " contains a non-string terrain tag");
+        const TerrainTagMask tag = terrainTagFromName(value.GetString());
+        if (tag == 0)
+            throw std::runtime_error(context + " contains unknown terrain tag '" +
+                                     std::string(value.GetString()) + "'");
+        result |= tag;
+    }
+    return result;
+}
+
 float requiredNumber(const rapidjson::Value& object,
                      const char* key,
                      const std::string& context) {
@@ -237,6 +256,30 @@ void DefinitionRegistry::loadArchetypes(const std::filesystem::path& path,
                     ? generation["startingMinimumDistance"].GetFloat() : 0.0F,
                 generation.HasMember("startingMaximumDistance") && generation["startingMaximumDistance"].IsNumber()
                     ? generation["startingMaximumDistance"].GetFloat() : 0.0F};
+            const std::string context = "Definition '" + archetype.id + "' generation";
+            if (generation.HasMember("requiredTerrainTags"))
+                archetype.generation->requiredTerrainTags =
+                    terrainTags(generation, "requiredTerrainTags", context);
+            archetype.generation->forbiddenTerrainTags =
+                terrainTags(generation, "forbiddenTerrainTags", context);
+            if (generation.HasMember("minimumHeight"))
+                archetype.generation->minimumHeight =
+                    requiredNumber(generation, "minimumHeight", context);
+            if (generation.HasMember("maximumHeight"))
+                archetype.generation->maximumHeight =
+                    requiredNumber(generation, "maximumHeight", context);
+            if (generation.HasMember("maximumSlopeDegrees"))
+                archetype.generation->maximumSlope =
+                    requiredNumber(generation, "maximumSlopeDegrees", context);
+            if ((archetype.generation->minimumHeight >= 0.0F &&
+                 archetype.generation->minimumHeight > 1.0F) ||
+                (archetype.generation->maximumHeight >= 0.0F &&
+                 archetype.generation->maximumHeight > 1.0F) ||
+                (archetype.generation->minimumHeight >= 0.0F &&
+                 archetype.generation->maximumHeight >= 0.0F &&
+                 archetype.generation->minimumHeight > archetype.generation->maximumHeight) ||
+                archetype.generation->maximumSlope > 90.0F)
+                throw std::runtime_error(context + " has invalid terrain limits");
             if (archetype.generation->startingNodesPerPlayer > 0 &&
                 (archetype.generation->startingMinimumDistance <= 0.0F ||
                  archetype.generation->startingMaximumDistance < archetype.generation->startingMinimumDistance))
