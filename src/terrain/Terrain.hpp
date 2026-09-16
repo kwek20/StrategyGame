@@ -30,6 +30,7 @@ struct TerrainSample {
     glm::vec4 materialWeights{1.0F, 0.0F, 0.0F, 0.0F};
     TerrainTraversalClass traversal{TerrainTraversalClass::open};
     TerrainBuildabilityClass buildability{TerrainBuildabilityClass::buildable};
+    std::array<float, 3> movementCosts{1.0F, 0.0F, 1.0F};
 };
 
 struct TerrainFootprint {
@@ -98,6 +99,8 @@ class Terrain final {
     [[nodiscard]] const TerrainSample& sampleAt(float worldX, float worldZ) const;
     [[nodiscard]] TerrainBiomeId biomeAt(float worldX, float worldZ) const;
     [[nodiscard]] TerrainTraversalClass traversalAt(float worldX, float worldZ) const;
+    [[nodiscard]] float movementCostAt(float worldX, float worldZ,
+                                       MovementDomainMask domains) const;
     [[nodiscard]] bool isBuildableAt(float worldX, float worldZ) const;
     [[nodiscard]] glm::vec3 normalAt(int x, int z) const;
     [[nodiscard]] glm::vec3 colorAt(float worldX, float worldZ) const;

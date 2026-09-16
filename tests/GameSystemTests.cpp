@@ -64,6 +64,11 @@ int main() {
     valid = valid && alloy && alloy->enabled && power && power->enabled && scrap &&
             scrap->storage == strategy::ResourceStorageKind::cargo && workerWeapon && workerWeapon->cooldownTicks == 30 &&
             constructionDrone && constructionDrone->movement.type == "flying" &&
+            strategy::hasMovementDomain(constructionDrone->movement.domains,
+                                        strategy::MovementDomain::air) &&
+            !strategy::hasMovementDomain(constructionDrone->movement.domains,
+                                         strategy::MovementDomain::land) &&
+            constructionDrone->movement.ignoresEntityObstacles &&
             constructionDrone->battery && commandHub && commandHub->powerDevice &&
             chargingPad && chargingPad->powerDevice && extractor && extractor->powerDevice &&
             factory && factory->powerDevice && sensorTower && sensorTower->powerDevice &&
@@ -327,7 +332,10 @@ int main() {
         const auto droneRoute = navigation.findPath(
             navigationWorld,
             {navigationOrigin.x - 18.0F, 0.0F, navigationOrigin.y},
-            impassableDestination, 0.0F, 999, true);
+            impassableDestination, 0.0F, 999,
+            strategy::NavigationProfile{strategy::movementDomainBit(
+                                            strategy::MovementDomain::air),
+                                        true});
         valid = valid && droneRoute.empty();
     }
 

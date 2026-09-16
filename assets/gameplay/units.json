@@ -11,7 +11,7 @@
       "availableUpgrades": [],
       "tags": ["unit", "worker", "civilian", "melee"],
       "health": 100,
-      "movement": { "type": "ground", "speed": 7 },
+      "movement": { "type": "ground", "domains": ["land"], "speed": 7 },
       "vision": { "range": 10 },
       "cargo": { "capacity": 10 },
       "weapons": ["worker_unarmed"],
@@ -30,7 +30,7 @@
       "availableUpgrades": [],
       "tags": ["unit", "drone", "flying", "worker", "construction"],
       "health": 100,
-      "movement": { "type": "flying", "speed": 8 },
+      "movement": { "type": "flying", "domains": ["air"], "ignoreEntityObstacles": true, "speed": 8 },
       "vision": { "range": 14 },
       "cargo": { "capacity": 10 },
       "battery": {

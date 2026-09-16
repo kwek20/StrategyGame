@@ -1,8 +1,10 @@
 #pragma once
 
 #include "core/DefinitionId.hpp"
+#include "world/MovementDomain.hpp"
 
 #include <cstdint>
+#include <array>
 #include <filesystem>
 #include <string>
 #include <unordered_map>
@@ -69,6 +71,7 @@ struct TerrainBiomeDefinition {
     TerrainSurfaceId surface;
     std::string traversal;
     std::string buildability;
+    std::array<float, 3> movementCosts{1.0F, 0.0F, 1.0F};
 };
 
 struct TerrainSurfaceDefinition {

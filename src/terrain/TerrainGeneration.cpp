@@ -181,6 +181,26 @@ TerrainGenerationDefinitions TerrainGenerationDefinitions::load(
         biome.surface = TerrainSurfaceId{requiredString(value, "surface", id)};
         biome.traversal = requiredString(value, "traversal", id);
         biome.buildability = requiredString(value, "buildability", id);
+        biome.movementCosts = biome.traversal == "impassable"
+                                  ? std::array<float, 3>{0.0F, 0.0F, 0.0F}
+                                  : std::array<float, 3>{biome.traversal == "difficult" ? 2.25F
+                                                                                       : 1.0F,
+                                                         0.0F, 1.0F};
+        if (value.HasMember("movementCosts")) {
+            if (!value["movementCosts"].IsObject())
+                throw std::runtime_error("Terrain biome movementCosts must be an object: " + id);
+            biome.movementCosts.fill(0.0F);
+            const auto& costs = value["movementCosts"];
+            for (const MovementDomain domain : movementDomains) {
+                const std::string name{movementDomainName(domain)};
+                if (!costs.HasMember(name.c_str())) continue;
+                if (!costs[name.c_str()].IsNumber() || costs[name.c_str()].GetFloat() <= 0.0F)
+                    throw std::runtime_error("Terrain biome has invalid movement cost for " +
+                                             name + ": " + id);
+                biome.movementCosts[static_cast<std::size_t>(domain)] =
+                    costs[name.c_str()].GetFloat();
+            }
+        }
         result.biomes_.push_back(std::move(biome));
     }
     if (std::none_of(result.biomes_.begin(), result.biomes_.end(), [&](const auto& biome) {

@@ -39,6 +39,14 @@ float interactionRange(const DefinitionRegistry& definitions,
     return definition->interactionMargin;
 }
 
+NavigationProfile navigationProfile(const DefinitionRegistry& definitions,
+                                    const Entity& entity) {
+    const EntityArchetype* archetype = definitions.archetype(entity.archetype);
+    return archetype ? NavigationProfile{archetype->movement.domains,
+                                         archetype->movement.ignoresEntityObstacles}
+                     : NavigationProfile{};
+}
+
 bool canReceiveCargo(const Entity& entity) {
     return entity.processor && entity.power && entity.power.enabled && isOperational(entity) &&
            entity.power.state == PowerOperationalState::powered;
@@ -410,7 +418,7 @@ void GameSession::apply(const PlayerCommand& command) {
                                          payload.destination,
                                          collisionRadius(gameplay_, entity->archetype),
                                          entity->id,
-                                         entity->flight.present);
+                                         navigationProfile(gameplay_, *entity));
                 entity->transient.navigationWaypoint = 0;
                 entity->transient.navigationRetrySeconds =
                     entity->transient.navigationPath.empty() ? 0.5F : 0.0F;
@@ -443,7 +451,7 @@ void GameSession::apply(const PlayerCommand& command) {
                                 {entity->transform.position.x, entity->transform.position.z},
                                 resource->id, entity->id},
                             collisionRadius(gameplay_, entity->archetype), entity->id,
-                            entity->flight.present).empty()) {
+                            navigationProfile(gameplay_, *entity)).empty()) {
                         resourceEvents_.push_back({ResourceEventKind::sourceInaccessible, tick_,
                                                    command.player, entity->id, resource->id,
                                                    resource->resource.type, 0.0F});
@@ -1315,7 +1323,7 @@ void GameSession::simulateTick() {
                             {entity.transform.position.x, entity.transform.position.z},
                             candidate.id, entity.id},
                         collisionRadius(gameplay_, entity.archetype), entity.id,
-                        entity.flight.present).empty();
+                        navigationProfile(gameplay_, entity)).empty();
                 };
                 if (entity.gatherer.deliveryTarget != 0) {
                     Entity* committed = world_.findEntity(entity.gatherer.deliveryTarget);
@@ -1463,13 +1471,13 @@ void GameSession::simulateTick() {
                             navigationTarget->id,
                             entity.id},
                         collisionRadius(gameplay_, entity.archetype), entity.id,
-                        entity.flight.present);
+                        navigationProfile(gameplay_, entity));
                 } else {
                     entity.transient.navigationPath = navigation_.findPath(
                         world_, entity.transform.position,
                         entity.unitControl.strategicDestination,
                         collisionRadius(gameplay_, entity.archetype), entity.id,
-                        entity.flight.present);
+                        navigationProfile(gameplay_, entity));
                 }
                 entity.transient.navigationWaypoint = 0;
                 if (entity.transient.navigationPath.empty()) {
@@ -1557,11 +1565,13 @@ void GameSession::simulateTick() {
                 beginRecharge(entity);
         }
         const float radius = flying ? 0.0F : collisionRadius(gameplay_, entity.archetype);
+        const NavigationProfile movementProfile = navigationProfile(gameplay_, entity);
         const MapArea map{mapChunksPerSide_};
-        const auto validPosition = [this, &entity, radius, map, flying](glm::vec2 candidate) {
+        const auto validPosition = [this, &entity, radius, map, flying,
+                                    movementProfile](glm::vec2 candidate) {
             return map.contains(candidate, radius) &&
-                   terrain_.traversalAt(candidate.x, candidate.y) !=
-                       TerrainTraversalClass::impassable &&
+                   terrain_.movementCostAt(candidate.x, candidate.y,
+                                           movementProfile.domains) > 0.0F &&
                    (flying || !overlapsObject(world_, gameplay_, candidate, radius, entity.id));
         };
         if (validPosition(current + delta)) {

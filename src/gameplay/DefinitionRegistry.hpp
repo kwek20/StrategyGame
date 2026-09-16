@@ -150,6 +150,8 @@ struct CountryDefinition {
 struct MovementDefinition {
     std::string type{"ground"};
     float speed{0.0F};
+    MovementDomainMask domains{movementDomainBit(MovementDomain::land)};
+    bool ignoresEntityObstacles{false};
 };
 
 struct BatteryDefinition {

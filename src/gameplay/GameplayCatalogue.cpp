@@ -251,6 +251,34 @@ void DefinitionRegistry::loadArchetypes(const std::filesystem::path& path,
                                          archetype.movement.type + "'");
             archetype.movement.speed =
                 requiredNumber(movement, "speed", "Definition '" + archetype.id + "' movement");
+            if (!movement.HasMember("domains") || !movement["domains"].IsArray() ||
+                movement["domains"].Empty())
+                throw std::runtime_error("Definition '" + archetype.id +
+                                         "' movement requires at least one domain");
+            archetype.movement.domains = 0;
+            for (const auto& domainValue : movement["domains"].GetArray()) {
+                if (!domainValue.IsString())
+                    throw std::runtime_error("Definition '" + archetype.id +
+                                             "' has a non-string movement domain");
+                const std::string_view domain = domainValue.GetString();
+                if (domain == "land")
+                    archetype.movement.domains |= movementDomainBit(MovementDomain::land);
+                else if (domain == "water")
+                    archetype.movement.domains |= movementDomainBit(MovementDomain::water);
+                else if (domain == "air")
+                    archetype.movement.domains |= movementDomainBit(MovementDomain::air);
+                else
+                    throw std::runtime_error("Definition '" + archetype.id +
+                                             "' has unknown movement domain '" +
+                                             std::string(domain) + "'");
+            }
+            if (movement.HasMember("ignoreEntityObstacles")) {
+                if (!movement["ignoreEntityObstacles"].IsBool())
+                    throw std::runtime_error("Definition '" + archetype.id +
+                                             "' ignoreEntityObstacles must be boolean");
+                archetype.movement.ignoresEntityObstacles =
+                    movement["ignoreEntityObstacles"].GetBool();
+            }
             archetype.stats[GameplayStat::movementSpeed] = archetype.movement.speed;
         }
         if (item->value.HasMember("cargo") && item->value["cargo"].IsObject())

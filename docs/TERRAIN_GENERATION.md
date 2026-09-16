@@ -163,10 +163,12 @@ The first water implementation can use a stable global water level:
 
 - Terrain below the water level renders with a water surface.
 - Store authoritative `waterDepth` and `isSubmerged` values per terrain/navigation cell.
-- Ground navigation treats water as impassable.
+- Terrain supplies independent traversal costs for land, water, and air domains. Deep water denies
+  land movement while allowing water and air movement.
 - Building definitions state whether shallow/deep water placement is permitted; initially all
   existing buildings require dry land.
-- Drones may fly over water because they ignore ground traversal.
+- Drones may fly over water because their movement profile includes the air domain. Ignoring entity
+  obstacles is a separate property and does not grant access through terrain barriers.
 - Fog and visibility continue across water unless a future rule changes them.
 
 Later hydrology may add lakes and rivers using basin/fill and flow fields. River generation should
@@ -182,12 +184,17 @@ For every authoritative terrain cell, derive and cache:
 - Gradient and slope angle
 - Biome ID
 - Water depth
-- Traversal class: open, difficult, or impassable
+- Legacy traversal class: open, difficult, or impassable (used for broad terrain semantics)
+- Per-domain movement costs for land, water, and air; a missing/zero cost denies that domain
 - Buildability class
 - Material/surface tags
-- Optional movement-cost multiplier for future unit classes
+- Movement profile on each unit archetype, including one or more allowed domains and whether it
+  ignores entity obstacles
 
-Initial impassable terrain consists of water and slopes above the configured ground-unit limit.
+Initial land-impassable terrain consists of water and slopes above the configured ground-unit limit.
+Water-only units use the water domain, amphibious units carry both land and water domains and use
+the cheapest valid cost per cell, and aircraft use air. Explicit universal barriers omit all three
+domain costs, so even aircraft and drones cannot cross them.
 Mountain chains should form useful strategic barriers while leaving deterministic passes. Validate
 that each player can reach required opening objectives and that the traversable land graph is not
 accidentally split unless the selected map rules explicitly allow islands.
@@ -480,14 +487,16 @@ biome, surface, traversal/buildability, slope, and regional fields beneath the c
 2. Introduce world-coordinate regional fields and remove per-map min/max normalization.
 3. Add authoritative biome/surface/traversal semantic grids.
 4. ~~Make renderer colors/material blending consume biome and surface definitions.~~ Complete.
-5. ~~Make navigation consume traversal semantics.~~ Complete. Open terrain uses normal cost,
-   difficult terrain uses weighted routing and reduced ground speed, and impassable terrain blocks
-   both ground units and flying drones. Drones still ignore entity obstacles.
+5. ~~Make navigation consume traversal semantics.~~ Complete. Navigation and its flow-field caches
+   use typed land/water/air movement profiles. Open and difficult terrain have data-defined costs,
+   amphibious profiles can select either land or water per cell, entity-obstacle bypass is separate,
+   and explicit universal barriers block every domain.
 
 ### Phase B: water and barriers
 
 6. Add stable water levels, water occupancy, and a basic water render pass.
-7. Define ground-unit and building interaction with water.
+7. Define water occupancy and building interaction with water. Unit traversal domains and the
+   deep-water land/water/air rules are already established.
 8. Generate mountain masks, impassable slopes, and deliberate passes.
 9. Add connectivity/buildability validation.
 

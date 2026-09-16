@@ -208,6 +208,7 @@ void Terrain::generateSemantics(std::uint32_t seed,
                                       sample.materialWeights.z + sample.materialWeights.w;
             sample.traversal = traversalClass(biome.traversal);
             sample.buildability = buildabilityClass(biome.buildability);
+            sample.movementCosts = biome.movementCosts;
         }
     }
 }
@@ -269,6 +270,17 @@ TerrainBiomeId Terrain::biomeAt(float worldX, float worldZ) const {
 
 TerrainTraversalClass Terrain::traversalAt(float worldX, float worldZ) const {
     return sampleAt(worldX, worldZ).traversal;
+}
+
+float Terrain::movementCostAt(float worldX, float worldZ, MovementDomainMask domains) const {
+    const TerrainSample& sample = sampleAt(worldX, worldZ);
+    float result = std::numeric_limits<float>::max();
+    for (const MovementDomain domain : movementDomains) {
+        if (!hasMovementDomain(domains, domain)) continue;
+        const float cost = sample.movementCosts[static_cast<std::size_t>(domain)];
+        if (cost > 0.0F) result = std::min(result, cost);
+    }
+    return result == std::numeric_limits<float>::max() ? 0.0F : result;
 }
 
 bool Terrain::isBuildableAt(float worldX, float worldZ) const {
