@@ -13,7 +13,8 @@ uniform bool useExploration;
 out vec4 outColor;
 
 void main() {
-    if (terrainHeight >= waterLevel - 0.01)
+    float visualDepth = waterLevel - terrainHeight;
+    if (visualDepth <= 0.01)
         discard;
     if (useExploration &&
         any(greaterThan(abs(worldPosition.xz), vec2(explorationExtent * 0.5))))
@@ -25,6 +26,8 @@ void main() {
     vec3 shallow = vec3(0.10, 0.42, 0.52);
     vec3 deep = vec3(0.025, 0.16, 0.29);
     vec3 water = mix(deep, shallow, 0.38 + shimmer * 0.20);
+    float shoreline = 1.0 - smoothstep(0.03, 0.42, visualDepth);
+    water = mix(water, vec3(0.62, 0.78, 0.76), shoreline * (0.34 + shimmer * 0.12));
 
     float distanceToCamera = distance(cameraPosition.xz, worldPosition.xz);
     float fog = smoothstep(fogRange.x, fogRange.y, distanceToCamera);
@@ -36,5 +39,6 @@ void main() {
         water = vec3(0.008, 0.012, 0.018);
     else if (explored < 0.75)
         water *= 0.42;
-    outColor = vec4(water, explored < 0.12 ? 0.82 : 0.72);
+    float alpha = mix(0.58, 0.76, smoothstep(0.04, 1.4, visualDepth));
+    outColor = vec4(water, explored < 0.12 ? 0.82 : alpha);
 }

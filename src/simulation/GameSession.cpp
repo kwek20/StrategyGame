@@ -662,9 +662,11 @@ void GameSession::apply(const PlayerCommand& command) {
                 if (std::abs(placementShape.center.x) + bounds.x > map.halfExtent() ||
                     std::abs(placementShape.center.y) + bounds.y > map.halfExtent()) return;
                 if (overlapsObject(world_, gameplay_, placementShape, 0, true)) return;
-                const FootprintFit footprint = terrain_.fitFootprint(payload.position.x,
-                                                                     payload.position.z, shape);
-                if (!footprint.valid) return;
+                const TerrainPlacementResult placement = terrain_.evaluatePlacement(
+                    payload.position.x, payload.position.z, shape,
+                    buildingDefinition ? buildingDefinition->placement
+                                       : TerrainPlacementProfile{});
+                if (!placement.valid()) return;
                 for (const auto& [resource, amount] : recipe->cost)
                     if (player->resources[resource] < amount) return;
                 for (const auto& [resource, amount] : recipe->cost) player->resources[resource] -= amount;

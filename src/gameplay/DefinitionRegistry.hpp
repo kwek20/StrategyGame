@@ -181,6 +181,7 @@ struct EntityArchetype {
     MovementDefinition movement;
     std::optional<BatteryDefinition> battery;
     std::optional<TerrainFootprint> footprint;
+    TerrainPlacementProfile placement;
     std::optional<PowerDeviceId> powerDevice;
     std::vector<WeaponId> weapons;
     std::unordered_set<std::string> tags, components;

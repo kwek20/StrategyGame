@@ -90,6 +90,7 @@ class PlayState final : public GameState {
     mutable std::optional<glm::vec3> pendingConstructionPosition_;
     mutable std::optional<glm::vec2> constructionCursorScreen_;
     mutable bool constructionPreviewValid_{false};
+    mutable std::string constructionPreviewReason_;
     mutable GameplayParticlePresenter particlePresenter_;
 
     void setMouseCaptured(bool captured);

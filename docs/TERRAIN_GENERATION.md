@@ -499,8 +499,11 @@ biome, surface, traversal/buildability, slope, and regional fields beneath the c
 6. ~~Add stable water levels, water occupancy, and a basic water render pass.~~ Complete. The
    generator owns a normalized water level, semantic cells expose deterministic depth/submersion,
    and a dedicated fog-aware translucent render pass draws the matching coastline.
-7. Define water occupancy and building interaction with water. Unit traversal domains and the
-   deep-water land/water/air rules are already established.
+7. ~~Define water occupancy and building interaction with water.~~ Complete. Buildings resolve a
+   definition-backed land/shallow/deep placement profile across their entire footprint, with an
+   optional shoreline requirement. Live preview, authoritative construction, and the map editor
+   share the same evaluator and expose localized rejection reasons. Land, water, amphibious, and
+   air navigation profiles have focused shoreline-crossing tests.
 8. Generate mountain masks, impassable slopes, and deliberate passes.
 9. Add connectivity/buildability validation.
 

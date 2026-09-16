@@ -404,6 +404,57 @@ FootprintFit Terrain::fitFootprint(float worldX, float worldZ,
             slope <= footprint.maximumTiltDegrees};
 }
 
+TerrainPlacementResult Terrain::evaluatePlacement(
+    float worldX, float worldZ, const TerrainFootprint& footprint,
+    TerrainPlacementProfile profile) const {
+    TerrainPlacementResult result;
+    result.fit = fitFootprint(worldX, worldZ, footprint);
+    if (!result.fit.valid) {
+        result.failure = TerrainPlacementFailure::excessiveSlope;
+        return result;
+    }
+    constexpr int samples = 7;
+    const float radians = glm::radians(footprint.rotationDegrees);
+    const float cosine = std::cos(radians), sine = std::sin(radians);
+    bool sawLand = false;
+    bool sawWater = false;
+    for (int z = 0; z < samples; ++z) {
+        for (int x = 0; x < samples; ++x) {
+            const glm::vec2 uv{-1.0F + 2.0F * x / (samples - 1.0F),
+                               -1.0F + 2.0F * z / (samples - 1.0F)};
+            if (footprint.shape == FootprintShape::circle && glm::dot(uv, uv) > 1.0F)
+                continue;
+            const glm::vec2 extent = footprint.shape == FootprintShape::circle
+                                         ? glm::vec2{footprint.radius}
+                                         : footprint.halfExtents;
+            const glm::vec2 local = uv * extent;
+            const glm::vec2 offset{cosine * local.x - sine * local.y,
+                                   sine * local.x + cosine * local.y};
+            const TerrainSample& sample = sampleAt(worldX + offset.x, worldZ + offset.y);
+            TerrainPlacementDomain domain = TerrainPlacementDomain::land;
+            if (sample.submerged) {
+                sawWater = true;
+                domain = sample.biome.value == "deep_water"
+                             ? TerrainPlacementDomain::deepWater
+                             : TerrainPlacementDomain::shallowWater;
+            } else {
+                sawLand = true;
+                if (sample.buildability == TerrainBuildabilityClass::forbidden) {
+                    result.failure = TerrainPlacementFailure::forbiddenTerrain;
+                    return result;
+                }
+            }
+            if ((profile.domains & terrainPlacementBit(domain)) == 0) {
+                result.failure = TerrainPlacementFailure::forbiddenTerrain;
+                return result;
+            }
+        }
+    }
+    if (profile.requiresShore && !(sawLand && sawWater))
+        result.failure = TerrainPlacementFailure::shoreRequired;
+    return result;
+}
+
 TerrainFoundation Terrain::evaluateFoundation(std::uint64_t sourceEntity, float worldX,
                                                float worldZ,
                                                const TerrainFootprint& footprint) const {

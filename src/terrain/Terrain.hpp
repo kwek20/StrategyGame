@@ -15,6 +15,16 @@ namespace strategy {
 enum class FootprintShape { circle, rectangle };
 enum class TerrainTraversalClass { open, difficult, impassable };
 enum class TerrainBuildabilityClass { buildable, restricted, forbidden };
+enum class TerrainPlacementDomain : std::uint8_t { land = 0, shallowWater = 1, deepWater = 2 };
+using TerrainPlacementDomainMask = std::uint8_t;
+constexpr TerrainPlacementDomainMask terrainPlacementBit(TerrainPlacementDomain domain) {
+    return static_cast<TerrainPlacementDomainMask>(1U << static_cast<unsigned>(domain));
+}
+struct TerrainPlacementProfile {
+    TerrainPlacementDomainMask domains{terrainPlacementBit(TerrainPlacementDomain::land)};
+    bool requiresShore{false};
+};
+enum class TerrainPlacementFailure { none, excessiveSlope, forbiddenTerrain, shoreRequired };
 
 struct TerrainSample {
     float baseHeight{0.0F};
@@ -80,6 +90,12 @@ struct FootprintFit {
     bool valid{false};
 };
 
+struct TerrainPlacementResult {
+    FootprintFit fit;
+    TerrainPlacementFailure failure{TerrainPlacementFailure::none};
+    [[nodiscard]] bool valid() const { return failure == TerrainPlacementFailure::none; }
+};
+
 class Terrain final {
   public:
     static constexpr int chunkCellCount = 64;
@@ -115,6 +131,9 @@ class Terrain final {
                                             float maximumSlopeDegrees) const;
     [[nodiscard]] FootprintFit fitFootprint(float worldX, float worldZ,
                                             const TerrainFootprint& footprint) const;
+    [[nodiscard]] TerrainPlacementResult evaluatePlacement(
+        float worldX, float worldZ, const TerrainFootprint& footprint,
+        TerrainPlacementProfile profile) const;
     [[nodiscard]] TerrainFoundation evaluateFoundation(std::uint64_t sourceEntity,
                                                        float worldX, float worldZ,
                                                        const TerrainFootprint& footprint) const;

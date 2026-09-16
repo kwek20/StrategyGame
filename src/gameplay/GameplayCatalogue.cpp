@@ -86,12 +86,48 @@ void DefinitionRegistry::loadArchetypes(const std::filesystem::path& path,
     if (!data.HasMember(collection) || !data[collection].IsObject())
         throw std::runtime_error("Gameplay definition file has no '" + std::string(collection) +
                                  "' object: " + path.string());
+    const auto parsePlacement = [&](const rapidjson::Value& value,
+                                    const std::string& context) {
+        TerrainPlacementProfile result;
+        if (!value.IsObject() || !value.HasMember("domains") ||
+            !value["domains"].IsArray() || value["domains"].Empty())
+            throw std::runtime_error(context + " requires a non-empty domains array");
+        result.domains = 0;
+        for (const auto& item : value["domains"].GetArray()) {
+            if (!item.IsString())
+                throw std::runtime_error(context + " contains a non-string domain");
+            const std::string_view domain{item.GetString()};
+            if (domain == "land")
+                result.domains |= terrainPlacementBit(TerrainPlacementDomain::land);
+            else if (domain == "shallow_water")
+                result.domains |= terrainPlacementBit(TerrainPlacementDomain::shallowWater);
+            else if (domain == "deep_water")
+                result.domains |= terrainPlacementBit(TerrainPlacementDomain::deepWater);
+            else
+                throw std::runtime_error(context + " contains unknown domain '" +
+                                         std::string(domain) + "'");
+        }
+        if (value.HasMember("requiresShore")) {
+            if (!value["requiresShore"].IsBool())
+                throw std::runtime_error(context + " requires boolean requiresShore");
+            result.requiresShore = value["requiresShore"].GetBool();
+        }
+        return result;
+    };
+    TerrainPlacementProfile defaultPlacement;
+    if (kind == EntityKind::building) {
+        if (!data.HasMember("defaultPlacement"))
+            throw std::runtime_error("Building definitions require defaultPlacement in " +
+                                     path.string());
+        defaultPlacement = parsePlacement(data["defaultPlacement"], "defaultPlacement");
+    }
     for (auto item = data[collection].MemberBegin();
          item != data[collection].MemberEnd();
          ++item) {
         EntityArchetype archetype;
         archetype.id = item->name.GetString();
         archetype.kind = kind;
+        archetype.placement = defaultPlacement;
         if (!item->value.IsObject())
             throw std::runtime_error("Invalid definition '" + archetype.id + "' in " +
                                      path.string());
@@ -125,6 +161,9 @@ void DefinitionRegistry::loadArchetypes(const std::filesystem::path& path,
                 throw std::runtime_error("Definition '" + archetype.id + "' has invalid footprint dimensions");
             archetype.footprint = definition;
         }
+        if (item->value.HasMember("placement"))
+            archetype.placement = parsePlacement(
+                item->value["placement"], "Definition '" + archetype.id + "' placement");
         if (item->value.HasMember("interactionMargin"))
             archetype.interactionMargin = requiredNumber(
                 item->value, "interactionMargin", "Definition '" + archetype.id + "'");

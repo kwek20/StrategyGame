@@ -729,9 +729,9 @@ void Renderer::drawWater(const CameraView& camera, const Player* player) const {
 
     const glm::vec3 focus = camera.target;
     constexpr float renderDistance = 190.0F;
-    const std::size_t lodLevel = camera.detailDistance <= 36.0F   ? 0U
-                                 : camera.detailDistance <= 76.0F ? 1U
-                                                                  : 2U;
+    // Water always uses the fine terrain topology. Switching coastline topology by camera
+    // distance makes shores crawl and exposes cracks where neighboring LODs disagree.
+    constexpr std::size_t lodLevel = 0U;
     for (const TerrainChunk& chunk : terrainChunks_) {
         const float dx = chunk.center.x - focus.x;
         const float dz = chunk.center.z - focus.z;

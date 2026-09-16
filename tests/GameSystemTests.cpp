@@ -70,6 +70,8 @@ int main() {
                                          strategy::MovementDomain::land) &&
             constructionDrone->movement.ignoresEntityObstacles &&
             constructionDrone->battery && commandHub && commandHub->powerDevice &&
+            strategy::terrainPlacementBit(strategy::TerrainPlacementDomain::land) ==
+                commandHub->placement.domains && !commandHub->placement.requiresShore &&
             chargingPad && chargingPad->powerDevice && extractor && extractor->powerDevice &&
             factory && factory->powerDevice && sensorTower && sensorTower->powerDevice &&
             commandHubPower && commandHubPower->production == 10.0F && droneRecipe &&
@@ -314,6 +316,49 @@ int main() {
     valid = valid && !blockedSideRoute.empty();
 
     navigation.rebuildTerrain(navigationTerrain, 20);
+    const strategy::Terrain waterTerrain{0x5EED1234U};
+    strategy::Navigation waterNavigation{waterTerrain, gameplay, 20};
+    glm::vec3 shoreLand{0.0F}, shoreWater{0.0F};
+    bool foundShore = false;
+    const strategy::MapArea waterNavigationMap{20};
+    for (float z = -waterNavigationMap.halfExtent() + strategy::Navigation::cellSize;
+         z < waterNavigationMap.halfExtent() - strategy::Navigation::cellSize && !foundShore;
+         z += strategy::Navigation::cellSize)
+        for (float x = -waterNavigationMap.halfExtent() + strategy::Navigation::cellSize;
+             x < waterNavigationMap.halfExtent() - strategy::Navigation::cellSize;
+             x += strategy::Navigation::cellSize) {
+            const float landCost = waterTerrain.movementCostAt(
+                x, z, strategy::movementDomainBit(strategy::MovementDomain::land));
+            const float waterCost = waterTerrain.movementCostAt(
+                x + strategy::Navigation::cellSize, z,
+                strategy::movementDomainBit(strategy::MovementDomain::water));
+            if (landCost > 0.0F && waterCost > 0.0F) {
+                shoreLand = {x, 0.0F, z};
+                shoreWater = {x + strategy::Navigation::cellSize, 0.0F, z};
+                foundShore = true;
+                break;
+            }
+        }
+    valid = valid && foundShore;
+    if (foundShore) {
+        const auto landIntoWater = waterNavigation.findPath(
+            navigationWorld, shoreLand, shoreWater, 0.0F, 999,
+            {strategy::movementDomainBit(strategy::MovementDomain::land), true});
+        const auto waterIntoLand = waterNavigation.findPath(
+            navigationWorld, shoreWater, shoreLand, 0.0F, 999,
+            {strategy::movementDomainBit(strategy::MovementDomain::water), true});
+        const auto amphibiousCrossing = waterNavigation.findPath(
+            navigationWorld, shoreLand, shoreWater, 0.0F, 999,
+            {static_cast<strategy::MovementDomainMask>(
+                 strategy::movementDomainBit(strategy::MovementDomain::land) |
+                 strategy::movementDomainBit(strategy::MovementDomain::water)),
+             true});
+        const auto airCrossing = waterNavigation.findPath(
+            navigationWorld, shoreLand, shoreWater, 0.0F, 999,
+            {strategy::movementDomainBit(strategy::MovementDomain::air), true});
+        valid = valid && landIntoWater.empty() && waterIntoLand.empty() &&
+                !amphibiousCrossing.empty() && !airCrossing.empty();
+    }
     glm::vec3 impassableDestination{0.0F};
     bool foundImpassable = false;
     const strategy::MapArea fullNavigationMap{20};

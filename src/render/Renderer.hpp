@@ -143,6 +143,11 @@ class Renderer final {
                                                    const TerrainFootprint& footprint) const {
         return terrain_.fitFootprint(worldX, worldZ, footprint);
     }
+    [[nodiscard]] TerrainPlacementResult evaluateTerrainPlacement(
+        float worldX, float worldZ, const TerrainFootprint& footprint,
+        TerrainPlacementProfile profile) const {
+        return terrain_.evaluatePlacement(worldX, worldZ, footprint, profile);
+    }
     [[nodiscard]] std::size_t loadedModelCount() const {
         return resources_.modelCount();
     }

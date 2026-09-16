@@ -1149,8 +1149,9 @@ void PlayState::render(Renderer& renderer) const {
             context_.definitions, EntityArchetypeId{buildingId},
             {position.x, position.z}, 0.0F);
         const glm::vec2 placementBounds = axisAlignedHalfExtents(placementShape);
-        const FootprintFit footprint = renderer.fitTerrainFootprint(
-            position.x, position.z, buildingFootprint);
+        const TerrainPlacementResult terrainPlacement = renderer.evaluateTerrainPlacement(
+            position.x, position.z, buildingFootprint,
+            buildingDefinition ? buildingDefinition->placement : TerrainPlacementProfile{});
         if (local) {
             const glm::ivec2 cell = MapArea{session_.mapChunksPerSide()}.gridCell(
                 {position.x, position.z}, Player::explorationCells);
@@ -1159,22 +1160,35 @@ void PlayState::render(Renderer& renderer) const {
             currentlyVisible = index < local->visible.size() && local->visible[index] != 0;
             previouslyExplored = index < local->discovered.size() && local->discovered[index] != 0;
         }
-        constructionPreviewValid_ = previouslyExplored;
+        constructionPreviewValid_ = true;
+        constructionPreviewReason_.clear();
+        const auto invalidate = [&](const char* key) {
+            if (constructionPreviewValid_) constructionPreviewReason_ = Text::get(key);
+            constructionPreviewValid_ = false;
+        };
+        if (!previouslyExplored) invalidate("placement.unexplored");
         const MapArea placementMap{session_.mapChunksPerSide()};
-        constructionPreviewValid_ = constructionPreviewValid_ &&
-            std::abs(position.x) + placementBounds.x <= placementMap.halfExtent() &&
-            std::abs(position.z) + placementBounds.y <= placementMap.halfExtent();
+        if (std::abs(position.x) + placementBounds.x > placementMap.halfExtent() ||
+            std::abs(position.z) + placementBounds.y > placementMap.halfExtent())
+            invalidate("placement.outside_map");
         // Hidden enemy construction is resolved authoritatively by PlaceBuildingCommand.
         // Do not leak it through a red preview in previously explored fog.
-        if (currentlyVisible)
-            constructionPreviewValid_ = constructionPreviewValid_ &&
-                !overlapsObject(session_.world(), context_.definitions, placementShape, 0, true);
-        constructionPreviewValid_ = constructionPreviewValid_ && footprint.valid;
+        if (currentlyVisible &&
+            overlapsObject(session_.world(), context_.definitions, placementShape, 0, true))
+            invalidate("placement.collision");
+        if (!terrainPlacement.valid()) {
+            const char* key = terrainPlacement.failure == TerrainPlacementFailure::excessiveSlope
+                                  ? "placement.slope"
+                              : terrainPlacement.failure == TerrainPlacementFailure::shoreRequired
+                                  ? "placement.shore"
+                                  : "placement.terrain";
+            invalidate(key);
+        }
         if (local)
             if (selectedRecipe)
                 for (const auto& [resource, amount] : selectedRecipe->cost)
                     if (!local->resources.contains(resource) || local->resources.at(resource) < amount)
-                        constructionPreviewValid_ = false;
+                        invalidate("placement.resources");
         World preview;
         Entity& ghost = preview.createEntity(buildingId, buildingId, localPlayer_);
         context_.definitions.initializeEntity(ghost);
@@ -1282,6 +1296,18 @@ void PlayState::render(Renderer& renderer) const {
         for (const HudAlert& alert : hudAlerts_) messages.push_back(alert.text);
         renderer.drawUi(GameHudLayout::alerts(messages, renderer.viewportWidth(),
                                               renderer.viewportHeight(), config_.uiScale));
+    }
+    if (constructionPlacementMode_ && !constructionPreviewValid_ &&
+        !constructionPreviewReason_.empty()) {
+        const float width = 310.0F;
+        const float left = std::clamp(pointerScreen_.x + 18.0F, 8.0F,
+                                      static_cast<float>(renderer.viewportWidth()) - width - 8.0F);
+        const float top = std::clamp(pointerScreen_.y + 18.0F, 8.0F,
+                                     static_cast<float>(renderer.viewportHeight()) - 42.0F);
+        UiDocument placementUi;
+        placementUi.tooltip("placement.reason", {left, top, left + width, top + 34.0F},
+                            constructionPreviewReason_);
+        renderer.drawUi(placementUi);
     }
     // Terrain inspection is a UI pass and must remain after every world/overlay pass.
     // Keeping it at the top of the visual stack also prevents entity outlines from

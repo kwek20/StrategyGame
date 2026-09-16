@@ -110,6 +110,44 @@ int main() {
     }
     valid = valid && buildableSamples > 0 && submergedSamples > 0;
 
+    bool checkedWaterPlacement = false;
+    for (int z = 0; z < strategy::Terrain::semanticCellCount && !checkedWaterPlacement; ++z)
+        for (int x = 0; x < strategy::Terrain::semanticCellCount; ++x) {
+            const float worldX = -halfExtent + (static_cast<float>(x) + 0.5F) *
+                                                   strategy::Terrain::semanticCellSize;
+            const float worldZ = -halfExtent + (static_cast<float>(z) + 0.5F) *
+                                                   strategy::Terrain::semanticCellSize;
+            const auto& sample = terrain.sampleAt(worldX, worldZ);
+            if (!sample.submerged) continue;
+            strategy::TerrainFootprint footprint;
+            footprint.shape = strategy::FootprintShape::circle;
+            footprint.radius = 0.35F;
+            footprint.halfExtents = {0.35F, 0.35F};
+            footprint.maximumTiltDegrees = 90.0F;
+            const auto land = terrain.evaluatePlacement(
+                worldX, worldZ, footprint,
+                {strategy::terrainPlacementBit(strategy::TerrainPlacementDomain::land), false});
+            const strategy::TerrainPlacementDomain waterDomain =
+                sample.biome.value == "deep_water"
+                    ? strategy::TerrainPlacementDomain::deepWater
+                    : strategy::TerrainPlacementDomain::shallowWater;
+            const auto water = terrain.evaluatePlacement(
+                worldX, worldZ, footprint,
+                {strategy::terrainPlacementBit(waterDomain), false});
+            const auto shore = terrain.evaluatePlacement(
+                worldX, worldZ, footprint,
+                {static_cast<strategy::TerrainPlacementDomainMask>(
+                     strategy::terrainPlacementBit(strategy::TerrainPlacementDomain::land) |
+                     strategy::terrainPlacementBit(strategy::TerrainPlacementDomain::shallowWater) |
+                     strategy::terrainPlacementBit(strategy::TerrainPlacementDomain::deepWater)),
+                 true});
+            valid = valid && !land.valid() && water.valid() && !shore.valid() &&
+                    shore.failure == strategy::TerrainPlacementFailure::shoreRequired;
+            checkedWaterPlacement = true;
+            break;
+        }
+    valid = valid && checkedWaterPlacement;
+
     for (const glm::vec2 point : {glm::vec2{0.0F, 0.0F},
                                   glm::vec2{-64.0F, 23.0F},
                                   glm::vec2{96.0F, -48.0F}}) {

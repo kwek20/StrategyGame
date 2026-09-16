@@ -1,5 +1,6 @@
 {
   "version": 1,
+  "defaultPlacement": { "domains": ["land"], "requiresShore": false },
   "buildings": {
     "town_center": {
       "nameKey": "entity.town_center",
