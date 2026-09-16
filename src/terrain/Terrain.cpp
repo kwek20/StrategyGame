@@ -1,4 +1,5 @@
 #include "terrain/Terrain.hpp"
+#include "terrain/TerrainGeneration.hpp"
 
 #include <algorithm>
 #include <array>
@@ -6,115 +7,138 @@
 #include <glm/common.hpp>
 #include <glm/geometric.hpp>
 #include <glm/trigonometric.hpp>
-#include <limits>
+#include <stdexcept>
 
 namespace strategy {
 namespace {
-
-float fade(float value) {
-    return value * value * value * (value * (value * 6.0F - 15.0F) + 10.0F);
-}
-
-std::uint32_t hashCoordinates(int x, int z, std::uint32_t seed) {
-    std::uint32_t hash = seed;
-    hash ^= static_cast<std::uint32_t>(x) * 0x9E3779B9U;
-    hash = (hash << 13U) | (hash >> 19U);
-    hash ^= static_cast<std::uint32_t>(z) * 0x85EBCA6BU;
-    hash ^= hash >> 16U;
-    hash *= 0x7FEB352DU;
-    hash ^= hash >> 15U;
-    hash *= 0x846CA68BU;
-    return hash ^ (hash >> 16U);
-}
-
-float randomSigned(int x, int z, std::uint32_t seed) {
-    return static_cast<float>(hashCoordinates(x, z, seed) & 0x00FFFFFFU) /
-               static_cast<float>(0x007FFFFFU) -
-           1.0F;
-}
 
 float smoothstep(float edge0, float edge1, float value) {
     const float t = glm::clamp((value - edge0) / (edge1 - edge0), 0.0F, 1.0F);
     return t * t * (3.0F - 2.0F * t);
 }
 
+const TerrainGenerationDefinitions& defaultGenerationDefinitions() {
+    static const TerrainGenerationDefinitions definitions = TerrainGenerationDefinitions::load();
+    return definitions;
+}
+
+bool inRange(float value, float minimum, float maximum) {
+    return value >= minimum && value <= maximum;
+}
+
+float rangeSuitability(float value, float minimum, float maximum) {
+    const float halfRange = (maximum - minimum) * 0.5F;
+    if (halfRange <= 0.00001F)
+        return value == minimum ? 1.0F : 0.0F;
+    const float center = (minimum + maximum) * 0.5F;
+    return 1.0F - glm::clamp(std::abs(value - center) / halfRange, 0.0F, 1.0F);
+}
+
+TerrainTraversalClass traversalClass(const std::string& value) {
+    if (value == "open")
+        return TerrainTraversalClass::open;
+    if (value == "difficult")
+        return TerrainTraversalClass::difficult;
+    if (value == "impassable")
+        return TerrainTraversalClass::impassable;
+    throw std::runtime_error("Unknown terrain traversal class: " + value);
+}
+
+TerrainBuildabilityClass buildabilityClass(const std::string& value) {
+    if (value == "buildable")
+        return TerrainBuildabilityClass::buildable;
+    if (value == "restricted")
+        return TerrainBuildabilityClass::restricted;
+    if (value == "forbidden")
+        return TerrainBuildabilityClass::forbidden;
+    throw std::runtime_error("Unknown terrain buildability class: " + value);
+}
+
+const TerrainBiomeDefinition& classifyBiome(const TerrainGenerationDefinitions& definitions,
+                                             const TerrainRegionalFields& fields,
+                                             float normalizedHeight,
+                                             float slopeDegrees) {
+    const TerrainBiomeDefinition* selected = nullptr;
+    float selectedSuitability = -1.0F;
+    for (const TerrainBiomeDefinition& candidate : definitions.biomes()) {
+        if (!candidate.enabled ||
+            !inRange(normalizedHeight, candidate.minimumHeight, candidate.maximumHeight) ||
+            !inRange(fields.moisture, candidate.minimumMoisture, candidate.maximumMoisture) ||
+            !inRange(fields.erosion, candidate.minimumErosion, candidate.maximumErosion) ||
+            !inRange(fields.peaks, candidate.minimumPeaks, candidate.maximumPeaks) ||
+            !inRange(fields.temperature,
+                     candidate.minimumTemperature,
+                     candidate.maximumTemperature) ||
+            slopeDegrees > candidate.maximumSlopeDegrees)
+            continue;
+        const float suitability =
+            rangeSuitability(normalizedHeight,
+                             candidate.minimumHeight,
+                             candidate.maximumHeight) *
+                candidate.heightWeight +
+            rangeSuitability(fields.moisture,
+                             candidate.minimumMoisture,
+                             candidate.maximumMoisture) *
+                candidate.moistureWeight +
+            rangeSuitability(fields.erosion,
+                             candidate.minimumErosion,
+                             candidate.maximumErosion) *
+                candidate.erosionWeight +
+            rangeSuitability(fields.peaks, candidate.minimumPeaks, candidate.maximumPeaks) *
+                candidate.peaksWeight +
+            rangeSuitability(fields.temperature,
+                             candidate.minimumTemperature,
+                             candidate.maximumTemperature) *
+                candidate.temperatureWeight;
+        if (!selected || candidate.priority > selected->priority ||
+            (candidate.priority == selected->priority && suitability > selectedSuitability) ||
+            (candidate.priority == selected->priority && suitability == selectedSuitability &&
+             candidate.id.value < selected->id.value)) {
+            selected = &candidate;
+            selectedSuitability = suitability;
+        }
+    }
+    if (selected)
+        return *selected;
+    const auto fallback =
+        std::find_if(definitions.biomes().begin(), definitions.biomes().end(), [&](const auto& item) {
+            return item.id == definitions.fallbackBiome();
+        });
+    if (fallback == definitions.biomes().end())
+        throw std::runtime_error("Terrain biome classification has no fallback");
+    return *fallback;
+}
+
 } // namespace
 
 Terrain::Terrain(std::uint32_t seed) {
-    generate(seed);
+    const TerrainGenerationDefinitions& definitions = defaultGenerationDefinitions();
+    generate(seed, definitions.activeGenerator());
+    generateSemantics(seed, definitions.activeGenerator(), definitions);
 }
 
-float Terrain::valueNoise(float x, float z, std::uint32_t seed) {
-    const int x0 = static_cast<int>(std::floor(x));
-    const int z0 = static_cast<int>(std::floor(z));
-    const float tx = fade(x - static_cast<float>(x0));
-    const float tz = fade(z - static_cast<float>(z0));
-    const float top = glm::mix(randomSigned(x0, z0, seed), randomSigned(x0 + 1, z0, seed), tx);
-    const float bottom =
-        glm::mix(randomSigned(x0, z0 + 1, seed), randomSigned(x0 + 1, z0 + 1, seed), tx);
-    return glm::mix(top, bottom, tz);
+Terrain::Terrain(std::uint32_t seed, const TerrainGeneratorDefinition& generator) {
+    generate(seed, generator);
+    generateSemantics(seed, generator, defaultGenerationDefinitions());
 }
 
-float Terrain::fractalNoise(float x, float z, std::uint32_t seed, int octaves, float persistence) {
-    float total = 0.0F;
-    float amplitude = 1.0F;
-    float frequency = 1.0F;
-    float amplitudeSum = 0.0F;
-    for (int octave = 0; octave < octaves; ++octave) {
-        total += valueNoise(x * frequency,
-                            z * frequency,
-                            seed + static_cast<std::uint32_t>(octave) * 1013U) *
-                 amplitude;
-        amplitudeSum += amplitude;
-        amplitude *= persistence;
-        frequency *= 2.0F;
-    }
-    return total / amplitudeSum;
-}
-
-void Terrain::generate(std::uint32_t seed) {
+void Terrain::generate(std::uint32_t seed, const TerrainGeneratorDefinition& generator) {
     heights_.resize(static_cast<std::size_t>(vertexCount * vertexCount));
-    float minimum = std::numeric_limits<float>::max();
-    float maximum = std::numeric_limits<float>::lowest();
+    const TerrainFieldGenerator fieldGenerator(seed, generator);
+    const float halfExtent = worldExtent() * 0.5F;
 
     for (int z = 0; z < vertexCount; ++z) {
         for (int x = 0; x < vertexCount; ++x) {
-            const float nx = static_cast<float>(x) / static_cast<float>(cellCount);
-            const float nz = static_cast<float>(z) / static_cast<float>(cellCount);
-
-            // Domain warping supplies the old turbulence stage.
-            const float warpX = fractalNoise(nx * 2.2F, nz * 2.2F, seed + 17U, 3, 0.5F);
-            const float warpZ = fractalNoise(nx * 2.2F, nz * 2.2F, seed + 31U, 3, 0.5F);
-            const float px = nx * 3.0F + warpX * 0.16F;
-            const float pz = nz * 3.0F + warpZ * 0.16F;
-
-            const float base = fractalNoise(px, pz, seed + 101U, 4, 0.44F);
-            const float billow =
-                std::abs(fractalNoise(px * 1.45F, pz * 1.45F, seed + 211U, 4, 0.5F)) * 2.0F - 1.0F;
-            const float ridgeSource = fractalNoise(px * 1.2F, pz * 1.2F, seed + 307U, 5, 0.48F);
-            const float ridges = std::pow(1.0F - std::abs(ridgeSource), 2.8F);
-            const float region = fractalNoise(nx * 1.35F, nz * 1.35F, seed + 401U, 3, 0.55F);
-            const float mountainWeight = smoothstep(0.02F, 0.52F, region);
-            const float plains = base * 0.32F + billow * 0.04F;
-            const float mountains = base * 0.28F + ridges * 0.46F;
-            const float value = glm::mix(plains, mountains, mountainWeight);
-
-            heights_[static_cast<std::size_t>(z * vertexCount + x)] = value;
-            minimum = std::min(minimum, value);
-            maximum = std::max(maximum, value);
+            const float worldX = static_cast<float>(x) * spacing - halfExtent;
+            const float worldZ = static_cast<float>(z) * spacing - halfExtent;
+            heights_[static_cast<std::size_t>(z * vertexCount + x)] =
+                fieldGenerator.heightAt(worldX, worldZ);
         }
     }
 
-    const float range = maximum - minimum;
-    for (float& height : heights_) {
-        height = (height - minimum) / range;
-        // Broaden lowlands and reserve less area for the highest peaks.
-        height = std::pow(height, 1.12F);
-    }
-
-    // Weighted blur removes single-cell ridges while retaining broad landforms.
+    // Configured smoothing controls roughness without rescaling this seed's elevation range.
     std::vector<float> smoothed(heights_.size());
-    for (int pass = 0; pass < 4; ++pass) {
+    for (std::uint32_t pass = 0; pass < generator.height.smoothingPasses; ++pass) {
         for (int z = 0; z < vertexCount; ++z) {
             for (int x = 0; x < vertexCount; ++x) {
                 float total = 0.0F;
@@ -136,6 +160,56 @@ void Terrain::generate(std::uint32_t seed) {
         heights_.swap(smoothed);
     }
     baseHeights_ = heights_;
+}
+
+void Terrain::generateSemantics(std::uint32_t seed,
+                                const TerrainGeneratorDefinition& generator,
+                                const TerrainGenerationDefinitions& definitions) {
+    const TerrainFieldGenerator fieldGenerator(seed, generator);
+    semanticSamples_.resize(
+        static_cast<std::size_t>(semanticCellCount * semanticCellCount));
+    const float halfExtent = worldExtent() * 0.5F;
+    for (int z = 0; z < semanticCellCount; ++z) {
+        for (int x = 0; x < semanticCellCount; ++x) {
+            const float worldX = -halfExtent + (static_cast<float>(x) + 0.5F) * semanticCellSize;
+            const float worldZ = -halfExtent + (static_cast<float>(z) + 0.5F) * semanticCellSize;
+            TerrainSample& sample = semanticSamples_[static_cast<std::size_t>(
+                z * semanticCellCount + x)];
+            sample.baseHeight = heightAt(worldX, worldZ);
+            const float dx = (heightAt(worldX + semanticCellSize, worldZ) -
+                              heightAt(worldX - semanticCellSize, worldZ)) /
+                             (2.0F * semanticCellSize);
+            const float dz = (heightAt(worldX, worldZ + semanticCellSize) -
+                              heightAt(worldX, worldZ - semanticCellSize)) /
+                             (2.0F * semanticCellSize);
+            sample.slopeDegrees = glm::degrees(std::atan(std::sqrt(dx * dx + dz * dz)));
+            const TerrainRegionalFields fields = fieldGenerator.sample(worldX, worldZ);
+            sample.continentalness = fields.continentalness;
+            sample.erosion = fields.erosion;
+            sample.peaks = fields.peaks;
+            sample.moisture = fields.moisture;
+            sample.temperature = fields.temperature;
+            const TerrainBiomeDefinition& biome = classifyBiome(
+                definitions, fields, sample.baseHeight / heightScale, sample.slopeDegrees);
+            sample.biome = biome.id;
+            sample.surface = biome.surface;
+            const auto surface = std::find_if(
+                definitions.surfaces().begin(),
+                definitions.surfaces().end(),
+                [&](const TerrainSurfaceDefinition& item) { return item.id == biome.surface; });
+            if (surface == definitions.surfaces().end())
+                throw std::runtime_error("Terrain sample references an unknown surface");
+            sample.surfaceColor = {surface->color[0], surface->color[1], surface->color[2]};
+            sample.materialWeights = {surface->materialWeights[0],
+                                      surface->materialWeights[1],
+                                      surface->materialWeights[2],
+                                      surface->materialWeights[3]};
+            sample.materialWeights /= sample.materialWeights.x + sample.materialWeights.y +
+                                      sample.materialWeights.z + sample.materialWeights.w;
+            sample.traversal = traversalClass(biome.traversal);
+            sample.buildability = buildabilityClass(biome.buildability);
+        }
+    }
 }
 
 float Terrain::normalizedHeight(int x, int z) const {
@@ -172,6 +246,35 @@ float Terrain::heightAt(float worldX, float worldZ) const {
     return h11 + (1.0F - u) * (h01 - h11) + (1.0F - v) * (h10 - h11);
 }
 
+int Terrain::semanticIndex(float worldX, float worldZ) const {
+    const float halfExtent = worldExtent() * 0.5F;
+    const int x = std::clamp(static_cast<int>(std::floor((worldX + halfExtent) /
+                                                        semanticCellSize)),
+                             0,
+                             semanticCellCount - 1);
+    const int z = std::clamp(static_cast<int>(std::floor((worldZ + halfExtent) /
+                                                        semanticCellSize)),
+                             0,
+                             semanticCellCount - 1);
+    return z * semanticCellCount + x;
+}
+
+const TerrainSample& Terrain::sampleAt(float worldX, float worldZ) const {
+    return semanticSamples_[static_cast<std::size_t>(semanticIndex(worldX, worldZ))];
+}
+
+TerrainBiomeId Terrain::biomeAt(float worldX, float worldZ) const {
+    return sampleAt(worldX, worldZ).biome;
+}
+
+TerrainTraversalClass Terrain::traversalAt(float worldX, float worldZ) const {
+    return sampleAt(worldX, worldZ).traversal;
+}
+
+bool Terrain::isBuildableAt(float worldX, float worldZ) const {
+    return sampleAt(worldX, worldZ).buildability == TerrainBuildabilityClass::buildable;
+}
+
 glm::vec3 Terrain::normalAt(int x, int z) const {
     const float left = vertexHeight(x - 1, z);
     const float right = vertexHeight(x + 1, z);
@@ -180,28 +283,42 @@ glm::vec3 Terrain::normalAt(int x, int z) const {
     return glm::normalize(glm::vec3{left - right, 2.0F * spacing, down - up});
 }
 
-glm::vec3 Terrain::colorAt(float height) const {
-    struct Stop {
-        float height;
-        glm::vec3 color;
+glm::vec3 Terrain::colorAt(float worldX, float worldZ) const {
+    const float halfExtent = worldExtent() * 0.5F;
+    const float gridX = (worldX + halfExtent) / semanticCellSize - 0.5F;
+    const float gridZ = (worldZ + halfExtent) / semanticCellSize - 0.5F;
+    const int x0 = std::clamp(static_cast<int>(std::floor(gridX)), 0, semanticCellCount - 1);
+    const int z0 = std::clamp(static_cast<int>(std::floor(gridZ)), 0, semanticCellCount - 1);
+    const int x1 = std::min(x0 + 1, semanticCellCount - 1);
+    const int z1 = std::min(z0 + 1, semanticCellCount - 1);
+    const float tx = glm::clamp(gridX - std::floor(gridX), 0.0F, 1.0F);
+    const float tz = glm::clamp(gridZ - std::floor(gridZ), 0.0F, 1.0F);
+    const auto color = [&](int x, int z) {
+        return semanticSamples_[static_cast<std::size_t>(z * semanticCellCount + x)].surfaceColor;
     };
-    static const std::array<Stop, 5> stops{{{0.00F, {32.0F, 70.0F, 80.0F}},
-                                            {0.18F, {32.0F, 160.0F, 0.0F}},
-                                            {0.48F, {224.0F, 224.0F, 0.0F}},
-                                            {0.72F, {128.0F, 128.0F, 128.0F}},
-                                            {0.90F, {255.0F, 255.0F, 255.0F}}}};
+    return glm::mix(glm::mix(color(x0, z0), color(x1, z0), tx),
+                    glm::mix(color(x0, z1), color(x1, z1), tx),
+                    tz);
+}
 
-    if (height <= stops.front().height) {
-        return stops.front().color / 255.0F;
-    }
-    for (std::size_t index = 1; index < stops.size(); ++index) {
-        if (height <= stops[index].height) {
-            const float t = (height - stops[index - 1].height) /
-                            (stops[index].height - stops[index - 1].height);
-            return glm::mix(stops[index - 1].color, stops[index].color, t) / 255.0F;
-        }
-    }
-    return stops.back().color / 255.0F;
+glm::vec4 Terrain::materialWeightsAt(float worldX, float worldZ) const {
+    const float halfExtent = worldExtent() * 0.5F;
+    const float gridX = (worldX + halfExtent) / semanticCellSize - 0.5F;
+    const float gridZ = (worldZ + halfExtent) / semanticCellSize - 0.5F;
+    const int x0 = std::clamp(static_cast<int>(std::floor(gridX)), 0, semanticCellCount - 1);
+    const int z0 = std::clamp(static_cast<int>(std::floor(gridZ)), 0, semanticCellCount - 1);
+    const int x1 = std::min(x0 + 1, semanticCellCount - 1);
+    const int z1 = std::min(z0 + 1, semanticCellCount - 1);
+    const float tx = glm::clamp(gridX - std::floor(gridX), 0.0F, 1.0F);
+    const float tz = glm::clamp(gridZ - std::floor(gridZ), 0.0F, 1.0F);
+    const auto weights = [&](int x, int z) {
+        return semanticSamples_[static_cast<std::size_t>(z * semanticCellCount + x)]
+            .materialWeights;
+    };
+    glm::vec4 result = glm::mix(glm::mix(weights(x0, z0), weights(x1, z0), tx),
+                                glm::mix(weights(x0, z1), weights(x1, z1), tx),
+                                tz);
+    return result / (result.x + result.y + result.z + result.w);
 }
 
 float Terrain::worldExtent() const {

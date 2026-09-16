@@ -304,6 +304,11 @@ void PlayState::handleEvent(const SDL_Event& event) {
         detailedDebug_ = !detailedDebug_;
         return;
     }
+    if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
+        event.key.key == bound("terrain_debug", SDLK_F4)) {
+        terrainDebug_ = !terrainDebug_;
+        return;
+    }
     if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat && event.key.key == SDLK_F5) {
         try {
             SaveGame::write(
@@ -704,7 +709,8 @@ void PlayState::handleEvent(const SDL_Event& event) {
         return;
     }
     if (event.type == SDL_EVENT_MOUSE_MOTION && viewMode_ == ViewMode::strategy) {
-        hoverPosition_ = glm::vec2{event.motion.x, event.motion.y};
+        pointerScreen_ = glm::vec2{event.motion.x, event.motion.y};
+        hoverPosition_ = pointerScreen_;
         return;
     }
     if (event.type == SDL_EVENT_MOUSE_WHEEL) {
@@ -1119,7 +1125,7 @@ void PlayState::render(Renderer& renderer) const {
             hoverPosition_->x, hoverPosition_->y, session_.world(), view, local, false);
         hoverPosition_.reset();
     }
-    renderer.drawTerrain(view, local);
+    renderer.drawTerrain(view, local, terrainDebug_);
     particlePresenter_.sync(renderer, session_.world(), local, session_.mapChunksPerSide());
     renderer.drawWorld(session_.world(), view, local, powerOverlayVisible_);
     renderer.drawParticles(view);
@@ -1276,6 +1282,13 @@ void PlayState::render(Renderer& renderer) const {
         for (const HudAlert& alert : hudAlerts_) messages.push_back(alert.text);
         renderer.drawUi(GameHudLayout::alerts(messages, renderer.viewportWidth(),
                                               renderer.viewportHeight(), config_.uiScale));
+    }
+    // Terrain inspection is a UI pass and must remain after every world/overlay pass.
+    // Keeping it at the top of the visual stack also prevents entity outlines from
+    // showing through its opaque panel.
+    if (terrainDebug_) {
+        const glm::vec3 cursor = renderer.screenToTerrain(pointerScreen_.x, pointerScreen_.y, view);
+        renderer.drawTerrainDebugHud(cursor);
     }
     if (paused_) {
         UiDocument document = pauseUi(renderer.viewportWidth(), renderer.viewportHeight());

@@ -409,7 +409,8 @@ void GameSession::apply(const PlayerCommand& command) {
                                          entity->transform.position,
                                          payload.destination,
                                          collisionRadius(gameplay_, entity->archetype),
-                                         entity->id);
+                                         entity->id,
+                                         entity->flight.present);
                 entity->transient.navigationWaypoint = 0;
                 entity->transient.navigationRetrySeconds =
                     entity->transient.navigationPath.empty() ? 0.5F : 0.0F;
@@ -435,13 +436,14 @@ void GameSession::apply(const PlayerCommand& command) {
                             return;
                     }
                     const float reach = interactionRange(gameplay_, *entity, "gather");
-                    if (!entity->flight && boundaryClearance(gameplay_, *entity, *resource) > reach &&
+                    if (boundaryClearance(gameplay_, *entity, *resource) > reach &&
                         navigation_.findPath(
                             world_, entity->transform.position,
                             NavigationGoalRegion{spatialShape(gameplay_, *resource), reach,
                                 {entity->transform.position.x, entity->transform.position.z},
                                 resource->id, entity->id},
-                            collisionRadius(gameplay_, entity->archetype), entity->id).empty()) {
+                            collisionRadius(gameplay_, entity->archetype), entity->id,
+                            entity->flight.present).empty()) {
                         resourceEvents_.push_back({ResourceEventKind::sourceInaccessible, tick_,
                                                    command.player, entity->id, resource->id,
                                                    resource->resource.type, 0.0F});
@@ -1305,14 +1307,15 @@ void GameSession::simulateTick() {
                 };
                 const float depositReach = interactionRange(gameplay_, entity, "deposit");
                 const auto reachable = [&](Entity& candidate) {
-                    if (entity.flight || boundaryClearance(gameplay_, entity, candidate) <= depositReach)
+                    if (boundaryClearance(gameplay_, entity, candidate) <= depositReach)
                         return true;
                     return !navigation_.findPath(
                         world_, entity.transform.position,
                         NavigationGoalRegion{spatialShape(gameplay_, candidate), depositReach,
                             {entity.transform.position.x, entity.transform.position.z},
                             candidate.id, entity.id},
-                        collisionRadius(gameplay_, entity.archetype), entity.id).empty();
+                        collisionRadius(gameplay_, entity.archetype), entity.id,
+                        entity.flight.present).empty();
                 };
                 if (entity.gatherer.deliveryTarget != 0) {
                     Entity* committed = world_.findEntity(entity.gatherer.deliveryTarget);
@@ -1445,18 +1448,7 @@ void GameSession::simulateTick() {
         if (entity.authority.directController != 0) {
             movement = entity.unitControl.directInput;
         } else if (entity.unitControl.hasStrategicDestination) {
-            if (entity.flight) {
-                const glm::vec2 delta{
-                    entity.unitControl.strategicDestination.x - entity.transform.position.x,
-                    entity.unitControl.strategicDestination.z - entity.transform.position.z};
-                if (glm::length(delta) < 0.35F) {
-                    entity.unitControl.hasStrategicDestination = false;
-                    if (entity.unitControl.order == UnitOrderKind::move)
-                        entity.unitControl.order = UnitOrderKind::idle;
-                } else {
-                    movement = glm::normalize(delta);
-                }
-            } else if (entity.transient.navigationWaypoint >= entity.transient.navigationPath.size()) {
+            if (entity.transient.navigationWaypoint >= entity.transient.navigationPath.size()) {
                 if (entity.transient.navigationRetrySeconds > 0.0F)
                     continue;
                 const Entity* navigationTarget =
@@ -1470,12 +1462,14 @@ void GameSession::simulateTick() {
                             {entity.transform.position.x, entity.transform.position.z},
                             navigationTarget->id,
                             entity.id},
-                        collisionRadius(gameplay_, entity.archetype), entity.id);
+                        collisionRadius(gameplay_, entity.archetype), entity.id,
+                        entity.flight.present);
                 } else {
                     entity.transient.navigationPath = navigation_.findPath(
                         world_, entity.transform.position,
                         entity.unitControl.strategicDestination,
-                        collisionRadius(gameplay_, entity.archetype), entity.id);
+                        collisionRadius(gameplay_, entity.archetype), entity.id,
+                        entity.flight.present);
                 }
                 entity.transient.navigationWaypoint = 0;
                 if (entity.transient.navigationPath.empty()) {
@@ -1505,9 +1499,9 @@ void GameSession::simulateTick() {
                     continue;
                 }
             }
-            if (!entity.flight) {
-                const glm::vec3 waypoint =
-                    entity.transient.navigationPath[entity.transient.navigationWaypoint];
+            if (entity.transient.navigationWaypoint < entity.transient.navigationPath.size()) {
+                const glm::vec3 waypoint = entity.transient.navigationPath[
+                    entity.transient.navigationWaypoint];
                 const glm::vec2 delta{waypoint.x - entity.transform.position.x,
                                       waypoint.z - entity.transform.position.z};
                 if (glm::length(delta) < 0.35F) {
@@ -1547,7 +1541,13 @@ void GameSession::simulateTick() {
         const float resolvedMovementSpeed = entity.authority.owner
                                                 ? stat(entity, GameplayStat::movementSpeed)
                                                 : entity.unitControl.movementSpeed;
+        const float terrainSpeedMultiplier =
+            !entity.flight && terrain_.traversalAt(current.x, current.y) ==
+                                  TerrainTraversalClass::difficult
+                ? 0.65F
+                : 1.0F;
         const glm::vec2 delta = movement * resolvedMovementSpeed * speedMultiplier *
+                                terrainSpeedMultiplier *
                                 static_cast<float>(fixedTickSeconds);
         const bool flying = entity.flight.present;
         if (flying && entity.battery && glm::length(delta) > 0.001F) {
@@ -1560,6 +1560,8 @@ void GameSession::simulateTick() {
         const MapArea map{mapChunksPerSide_};
         const auto validPosition = [this, &entity, radius, map, flying](glm::vec2 candidate) {
             return map.contains(candidate, radius) &&
+                   terrain_.traversalAt(candidate.x, candidate.y) !=
+                       TerrainTraversalClass::impassable &&
                    (flying || !overlapsObject(world_, gameplay_, candidate, radius, entity.id));
         };
         if (validPosition(current + delta)) {

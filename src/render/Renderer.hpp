@@ -53,7 +53,9 @@ class Renderer final {
     void endFrame();
     void drawUi(const UiDocument& document) const;
     void drawLoadingScreen(float progress, const std::string& status) const;
-    void drawTerrain(const CameraView& camera, const Player* player = nullptr) const;
+    void drawTerrain(const CameraView& camera,
+                     const Player* player = nullptr,
+                     bool terrainDebug = false) const;
     void drawWorld(const World& world,
                    const CameraView& camera,
                    const Player* player = nullptr,
@@ -85,6 +87,7 @@ class Renderer final {
                               std::uint64_t tick,
                               std::size_t entityCount) const;
     void drawVisionRanges(const CameraView& camera, const Entity* entity) const;
+    void drawTerrainDebugHud(glm::vec3 worldPosition) const;
     void drawEntityHud(const EntityHudModel& model, const UiDocument& layout) const;
     void
     drawStrategyHud(const World& world, EntityId selected, const Player* player,

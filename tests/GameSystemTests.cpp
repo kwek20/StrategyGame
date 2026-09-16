@@ -218,15 +218,40 @@ int main() {
     strategy::World navigationWorld;
     strategy::Entity& navigationObstacle =
         navigationWorld.createEntity("Blocker", "town_center", 0);
-    navigationObstacle.transform.position = {0.0F, 0.0F, 0.0F};
     const strategy::Terrain navigationTerrain{123U};
     strategy::Navigation navigation{navigationTerrain, gameplay, 13};
+    glm::vec2 navigationOrigin{0.0F};
+    bool foundNavigationPatch = false;
+    const strategy::MapArea navigationMap{13};
+    for (float centerZ = -navigationMap.halfExtent() + 42.0F;
+         centerZ <= navigationMap.halfExtent() - 42.0F && !foundNavigationPatch;
+         centerZ += strategy::Navigation::cellSize) {
+        for (float centerX = -navigationMap.halfExtent() + 42.0F;
+             centerX <= navigationMap.halfExtent() - 42.0F && !foundNavigationPatch;
+             centerX += strategy::Navigation::cellSize) {
+            bool traversable = true;
+            for (float z = -12.0F; z <= 12.0F && traversable;
+                 z += strategy::Navigation::cellSize)
+                for (float x = -40.0F; x <= 40.0F; x += strategy::Navigation::cellSize)
+                    if (navigationTerrain.traversalAt(centerX + x, centerZ + z) ==
+                        strategy::TerrainTraversalClass::impassable) {
+                        traversable = false;
+                        break;
+                    }
+            if (traversable) {
+                navigationOrigin = {centerX, centerZ};
+                foundNavigationPatch = true;
+            }
+        }
+    }
+    valid = valid && foundNavigationPatch;
+    navigationObstacle.transform.position = {navigationOrigin.x, 0.0F, navigationOrigin.y};
     valid = valid && navigation.cellsPerSide() ==
                            static_cast<int>(std::ceil(
                                strategy::MapArea{13}.extent() / strategy::Navigation::cellSize));
     const auto route = navigation.findPath(navigationWorld,
-                                           {-18.0F, 0.0F, 0.0F},
-                                           {18.0F, 0.0F, 0.0F},
+                                           {navigationOrigin.x - 18.0F, 0.0F, navigationOrigin.y},
+                                           {navigationOrigin.x + 18.0F, 0.0F, navigationOrigin.y},
                                            strategy::collisionRadius(gameplay, "worker"),
                                            999);
     valid = valid && !route.empty();
@@ -234,13 +259,18 @@ int main() {
         const float safe =
             strategy::collisionRadius(gameplay, "town_center") +
             strategy::collisionRadius(gameplay, "worker");
-        valid = valid && (point.x * point.x + point.z * point.z >= safe * safe);
+        const glm::vec2 offset{point.x - navigationOrigin.x, point.z - navigationOrigin.y};
+        valid = valid && glm::dot(offset, offset) >= safe * safe;
+        valid = valid && navigationTerrain.traversalAt(point.x, point.z) !=
+                           strategy::TerrainTraversalClass::impassable;
     }
     const strategy::SpatialShape navigationTarget =
         strategy::spatialShape(gameplay, navigationObstacle);
     for (const glm::vec3 start : std::array<glm::vec3, 4>{
-             glm::vec3{-30.0F, 0.0F, 0.0F}, glm::vec3{30.0F, 0.0F, 0.0F},
-             glm::vec3{0.0F, 0.0F, -30.0F}, glm::vec3{0.0F, 0.0F, 30.0F}}) {
+             glm::vec3{navigationOrigin.x - 30.0F, 0.0F, navigationOrigin.y},
+             glm::vec3{navigationOrigin.x + 30.0F, 0.0F, navigationOrigin.y},
+             glm::vec3{navigationOrigin.x, 0.0F, navigationOrigin.y - 30.0F},
+             glm::vec3{navigationOrigin.x, 0.0F, navigationOrigin.y + 30.0F}}) {
         const auto interactionRoute = navigation.findPath(
             navigationWorld, start,
             strategy::NavigationGoalRegion{navigationTarget, 0.9F, {start.x, start.z},
@@ -257,8 +287,9 @@ int main() {
     const strategy::SpatialShape rotatedTarget =
         strategy::spatialShape(gameplay, navigationObstacle);
     const auto rotatedRoute = navigation.findPath(
-        navigationWorld, {-32.0F, 0.0F, 7.0F},
-        strategy::NavigationGoalRegion{rotatedTarget, 0.9F, {-32.0F, 7.0F},
+        navigationWorld, {navigationOrigin.x - 32.0F, 0.0F, navigationOrigin.y + 7.0F},
+        strategy::NavigationGoalRegion{rotatedTarget, 0.9F,
+                                       {navigationOrigin.x - 32.0F, navigationOrigin.y + 7.0F},
                                        navigationObstacle.id, 42},
         1.25F, 42);
     valid = valid && !rotatedRoute.empty();
@@ -268,17 +299,49 @@ int main() {
 
     strategy::Entity& sideBlocker =
         navigationWorld.createEntity("Side blocker", "alloy_processor", 0);
-    sideBlocker.transform.position = {-19.0F, 0.0F, 0.0F};
+    sideBlocker.transform.position = {navigationOrigin.x - 19.0F, 0.0F, navigationOrigin.y};
     const auto blockedSideRoute = navigation.findPath(
-        navigationWorld, {-36.0F, 0.0F, 0.0F},
-        strategy::NavigationGoalRegion{rotatedTarget, 0.9F, {-36.0F, 0.0F},
+        navigationWorld, {navigationOrigin.x - 36.0F, 0.0F, navigationOrigin.y},
+        strategy::NavigationGoalRegion{rotatedTarget, 0.9F,
+                                       {navigationOrigin.x - 36.0F, navigationOrigin.y},
                                        navigationObstacle.id, 43},
         strategy::collisionRadius(gameplay, "worker"), 43);
     valid = valid && !blockedSideRoute.empty();
 
+    navigation.rebuildTerrain(navigationTerrain, 20);
+    glm::vec3 impassableDestination{0.0F};
+    bool foundImpassable = false;
+    const strategy::MapArea fullNavigationMap{20};
+    for (float z = -fullNavigationMap.halfExtent();
+         z < fullNavigationMap.halfExtent() && !foundImpassable;
+         z += strategy::Navigation::cellSize)
+        for (float x = -fullNavigationMap.halfExtent(); x < fullNavigationMap.halfExtent();
+             x += strategy::Navigation::cellSize)
+            if (navigationTerrain.traversalAt(x, z) ==
+                strategy::TerrainTraversalClass::impassable) {
+                impassableDestination = {x, 0.0F, z};
+                foundImpassable = true;
+                break;
+            }
+    if (foundImpassable) {
+        const auto droneRoute = navigation.findPath(
+            navigationWorld,
+            {navigationOrigin.x - 18.0F, 0.0F, navigationOrigin.y},
+            impassableDestination, 0.0F, 999, true);
+        valid = valid && droneRoute.empty();
+    }
+
     navigation.rebuildTerrain(navigationTerrain, 17);
     valid = valid && navigation.cellsPerSide() == static_cast<int>(std::ceil(
                            strategy::MapArea{17}.extent() / strategy::Navigation::cellSize));
+    if (!valid) {
+        std::cerr << "Game system validation failed in navigation section: patch="
+                  << foundNavigationPatch << " route=" << route.size()
+                  << " rotated=" << rotatedRoute.size()
+                  << " blocked-side=" << blockedSideRoute.size()
+                  << " impassable=" << foundImpassable << '\n';
+        return 1;
+    }
 
     strategy::RtsCamera camera;
     const auto originalFocus = camera.focus();
@@ -949,12 +1012,12 @@ int main() {
     gameplay.initializeEntity(cappedProcessor);
     const strategy::EntityId cappedProcessorId = cappedProcessor.id;
     cappedProcessor.processor.bufferedInputs["blocked_input"] = 399.0F;
+    cappedProcessor.transform.position = {0, 0, 0};
     strategy::Entity& capacityDrone = capacitySession.world().createEntity(
         "Capacity Drone", "construction_drone", 1);
     gameplay.initializeEntity(capacityDrone);
     const strategy::EntityId capacityDroneId = capacityDrone.id;
     capacityDrone.transform.position = {0, 6, 0};
-    cappedProcessor.transform.position = {0, 0, 0};
     capacityDrone.gatherer.carriedResource = "scrap";
     capacityDrone.gatherer.carriedAmount = 10.0F;
     capacityDrone.unitControl.order = strategy::UnitOrderKind::returnResources;
@@ -973,18 +1036,31 @@ int main() {
     valid = capacitySession.submit(
                 {1, 1, strategy::ConnectPowerCommand{capacityHubId, cappedProcessorId}}) && valid;
     capacitySession.advanceTicks();
-    valid = valid && std::abs(capacitySession.world().findEntity(cappedProcessorId)
-                                  ->processor.bufferedInputs.at("blocked_input") - 399.0F) < 0.001F &&
-            std::abs(capacitySession.world().findEntity(cappedProcessorId)
-                                  ->processor.bufferedInputs.at("scrap") - 1.0F) < 0.001F &&
+    const auto& cappedInputs = capacitySession.world().findEntity(cappedProcessorId)
+                                   ->processor.bufferedInputs;
+    valid = valid && cappedInputs.contains("blocked_input") &&
+            std::abs(cappedInputs.at("blocked_input") - 399.0F) < 0.001F &&
+            cappedInputs.contains("scrap") &&
+            std::abs(cappedInputs.at("scrap") - 1.0F) < 0.001F &&
             std::abs(capacitySession.world().findEntity(capacityDroneId)
                                   ->gatherer.carriedAmount - 9.0F) < 0.001F;
     valid = capacitySession.submit(
                 {1, 2, strategy::SetPowerEnabledCommand{cappedProcessorId, false}}) && valid;
+    const float alloyBeforeFallback =
+        capacitySession.players().find(1)->resources.at("alloy");
     capacitySession.advanceTicks();
-    valid = valid && capacitySession.world().findEntity(capacityDroneId)->gatherer.carriedAmount == 0.0F &&
-            std::abs(capacitySession.world().findEntity(capacityHubId)
-                                  ->processor.bufferedInputs.at("scrap") - 9.0F) < 0.001F;
+    const auto& capacityHubInputs = capacitySession.world().findEntity(capacityHubId)
+                                        ->processor.bufferedInputs;
+    const float bufferedFallback = capacityHubInputs.contains("scrap")
+                                       ? capacityHubInputs.at("scrap")
+                                       : 0.0F;
+    const float convertedFallback = hubScrapConversion && hubScrapConversion->outputPerInput > 0.0F
+        ? (capacitySession.players().find(1)->resources.at("alloy") - alloyBeforeFallback) /
+              hubScrapConversion->outputPerInput
+        : 0.0F;
+    valid = valid &&
+            capacitySession.world().findEntity(capacityDroneId)->gatherer.carriedAmount == 0.0F &&
+            std::abs(bufferedFallback + convertedFallback - 9.0F) < 0.001F;
 
     strategy::GameSession syntheticSession{gameplay, 324U};
     syntheticSession.replaceWorld({}, 324U);

@@ -68,9 +68,12 @@ add_library(strategy_players STATIC
 strategy_target(strategy_players)
 target_link_libraries(strategy_players PUBLIC strategy_core)
 
-add_library(strategy_terrain STATIC src/terrain/Terrain.cpp)
+add_library(strategy_terrain STATIC
+    src/terrain/Terrain.cpp
+    src/terrain/TerrainGeneration.cpp
+)
 strategy_target(strategy_terrain)
-target_link_libraries(strategy_terrain PUBLIC strategy_core)
+target_link_libraries(strategy_terrain PUBLIC strategy_core RapidJSON)
 
 # World storage and spatial services.
 add_library(strategy_world STATIC
@@ -222,6 +225,7 @@ if(STRATEGY_BUILD_TESTS)
     strategy_target(terrain_tests)
     target_link_libraries(terrain_tests PRIVATE strategy_terrain)
     add_test(NAME terrain_queries COMMAND terrain_tests)
+    set_tests_properties(terrain_queries PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
     add_executable(game_system_tests tests/GameSystemTests.cpp)
     strategy_target(game_system_tests)

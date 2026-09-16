@@ -23,6 +23,7 @@ struct GameConfig {
                                                            {"left", 97},
                                                            {"right", 100},
                                                            {"debug", 1073741884},
+                                                           {"terrain_debug", 1073741885},
                                                            {"pause", 27}};
 
     [[nodiscard]] static GameConfig load(const std::filesystem::path& path);

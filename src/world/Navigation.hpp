@@ -29,10 +29,11 @@ class Navigation final {
                std::uint32_t mapChunksPerSide);
     void rebuildTerrain(const Terrain& terrain, std::uint32_t mapChunksPerSide);
     [[nodiscard]] std::vector<glm::vec3> findPath(
-        const World& world, glm::vec3 start, glm::vec3 destination, float radius, EntityId ignored);
+        const World& world, glm::vec3 start, glm::vec3 destination, float radius, EntityId ignored,
+        bool ignoreEntityObstacles = false);
     [[nodiscard]] std::vector<glm::vec3> findPath(
         const World& world, glm::vec3 start, const NavigationGoalRegion& goal,
-        float radius, EntityId ignored);
+        float radius, EntityId ignored, bool ignoreEntityObstacles = false);
     [[nodiscard]] int cellsPerSide() const { return side_; }
     [[nodiscard]] float worldExtent() const { return map_.extent(); }
 
@@ -41,6 +42,7 @@ class Navigation final {
     int side_{1};
     std::vector<float> heights_;
     std::vector<std::uint8_t> terrainPassable_;
+    std::vector<float> terrainTraversalCosts_;
     std::unordered_map<int, std::vector<std::uint8_t>> occupancyByRadius_;
     std::unordered_map<std::uint64_t, std::vector<float>> flowFields_;
     std::map<EntityId, SpatialShape> obstacleShapes_;
@@ -49,9 +51,11 @@ class Navigation final {
     [[nodiscard]] int gridCoordinate(float value) const;
     [[nodiscard]] glm::vec3 positionOf(int x, int z) const;
     void synchronizeObstacles(const World& world);
-    const std::vector<std::uint8_t>& occupancy(const World& world, float radius);
+    const std::vector<std::uint8_t>& occupancy(const World& world, float radius,
+                                               bool ignoreEntityObstacles);
     [[nodiscard]] std::vector<glm::vec3> pathFromGoals(
         const World& world, glm::vec3 start, const std::vector<int>& goals,
-        glm::vec2 preferredGoal, float radius, EntityId ignored, std::uint64_t goalKey);
+        glm::vec2 preferredGoal, float radius, EntityId ignored, std::uint64_t goalKey,
+        bool ignoreEntityObstacles);
 };
 } // namespace strategy

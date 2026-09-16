@@ -38,12 +38,16 @@ int main() {
             const auto rule = std::find_if(vegetation.begin(), vegetation.end(), [&](const auto& item) {
                 return item.archetype == entity.archetype.value;
             });
-            const float normalizedHeight = terrain.heightAt(entity.transform.position.x,
-                                                             entity.transform.position.z) /
-                                           strategy::Terrain::heightScale;
+            const strategy::TerrainSample& terrainSample = terrain.sampleAt(
+                entity.transform.position.x, entity.transform.position.z);
             valid = valid && rule != vegetation.end() &&
-                    normalizedHeight >= rule->minimumHeight &&
-                    normalizedHeight <= rule->maximumHeight;
+                    std::find(rule->allowedBiomes.begin(),
+                              rule->allowedBiomes.end(),
+                              terrainSample.biome) != rule->allowedBiomes.end() &&
+                    std::find(rule->allowedSurfaces.begin(),
+                              rule->allowedSurfaces.end(),
+                              terrainSample.surface) != rule->allowedSurfaces.end() &&
+                    terrainSample.slopeDegrees <= rule->maximumSlopeDegrees;
         }
     }
     valid = valid && grassVariants["grass_dry"] > 0 &&

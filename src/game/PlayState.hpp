@@ -51,6 +51,7 @@ class PlayState final : public GameState {
     mutable EntityId pendingOrderTarget_{0};
     bool paused_{false};
     bool detailedDebug_{false};
+    bool terrainDebug_{false};
     bool powerOverlayVisible_{false};
     enum class PowerLinkMode { none, connect, disconnect };
     PowerLinkMode powerLinkMode_{PowerLinkMode::none};
@@ -72,6 +73,7 @@ class PlayState final : public GameState {
     mutable bool pendingSelectionDoubleClick_{false};
     EntityId lastWorldClickEntity_{0};
     mutable std::optional<glm::vec2> hoverPosition_;
+    mutable glm::vec2 pointerScreen_{0.0F};
     mutable EntityId hoveredEntity_{0};
     EntityId selectedEntity_{0};
     std::vector<EntityId> selectedUnits_;

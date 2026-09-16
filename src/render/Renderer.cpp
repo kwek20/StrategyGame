@@ -38,6 +38,7 @@ struct TerrainVertex {
     glm::vec3 position;
     glm::vec3 normal;
     glm::vec3 color;
+    glm::vec4 materialWeights{0.0F};
 };
 
 void GLAPIENTRY openGlDebugMessage(GLenum,
@@ -285,11 +286,16 @@ Renderer::Renderer(Logger* logger)
                 for (int localX = 0; localX < chunkSide; ++localX) {
                     const int gridX = startX + localX;
                     const int gridZ = startZ + localZ;
-                    vertices.push_back({{static_cast<float>(gridX) * Terrain::spacing - halfExtent,
+                    const float worldX =
+                        static_cast<float>(gridX) * Terrain::spacing - halfExtent;
+                    const float worldZ =
+                        static_cast<float>(gridZ) * Terrain::spacing - halfExtent;
+                    vertices.push_back({{worldX,
                                          terrain_.vertexHeight(gridX, gridZ),
-                                         static_cast<float>(gridZ) * Terrain::spacing - halfExtent},
+                                         worldZ},
                                         terrain_.normalAt(gridX, gridZ),
-                                        terrain_.colorAt(terrain_.normalizedHeight(gridX, gridZ))});
+                                        terrain_.colorAt(worldX, worldZ),
+                                        terrain_.materialWeightsAt(worldX, worldZ)});
                 }
             }
 
@@ -363,6 +369,14 @@ Renderer::Renderer(Logger* logger)
                                   GL_FALSE,
                                   sizeof(TerrainVertex),
                                   reinterpret_cast<void*>(offsetof(TerrainVertex, color)));
+            glEnableVertexAttribArray(3);
+            glVertexAttribPointer(3,
+                                  4,
+                                  GL_FLOAT,
+                                  GL_FALSE,
+                                  sizeof(TerrainVertex),
+                                  reinterpret_cast<void*>(offsetof(TerrainVertex,
+                                                                   materialWeights)));
             glBindVertexArray(0);
             terrainChunks_.push_back(chunk);
         }
@@ -599,7 +613,9 @@ void Renderer::drawText(
         {text, x, y, std::max(scale * 8.0F, 13.0F), color});
 }
 
-void Renderer::drawTerrain(const CameraView& camera, const Player* player) const {
+void Renderer::drawTerrain(const CameraView& camera,
+                           const Player* player,
+                           bool terrainDebug) const {
     renderGraph_.enter(RenderPassKind::terrain);
     ProfileScope profile(profiler_, "render.terrain");
     RenderPass pass(RenderPassKind::terrain);
@@ -613,13 +629,14 @@ void Renderer::drawTerrain(const CameraView& camera, const Player* player) const
     glUniform1i(shaders_.uniform(program_, "rockTexture"), 2);
     glUniform1i(shaders_.uniform(program_, "dryGroundTexture"), 3);
     glUniform1i(shaders_.uniform(program_, "useFoundationTexture"), 0);
+    glUniform1i(shaders_.uniform(program_, "terrainDebug"), terrainDebug ? 1 : 0);
     const GLint location = shaders_.uniform(program_, "viewProjection");
     glUniformMatrix4fv(location, 1, GL_FALSE, glm::value_ptr(viewProjection));
     glUniform3fv(
         shaders_.uniform(program_, "cameraPosition"), 1, glm::value_ptr(camera.position));
     const bool closeView = camera.detailDistance < 20.0F;
     glUniform2f(shaders_.uniform(program_, "fogRange"), 140.0F, 280.0F);
-    glUniform1i(shaders_.uniform(program_, "useExploration"), player ? 1 : 0);
+    glUniform1i(shaders_.uniform(program_, "useExploration"), player && !terrainDebug ? 1 : 0);
     glUniform1f(shaders_.uniform(program_, "explorationExtent"), activeWorldExtent());
     if (player) {
         std::vector<std::uint8_t> map(player->discovered.size());
@@ -671,6 +688,7 @@ void Renderer::drawTerrain(const CameraView& camera, const Player* player) const
         resources_.textureOrMarker(foundationTexture_)->bind(4, true);
         glUniform1i(shaders_.uniform(program_, "foundationTexture"), 4);
         glUniform1i(shaders_.uniform(program_, "useFoundationTexture"), 1);
+        glUniform1i(shaders_.uniform(program_, "terrainDebug"), 0);
         if (!mesh.visible || mesh.indexCount == 0)
             continue;
         glBindVertexArray(mesh.vao);
@@ -678,6 +696,7 @@ void Renderer::drawTerrain(const CameraView& camera, const Player* player) const
                        nullptr);
     }
     glUniform1i(shaders_.uniform(program_, "useFoundationTexture"), 0);
+    glUniform1i(shaders_.uniform(program_, "terrainDebug"), 0);
     glActiveTexture(GL_TEXTURE0);
     glBindVertexArray(0);
 }
@@ -975,6 +994,7 @@ void Renderer::drawVisionRanges(const CameraView& camera, const Entity* entity) 
             shaders_.uniform(program_, "cameraPosition"), 1, glm::value_ptr(camera.position));
         glUniform2f(shaders_.uniform(program_, "fogRange"), 10000.0F, 10001.0F);
         glUniform1i(shaders_.uniform(program_, "useExploration"), 0);
+        glUniform1i(shaders_.uniform(program_, "terrainDebug"), 0);
         glBindVertexArray(hudVao_);
         glBindBuffer(GL_ARRAY_BUFFER, hudVbo_);
         glBufferData(GL_ARRAY_BUFFER,
@@ -984,6 +1004,8 @@ void Renderer::drawVisionRanges(const CameraView& camera, const Entity* entity) 
         glEnableVertexAttribArray(0);
         glEnableVertexAttribArray(1);
         glEnableVertexAttribArray(2);
+        glDisableVertexAttribArray(3);
+        glVertexAttrib4f(3, 0.0F, 0.0F, 0.0F, 0.0F);
         glVertexAttribPointer(0,
                               3,
                               GL_FLOAT,
@@ -1011,6 +1033,62 @@ void Renderer::drawVisionRanges(const CameraView& camera, const Entity* entity) 
     glDisableVertexAttribArray(1);
     glDisableVertexAttribArray(2);
     glBindVertexArray(0);
+}
+
+void Renderer::drawTerrainDebugHud(glm::vec3 worldPosition) const {
+    renderGraph_.enter(RenderPassKind::userInterface);
+    const TerrainSample& sample = terrain_.sampleAt(worldPosition.x, worldPosition.z);
+    const auto number = [](float value, int precision = 2) {
+        std::ostringstream stream;
+        stream << std::fixed << std::setprecision(precision) << value;
+        return stream.str();
+    };
+    const auto traversal = [](TerrainTraversalClass value) {
+        switch (value) {
+        case TerrainTraversalClass::open: return "open";
+        case TerrainTraversalClass::difficult: return "difficult";
+        case TerrainTraversalClass::impassable: return "impassable";
+        }
+        return "unknown";
+    };
+    const auto buildability = [](TerrainBuildabilityClass value) {
+        switch (value) {
+        case TerrainBuildabilityClass::buildable: return "buildable";
+        case TerrainBuildabilityClass::restricted: return "restricted";
+        case TerrainBuildabilityClass::forbidden: return "forbidden";
+        }
+        return "unknown";
+    };
+
+    constexpr float width = 430.0F;
+    constexpr float height = 212.0F;
+    const float left = std::max(8.0F, (static_cast<float>(viewportWidth_) - width) * 0.5F);
+    const float top = 52.0F;
+    UiDocument ui;
+    ui.modal("terrain_debug.panel", {left, top, left + width, top + height},
+             {0.025F, 0.035F, 0.045F});
+    const std::vector<std::string> lines{
+        Text::get("terrain_debug.title"),
+        Text::format("terrain_debug.cursor",
+                     {number(worldPosition.x), number(sample.baseHeight), number(worldPosition.z),
+                      number(sample.slopeDegrees)}),
+        Text::format("terrain_debug.identity", {sample.biome.value, sample.surface.value}),
+        Text::format("terrain_debug.rules",
+                     {traversal(sample.traversal), buildability(sample.buildability)}),
+        Text::format("terrain_debug.fields_a",
+                     {number(sample.continentalness, 3), number(sample.erosion, 3)}),
+        Text::format("terrain_debug.fields_b",
+                     {number(sample.peaks, 3), number(sample.moisture, 3),
+                      number(sample.temperature, 3)}),
+        Text::format("terrain_debug.grid", {number(Terrain::semanticCellSize, 1)})};
+    for (std::size_t index = 0; index < lines.size(); ++index)
+        ui.label("terrain_debug.line." + std::to_string(index),
+                 {left + 14.0F, top + 13.0F + static_cast<float>(index) * 27.0F,
+                  left + width - 14.0F, top + 38.0F + static_cast<float>(index) * 27.0F},
+                 lines[index], index == 0 ? 1.25F : 1.05F,
+                 index == 0 ? glm::vec3{1.0F, 0.82F, 0.28F}
+                            : glm::vec3{0.92F, 0.95F, 0.98F});
+    uiRenderer_->draw(ui, viewportWidth_, viewportHeight_);
 }
 
 void Renderer::drawDetailedDebugHud(const CameraView& camera,
@@ -1400,11 +1478,16 @@ void Renderer::regenerateTerrain(std::uint32_t seed, std::uint32_t chunksPerSide
                 for (int localX = 0; localX < chunkSide; ++localX) {
                     const int gridX = startX + localX;
                     const int gridZ = startZ + localZ;
-                    vertices.push_back({{static_cast<float>(gridX) * Terrain::spacing - halfExtent,
+                    const float worldX =
+                        static_cast<float>(gridX) * Terrain::spacing - halfExtent;
+                    const float worldZ =
+                        static_cast<float>(gridZ) * Terrain::spacing - halfExtent;
+                    vertices.push_back({{worldX,
                                          terrain_.vertexHeight(gridX, gridZ),
-                                         static_cast<float>(gridZ) * Terrain::spacing - halfExtent},
+                                         worldZ},
                                         terrain_.normalAt(gridX, gridZ),
-                                        terrain_.colorAt(terrain_.normalizedHeight(gridX, gridZ))});
+                                        terrain_.colorAt(worldX, worldZ),
+                                        terrain_.materialWeightsAt(worldX, worldZ)});
                 }
             }
             const std::size_t chunkIndex =
@@ -1527,6 +1610,7 @@ void Renderer::syncFoundationMeshes() {
         glEnableVertexAttribArray(0); glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(TerrainVertex), reinterpret_cast<void*>(offsetof(TerrainVertex, position)));
         glEnableVertexAttribArray(1); glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(TerrainVertex), reinterpret_cast<void*>(offsetof(TerrainVertex, normal)));
         glEnableVertexAttribArray(2); glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(TerrainVertex), reinterpret_cast<void*>(offsetof(TerrainVertex, color)));
+        glEnableVertexAttribArray(3); glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, sizeof(TerrainVertex), reinterpret_cast<void*>(offsetof(TerrainVertex, materialWeights)));
         glBindVertexArray(0);
         foundationMeshes_.push_back(mesh);
     }
@@ -1542,9 +1626,11 @@ void Renderer::uploadTerrainChunk(int chunkX, int chunkZ) {
     for (int localZ = 0; localZ < chunkSide; ++localZ)
         for (int localX = 0; localX < chunkSide; ++localX) {
             const int x = startX + localX, z = startZ + localZ;
-            vertices.push_back({{x * Terrain::spacing - halfExtent, terrain_.vertexHeight(x, z),
-                                 z * Terrain::spacing - halfExtent}, terrain_.normalAt(x, z),
-                                terrain_.colorAt(terrain_.normalizedHeight(x, z))});
+            const float worldX = x * Terrain::spacing - halfExtent;
+            const float worldZ = z * Terrain::spacing - halfExtent;
+            vertices.push_back({{worldX, terrain_.vertexHeight(x, z), worldZ},
+                                terrain_.normalAt(x, z), terrain_.colorAt(worldX, worldZ),
+                                terrain_.materialWeightsAt(worldX, worldZ)});
         }
     const std::size_t index = static_cast<std::size_t>(chunkZ * Terrain::chunksPerSide + chunkX);
     if (index < terrainChunks_.size()) {

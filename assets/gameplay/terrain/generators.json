@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "activeGenerator": "continental_v1",
+  "generators": {
+    "continental_v1": {
+      "version": 1,
+      "height": {
+        "baseHeight": 0.36,
+        "continentalAmplitude": 0.20,
+        "detailAmplitude": 0.035,
+        "mountainAmplitude": 0.34,
+        "mountainThreshold": 0.52,
+        "erosionStrength": 0.58,
+        "ridgePower": 2.6,
+        "minimumHeight": 0.04,
+        "maximumHeight": 0.94,
+        "warpScale": 180.0,
+        "warpStrength": 18.0,
+        "smoothingPasses": 2
+      },
+      "fields": {
+        "continentalness": { "scale": 190.0, "octaves": 4, "persistence": 0.52 },
+        "erosion": { "scale": 145.0, "octaves": 3, "persistence": 0.50 },
+        "peaks": { "scale": 105.0, "octaves": 5, "persistence": 0.48 },
+        "moisture": { "scale": 155.0, "octaves": 3, "persistence": 0.54 },
+        "temperature": { "scale": 230.0, "octaves": 2, "persistence": 0.50 },
+        "detail": { "scale": 34.0, "octaves": 4, "persistence": 0.44 }
+      }
+    }
+  }
+}

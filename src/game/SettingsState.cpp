@@ -13,7 +13,8 @@
 
 namespace strategy {
 namespace {
-constexpr const char* bindingNames[]{"forward", "backward", "left", "right", "debug", "pause"};
+constexpr const char* bindingNames[]{
+    "forward", "backward", "left", "right", "debug", "terrain_debug", "pause"};
 }
 
 UiDocument SettingsState::uiDocument(int width, int height) const {
@@ -43,11 +44,13 @@ UiDocument SettingsState::uiDocument(int width, int height) const {
     for (std::size_t row = 0; row < audio.size(); ++row)
         ui.button(audio[row].first, {60.0F, 285.0F + row * 45.0F, 430.0F,
                                     323.0F + row * 45.0F}, audio[row].second);
-    static constexpr const char* actionKeys[]{"settings.action.forward", "settings.action.backward",
-        "settings.action.left", "settings.action.right", "settings.action.debug", "settings.action.pause"};
+    static constexpr const char* actionKeys[]{
+        "settings.action.forward", "settings.action.backward", "settings.action.left",
+        "settings.action.right", "settings.action.debug", "settings.action.terrain_debug",
+        "settings.action.pause"};
     ui.label("settings.controls", {470, 100, 0, 0}, Text::get("settings.controls"), 2.0F,
              {0.35F, 0.72F, 0.92F});
-    for (int row = 0; row < 6; ++row) {
+    for (int row = 0; row < static_cast<int>(std::size(bindingNames)); ++row) {
         const auto found = config_.keybinds.find(bindingNames[row]);
         const SDL_Keycode key = found == config_.keybinds.end() ? 0 : found->second;
         const std::string value = binding_ == row ? Text::get("settings.press_key")

@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "surfaces": [
+    { "id": "water_bed", "color": [0.12, 0.24, 0.28], "materialWeights": [0.00, 0.30, 0.70, 0.00], "tags": ["submerged", "no-build"] },
+    { "id": "dry_ground", "color": [0.52, 0.42, 0.24], "materialWeights": [0.00, 0.10, 0.00, 0.90], "tags": ["land", "dry", "buildable"] },
+    { "id": "grass", "color": [0.30, 0.52, 0.22], "materialWeights": [0.86, 0.14, 0.00, 0.00], "tags": ["land", "vegetated", "buildable"] },
+    { "id": "upland_grass", "color": [0.38, 0.48, 0.24], "materialWeights": [0.58, 0.24, 0.18, 0.00], "tags": ["land", "vegetated"] },
+    { "id": "rock", "color": [0.38, 0.38, 0.35], "materialWeights": [0.08, 0.18, 0.74, 0.00], "tags": ["land", "rocky"] },
+    { "id": "mountain_rock", "color": [0.28, 0.29, 0.30], "materialWeights": [0.00, 0.08, 0.92, 0.00], "tags": ["land", "rocky", "no-build"] }
+  ]
+}

@@ -850,16 +850,27 @@ void DefinitionRegistry::loadRules(const std::filesystem::path& path) {
             return value[name].GetFloat();
         };
         vegetation.instancesPerChunk = field("instancesPerChunk");
-        vegetation.minimumHeight = field("minimumHeight");
-        vegetation.maximumHeight = field("maximumHeight");
-        vegetation.maximumSlope = field("maximumSlope");
+        vegetation.maximumSlopeDegrees = field("maximumSlopeDegrees");
         vegetation.minimumSpacing = field("minimumSpacing");
         vegetation.minimumScale = field("minimumScale");
         vegetation.maximumScale = field("maximumScale");
-        if (vegetation.instancesPerChunk < 0.0F || vegetation.minimumHeight < 0.0F ||
-            vegetation.maximumHeight > 1.0F ||
-            vegetation.maximumHeight < vegetation.minimumHeight ||
-            vegetation.maximumSlope < 0.0F || vegetation.minimumSpacing < 0.0F ||
+        if (!value.HasMember("allowedBiomes") || !value["allowedBiomes"].IsArray() ||
+            !value.HasMember("allowedSurfaces") || !value["allowedSurfaces"].IsArray())
+            throw std::runtime_error("Vegetation '" + vegetation.archetype +
+                                     "' requires biome and surface rules");
+        for (const auto& biome : value["allowedBiomes"].GetArray()) {
+            if (!biome.IsString())
+                throw std::runtime_error("Vegetation biome IDs must be strings");
+            vegetation.allowedBiomes.emplace_back(biome.GetString());
+        }
+        for (const auto& surface : value["allowedSurfaces"].GetArray()) {
+            if (!surface.IsString())
+                throw std::runtime_error("Vegetation surface IDs must be strings");
+            vegetation.allowedSurfaces.emplace_back(surface.GetString());
+        }
+        if (vegetation.allowedBiomes.empty() || vegetation.allowedSurfaces.empty() ||
+            vegetation.instancesPerChunk < 0.0F || vegetation.maximumSlopeDegrees < 0.0F ||
+            vegetation.maximumSlopeDegrees > 90.0F || vegetation.minimumSpacing < 0.0F ||
             vegetation.minimumScale <= 0.0F ||
             vegetation.maximumScale < vegetation.minimumScale)
             throw std::runtime_error("Vegetation '" + vegetation.archetype +

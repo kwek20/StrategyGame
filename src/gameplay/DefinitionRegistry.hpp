@@ -197,9 +197,9 @@ struct VegetationGenerationDefinition {
     std::string archetype;
     std::string stream;
     float instancesPerChunk{0.0F};
-    float minimumHeight{0.0F};
-    float maximumHeight{1.0F};
-    float maximumSlope{1.0F};
+    std::vector<TerrainBiomeId> allowedBiomes;
+    std::vector<TerrainSurfaceId> allowedSurfaces;
+    float maximumSlopeDegrees{90.0F};
     float minimumSpacing{0.0F};
     float minimumScale{1.0F};
     float maximumScale{1.0F};

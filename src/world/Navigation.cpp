@@ -47,13 +47,17 @@ void Navigation::rebuildTerrain(const Terrain& terrain, std::uint32_t mapChunksP
     side_ = std::max(1, static_cast<int>(std::ceil(map_.extent() / cellSize)));
     heights_.resize(static_cast<std::size_t>(side_ * side_));
     terrainPassable_.assign(static_cast<std::size_t>(side_ * side_), 1);
+    terrainTraversalCosts_.assign(static_cast<std::size_t>(side_ * side_), 1.0F);
     for (int z = 0; z < side_; ++z)
         for (int x = 0; x < side_; ++x) {
             const glm::vec3 position = positionOf(x, z);
             const float height = terrain.heightAt(position.x, position.z);
             heights_[indexOf(x, z)] = height;
-            const float normalized = height / Terrain::heightScale;
-            terrainPassable_[indexOf(x, z)] = normalized > 0.12F && normalized < 0.78F;
+            const TerrainTraversalClass traversal = terrain.traversalAt(position.x, position.z);
+            terrainPassable_[indexOf(x, z)] =
+                traversal == TerrainTraversalClass::impassable ? 0 : 1;
+            terrainTraversalCosts_[indexOf(x, z)] =
+                traversal == TerrainTraversalClass::difficult ? 2.25F : 1.0F;
         }
     obstacleShapes_.clear();
     occupancyByRadius_.clear();
@@ -118,7 +122,10 @@ void Navigation::synchronizeObstacles(const World& world) {
     flowFields_.clear();
 }
 
-const std::vector<std::uint8_t>& Navigation::occupancy(const World& world, float radius) {
+const std::vector<std::uint8_t>& Navigation::occupancy(const World& world, float radius,
+                                                       bool ignoreEntityObstacles) {
+    if (ignoreEntityObstacles)
+        return terrainPassable_;
     synchronizeObstacles(world);
     const int radiusClass = static_cast<int>(std::round(radius * 10.0F));
     if (const auto found = occupancyByRadius_.find(radiusClass); found != occupancyByRadius_.end())
@@ -144,18 +151,20 @@ const std::vector<std::uint8_t>& Navigation::occupancy(const World& world, float
 }
 
 std::vector<glm::vec3> Navigation::findPath(
-    const World& world, glm::vec3 start, glm::vec3 destination, float radius, EntityId ignored) {
+    const World& world, glm::vec3 start, glm::vec3 destination, float radius, EntityId ignored,
+    bool ignoreEntityObstacles) {
     const int target = indexOf(gridCoordinate(destination.x), gridCoordinate(destination.z));
     auto result = pathFromGoals(world, start, {target}, {destination.x, destination.z}, radius,
-                                ignored, static_cast<std::uint64_t>(target));
+                                ignored, static_cast<std::uint64_t>(target),
+                                ignoreEntityObstacles);
     if (!result.empty()) result.back() = destination;
     return result;
 }
 
 std::vector<glm::vec3> Navigation::findPath(
     const World& world, glm::vec3 start, const NavigationGoalRegion& goal,
-    float radius, EntityId ignored) {
-    const auto& passable = occupancy(world, radius);
+    float radius, EntityId ignored, bool ignoreEntityObstacles) {
+    const auto& passable = occupancy(world, radius, ignoreEntityObstacles);
     const SpatialShape actorBoundary = expanded(
         goal.target, radius + std::max(0.0F, goal.interactionRange * 0.5F));
     const float outerDistance = radius + std::max(0.0F, goal.interactionRange) + cellSize * 0.75F;
@@ -195,11 +204,13 @@ std::vector<glm::vec3> Navigation::findPath(
     mix(goalKey, std::bit_cast<std::uint32_t>(goal.interactionRange));
     mix(goalKey, static_cast<std::uint64_t>(gridCoordinate(preferred.x)));
     mix(goalKey, static_cast<std::uint64_t>(gridCoordinate(preferred.y)));
-    auto result = pathFromGoals(world, start, goals, preferred, radius, ignored, goalKey);
+    auto result = pathFromGoals(world, start, goals, preferred, radius, ignored, goalKey,
+                                ignoreEntityObstacles);
     const SpatialShape actorAtPreferred{
         FootprintShape::circle, preferred, radius, glm::vec2{radius}, 0.0F};
     if (!result.empty() && map_.contains(preferred, radius) &&
-        !overlapsObject(world, definitions_, actorAtPreferred, ignored)) {
+        (ignoreEntityObstacles ||
+         !overlapsObject(world, definitions_, actorAtPreferred, ignored))) {
         result.push_back({preferred.x, 0.0F, preferred.y});
     }
     return result;
@@ -207,13 +218,15 @@ std::vector<glm::vec3> Navigation::findPath(
 
 std::vector<glm::vec3> Navigation::pathFromGoals(
     const World& world, glm::vec3 start, const std::vector<int>& goals,
-    glm::vec2 preferredGoal, float radius, EntityId ignored, std::uint64_t goalKey) {
+    glm::vec2 preferredGoal, float radius, EntityId ignored, std::uint64_t goalKey,
+    bool ignoreEntityObstacles) {
     (void)ignored;
-    const auto& cached = occupancy(world, radius);
+    const auto& cached = occupancy(world, radius, ignoreEntityObstacles);
     std::vector<std::uint8_t> passable = cached;
     const int sx = gridCoordinate(start.x), sz = gridCoordinate(start.z), source = indexOf(sx, sz);
     passable[source] = 1;
     mix(goalKey, static_cast<std::uint64_t>(static_cast<int>(std::round(radius * 10.0F))));
+    mix(goalKey, ignoreEntityObstacles ? 1U : 0U);
     auto flow = flowFields_.find(goalKey);
     if (flow == flowFields_.end()) {
         if (flowFields_.size() >= 64) flowFields_.clear();
@@ -241,8 +254,10 @@ std::vector<glm::vec3> Navigation::pathFromGoals(
                     (!passable[indexOf(x + direction[0], z)] || !passable[indexOf(x, z + direction[1])])) continue;
                 const int next = indexOf(nx, nz);
                 const float rise = std::abs(heights_[item.node] - heights_[next]);
-                if (rise > 1.5F) continue;
-                const float nextCost = item.cost + (direction[0] && direction[1] ? 1.4142F : 1.0F) + rise * 0.15F;
+                const float distance = direction[0] && direction[1] ? 1.4142F : 1.0F;
+                const float traversalCost =
+                    (terrainTraversalCosts_[item.node] + terrainTraversalCosts_[next]) * 0.5F;
+                const float nextCost = item.cost + distance * traversalCost + rise * 0.15F;
                 if (nextCost < costs[next]) { costs[next] = nextCost; open.push({nextCost, next}); }
             }
         }

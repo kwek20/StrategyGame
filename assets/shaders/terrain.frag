@@ -2,6 +2,7 @@
 in vec3 vertexColor;
 in vec3 vertexNormal;
 in vec3 worldPosition;
+in vec4 materialWeights;
 uniform vec3 cameraPosition;
 uniform vec2 fogRange;
 uniform sampler2D explorationMap;
@@ -13,6 +14,7 @@ uniform sampler2D dryGroundTexture;
 uniform sampler2D foundationTexture;
 uniform bool useExploration;
 uniform bool useFoundationTexture;
+uniform bool terrainDebug;
 out vec4 outColor;
 
 float terrainHash(vec2 point) {
@@ -46,19 +48,21 @@ void main() {
         discard;
     }
 
+    if (terrainDebug) {
+        vec2 cell = abs(fract((worldPosition.xz + vec2(explorationExtent * 0.5)) / 2.0) - 0.5);
+        float grid = smoothstep(0.455, 0.495, max(cell.x, cell.y));
+        vec3 semanticColor = mix(vertexColor, vertexColor * 0.22, grid * 0.72);
+        outColor = vec4(semanticColor, 1.0);
+        return;
+    }
+
     vec3 lightDirection = normalize(vec3(-0.45, 0.82, 0.35));
     float diffuse = max(dot(normalize(vertexNormal), lightDirection), 0.0);
-    float height = clamp(worldPosition.y / 16.0, 0.0, 1.0);
-    float slope = 1.0 - clamp(normalize(vertexNormal).y, 0.0, 1.0);
     float variation = terrainNoise(worldPosition.xz);
-    float dryWeight = (1.0 - smoothstep(0.16, 0.34, height)) * mix(0.72, 1.0, variation);
-    float rockWeight = smoothstep(0.20, 0.58, slope);
-    rockWeight = max(rockWeight, smoothstep(0.82, 0.98, height) * 0.45);
-    float dirtWeight = smoothstep(0.12, 0.30, height) *
-                       (1.0 - smoothstep(0.48, 0.72, height)) * mix(0.30, 0.72, variation);
-    float grassWeight = max(0.08, 1.0 - dryWeight - rockWeight - dirtWeight);
-    vec4 weights = max(vec4(grassWeight, dirtWeight, rockWeight, dryWeight), vec4(0.0));
-    weights /= dot(weights, vec4(1.0));
+    vec4 weights = max(materialWeights, vec4(0.0));
+    float weightTotal = dot(weights, vec4(1.0));
+    if (weightTotal > 0.0001)
+        weights /= weightTotal;
 
     vec2 tiledUv = worldPosition.xz * 0.16;
     vec3 grass = tiledSample(grassTexture, tiledUv, variation);
@@ -79,9 +83,11 @@ void main() {
     float textureStrength = 0.82;
     vec3 surface = useFoundationTexture
                        ? textured
-                       : mix(vertexColor,
-                             textured * mix(vec3(1.0), vertexColor, 0.18),
-                             textureStrength);
+                       : (weightTotal > 0.0001
+                              ? mix(vertexColor,
+                                    textured * mix(vec3(1.0), vertexColor, 0.18),
+                                    textureStrength)
+                              : vertexColor);
     vec3 lit = surface * (0.46 + diffuse * 0.64);
     float fog = smoothstep(fogRange.x, fogRange.y, cameraDistance);
     vec3 atmospheric = mix(lit, vec3(0.32, 0.36, 0.38), fog * 0.72);

@@ -1,7 +1,10 @@
 #pragma once
 
+#include "terrain/TerrainGeneration.hpp"
+
 #include <cstdint>
 #include <glm/vec3.hpp>
+#include <glm/vec4.hpp>
 #include <glm/vec2.hpp>
 #include <glm/geometric.hpp>
 #include <vector>
@@ -10,6 +13,24 @@
 namespace strategy {
 
 enum class FootprintShape { circle, rectangle };
+enum class TerrainTraversalClass { open, difficult, impassable };
+enum class TerrainBuildabilityClass { buildable, restricted, forbidden };
+
+struct TerrainSample {
+    float baseHeight{0.0F};
+    float slopeDegrees{0.0F};
+    float continentalness{0.0F};
+    float erosion{0.0F};
+    float peaks{0.0F};
+    float moisture{0.0F};
+    float temperature{0.0F};
+    TerrainBiomeId biome;
+    TerrainSurfaceId surface;
+    glm::vec3 surfaceColor{1.0F};
+    glm::vec4 materialWeights{1.0F, 0.0F, 0.0F, 0.0F};
+    TerrainTraversalClass traversal{TerrainTraversalClass::open};
+    TerrainBuildabilityClass buildability{TerrainBuildabilityClass::buildable};
+};
 
 struct TerrainFootprint {
     FootprintShape shape{FootprintShape::circle};
@@ -64,14 +85,23 @@ class Terrain final {
     static constexpr int vertexCount = cellCount + 1;
     static constexpr float spacing = 0.375F;
     static constexpr float heightScale = 16.0F;
+    static constexpr float semanticCellSize = 2.0F;
+    static constexpr int semanticCellCount =
+        static_cast<int>(cellCount * spacing / semanticCellSize);
 
     explicit Terrain(std::uint32_t seed = 0x5EED1234U);
+    Terrain(std::uint32_t seed, const TerrainGeneratorDefinition& generator);
 
     [[nodiscard]] float normalizedHeight(int x, int z) const;
     [[nodiscard]] float vertexHeight(int x, int z) const;
     [[nodiscard]] float heightAt(float worldX, float worldZ) const;
+    [[nodiscard]] const TerrainSample& sampleAt(float worldX, float worldZ) const;
+    [[nodiscard]] TerrainBiomeId biomeAt(float worldX, float worldZ) const;
+    [[nodiscard]] TerrainTraversalClass traversalAt(float worldX, float worldZ) const;
+    [[nodiscard]] bool isBuildableAt(float worldX, float worldZ) const;
     [[nodiscard]] glm::vec3 normalAt(int x, int z) const;
-    [[nodiscard]] glm::vec3 colorAt(float normalizedHeight) const;
+    [[nodiscard]] glm::vec3 colorAt(float worldX, float worldZ) const;
+    [[nodiscard]] glm::vec4 materialWeightsAt(float worldX, float worldZ) const;
     [[nodiscard]] float worldExtent() const;
     [[nodiscard]] FootprintFit fitFootprint(float worldX,
                                             float worldZ,
@@ -92,13 +122,15 @@ class Terrain final {
   private:
     std::vector<float> heights_;
     std::vector<float> baseHeights_;
+    std::vector<TerrainSample> semanticSamples_;
     std::vector<std::pair<int, int>> dirtyChunks_;
     std::vector<TerrainFoundation> appliedFoundations_;
 
-    void generate(std::uint32_t seed);
-    [[nodiscard]] static float valueNoise(float x, float z, std::uint32_t seed);
-    [[nodiscard]] static float
-    fractalNoise(float x, float z, std::uint32_t seed, int octaves, float persistence);
+    void generate(std::uint32_t seed, const TerrainGeneratorDefinition& generator);
+    void generateSemantics(std::uint32_t seed,
+                           const TerrainGeneratorDefinition& generator,
+                           const TerrainGenerationDefinitions& definitions);
+    [[nodiscard]] int semanticIndex(float worldX, float worldZ) const;
 };
 
 } // namespace strategy

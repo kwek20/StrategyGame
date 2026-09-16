@@ -142,17 +142,18 @@ out vec4 color;void main(){color=vec4(1);})";
         }
         const strategy::TextureHandle texture = renderer.requestTexture("ui/placeholder");
         renderer.bindTexture(texture, 0);
-        // The match manifest contains sixteen presentation models and fifteen textures.
-        valid = loadProgress.total == 31 && loadProgress.completed == 31 &&
-                loadProgress.failed == 0 && renderer.loadedModelCount() == 16 && valid;
+        // The match manifest contains seventeen presentation models and fifteen textures.
+        valid = loadProgress.total == 32 && loadProgress.completed == 32 &&
+                loadProgress.failed == 0 && renderer.loadedModelCount() == 17 && valid;
         valid = renderer.textureState(texture) == strategy::ResourceState::ready &&
                 noGlErrors("standalone texture") && valid;
         renderer.beginProfileFrame();
         renderer.beginFrame(640, 360);
-        renderer.drawTerrain(camera);
+        renderer.drawTerrain(camera, nullptr, true);
         renderer.drawWorld(world, camera);
         renderer.drawEntityOutline(world, workerId, camera);
         renderer.drawUi(ui);
+        renderer.drawTerrainDebugHud({0.0F, 0.0F, 0.0F});
         renderer.endFrame();
         glFinish();
         valid = noGlErrors("complete render") && valid;

@@ -20,6 +20,9 @@ bool suitable(const Terrain& terrain, const MatchRulesDefinition& rules,
               float x, float z) {
     if (!MapArea{mapChunksPerSide}.contains({x, z}, rules.terrainEdgeMargin))
         return false;
+    const TerrainSample& sample = terrain.sampleAt(x, z);
+    if (sample.traversal == TerrainTraversalClass::impassable)
+        return false;
     const float normalized = terrain.heightAt(x, z) / Terrain::heightScale;
     if (normalized < rules.minimumResourceHeight || normalized > rules.maximumResourceHeight)
         return false;
@@ -108,6 +111,7 @@ void clusters(World& world,
 }
 
 void guaranteedStartingNodes(World& world,
+                             const Terrain& terrain,
                              const DefinitionRegistry& definitions,
                              std::uint32_t seed,
                              const ResourceNodeDefinition& type,
@@ -135,10 +139,12 @@ void guaranteedStartingNodes(World& world,
         const float x = headquartersPosition.x + std::cos(angle) * distance;
         const float z = headquartersPosition.z + std::sin(angle) * distance;
         const MapArea map{mapChunksPerSide};
-        // Starting gatherers are flying drones. Preserve a guaranteed, mirrored opening
-        // supply even when a seed has unusually steep terrain around a headquarters.
+        // Drones ignore entities but not authoritative impassable terrain, so guaranteed
+        // opening nodes must still occupy traversable semantic cells.
         if (map.contains({x, z}, rules.terrainEdgeMargin) &&
             map.contains({-x, -z}, rules.terrainEdgeMargin) &&
+            terrain.sampleAt(x, z).traversal != TerrainTraversalClass::impassable &&
+            terrain.sampleAt(-x, -z).traversal != TerrainTraversalClass::impassable &&
             !overlapsObject(world, definitions, {x, z}, type.collisionRadius) &&
             !overlapsObject(world, definitions, {-x, -z}, type.collisionRadius)) {
             const float rotation = random.range(0.0F, 360.0F);
@@ -162,7 +168,7 @@ void populateResources(World& world,
     for (const std::string& id : definitions.matchRules().generatedResourceNodes)
     {
         const ResourceNodeDefinition& type = *definitions.resource(ResourceArchetypeId{id});
-        guaranteedStartingNodes(world, definitions, terrainSeed, type,
+        guaranteedStartingNodes(world, terrain, definitions, terrainSeed, type,
                                 std::clamp(mapChunksPerSide, 10U,
                                            static_cast<std::uint32_t>(Terrain::chunksPerSide)));
         clusters(world,
@@ -194,13 +200,14 @@ void populateVegetation(World& world,
             const float extent = map.halfExtent() - definitions.matchRules().terrainEdgeMargin;
             const float x = random.range(-extent, extent);
             const float z = random.range(-extent, extent);
-            const float normalized = terrain.heightAt(x, z) / Terrain::heightScale;
-            if (normalized < settings.minimumHeight || normalized > settings.maximumHeight)
-                continue;
-            const float sample = Terrain::spacing * 2.0F;
-            const float dx = terrain.heightAt(x + sample, z) - terrain.heightAt(x - sample, z);
-            const float dz = terrain.heightAt(x, z + sample) - terrain.heightAt(x, z - sample);
-            if (std::sqrt(dx * dx + dz * dz) > settings.maximumSlope)
+            const TerrainSample& terrainSample = terrain.sampleAt(x, z);
+            if (std::find(settings.allowedBiomes.begin(),
+                          settings.allowedBiomes.end(),
+                          terrainSample.biome) == settings.allowedBiomes.end() ||
+                std::find(settings.allowedSurfaces.begin(),
+                          settings.allowedSurfaces.end(),
+                          terrainSample.surface) == settings.allowedSurfaces.end() ||
+                terrainSample.slopeDegrees > settings.maximumSlopeDegrees)
                 continue;
             if (overlapsObject(world, definitions, {x, z}, std::max(0.2F, type->collisionRadius)))
                 continue;

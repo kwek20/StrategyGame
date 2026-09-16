@@ -17,6 +17,7 @@
         "keybinds": {
             "backward": 115,
             "debug": 1073741884,
+            "terrain_debug": 1073741885,
             "forward": 119,
             "left": 97,
             "pause": 27,

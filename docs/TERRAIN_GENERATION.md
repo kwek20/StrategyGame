@@ -454,13 +454,35 @@ visual regression screenshots and known edge cases.
 
 ## Implementation sequence
 
+### Implementation status
+
+Completed in the first terrain-rewrite slice:
+
+- Terrain generator, biome, and surface definition files with validated loading.
+- Named deterministic continentalness, erosion, peaks, moisture, temperature, detail, and domain
+  warp fields sampled in world coordinates.
+- Definition-backed height synthesis with stable configured bounds and no per-seed min/max
+  normalization.
+- An immutable 2-world-unit semantic terrain grid containing base height, slope, regional fields,
+  typed biome/surface IDs, traversal class, and buildability class.
+- Deterministic biome resolution using explicit priority, suitability scores, and stable ID
+  tie-breaking, with water definitions present but disabled until the water phase.
+- Terrain queries for complete samples, biome identity, traversal class, and buildability.
+
+Terrain rendering, navigation, and decorative grass now consume the semantic biome/surface layer.
+Water and the remaining world-generation stages remain in the following phases.
+An F4 terrain-debug view renders semantic colors and cell boundaries without fog and reports the
+biome, surface, traversal/buildability, slope, and regional fields beneath the cursor.
+
 ### Phase A: generation foundation
 
 1. Add generator version/preset definitions and named field parameters.
 2. Introduce world-coordinate regional fields and remove per-map min/max normalization.
 3. Add authoritative biome/surface/traversal semantic grids.
-4. Make renderer colors/material blending consume biome and surface definitions.
-5. Make navigation consume traversal semantics.
+4. ~~Make renderer colors/material blending consume biome and surface definitions.~~ Complete.
+5. ~~Make navigation consume traversal semantics.~~ Complete. Open terrain uses normal cost,
+   difficult terrain uses weighted routing and reduced ground speed, and impassable terrain blocks
+   both ground units and flying drones. Drones still ignore entity obstacles.
 
 ### Phase B: water and barriers
 
@@ -481,7 +503,7 @@ visual regression screenshots and known edge cases.
 
 15. Move dense non-gameplay vegetation out of authoritative `World` entities into chunk scatter
     resources.
-16. Drive dry, aged, and fresh grass from biome/moisture/surface rules.
+16. ~~Drive dry, aged, and fresh grass from biome/moisture/surface rules.~~ Complete.
 17. Add instanced pebbles, weeds, shoreline detail, and surface decals.
 18. Ensure construction clears/hides decoration through the same footprint mask.
 
