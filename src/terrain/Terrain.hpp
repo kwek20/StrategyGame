@@ -27,7 +27,10 @@ enum class TerrainTag : std::uint32_t {
     vegetated = 1U << 7U,
     rocky = 1U << 8U,
     buildable = 1U << 9U,
-    noBuild = 1U << 10U
+    noBuild = 1U << 10U,
+    mountainBarrier = 1U << 11U,
+    mountainPass = 1U << 12U,
+    universalBarrier = 1U << 13U
 };
 using TerrainTagMask = std::uint32_t;
 constexpr TerrainTagMask terrainTagBit(TerrainTag tag) {
@@ -145,6 +148,12 @@ class Terrain final {
     [[nodiscard]] glm::vec4 materialWeightsAt(float worldX, float worldZ) const;
     [[nodiscard]] float worldExtent() const;
     [[nodiscard]] float waterLevel() const { return waterLevel_; }
+    [[nodiscard]] float minimumStartingLandFraction() const {
+        return minimumStartingLandFraction_;
+    }
+    [[nodiscard]] std::uint32_t maximumGenerationAttempts() const {
+        return maximumGenerationAttempts_;
+    }
     [[nodiscard]] FootprintFit fitFootprint(float worldX,
                                             float worldZ,
                                             float radius,
@@ -169,6 +178,8 @@ class Terrain final {
     std::vector<float> baseHeights_;
     std::vector<TerrainSample> semanticSamples_;
     float waterLevel_{0.0F};
+    float minimumStartingLandFraction_{0.12F};
+    std::uint32_t maximumGenerationAttempts_{8};
     std::vector<std::pair<int, int>> dirtyChunks_;
     std::vector<TerrainFoundation> appliedFoundations_;
 

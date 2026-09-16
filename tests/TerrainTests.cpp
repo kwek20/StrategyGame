@@ -70,6 +70,8 @@ int main() {
     std::size_t buildableSamples = 0;
     std::size_t submergedSamples = 0;
     std::size_t shorelineSamples = 0;
+    std::size_t mountainBarrierSamples = 0;
+    std::size_t mountainPassSamples = 0;
     for (int z = 0; z < strategy::Terrain::semanticCellCount; ++z) {
         for (int x = 0; x < strategy::Terrain::semanticCellCount; ++x) {
             const float worldX = -halfExtent +
@@ -116,9 +118,26 @@ int main() {
             }
             if ((sample.tags & strategy::terrainTagBit(strategy::TerrainTag::shoreline)) != 0)
                 ++shorelineSamples;
+            if ((sample.tags & strategy::terrainTagBit(strategy::TerrainTag::mountainBarrier)) != 0) {
+                ++mountainBarrierSamples;
+                valid = valid && !sample.submerged &&
+                        sample.traversal == strategy::TerrainTraversalClass::impassable &&
+                        sample.movementCosts[static_cast<std::size_t>(
+                            strategy::MovementDomain::land)] == 0.0F &&
+                        sample.movementCosts[static_cast<std::size_t>(
+                            strategy::MovementDomain::air)] > 0.0F;
+            }
+            if ((sample.tags & strategy::terrainTagBit(strategy::TerrainTag::mountainPass)) != 0) {
+                ++mountainPassSamples;
+                valid = valid && !sample.submerged &&
+                        sample.traversal == strategy::TerrainTraversalClass::difficult &&
+                        sample.movementCosts[static_cast<std::size_t>(
+                            strategy::MovementDomain::land)] > 1.0F;
+            }
         }
     }
-    valid = valid && buildableSamples > 0 && submergedSamples > 0 && shorelineSamples > 0;
+    valid = valid && buildableSamples > 0 && submergedSamples > 0 && shorelineSamples > 0 &&
+            mountainBarrierSamples > 0 && mountainPassSamples > 0;
 
     bool checkedWaterPlacement = false;
     for (int z = 0; z < strategy::Terrain::semanticCellCount && !checkedWaterPlacement; ++z)
@@ -235,7 +254,9 @@ int main() {
     if (!valid) {
         std::cerr << "Terrain validation failed: buildable=" << buildableSamples
                   << " submerged=" << submergedSamples << " waterLevel="
-                  << terrain.waterLevel() << " generatedMinimum=" << generatedMinimum << '\n';
+                  << terrain.waterLevel() << " barriers=" << mountainBarrierSamples
+                  << " passes=" << mountainPassSamples
+                  << " generatedMinimum=" << generatedMinimum << '\n';
         return 1;
     }
     std::cout << "Terrain validation passed\n";

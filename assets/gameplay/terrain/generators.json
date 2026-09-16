@@ -19,6 +19,18 @@
         "warpStrength": 18.0,
         "smoothingPasses": 2
       },
+      "barriers": {
+        "minimumHeight": 0.70,
+        "minimumPeak": 0.34,
+        "cliffSlopeDegrees": 34.0,
+        "passMinimumErosion": 0.50,
+        "passMaximumSlopeDegrees": 23.0,
+        "passMovementCost": 2.4
+      },
+      "connectivity": {
+        "minimumStartingLandFraction": 0.12,
+        "maximumGenerationAttempts": 8
+      },
       "fields": {
         "continentalness": { "scale": 190.0, "octaves": 4, "persistence": 0.52 },
         "erosion": { "scale": 145.0, "octaves": 3, "persistence": 0.50 },

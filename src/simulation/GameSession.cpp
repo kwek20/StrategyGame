@@ -47,6 +47,16 @@ NavigationProfile navigationProfile(const DefinitionRegistry& definitions,
                      : NavigationProfile{};
 }
 
+std::uint32_t retryTerrainSeed(std::uint32_t requestedSeed, std::uint32_t attempt) {
+    if (attempt == 0) return requestedSeed;
+    std::uint32_t value = requestedSeed ^ (0x9E3779B9U * attempt);
+    value ^= value >> 16U;
+    value *= 0x7FEB352DU;
+    value ^= value >> 15U;
+    value *= 0x846CA68BU;
+    return value ^ (value >> 16U);
+}
+
 bool canReceiveCargo(const Entity& entity) {
     return entity.processor && entity.power && entity.power.enabled && isOperational(entity) &&
            entity.power.state == PowerOperationalState::powered;
@@ -176,8 +186,27 @@ GameSession::GameSession(const DefinitionRegistry& definitions,
         for (const auto& [resource, amount] : gameplay_.matchRules().startingResources)
             player.resources[resource] =
                 amount * std::clamp(startingResourcesScale, 0.0F, 4.0F);
-    for (const StartingRegion& region : selectStartingRegions(
-             terrain_, gameplay_, mapChunksPerSide_, players_.players().size()))
+    std::vector<StartingRegion> startingRegions;
+    const std::uint32_t requestedSeed = terrainSeed_;
+    const std::uint32_t maximumAttempts = terrain_.maximumGenerationAttempts();
+    for (std::uint32_t attempt = 0; attempt < maximumAttempts; ++attempt) {
+        terrainSeed_ = retryTerrainSeed(requestedSeed, attempt);
+        if (attempt > 0) {
+            terrain_ = Terrain{terrainSeed_};
+            navigation_.rebuildTerrain(terrain_, mapChunksPerSide_);
+        }
+        try {
+            startingRegions = selectStartingRegions(
+                terrain_, gameplay_, mapChunksPerSide_, players_.players().size());
+            break;
+        } catch (const std::runtime_error&) {
+            if (attempt + 1 == maximumAttempts)
+                throw std::runtime_error(
+                    "Unable to generate a connected, playable terrain after " +
+                    std::to_string(maximumAttempts) + " deterministic attempts");
+        }
+    }
+    for (const StartingRegion& region : startingRegions)
         startingAnchors_.push_back(region.anchor);
     const auto createStartingEntities = [this](PlayerId player,
                                                const auto& starts,

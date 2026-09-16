@@ -3,6 +3,7 @@ in vec3 vertexColor;
 in vec3 vertexNormal;
 in vec3 worldPosition;
 in vec4 materialWeights;
+in float traversalClass;
 uniform vec3 cameraPosition;
 uniform vec2 fogRange;
 uniform sampler2D explorationMap;
@@ -52,7 +53,12 @@ void main() {
     if (terrainDebug) {
         vec2 cell = abs(fract((worldPosition.xz + vec2(explorationExtent * 0.5)) / 2.0) - 0.5);
         float grid = smoothstep(0.455, 0.495, max(cell.x, cell.y));
-        vec3 semanticColor = mix(vertexColor, vertexColor * 0.22, grid * 0.72);
+        vec3 traversalColor = traversalClass > 0.75
+                                  ? vec3(0.88, 0.08, 0.05)
+                                  : (traversalClass > 0.25
+                                         ? vec3(0.95, 0.62, 0.08)
+                                         : vertexColor);
+        vec3 semanticColor = mix(traversalColor, traversalColor * 0.22, grid * 0.72);
         outColor = vec4(semanticColor, 1.0);
         return;
     }

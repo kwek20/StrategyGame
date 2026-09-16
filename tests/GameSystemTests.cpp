@@ -360,7 +360,14 @@ int main() {
                 std::abs(fourPlayerRegions[left].anchor.x) <=
                     fourPlayerMap.halfExtent() - startChunkWidth &&
                 std::abs(fourPlayerRegions[left].anchor.y) <=
-                    fourPlayerMap.halfExtent() - startChunkWidth;
+                    fourPlayerMap.halfExtent() - startChunkWidth &&
+                fourPlayerRegions[left].landComponent ==
+                    fourPlayerRegions.front().landComponent &&
+                fourPlayerRegions[left].connectedLandCells >=
+                    static_cast<std::uint32_t>(std::ceil(
+                        std::pow(fourPlayerMap.extent() / strategy::Terrain::semanticCellSize,
+                                 2.0F) *
+                        waterTerrain.minimumStartingLandFraction()));
         for (std::size_t right = left + 1; right < fourPlayerRegions.size(); ++right)
             valid = valid && glm::distance(fourPlayerRegions[left].anchor,
                                            fourPlayerRegions[right].anchor) >= startChunkWidth * 3.0F;

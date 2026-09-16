@@ -118,6 +118,44 @@ TerrainGenerationDefinitions TerrainGenerationDefinitions::load(
             generator.height.warpScale <= 0.0F || generator.height.ridgePower <= 0.0F)
             throw std::runtime_error(context + " has invalid height bounds");
 
+        if (!value.HasMember("barriers") || !value["barriers"].IsObject() ||
+            !value.HasMember("connectivity") || !value["connectivity"].IsObject())
+            throw std::runtime_error(context + " requires barriers and connectivity settings");
+        const rapidjson::Value& barriers = value["barriers"];
+        generator.barriers.minimumHeight = requiredFloat(barriers, "minimumHeight", context);
+        generator.barriers.minimumPeak = requiredFloat(barriers, "minimumPeak", context);
+        generator.barriers.cliffSlopeDegrees =
+            requiredFloat(barriers, "cliffSlopeDegrees", context);
+        generator.barriers.passMinimumErosion =
+            requiredFloat(barriers, "passMinimumErosion", context);
+        generator.barriers.passMaximumSlopeDegrees =
+            requiredFloat(barriers, "passMaximumSlopeDegrees", context);
+        generator.barriers.passMovementCost =
+            requiredFloat(barriers, "passMovementCost", context);
+        const rapidjson::Value& connectivity = value["connectivity"];
+        generator.connectivity.minimumStartingLandFraction =
+            requiredFloat(connectivity, "minimumStartingLandFraction", context);
+        if (!connectivity.HasMember("maximumGenerationAttempts") ||
+            !connectivity["maximumGenerationAttempts"].IsUint())
+            throw std::runtime_error(context + " requires unsigned maximumGenerationAttempts");
+        generator.connectivity.maximumGenerationAttempts =
+            connectivity["maximumGenerationAttempts"].GetUint();
+        if (generator.barriers.minimumHeight < 0.0F ||
+            generator.barriers.minimumHeight > 1.0F ||
+            generator.barriers.minimumPeak < 0.0F || generator.barriers.minimumPeak > 1.0F ||
+            generator.barriers.cliffSlopeDegrees <= 0.0F ||
+            generator.barriers.cliffSlopeDegrees > 90.0F ||
+            generator.barriers.passMinimumErosion < 0.0F ||
+            generator.barriers.passMinimumErosion > 1.0F ||
+            generator.barriers.passMaximumSlopeDegrees <= 0.0F ||
+            generator.barriers.passMaximumSlopeDegrees >=
+                generator.barriers.cliffSlopeDegrees ||
+            generator.barriers.passMovementCost < 1.0F ||
+            generator.connectivity.minimumStartingLandFraction <= 0.0F ||
+            generator.connectivity.minimumStartingLandFraction > 1.0F ||
+            generator.connectivity.maximumGenerationAttempts == 0)
+            throw std::runtime_error(context + " has invalid barrier/connectivity settings");
+
         for (auto field = value["fields"].MemberBegin(); field != value["fields"].MemberEnd();
              ++field) {
             TerrainNoiseFieldDefinition definition;

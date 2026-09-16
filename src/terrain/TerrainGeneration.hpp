@@ -41,10 +41,26 @@ struct TerrainHeightDefinition {
     std::uint32_t smoothingPasses{2};
 };
 
+struct TerrainBarrierDefinition {
+    float minimumHeight{0.72F};
+    float minimumPeak{0.35F};
+    float cliffSlopeDegrees{38.0F};
+    float passMinimumErosion{0.68F};
+    float passMaximumSlopeDegrees{24.0F};
+    float passMovementCost{2.4F};
+};
+
+struct TerrainConnectivityDefinition {
+    float minimumStartingLandFraction{0.12F};
+    std::uint32_t maximumGenerationAttempts{8};
+};
+
 struct TerrainGeneratorDefinition {
     TerrainGeneratorId id;
     std::uint32_t version{1};
     TerrainHeightDefinition height;
+    TerrainBarrierDefinition barriers;
+    TerrainConnectivityDefinition connectivity;
     float waterLevel{0.18F};
     std::unordered_map<std::string, TerrainNoiseFieldDefinition> fields;
 };

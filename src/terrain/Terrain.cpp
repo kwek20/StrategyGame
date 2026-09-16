@@ -22,6 +22,9 @@ TerrainTagMask terrainTagFromName(std::string_view name) {
     if (name == "rocky") return terrainTagBit(TerrainTag::rocky);
     if (name == "buildable") return terrainTagBit(TerrainTag::buildable);
     if (name == "no-build") return terrainTagBit(TerrainTag::noBuild);
+    if (name == "mountain-barrier") return terrainTagBit(TerrainTag::mountainBarrier);
+    if (name == "mountain-pass") return terrainTagBit(TerrainTag::mountainPass);
+    if (name == "universal-barrier") return terrainTagBit(TerrainTag::universalBarrier);
     return 0;
 }
 namespace {
@@ -180,6 +183,8 @@ void Terrain::generateSemantics(std::uint32_t seed,
                                 const TerrainGeneratorDefinition& generator,
                                 const TerrainGenerationDefinitions& definitions) {
     waterLevel_ = generator.waterLevel * heightScale;
+    minimumStartingLandFraction_ = generator.connectivity.minimumStartingLandFraction;
+    maximumGenerationAttempts_ = generator.connectivity.maximumGenerationAttempts;
     const TerrainFieldGenerator fieldGenerator(seed, generator);
     semanticSamples_.resize(
         static_cast<std::size_t>(semanticCellCount * semanticCellCount));
@@ -240,6 +245,43 @@ void Terrain::generateSemantics(std::uint32_t seed,
                 sample.tags |= terrainTagBit(TerrainTag::land);
                 sample.tags &= ~(terrainTagBit(TerrainTag::water) |
                                  terrainTagBit(TerrainTag::submerged));
+
+                const float normalizedHeight = sample.baseHeight / heightScale;
+                const bool mountainSignal =
+                    normalizedHeight >= generator.barriers.minimumHeight &&
+                    sample.peaks >= generator.barriers.minimumPeak;
+                const bool cliffSignal =
+                    sample.slopeDegrees >= generator.barriers.cliffSlopeDegrees;
+                if (mountainSignal || cliffSignal) {
+                    const bool deliberatePass =
+                        sample.erosion >= generator.barriers.passMinimumErosion &&
+                        sample.slopeDegrees <= generator.barriers.passMaximumSlopeDegrees;
+                    if (deliberatePass) {
+                        sample.traversal = TerrainTraversalClass::difficult;
+                        sample.buildability = TerrainBuildabilityClass::restricted;
+                        sample.movementCosts[static_cast<std::size_t>(MovementDomain::land)] =
+                            generator.barriers.passMovementCost;
+                        sample.movementCosts[static_cast<std::size_t>(MovementDomain::water)] =
+                            0.0F;
+                        sample.movementCosts[static_cast<std::size_t>(MovementDomain::air)] = 1.0F;
+                        sample.tags |= terrainTagBit(TerrainTag::mountainPass);
+                        sample.tags &= ~terrainTagBit(TerrainTag::mountainBarrier);
+                    } else {
+                        sample.traversal = TerrainTraversalClass::impassable;
+                        sample.buildability = TerrainBuildabilityClass::forbidden;
+                        sample.movementCosts[static_cast<std::size_t>(MovementDomain::land)] = 0.0F;
+                        sample.movementCosts[static_cast<std::size_t>(MovementDomain::water)] = 0.0F;
+                        sample.movementCosts[static_cast<std::size_t>(MovementDomain::air)] = 1.0F;
+                        sample.tags |= terrainTagBit(TerrainTag::mountainBarrier) |
+                                       terrainTagBit(TerrainTag::noBuild);
+                        sample.tags &= ~terrainTagBit(TerrainTag::buildable);
+                    }
+                }
+                if ((sample.tags & terrainTagBit(TerrainTag::universalBarrier)) != 0) {
+                    sample.traversal = TerrainTraversalClass::impassable;
+                    sample.buildability = TerrainBuildabilityClass::forbidden;
+                    sample.movementCosts.fill(0.0F);
+                }
             }
         }
     }

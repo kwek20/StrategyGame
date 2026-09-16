@@ -525,8 +525,17 @@ biome, surface, traversal/buildability, slope, and regional fields beneath the c
    optional shoreline requirement. Live preview, authoritative construction, and the map editor
    share the same evaluator and expose localized rejection reasons. Land, water, amphibious, and
    air navigation profiles have focused shoreline-crossing tests.
-8. Generate mountain masks, impassable slopes, and deliberate passes.
-9. Add connectivity/buildability validation.
+8. ~~Generate mountain masks, impassable slopes, and deliberate passes.~~ Complete. Generator
+   definitions now provide height, peak, cliff-slope, erosion-saddle, pass-slope, and pass-cost
+   thresholds. Mountain and cliff cells block land and water movement while retaining air
+   movement. High-erosion saddles through mountain signals become deterministic difficult-terrain
+   passes. Only the explicit `universal-barrier` terrain tag can block every movement domain.
+9. ~~Add connectivity/buildability validation.~~ Complete. Start selection labels deterministic
+   connected land components on the semantic grid, rejects components below a definition-backed
+   map-area fraction, requires every selected opponent to share a reachable land component, and
+   retains the local footprint, expansion-space, resource-site, edge, and separation checks. If a
+   requested seed cannot produce a playable layout, match creation tries a bounded sequence of
+   deterministically derived seeds and stores the successful resolved seed.
 
 ### Phase C: starts and resources
 

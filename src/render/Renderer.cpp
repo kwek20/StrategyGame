@@ -39,6 +39,7 @@ struct TerrainVertex {
     glm::vec3 normal;
     glm::vec3 color;
     glm::vec4 materialWeights{0.0F};
+    float traversalClass{0.0F};
 };
 
 void GLAPIENTRY openGlDebugMessage(GLenum,
@@ -301,7 +302,14 @@ Renderer::Renderer(Logger* logger)
                                          worldZ},
                                         terrain_.normalAt(gridX, gridZ),
                                         terrain_.colorAt(worldX, worldZ),
-                                        terrain_.materialWeightsAt(worldX, worldZ)});
+                                        terrain_.materialWeightsAt(worldX, worldZ),
+                                        terrain_.traversalAt(worldX, worldZ) ==
+                                                TerrainTraversalClass::impassable
+                                            ? 1.0F
+                                            : (terrain_.traversalAt(worldX, worldZ) ==
+                                                       TerrainTraversalClass::difficult
+                                                   ? 0.5F
+                                                   : 0.0F)});
                 }
             }
 
@@ -383,6 +391,10 @@ Renderer::Renderer(Logger* logger)
                                   sizeof(TerrainVertex),
                                   reinterpret_cast<void*>(offsetof(TerrainVertex,
                                                                    materialWeights)));
+            glEnableVertexAttribArray(4);
+            glVertexAttribPointer(4, 1, GL_FLOAT, GL_FALSE, sizeof(TerrainVertex),
+                                  reinterpret_cast<void*>(offsetof(TerrainVertex,
+                                                                   traversalClass)));
             glBindVertexArray(0);
             terrainChunks_.push_back(chunk);
         }
@@ -1539,7 +1551,14 @@ void Renderer::regenerateTerrain(std::uint32_t seed, std::uint32_t chunksPerSide
                                          worldZ},
                                         terrain_.normalAt(gridX, gridZ),
                                         terrain_.colorAt(worldX, worldZ),
-                                        terrain_.materialWeightsAt(worldX, worldZ)});
+                                        terrain_.materialWeightsAt(worldX, worldZ),
+                                        terrain_.traversalAt(worldX, worldZ) ==
+                                                TerrainTraversalClass::impassable
+                                            ? 1.0F
+                                            : (terrain_.traversalAt(worldX, worldZ) ==
+                                                       TerrainTraversalClass::difficult
+                                                   ? 0.5F
+                                                   : 0.0F)});
                 }
             }
             const std::size_t chunkIndex =
@@ -1663,6 +1682,7 @@ void Renderer::syncFoundationMeshes() {
         glEnableVertexAttribArray(1); glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(TerrainVertex), reinterpret_cast<void*>(offsetof(TerrainVertex, normal)));
         glEnableVertexAttribArray(2); glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(TerrainVertex), reinterpret_cast<void*>(offsetof(TerrainVertex, color)));
         glEnableVertexAttribArray(3); glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, sizeof(TerrainVertex), reinterpret_cast<void*>(offsetof(TerrainVertex, materialWeights)));
+        glEnableVertexAttribArray(4); glVertexAttribPointer(4, 1, GL_FLOAT, GL_FALSE, sizeof(TerrainVertex), reinterpret_cast<void*>(offsetof(TerrainVertex, traversalClass)));
         glBindVertexArray(0);
         foundationMeshes_.push_back(mesh);
     }
@@ -1682,7 +1702,14 @@ void Renderer::uploadTerrainChunk(int chunkX, int chunkZ) {
             const float worldZ = z * Terrain::spacing - halfExtent;
             vertices.push_back({{worldX, terrain_.vertexHeight(x, z), worldZ},
                                 terrain_.normalAt(x, z), terrain_.colorAt(worldX, worldZ),
-                                terrain_.materialWeightsAt(worldX, worldZ)});
+                                terrain_.materialWeightsAt(worldX, worldZ),
+                                terrain_.traversalAt(worldX, worldZ) ==
+                                        TerrainTraversalClass::impassable
+                                    ? 1.0F
+                                    : (terrain_.traversalAt(worldX, worldZ) ==
+                                               TerrainTraversalClass::difficult
+                                           ? 0.5F
+                                           : 0.0F)});
         }
     const std::size_t index = static_cast<std::size_t>(chunkZ * Terrain::chunksPerSide + chunkX);
     if (index < terrainChunks_.size()) {
