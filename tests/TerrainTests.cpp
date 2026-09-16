@@ -25,6 +25,7 @@ int main() {
     const strategy::Terrain sameSeed{0x5EED1234U};
     const strategy::Terrain differentSeed{12345U};
     bool valid = generator.id.value == "continental_v1" && generator.version == 1 &&
+                 nearlyEqual(generator.waterLevel, 0.24F) &&
                  generation.biomes().size() >= 5 && generation.surfaces().size() >= 5;
     const strategy::TerrainRegionalFields origin = regionalFields.sample(0.0F, 0.0F);
     const strategy::TerrainRegionalFields repeated = regionalFields.sample(0.0F, 0.0F);
@@ -67,6 +68,7 @@ int main() {
             generatedMaximum < 1.0F;
 
     std::size_t buildableSamples = 0;
+    std::size_t submergedSamples = 0;
     for (int z = 0; z < strategy::Terrain::semanticCellCount; ++z) {
         for (int x = 0; x < strategy::Terrain::semanticCellCount; ++x) {
             const float worldX = -halfExtent +
@@ -81,6 +83,9 @@ int main() {
                     validField(sample.continentalness) && validField(sample.erosion) &&
                     validField(sample.peaks) && validField(sample.moisture) &&
                     validField(sample.temperature) &&
+                    nearlyEqual(sample.waterDepth,
+                                std::max(0.0F, terrain.waterLevel() - sample.baseHeight)) &&
+                    sample.submerged == (sample.waterDepth > 0.0F) &&
                     terrain.biomeAt(worldX, worldZ) == sample.biome &&
                     terrain.traversalAt(worldX, worldZ) == sample.traversal &&
                     terrain.isBuildableAt(worldX, worldZ) ==
@@ -96,9 +101,14 @@ int main() {
                                 0.002F);
             if (sample.buildability == strategy::TerrainBuildabilityClass::buildable)
                 ++buildableSamples;
+            if (sample.submerged) {
+                ++submergedSamples;
+                valid = valid && (sample.biome.value == "deep_water" ||
+                                  sample.biome.value == "shallow_water");
+            }
         }
     }
-    valid = valid && buildableSamples > 0;
+    valid = valid && buildableSamples > 0 && submergedSamples > 0;
 
     for (const glm::vec2 point : {glm::vec2{0.0F, 0.0F},
                                   glm::vec2{-64.0F, 23.0F},
@@ -175,7 +185,9 @@ int main() {
             hasDirtyChunk(0, 1) && hasDirtyChunk(1, 1);
 
     if (!valid) {
-        std::cerr << "Terrain validation failed\n";
+        std::cerr << "Terrain validation failed: buildable=" << buildableSamples
+                  << " submerged=" << submergedSamples << " waterLevel="
+                  << terrain.waterLevel() << " generatedMinimum=" << generatedMinimum << '\n';
         return 1;
     }
     std::cout << "Terrain validation passed\n";

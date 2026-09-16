@@ -175,6 +175,7 @@ class Renderer final {
     std::unique_ptr<ParticleRenderer> particleRenderer_;
     MaterialManager materials_;
     ShaderHandle program_;
+    ShaderHandle waterProgram_;
     ShaderHandle modelProgram_;
     ShaderHandle outlineProgram_;
     ShaderHandle hudProgram_;
@@ -221,6 +222,7 @@ class Renderer final {
                   const glm::vec3& tint = {1.0F, 1.0F, 1.0F}) const;
     void refreshModelShaderBindings();
     void uploadTerrainChunk(int chunkX, int chunkZ);
+    void drawWater(const CameraView& camera, const Player* player) const;
     void syncFoundationMeshes();
     void drawText(const std::string& text,
                   float x,

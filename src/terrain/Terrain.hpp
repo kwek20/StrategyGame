@@ -24,6 +24,8 @@ struct TerrainSample {
     float peaks{0.0F};
     float moisture{0.0F};
     float temperature{0.0F};
+    float waterDepth{0.0F};
+    bool submerged{false};
     TerrainBiomeId biome;
     TerrainSurfaceId surface;
     glm::vec3 surfaceColor{1.0F};
@@ -106,6 +108,7 @@ class Terrain final {
     [[nodiscard]] glm::vec3 colorAt(float worldX, float worldZ) const;
     [[nodiscard]] glm::vec4 materialWeightsAt(float worldX, float worldZ) const;
     [[nodiscard]] float worldExtent() const;
+    [[nodiscard]] float waterLevel() const { return waterLevel_; }
     [[nodiscard]] FootprintFit fitFootprint(float worldX,
                                             float worldZ,
                                             float radius,
@@ -126,6 +129,7 @@ class Terrain final {
     std::vector<float> heights_;
     std::vector<float> baseHeights_;
     std::vector<TerrainSample> semanticSamples_;
+    float waterLevel_{0.0F};
     std::vector<std::pair<int, int>> dirtyChunks_;
     std::vector<TerrainFoundation> appliedFoundations_;
 

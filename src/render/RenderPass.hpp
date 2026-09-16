@@ -4,7 +4,7 @@
 
 namespace strategy {
 
-enum class RenderPassKind { terrain, world, overlay, userInterface };
+enum class RenderPassKind { terrain, water, world, overlay, userInterface };
 
 // Owns the mutable OpenGL bindings and fixed-function switches for one pass.
 // Restoring the previous state makes nested passes (notably text inside UI) safe.

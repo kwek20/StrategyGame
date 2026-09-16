@@ -99,6 +99,8 @@
   "terrain_debug.fields_a": "CONTINENTALNESS {0}  EROSION {1}",
   "terrain_debug.fields_b": "PEAKS {0}  MOISTURE {1}  TEMPERATURE {2}",
   "terrain_debug.grid": "SEMANTIC CELLS {0} WORLD UNITS  (DARK GRID LINES)",
+  "terrain_debug.water": "WATER LEVEL {0}  DEPTH {1}  SUBMERGED {2}",
+  "terrain_debug.domains": "MOVE COST  LAND {0}  WATER {1}  AIR {2}",
   "strategy.title": "STRATEGY MODE",
   "strategy.selection.none": "SELECT UNIT  LEFT CLICK",
   "strategy.selection": "SELECTED  {0}",

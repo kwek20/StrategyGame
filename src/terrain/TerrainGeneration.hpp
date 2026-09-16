@@ -45,6 +45,7 @@ struct TerrainGeneratorDefinition {
     TerrainGeneratorId id;
     std::uint32_t version{1};
     TerrainHeightDefinition height;
+    float waterLevel{0.18F};
     std::unordered_map<std::string, TerrainNoiseFieldDefinition> fields;
 };
 

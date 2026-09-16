@@ -473,11 +473,13 @@ Completed in the first terrain-rewrite slice:
 - An immutable 2-world-unit semantic terrain grid containing base height, slope, regional fields,
   typed biome/surface IDs, traversal class, and buildability class.
 - Deterministic biome resolution using explicit priority, suitability scores, and stable ID
-  tie-breaking, with water definitions present but disabled until the water phase.
+  tie-breaking. Deep- and shallow-water definitions are now active against the configured stable
+  shoreline.
 - Terrain queries for complete samples, biome identity, traversal class, and buildability.
 
-Terrain rendering, navigation, and decorative grass now consume the semantic biome/surface layer.
-Water and the remaining world-generation stages remain in the following phases.
+Terrain rendering, water rendering, navigation, and decorative grass now consume the semantic
+biome/surface layer. More advanced hydrology and the remaining world-generation stages remain in
+the following phases.
 An F4 terrain-debug view renders semantic colors and cell boundaries without fog and reports the
 biome, surface, traversal/buildability, slope, and regional fields beneath the cursor.
 
@@ -494,7 +496,9 @@ biome, surface, traversal/buildability, slope, and regional fields beneath the c
 
 ### Phase B: water and barriers
 
-6. Add stable water levels, water occupancy, and a basic water render pass.
+6. ~~Add stable water levels, water occupancy, and a basic water render pass.~~ Complete. The
+   generator owns a normalized water level, semantic cells expose deterministic depth/submersion,
+   and a dedicated fog-aware translucent render pass draws the matching coastline.
 7. Define water occupancy and building interaction with water. Unit traversal domains and the
    deep-water land/water/air rules are already established.
 8. Generate mountain masks, impassable slopes, and deliberate passes.

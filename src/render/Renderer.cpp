@@ -91,6 +91,11 @@ ShaderHandle createTerrainProgram(ShaderManager& shaders) {
         "terrain", "assets/shaders/terrain.vert", "assets/shaders/terrain.frag");
 }
 
+ShaderHandle createWaterProgram(ShaderManager& shaders) {
+    return shaders.loadFiles(
+        "water", "assets/shaders/water.vert", "assets/shaders/water.frag");
+}
+
 ShaderHandle createModelProgram(ShaderManager& shaders) {
     return shaders.loadFiles(
         "model", "assets/shaders/model.vert", "assets/shaders/model.frag");
@@ -246,6 +251,7 @@ Renderer::Renderer(Logger* logger)
     particleSystem_ = std::make_unique<ParticleSystem>(particleEffects_);
 
     program_ = createTerrainProgram(shaders_);
+    waterProgram_ = createWaterProgram(shaders_);
     modelProgram_ = createModelProgram(shaders_);
     outlineProgram_ = createOutlineProgram(shaders_);
     hudProgram_ = createHudProgram(shaders_);
@@ -699,6 +705,45 @@ void Renderer::drawTerrain(const CameraView& camera,
     glUniform1i(shaders_.uniform(program_, "terrainDebug"), 0);
     glActiveTexture(GL_TEXTURE0);
     glBindVertexArray(0);
+    drawWater(camera, player);
+}
+
+void Renderer::drawWater(const CameraView& camera, const Player* player) const {
+    renderGraph_.enter(RenderPassKind::water);
+    ProfileScope profile(profiler_, "render.water");
+    RenderPass pass(RenderPassKind::water);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    shaders_.use(waterProgram_);
+    glUniformMatrix4fv(shaders_.uniform(waterProgram_, "viewProjection"), 1, GL_FALSE,
+                       glm::value_ptr(camera.viewProjection()));
+    glUniform3fv(shaders_.uniform(waterProgram_, "cameraPosition"), 1,
+                 glm::value_ptr(camera.position));
+    glUniform1f(shaders_.uniform(waterProgram_, "waterLevel"), terrain_.waterLevel());
+    glUniform1f(shaders_.uniform(waterProgram_, "timeSeconds"),
+                static_cast<float>(SDL_GetTicks()) * 0.001F);
+    glUniform2f(shaders_.uniform(waterProgram_, "fogRange"), 140.0F, 280.0F);
+    glUniform1f(shaders_.uniform(waterProgram_, "explorationExtent"), activeWorldExtent());
+    glUniform1i(shaders_.uniform(waterProgram_, "explorationMap"), 7);
+    glUniform1i(shaders_.uniform(waterProgram_, "useExploration"), player ? 1 : 0);
+
+    const glm::vec3 focus = camera.target;
+    constexpr float renderDistance = 190.0F;
+    const std::size_t lodLevel = camera.detailDistance <= 36.0F   ? 0U
+                                 : camera.detailDistance <= 76.0F ? 1U
+                                                                  : 2U;
+    for (const TerrainChunk& chunk : terrainChunks_) {
+        const float dx = chunk.center.x - focus.x;
+        const float dz = chunk.center.z - focus.z;
+        const float maximumDistance = renderDistance + chunk.radius;
+        if (dx * dx + dz * dz > maximumDistance * maximumDistance)
+            continue;
+        glBindVertexArray(chunk.vao);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, chunk.ebos[lodLevel]);
+        glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(chunk.indexCounts[lodLevel]),
+                       GL_UNSIGNED_INT, nullptr);
+    }
+    glBindVertexArray(0);
 }
 
 void Renderer::drawWorld(const World& world,
@@ -1061,7 +1106,7 @@ void Renderer::drawTerrainDebugHud(glm::vec3 worldPosition) const {
     };
 
     constexpr float width = 430.0F;
-    constexpr float height = 212.0F;
+    constexpr float height = 266.0F;
     const float left = std::max(8.0F, (static_cast<float>(viewportWidth_) - width) * 0.5F);
     const float top = 52.0F;
     UiDocument ui;
@@ -1080,6 +1125,12 @@ void Renderer::drawTerrainDebugHud(glm::vec3 worldPosition) const {
         Text::format("terrain_debug.fields_b",
                      {number(sample.peaks, 3), number(sample.moisture, 3),
                       number(sample.temperature, 3)}),
+        Text::format("terrain_debug.water",
+                     {number(terrain_.waterLevel()), number(sample.waterDepth),
+                      sample.submerged ? "yes" : "no"}),
+        Text::format("terrain_debug.domains",
+                     {number(sample.movementCosts[0]), number(sample.movementCosts[1]),
+                      number(sample.movementCosts[2])}),
         Text::format("terrain_debug.grid", {number(Terrain::semanticCellSize, 1)})};
     for (std::size_t index = 0; index < lines.size(); ++index)
         ui.label("terrain_debug.line." + std::to_string(index),

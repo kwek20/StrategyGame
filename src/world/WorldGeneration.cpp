@@ -120,14 +120,21 @@ void guaranteedStartingNodes(World& world,
     if (settings.startingNodesPerPlayer == 0) return;
     const auto& rules = definitions.matchRules();
     DeterministicRandom random(seed, settings.stream + ".starting");
-    const StartingEntityDefinition* headquarters = nullptr;
-    for (const auto& start : rules.playerOne) {
-        const EntityArchetype* archetype = definitions.archetype(EntityArchetypeId{start.archetype});
-        if (archetype && archetype->tags.contains("headquarters")) { headquarters = &start; break; }
-    }
-    if (!headquarters) return;
+    const auto headquartersFor = [&](const auto& starts) -> const StartingEntityDefinition* {
+        for (const auto& start : starts) {
+            const EntityArchetype* archetype =
+                definitions.archetype(EntityArchetypeId{start.archetype});
+            if (archetype && archetype->tags.contains("headquarters")) return &start;
+        }
+        return nullptr;
+    };
+    const StartingEntityDefinition* headquarters = headquartersFor(rules.playerOne);
+    const StartingEntityDefinition* opposingHeadquarters = headquartersFor(rules.playerTwo);
+    if (!headquarters || !opposingHeadquarters) return;
     const glm::vec3 headquartersPosition = startingEntityPosition(
         *headquarters, 1, rules, mapChunksPerSide);
+    const glm::vec3 opposingPosition = startingEntityPosition(
+        *opposingHeadquarters, 2, rules, mapChunksPerSide);
     std::uint32_t made = 0;
     const float centerDirection = std::atan2(-headquartersPosition.z, -headquartersPosition.x);
     for (std::uint32_t attempt = 0;
@@ -138,24 +145,59 @@ void guaranteedStartingNodes(World& world,
         const float angle = centerDirection + random.range(-0.85F, 0.85F);
         const float x = headquartersPosition.x + std::cos(angle) * distance;
         const float z = headquartersPosition.z + std::sin(angle) * distance;
-        const MapArea map{mapChunksPerSide};
-        // Drones ignore entities but not authoritative impassable terrain, so guaranteed
-        // opening nodes must still occupy traversable semantic cells.
-        if (map.contains({x, z}, rules.terrainEdgeMargin) &&
-            map.contains({-x, -z}, rules.terrainEdgeMargin) &&
-            terrain.sampleAt(x, z).traversal != TerrainTraversalClass::impassable &&
-            terrain.sampleAt(-x, -z).traversal != TerrainTraversalClass::impassable &&
+        const glm::vec2 mirrored{-x, -z};
+        if (suitable(terrain, rules, mapChunksPerSide, x, z) &&
+            suitable(terrain, rules, mapChunksPerSide, mirrored.x, mirrored.y) &&
             !overlapsObject(world, definitions, {x, z}, type.collisionRadius) &&
-            !overlapsObject(world, definitions, {-x, -z}, type.collisionRadius)) {
+            !overlapsObject(world, definitions, mirrored, type.collisionRadius)) {
             const float rotation = random.range(0.0F, 360.0F);
             add(world, definitions, type, x, z, rotation);
-            add(world, definitions, type, -x, -z, rotation + 180.0F);
+            add(world, definitions, type, mirrored.x, mirrored.y, rotation + 180.0F);
             ++made;
         }
     }
+
+    // Water and mountain regions need not be rotationally symmetric. Preserve mirrored opening
+    // nodes where possible, then deterministically search each player's nearby land independently
+    // instead of failing an otherwise playable map.
+    DeterministicRandom firstFallback(seed, settings.stream + ".starting.fallback.player1");
+    DeterministicRandom secondFallback(seed, settings.stream + ".starting.fallback.player2");
+    const auto findNear = [&](glm::vec3 origin, DeterministicRandom& candidateRandom)
+        -> std::optional<glm::vec2> {
+        constexpr float goldenAngle = 2.39996323F;
+        const std::uint32_t attempts = std::max(512U, settings.attemptsPerCluster * 8U);
+        const float phase = candidateRandom.range(-3.14159265F, 3.14159265F);
+        const float center = std::atan2(-origin.z, -origin.x);
+        for (std::uint32_t attempt = 0; attempt < attempts; ++attempt) {
+            const float progress = attempts > 1
+                                       ? static_cast<float>(attempt) /
+                                             static_cast<float>(attempts - 1)
+                                       : 0.0F;
+            const float distance = settings.startingMinimumDistance +
+                (settings.startingMaximumDistance * 1.75F -
+                 settings.startingMinimumDistance) * std::sqrt(progress);
+            const float angle = center + phase + goldenAngle * static_cast<float>(attempt);
+            const glm::vec2 candidate{origin.x + std::cos(angle) * distance,
+                                      origin.z + std::sin(angle) * distance};
+            if (suitable(terrain, rules, mapChunksPerSide, candidate.x, candidate.y) &&
+                !overlapsObject(world, definitions, candidate, type.collisionRadius))
+                return candidate;
+        }
+        return std::nullopt;
+    };
+    while (made < settings.startingNodesPerPlayer) {
+        const auto first = findNear(headquartersPosition, firstFallback);
+        const auto second = findNear(opposingPosition, secondFallback);
+        if (!first || !second) break;
+        add(world, definitions, type, first->x, first->y,
+            firstFallback.range(0.0F, 360.0F));
+        add(world, definitions, type, second->x, second->y,
+            secondFallback.range(0.0F, 360.0F));
+        ++made;
+    }
     if (made != settings.startingNodesPerPlayer)
-        throw std::runtime_error("Unable to place guaranteed mirrored starting resource nodes for " +
-                                 type.id);
+        throw std::runtime_error("Unable to place guaranteed starting resource nodes on valid "
+                                 "terrain for " + type.id);
 }
 } // namespace
 

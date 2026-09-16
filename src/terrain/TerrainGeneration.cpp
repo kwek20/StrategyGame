@@ -94,6 +94,9 @@ TerrainGenerationDefinitions TerrainGenerationDefinitions::load(
         TerrainGeneratorDefinition generator;
         generator.id = TerrainGeneratorId{id};
         generator.version = value["version"].GetUint();
+        generator.waterLevel = requiredFloat(value, "waterLevel", context);
+        if (generator.waterLevel < 0.0F || generator.waterLevel > 1.0F)
+            throw std::runtime_error(context + " has an invalid waterLevel");
         const rapidjson::Value& height = value["height"];
         generator.height.baseHeight = requiredFloat(height, "baseHeight", context);
         generator.height.continentalAmplitude =

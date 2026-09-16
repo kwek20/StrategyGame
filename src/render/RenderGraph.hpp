@@ -16,7 +16,7 @@ class RenderGraph final {
     [[nodiscard]] std::size_t executionCount(RenderPassKind pass) const;
 
   private:
-    std::array<std::size_t, 4> executions_{};
+    std::array<std::size_t, 5> executions_{};
     int furthestPass_{-1};
 };
 

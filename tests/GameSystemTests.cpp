@@ -561,6 +561,15 @@ int main() {
     for (const strategy::Entity& entity : configuredMatch.world().entities())
         if (entity.authority.owner == 0 && entity.resource) ++configuredResourceCount;
     valid = valid && configuredResourceCount > resourceCount;
+    // The default match seed and medium map include asymmetric coastlines. Guaranteed opening
+    // resources must use the land-aware fallback rather than requiring mirrored valid cells.
+    strategy::GameSession defaultWaterMatch{gameplay, 0x5EED1234U, "spain", "japan",
+        "unassigned", "unassigned", 15};
+    std::size_t defaultScrapCount = 0;
+    for (const strategy::Entity& entity : defaultWaterMatch.world().entities())
+        if (entity.archetype.value == "scrap_field" && entity.resource)
+            ++defaultScrapCount;
+    valid = valid && defaultScrapCount >= 6;
     const auto playerOneStart = playerOneUnit->transform.position;
     valid = session.submit({1, 1, strategy::PossessUnitCommand{playerTwoUnit->id}}) && valid;
     valid = session.submit({1, 2, strategy::PossessUnitCommand{playerOneUnit->id}}) && valid;

@@ -7,9 +7,10 @@ namespace {
 int order(RenderPassKind pass) {
     switch (pass) {
     case RenderPassKind::terrain: return 0;
-    case RenderPassKind::world: return 1;
-    case RenderPassKind::overlay: return 2;
-    case RenderPassKind::userInterface: return 3;
+    case RenderPassKind::water: return 1;
+    case RenderPassKind::world: return 2;
+    case RenderPassKind::overlay: return 3;
+    case RenderPassKind::userInterface: return 4;
     }
     return 0;
 }

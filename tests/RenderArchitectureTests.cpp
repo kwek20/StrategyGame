@@ -35,6 +35,7 @@ int main() {
     strategy::RenderGraph graph;
     graph.beginFrame();
     graph.enter(strategy::RenderPassKind::terrain);
+    graph.enter(strategy::RenderPassKind::water);
     graph.enter(strategy::RenderPassKind::world);
     graph.enter(strategy::RenderPassKind::overlay);
     graph.enter(strategy::RenderPassKind::overlay);

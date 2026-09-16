@@ -165,6 +165,7 @@ void Terrain::generate(std::uint32_t seed, const TerrainGeneratorDefinition& gen
 void Terrain::generateSemantics(std::uint32_t seed,
                                 const TerrainGeneratorDefinition& generator,
                                 const TerrainGenerationDefinitions& definitions) {
+    waterLevel_ = generator.waterLevel * heightScale;
     const TerrainFieldGenerator fieldGenerator(seed, generator);
     semanticSamples_.resize(
         static_cast<std::size_t>(semanticCellCount * semanticCellCount));
@@ -176,6 +177,8 @@ void Terrain::generateSemantics(std::uint32_t seed,
             TerrainSample& sample = semanticSamples_[static_cast<std::size_t>(
                 z * semanticCellCount + x)];
             sample.baseHeight = heightAt(worldX, worldZ);
+            sample.waterDepth = std::max(0.0F, waterLevel_ - sample.baseHeight);
+            sample.submerged = sample.waterDepth > 0.0F;
             const float dx = (heightAt(worldX + semanticCellSize, worldZ) -
                               heightAt(worldX - semanticCellSize, worldZ)) /
                              (2.0F * semanticCellSize);
