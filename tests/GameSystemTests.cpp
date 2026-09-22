@@ -13,6 +13,7 @@
 #include <cmath>
 #include <array>
 #include <iostream>
+#include <limits>
 #include <unordered_set>
 
 int main() {
@@ -627,12 +628,45 @@ int main() {
             std::get<strategy::SetPowerPriorityCommand>(decodedPriority->payload).priority == 25 &&
             !std::get<strategy::SetPowerEnabledCommand>(decodedEnabled->payload).enabled;
     std::size_t resourceCount = 0;
+    float minimumGeneratedCapacity = std::numeric_limits<float>::max();
+    float maximumGeneratedCapacity = 0.0F;
+    bool foundAsymmetricResource = false;
+    const strategy::Terrain sessionResourceTerrain{session.terrainSeed()};
     for (const strategy::Entity& resource : session.world().entities()) {
         if (resource.authority.owner != 0 || !resource.resource)
             continue;
         ++resourceCount;
+        const auto* definition = gameplay.resource(
+            strategy::ResourceArchetypeId{resource.archetype.value});
+        if (!definition || !definition->generation) {
+            valid = false;
+            continue;
+        }
+        const auto& generation = *definition->generation;
+        const auto& sample = sessionResourceTerrain.sampleAt(
+            resource.transform.position.x, resource.transform.position.z);
+        valid = valid && (sample.tags & generation.requiredTerrainTags) ==
+                    generation.requiredTerrainTags &&
+                (sample.tags & generation.forbiddenTerrainTags) == 0 &&
+                std::find(generation.allowedBiomes.begin(), generation.allowedBiomes.end(),
+                          sample.biome) != generation.allowedBiomes.end() &&
+                sample.moisture >= generation.minimumMoisture &&
+                sample.moisture <= generation.maximumMoisture;
+        minimumGeneratedCapacity = std::min(minimumGeneratedCapacity,
+                                             resource.resource.remaining);
+        maximumGeneratedCapacity = std::max(maximumGeneratedCapacity,
+                                             resource.resource.remaining);
+        const bool hasMirror = std::any_of(
+            session.world().entities().begin(), session.world().entities().end(),
+            [&](const strategy::Entity& other) {
+                return other.id != resource.id && other.archetype == resource.archetype &&
+                       std::abs(other.transform.position.x + resource.transform.position.x) < 0.01F &&
+                       std::abs(other.transform.position.z + resource.transform.position.z) < 0.01F;
+            });
+        foundAsymmetricResource = foundAsymmetricResource || !hasMirror;
     }
-    valid = valid && resourceCount >= 20;
+    valid = valid && resourceCount >= 20 && foundAsymmetricResource &&
+            maximumGeneratedCapacity > minimumGeneratedCapacity;
     valid = valid && session.startingAnchors().size() == 2;
     const float chunkWidth = static_cast<float>(strategy::Terrain::chunkCellCount) *
                              strategy::Terrain::spacing;

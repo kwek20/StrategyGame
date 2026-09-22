@@ -24,6 +24,86 @@
       "components": [],
       "tags": ["decoration", "vegetation", "grass", "clear-on-build"],
       "stats": {}
+    },
+    "field_weed": {
+      "presentation": "field_weed",
+      "nameKey": "entity.field_weed",
+      "collisionRadius": 0,
+      "components": [],
+      "tags": ["decoration", "vegetation", "weed", "clear-on-build"],
+      "stats": {}
+    },
+    "wildflower_clump": {
+      "presentation": "wildflower_clump",
+      "nameKey": "entity.wildflower_clump",
+      "collisionRadius": 0,
+      "components": [],
+      "tags": ["decoration", "vegetation", "flower", "clear-on-build"],
+      "stats": {}
+    },
+    "wildflower_empodium": {
+      "presentation": "wildflower_empodium",
+      "nameKey": "entity.wildflower_empodium",
+      "collisionRadius": 0,
+      "components": [],
+      "tags": ["decoration", "vegetation", "flower", "clear-on-build"],
+      "stats": {}
+    },
+    "wildflower_dandelion": {
+      "presentation": "wildflower_dandelion",
+      "nameKey": "entity.wildflower_dandelion",
+      "collisionRadius": 0,
+      "components": [],
+      "tags": ["decoration", "vegetation", "flower", "clear-on-build"],
+      "stats": {}
+    },
+    "grass_meadow": {
+      "presentation": "grass_meadow",
+      "nameKey": "entity.grass_meadow",
+      "collisionRadius": 0,
+      "components": [],
+      "tags": ["decoration", "vegetation", "grass", "clear-on-build"],
+      "stats": {}
+    },
+    "grass_bermuda": {
+      "presentation": "grass_bermuda",
+      "nameKey": "entity.grass_bermuda",
+      "collisionRadius": 0,
+      "components": [],
+      "tags": ["decoration", "vegetation", "grass", "clear-on-build"],
+      "stats": {}
+    },
+    "shore_reeds": {
+      "presentation": "shore_reeds",
+      "nameKey": "entity.shore_reeds",
+      "collisionRadius": 0,
+      "components": [],
+      "tags": ["decoration", "vegetation", "shoreline", "clear-on-build"],
+      "stats": {}
+    },
+    "pebble_cluster": {
+      "presentation": "pebble_cluster",
+      "nameKey": "entity.pebble_cluster",
+      "collisionRadius": 0,
+      "components": [],
+      "tags": ["decoration", "vegetation", "stone-detail", "clear-on-build"],
+      "stats": {}
+    },
+    "pebble_stone": {
+      "presentation": "pebble_stone",
+      "nameKey": "entity.pebble_stone",
+      "collisionRadius": 0,
+      "components": [],
+      "tags": ["decoration", "vegetation", "stone-detail", "clear-on-build"],
+      "stats": {}
+    },
+    "pebble_rock": {
+      "presentation": "pebble_rock",
+      "nameKey": "entity.pebble_rock",
+      "collisionRadius": 0,
+      "components": [],
+      "tags": ["decoration", "vegetation", "stone-detail", "clear-on-build"],
+      "stats": {}
     }
   }
 }

@@ -4,6 +4,15 @@
   "loading.startup": "LOADING ASSETS",
   "loading.terrain": "GENERATING TERRAIN",
   "loading.world": "CREATING WORLD",
+  "loading.terrain_fields": "GENERATING TERRAIN FIELDS",
+  "loading.water": "CLASSIFYING WATER AND SHORES",
+  "loading.navigation": "BUILDING NAVIGATION",
+  "loading.starts": "PLACING STARTING REGIONS",
+  "loading.resources": "PLACING RESOURCES",
+  "loading.validation": "VALIDATING MAP",
+  "loading.decoration": "SCATTERING VEGETATION",
+  "loading.world_ready": "WORLD DATA READY",
+  "loading.terrain_upload": "UPLOADING TERRAIN",
   "loading.save": "READING SAVE DATA",
   "loading.finalize": "FINALIZING",
   "loading.assets": "LOADING ASSETS {0} / {1} - {2}",
@@ -250,4 +259,14 @@
   ,"entity.grass_dry": "DRY GRASS"
   ,"entity.grass_aged": "AGED GRASS"
   ,"entity.grass_fresh": "FRESH GRASS"
+  ,"entity.field_weed": "FIELD WEEDS"
+  ,"entity.wildflower_clump": "WILDFLOWERS"
+  ,"entity.wildflower_empodium": "YELLOW WILDFLOWERS"
+  ,"entity.wildflower_dandelion": "DANDELIONS"
+  ,"entity.grass_meadow": "MEADOW GRASS"
+  ,"entity.grass_bermuda": "BERMUDA GRASS"
+  ,"entity.shore_reeds": "SHORE REEDS"
+  ,"entity.pebble_cluster": "PEBBLES"
+  ,"entity.pebble_stone": "SMALL STONES"
+  ,"entity.pebble_rock": "SMALL ROCKS"
 }

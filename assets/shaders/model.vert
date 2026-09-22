@@ -4,9 +4,11 @@ layout(location = 1) in vec3 inNormal;
 layout(location = 2) in vec2 inUv;
 layout(location = 3) in ivec4 inBones;
 layout(location = 4) in vec4 inWeights;
+layout(location = 5) in mat4 inInstanceModel;
 uniform mat4 viewProjection;
 uniform mat4 model;
 uniform bool useSkinning;
+uniform bool useInstancing;
 uniform mat4 bones[100];
 out vec3 worldPosition;
 out vec3 worldNormal;
@@ -18,9 +20,10 @@ void main() {
         for (int i = 0; i < 4; ++i)
             if (inBones[i] >= 0) skin += bones[inBones[i]] * inWeights[i];
     }
-    vec4 world = model * skin * vec4(inPosition, 1.0);
+    mat4 objectModel = useInstancing ? inInstanceModel * model : model;
+    vec4 world = objectModel * skin * vec4(inPosition, 1.0);
     worldPosition = world.xyz;
-    worldNormal = normalize(transpose(inverse(mat3(model * skin))) * inNormal);
+    worldNormal = normalize(transpose(inverse(mat3(objectModel * skin))) * inNormal);
     uv = inUv;
     gl_Position = viewProjection * world;
 }

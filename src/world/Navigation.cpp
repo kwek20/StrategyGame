@@ -3,6 +3,7 @@
 #include "terrain/Terrain.hpp"
 #include "world/Collision.hpp"
 #include "world/World.hpp"
+#include "world/GenerationProgress.hpp"
 
 #include <algorithm>
 #include <array>
@@ -29,9 +30,9 @@ constexpr std::array<std::array<int, 2>, 8> directions{
 } // namespace
 
 Navigation::Navigation(const Terrain& terrain, const DefinitionRegistry& definitions,
-                       std::uint32_t mapChunksPerSide)
+                       std::uint32_t mapChunksPerSide, WorldGenerationProgress* progress)
     : map_(mapChunksPerSide), definitions_(definitions) {
-    rebuildTerrain(terrain, mapChunksPerSide);
+    rebuildTerrain(terrain, mapChunksPerSide, progress);
 }
 
 int Navigation::indexOf(int x, int z) const { return z * side_ + x; }
@@ -43,12 +44,17 @@ glm::vec3 Navigation::positionOf(int x, int z) const {
             -map_.halfExtent() + (static_cast<float>(z) + 0.5F) * cellSize};
 }
 
-void Navigation::rebuildTerrain(const Terrain& terrain, std::uint32_t mapChunksPerSide) {
+void Navigation::rebuildTerrain(const Terrain& terrain, std::uint32_t mapChunksPerSide,
+                                WorldGenerationProgress* progress) {
+    if (progress) progress->report(WorldGenerationPhase::navigation, 0.0F);
     map_ = MapArea{mapChunksPerSide};
     side_ = std::max(1, static_cast<int>(std::ceil(map_.extent() / cellSize)));
     heights_.resize(static_cast<std::size_t>(side_ * side_));
     terrainMovementCosts_.resize(static_cast<std::size_t>(side_ * side_));
-    for (int z = 0; z < side_; ++z)
+    for (int z = 0; z < side_; ++z) {
+        if (progress && z % 8 == 0)
+            progress->report(WorldGenerationPhase::navigation,
+                             static_cast<float>(z) / side_);
         for (int x = 0; x < side_; ++x) {
             const glm::vec3 position = positionOf(x, z);
             const float height = terrain.heightAt(position.x, position.z);
@@ -56,9 +62,11 @@ void Navigation::rebuildTerrain(const Terrain& terrain, std::uint32_t mapChunksP
             terrainMovementCosts_[indexOf(x, z)] =
                 terrain.sampleAt(position.x, position.z).movementCosts;
         }
+    }
     obstacleShapes_.clear();
     occupancyByProfile_.clear();
     flowFields_.clear();
+    if (progress) progress->report(WorldGenerationPhase::navigation, 1.0F);
 }
 
 void Navigation::synchronizeObstacles(const World& world) {

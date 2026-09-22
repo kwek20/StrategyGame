@@ -115,6 +115,19 @@ PlayState::PlayState(StateContext& context, MatchSetupOptions setup)
                setup.startingResourcesScale,
                setup.resourceAbundanceScale)
     , config_(GameConfig::load(context.configPath)) {
+    initializeStartingView();
+}
+
+PlayState::PlayState(StateContext& context, MatchSetupOptions setup,
+                     GameSession preparedSession)
+    : GameState(context)
+    , session_(std::move(preparedSession))
+    , config_(GameConfig::load(context.configPath)) {
+    (void)setup;
+    initializeStartingView();
+}
+
+void PlayState::initializeStartingView() {
     for (const Entity& entity : session_.world().entities()) {
         if (entity.authority.owner != localPlayer_) continue;
         if (entity.archetype.value == "command_hub")
@@ -1127,6 +1140,7 @@ void PlayState::render(Renderer& renderer) const {
     }
     renderer.drawTerrain(view, local, terrainDebug_);
     particlePresenter_.sync(renderer, session_.world(), local, session_.mapChunksPerSide());
+    renderer.drawVegetation(session_.vegetation(), view, local);
     renderer.drawWorld(session_.world(), view, local, powerOverlayVisible_);
     renderer.drawParticles(view);
     if (constructionPlacementMode_ && constructionCursorScreen_) {
@@ -1174,7 +1188,7 @@ void PlayState::render(Renderer& renderer) const {
         // Hidden enemy construction is resolved authoritatively by PlaceBuildingCommand.
         // Do not leak it through a red preview in previously explored fog.
         if (currentlyVisible &&
-            overlapsObject(session_.world(), context_.definitions, placementShape, 0, true))
+            overlapsObject(session_.world(), context_.definitions, placementShape))
             invalidate("placement.collision");
         if (!terrainPlacement.valid()) {
             const char* key = terrainPlacement.failure == TerrainPlacementFailure::excessiveSlope

@@ -1,6 +1,7 @@
 #include "terrain/Terrain.hpp"
 #include "terrain/TerrainGeneration.hpp"
 #include "world/MapArea.hpp"
+#include "world/GenerationProgress.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -22,11 +23,25 @@ int main() {
     const strategy::TerrainGeneratorDefinition& generator = generation.activeGenerator();
     const strategy::TerrainFieldGenerator regionalFields{0x5EED1234U, generator};
     const strategy::Terrain terrain;
-    const strategy::Terrain sameSeed{0x5EED1234U};
+    strategy::WorldGenerationProgress terrainProgress;
+    const strategy::Terrain sameSeed{0x5EED1234U, &terrainProgress};
     const strategy::Terrain differentSeed{12345U};
     bool valid = generator.id.value == "continental_v1" && generator.version == 1 &&
                  nearlyEqual(generator.waterLevel, 0.24F) &&
                  generation.biomes().size() >= 5 && generation.surfaces().size() >= 5;
+    const auto completedTerrainProgress = terrainProgress.snapshot();
+    valid = valid && completedTerrainProgress.phase == strategy::WorldGenerationPhase::water &&
+            nearlyEqual(completedTerrainProgress.phaseProgress, 1.0F);
+    strategy::WorldGenerationProgress cancelledProgress;
+    cancelledProgress.requestCancellation();
+    bool cancellationObserved = false;
+    try {
+        const strategy::Terrain cancelledTerrain{123U, &cancelledProgress};
+        (void)cancelledTerrain;
+    } catch (const strategy::WorldGenerationCancelled&) {
+        cancellationObserved = true;
+    }
+    valid = valid && cancellationObserved;
     const strategy::TerrainRegionalFields origin = regionalFields.sample(0.0F, 0.0F);
     const strategy::TerrainRegionalFields repeated = regionalFields.sample(0.0F, 0.0F);
     const auto validField = [](float value) { return value >= 0.0F && value <= 1.0F; };

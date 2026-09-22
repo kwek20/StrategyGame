@@ -1,5 +1,6 @@
 #include "terrain/Terrain.hpp"
 #include "terrain/TerrainGeneration.hpp"
+#include "world/GenerationProgress.hpp"
 
 #include <algorithm>
 #include <array>
@@ -128,23 +129,29 @@ const TerrainBiomeDefinition& classifyBiome(const TerrainGenerationDefinitions& 
 
 } // namespace
 
-Terrain::Terrain(std::uint32_t seed) {
+Terrain::Terrain(std::uint32_t seed, WorldGenerationProgress* progress) {
     const TerrainGenerationDefinitions& definitions = defaultGenerationDefinitions();
-    generate(seed, definitions.activeGenerator());
-    generateSemantics(seed, definitions.activeGenerator(), definitions);
+    generate(seed, definitions.activeGenerator(), progress);
+    generateSemantics(seed, definitions.activeGenerator(), definitions, progress);
 }
 
-Terrain::Terrain(std::uint32_t seed, const TerrainGeneratorDefinition& generator) {
-    generate(seed, generator);
-    generateSemantics(seed, generator, defaultGenerationDefinitions());
+Terrain::Terrain(std::uint32_t seed, const TerrainGeneratorDefinition& generator,
+                 WorldGenerationProgress* progress) {
+    generate(seed, generator, progress);
+    generateSemantics(seed, generator, defaultGenerationDefinitions(), progress);
 }
 
-void Terrain::generate(std::uint32_t seed, const TerrainGeneratorDefinition& generator) {
+void Terrain::generate(std::uint32_t seed, const TerrainGeneratorDefinition& generator,
+                       WorldGenerationProgress* progress) {
+    if (progress) progress->report(WorldGenerationPhase::terrainFields, 0.0F);
     heights_.resize(static_cast<std::size_t>(vertexCount * vertexCount));
     const TerrainFieldGenerator fieldGenerator(seed, generator);
     const float halfExtent = worldExtent() * 0.5F;
 
     for (int z = 0; z < vertexCount; ++z) {
+        if (progress && z % 16 == 0)
+            progress->report(WorldGenerationPhase::terrainFields,
+                             0.75F * static_cast<float>(z) / vertexCount);
         for (int x = 0; x < vertexCount; ++x) {
             const float worldX = static_cast<float>(x) * spacing - halfExtent;
             const float worldZ = static_cast<float>(z) * spacing - halfExtent;
@@ -157,6 +164,11 @@ void Terrain::generate(std::uint32_t seed, const TerrainGeneratorDefinition& gen
     std::vector<float> smoothed(heights_.size());
     for (std::uint32_t pass = 0; pass < generator.height.smoothingPasses; ++pass) {
         for (int z = 0; z < vertexCount; ++z) {
+            if (progress && z % 16 == 0)
+                progress->report(WorldGenerationPhase::terrainFields,
+                    0.75F + 0.25F * (static_cast<float>(pass) +
+                    static_cast<float>(z) / vertexCount) /
+                    std::max(1U, generator.height.smoothingPasses));
             for (int x = 0; x < vertexCount; ++x) {
                 float total = 0.0F;
                 float weightTotal = 0.0F;
@@ -177,11 +189,14 @@ void Terrain::generate(std::uint32_t seed, const TerrainGeneratorDefinition& gen
         heights_.swap(smoothed);
     }
     baseHeights_ = heights_;
+    if (progress) progress->report(WorldGenerationPhase::terrainFields, 1.0F);
 }
 
 void Terrain::generateSemantics(std::uint32_t seed,
                                 const TerrainGeneratorDefinition& generator,
-                                const TerrainGenerationDefinitions& definitions) {
+                                const TerrainGenerationDefinitions& definitions,
+                                WorldGenerationProgress* progress) {
+    if (progress) progress->report(WorldGenerationPhase::water, 0.0F);
     waterLevel_ = generator.waterLevel * heightScale;
     minimumStartingLandFraction_ = generator.connectivity.minimumStartingLandFraction;
     maximumGenerationAttempts_ = generator.connectivity.maximumGenerationAttempts;
@@ -190,6 +205,9 @@ void Terrain::generateSemantics(std::uint32_t seed,
         static_cast<std::size_t>(semanticCellCount * semanticCellCount));
     const float halfExtent = worldExtent() * 0.5F;
     for (int z = 0; z < semanticCellCount; ++z) {
+        if (progress && z % 8 == 0)
+            progress->report(WorldGenerationPhase::water,
+                             static_cast<float>(z) / semanticCellCount);
         for (int x = 0; x < semanticCellCount; ++x) {
             const float worldX = -halfExtent + (static_cast<float>(x) + 0.5F) * semanticCellSize;
             const float worldZ = -halfExtent + (static_cast<float>(z) + 0.5F) * semanticCellSize;
@@ -303,6 +321,7 @@ void Terrain::generateSemantics(std::uint32_t seed,
             }
             if (oppositeMedium) sample.tags |= terrainTagBit(TerrainTag::shoreline);
         }
+    if (progress) progress->report(WorldGenerationPhase::water, 1.0F);
 }
 
 float Terrain::normalizedHeight(int x, int z) const {

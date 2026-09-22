@@ -13,6 +13,8 @@
 
 namespace strategy {
 
+class WorldGenerationProgress;
+
 enum class FootprintShape { circle, rectangle };
 enum class TerrainTraversalClass { open, difficult, impassable };
 enum class TerrainBuildabilityClass { buildable, restricted, forbidden };
@@ -131,8 +133,10 @@ class Terrain final {
     static constexpr int semanticCellCount =
         static_cast<int>(cellCount * spacing / semanticCellSize);
 
-    explicit Terrain(std::uint32_t seed = 0x5EED1234U);
-    Terrain(std::uint32_t seed, const TerrainGeneratorDefinition& generator);
+    explicit Terrain(std::uint32_t seed = 0x5EED1234U,
+                     WorldGenerationProgress* progress = nullptr);
+    Terrain(std::uint32_t seed, const TerrainGeneratorDefinition& generator,
+            WorldGenerationProgress* progress = nullptr);
 
     [[nodiscard]] float normalizedHeight(int x, int z) const;
     [[nodiscard]] float vertexHeight(int x, int z) const;
@@ -183,10 +187,12 @@ class Terrain final {
     std::vector<std::pair<int, int>> dirtyChunks_;
     std::vector<TerrainFoundation> appliedFoundations_;
 
-    void generate(std::uint32_t seed, const TerrainGeneratorDefinition& generator);
+    void generate(std::uint32_t seed, const TerrainGeneratorDefinition& generator,
+                  WorldGenerationProgress* progress);
     void generateSemantics(std::uint32_t seed,
                            const TerrainGeneratorDefinition& generator,
-                           const TerrainGenerationDefinitions& definitions);
+                           const TerrainGenerationDefinitions& definitions,
+                           WorldGenerationProgress* progress);
     [[nodiscard]] int semanticIndex(float worldX, float worldZ) const;
 };
 

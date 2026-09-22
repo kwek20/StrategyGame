@@ -233,30 +233,64 @@ void DefinitionRegistry::loadArchetypes(const std::filesystem::path& path,
         if (item->value.HasMember("generation")) {
             const auto& generation = item->value["generation"];
             if (!generation.IsObject() || !generation.HasMember("stream") ||
-                !generation["stream"].IsString() || !generation.HasMember("clusterPairs") ||
-                !generation["clusterPairs"].IsUint() ||
-                !generation.HasMember("nodesPerCluster") ||
-                !generation["nodesPerCluster"].IsUint() ||
-                !generation.HasMember("attemptsPerCluster") ||
-                !generation["attemptsPerCluster"].IsUint() || !generation.HasMember("spread") ||
-                !generation["spread"].IsNumber() || !generation.HasMember("centerExtent") ||
-                !generation["centerExtent"].IsNumber())
+                !generation["stream"].IsString())
                 throw std::runtime_error("Definition '" + archetype.id +
                                          "' has invalid generation settings");
-            archetype.generation = EntityArchetype::Generation{
-                generation["stream"].GetString(),
-                generation["clusterPairs"].GetUint(),
-                generation["nodesPerCluster"].GetUint(),
-                generation["attemptsPerCluster"].GetUint(),
-                generation["spread"].GetFloat(),
-                generation["centerExtent"].GetFloat(),
-                generation.HasMember("startingNodesPerPlayer") && generation["startingNodesPerPlayer"].IsUint()
-                    ? generation["startingNodesPerPlayer"].GetUint() : 0U,
-                generation.HasMember("startingMinimumDistance") && generation["startingMinimumDistance"].IsNumber()
-                    ? generation["startingMinimumDistance"].GetFloat() : 0.0F,
-                generation.HasMember("startingMaximumDistance") && generation["startingMaximumDistance"].IsNumber()
-                    ? generation["startingMaximumDistance"].GetFloat() : 0.0F};
             const std::string context = "Definition '" + archetype.id + "' generation";
+            const auto numberRange = [&](const char* key) {
+                if (!generation.HasMember(key) || !generation[key].IsArray() ||
+                    generation[key].Size() != 2 || !generation[key][0].IsNumber() ||
+                    !generation[key][1].IsNumber())
+                    throw std::runtime_error(context + " requires two-number range '" + key + "'");
+                return std::pair{generation[key][0].GetFloat(), generation[key][1].GetFloat()};
+            };
+            const auto unsignedRange = [&](const char* key) {
+                if (!generation.HasMember(key) || !generation[key].IsArray() ||
+                    generation[key].Size() != 2 || !generation[key][0].IsUint() ||
+                    !generation[key][1].IsUint())
+                    throw std::runtime_error(context + " requires two-unsigned range '" + key + "'");
+                return std::pair{generation[key][0].GetUint(), generation[key][1].GetUint()};
+            };
+            EntityArchetype::Generation settings;
+            settings.stream = generation["stream"].GetString();
+            for (const std::string& biome : strings(generation, "allowedBiomes"))
+                settings.allowedBiomes.emplace_back(biome);
+            const auto [minimumMoisture, maximumMoisture] = numberRange("moistureRange");
+            const auto [minimumClusters, maximumClusters] =
+                numberRange("clustersPerSquareChunk");
+            const auto [minimumRadius, maximumRadius] = numberRange("clusterRadius");
+            const auto [minimumNodes, maximumNodes] = unsignedRange("nodesPerCluster");
+            const auto [minimumCapacity, maximumCapacity] = numberRange("capacityMultiplier");
+            settings.minimumMoisture = minimumMoisture;
+            settings.maximumMoisture = maximumMoisture;
+            settings.regionScale = requiredNumber(generation, "regionScale", context);
+            settings.regionThreshold = requiredNumber(generation, "regionThreshold", context);
+            settings.minimumClustersPerSquareChunk = minimumClusters;
+            settings.maximumClustersPerSquareChunk = maximumClusters;
+            settings.minimumClusterRadius = minimumRadius;
+            settings.maximumClusterRadius = maximumRadius;
+            settings.minimumNodesPerCluster = minimumNodes;
+            settings.maximumNodesPerCluster = maximumNodes;
+            if (!generation.HasMember("placementAttemptsPerCluster") ||
+                !generation["placementAttemptsPerCluster"].IsUint())
+                throw std::runtime_error(context + " requires unsigned placementAttemptsPerCluster");
+            settings.placementAttemptsPerCluster =
+                generation["placementAttemptsPerCluster"].GetUint();
+            settings.minimumNodeSpacing = requiredNumber(generation, "minimumNodeSpacing", context);
+            settings.minimumClusterSpacing =
+                requiredNumber(generation, "minimumClusterSpacing", context);
+            settings.minimumCapacityMultiplier = minimumCapacity;
+            settings.maximumCapacityMultiplier = maximumCapacity;
+            settings.startingNodesPerPlayer =
+                generation.HasMember("startingNodesPerPlayer") && generation["startingNodesPerPlayer"].IsUint()
+                    ? generation["startingNodesPerPlayer"].GetUint() : 0U;
+            settings.startingMinimumDistance =
+                generation.HasMember("startingMinimumDistance") && generation["startingMinimumDistance"].IsNumber()
+                    ? generation["startingMinimumDistance"].GetFloat() : 0.0F;
+            settings.startingMaximumDistance =
+                generation.HasMember("startingMaximumDistance") && generation["startingMaximumDistance"].IsNumber()
+                    ? generation["startingMaximumDistance"].GetFloat() : 0.0F;
+            archetype.generation = std::move(settings);
             if (generation.HasMember("requiredTerrainTags"))
                 archetype.generation->requiredTerrainTags =
                     terrainTags(generation, "requiredTerrainTags", context);
@@ -280,6 +314,29 @@ void DefinitionRegistry::loadArchetypes(const std::filesystem::path& path,
                  archetype.generation->minimumHeight > archetype.generation->maximumHeight) ||
                 archetype.generation->maximumSlope > 90.0F)
                 throw std::runtime_error(context + " has invalid terrain limits");
+            if (archetype.generation->allowedBiomes.empty() ||
+                archetype.generation->minimumMoisture < 0.0F ||
+                archetype.generation->maximumMoisture > 1.0F ||
+                archetype.generation->minimumMoisture > archetype.generation->maximumMoisture ||
+                archetype.generation->regionScale <= 0.0F ||
+                archetype.generation->regionThreshold < 0.0F ||
+                archetype.generation->regionThreshold > 1.0F ||
+                archetype.generation->minimumClustersPerSquareChunk < 0.0F ||
+                archetype.generation->minimumClustersPerSquareChunk >
+                    archetype.generation->maximumClustersPerSquareChunk ||
+                archetype.generation->minimumClusterRadius <= 0.0F ||
+                archetype.generation->minimumClusterRadius >
+                    archetype.generation->maximumClusterRadius ||
+                archetype.generation->minimumNodesPerCluster == 0 ||
+                archetype.generation->minimumNodesPerCluster >
+                    archetype.generation->maximumNodesPerCluster ||
+                archetype.generation->placementAttemptsPerCluster == 0 ||
+                archetype.generation->minimumNodeSpacing <= 0.0F ||
+                archetype.generation->minimumClusterSpacing <= 0.0F ||
+                archetype.generation->minimumCapacityMultiplier <= 0.0F ||
+                archetype.generation->minimumCapacityMultiplier >
+                    archetype.generation->maximumCapacityMultiplier)
+                throw std::runtime_error(context + " has invalid region/cluster settings");
             if (archetype.generation->startingNodesPerPlayer > 0 &&
                 (archetype.generation->startingMinimumDistance <= 0.0F ||
                  archetype.generation->startingMaximumDistance < archetype.generation->startingMinimumDistance))
@@ -978,6 +1035,24 @@ void DefinitionRegistry::loadRules(const std::filesystem::path& path) {
                 throw std::runtime_error("Vegetation surface IDs must be strings");
             vegetation.allowedSurfaces.emplace_back(surface.GetString());
         }
+        const auto parseTerrainTags = [&](const char* name, TerrainTagMask& mask) {
+            if (!value.HasMember(name)) return;
+            if (!value[name].IsArray())
+                throw std::runtime_error("Vegetation '" + vegetation.archetype +
+                                         "' requires an array for " + name);
+            for (const auto& tag : value[name].GetArray()) {
+                if (!tag.IsString())
+                    throw std::runtime_error("Vegetation terrain tags must be strings");
+                const TerrainTagMask bit = terrainTagFromName(tag.GetString());
+                if (bit == 0)
+                    throw std::runtime_error("Vegetation '" + vegetation.archetype +
+                                             "' references unknown terrain tag '" +
+                                             tag.GetString() + "'");
+                mask |= bit;
+            }
+        };
+        parseTerrainTags("requiredTerrainTags", vegetation.requiredTerrainTags);
+        parseTerrainTags("forbiddenTerrainTags", vegetation.forbiddenTerrainTags);
         if (vegetation.allowedBiomes.empty() || vegetation.allowedSurfaces.empty() ||
             vegetation.instancesPerChunk < 0.0F || vegetation.maximumSlopeDegrees < 0.0F ||
             vegetation.maximumSlopeDegrees > 90.0F || vegetation.minimumSpacing < 0.0F ||

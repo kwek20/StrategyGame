@@ -34,6 +34,7 @@ class UiDocument;
 class UiRenderer;
 class Logger;
 class World;
+class VegetationField;
 class DefinitionRegistry;
 class ParticleSystem;
 struct ParticleEmitterDesc;
@@ -60,6 +61,9 @@ class Renderer final {
                    const CameraView& camera,
                    const Player* player = nullptr,
                    bool powerOverlayVisible = false) const;
+    void drawVegetation(const VegetationField& vegetation,
+                        const CameraView& camera,
+                        const Player* player = nullptr) const;
     [[nodiscard]] ParticleEmitterHandle emitParticle(const ParticleEmitterDesc& description);
     [[nodiscard]] ParticleEffectHandle particleEffect(ParticleEffectId id) const {
         return particleEffects_.handle(std::move(id));
@@ -125,6 +129,18 @@ class Renderer final {
     [[nodiscard]] int viewportHeight() const { return viewportHeight_; }
     void regenerateTerrain(std::uint32_t seed,
                            std::uint32_t chunksPerSide = Terrain::chunksPerSide);
+    // Copies CPU-generated terrain and schedules bounded render-thread uploads.
+    void stageGeneratedTerrain(const Terrain& terrain, std::uint32_t seed,
+                               std::uint32_t chunksPerSide,
+                               const std::vector<TerrainFoundation>& foundations = {});
+    [[nodiscard]] float terrainUploadProgress() const;
+    [[nodiscard]] bool terrainUploadFinished() const {
+        return pendingInitialTerrainUploads_.empty();
+    }
+    void cancelTerrainUpload() {
+        pendingInitialTerrainUploads_.clear();
+        initialTerrainUploadCount_ = 0;
+    }
     void setTerrainFoundations(const std::vector<TerrainFoundation>& foundations);
     void preloadAssetGroup(const std::string& group);
     [[nodiscard]] AssetLoadProgress assetProgress(const std::string& group);
@@ -202,6 +218,8 @@ class Renderer final {
     std::vector<TerrainChunk> terrainChunks_;
     std::vector<FoundationMesh> foundationMeshes_;
     std::vector<std::pair<int, int>> pendingTerrainChunkUploads_;
+    std::vector<std::pair<int, int>> pendingInitialTerrainUploads_;
+    std::size_t initialTerrainUploadCount_{0};
     int viewportWidth_{1};
     int viewportHeight_{1};
     float framesPerSecond_{0.0F};

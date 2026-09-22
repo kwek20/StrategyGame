@@ -77,10 +77,11 @@ legacy behavior. There are no public save files and no requirement for legacy sa
   abundance. Current named map sizes are 10x10, 15x15, and 20x20 chunks.
 - Players spawn on opposite sides with definition-backed edge inset/lateral placement.
 - Terrain is seeded and chunked, with LOD and blended materials.
-- Resources and vegetation use named deterministic streams.
+- Resources and presentation-only vegetation use named deterministic streams.
 - Decorative grass and small trees are configured in `assets/gameplay/rules.json` and archetyped in
   `decorations.json`. `wild_tree` uses the grass-pack tall clump presentation, not the harvestable
-  resource pine. Decorative vegetation is cleared by accepted building placement.
+  resource pine. Decorative vegetation lives in chunked `VegetationField` render data rather than
+  authoritative `World` entities, is GPU-instanced, and is cleared by accepted building placement.
 
 ### Selection and camera
 
@@ -192,6 +193,10 @@ legacy behavior. There are no public save files and no requirement for legacy sa
   sheet as an equal grid because its row spacing is non-uniform.
 - Runtime text belongs in `assets/text/en_us.json`.
 - Asset groups/preloading: `assets/asset_manifest.json`.
+- New-match world generation runs as a cancellable CPU background job. Progress is exposed through
+  `world/GenerationProgress.hpp`; never call OpenGL from that worker. The accepted `GameSession`
+  terrain is staged into `Renderer`, which uploads a bounded number of terrain chunks per loading
+  frame on the render thread.
 - Shaders: `assets/shaders/`; particle definitions: `assets/presentation/particle_effects.json`.
 - Keep third-party licenses and attribution when moving/extracting asset packs.
 
@@ -203,8 +208,8 @@ legacy behavior. There are no public save files and no requirement for legacy sa
 - Most relevant last-known passing checks:
   `resource_delivery_routing`, `definition_registry_validation`, `vegetation_generation`, and
   `renderer_integration`.
-- `game_system_tests` is comprehensive and slow in Debug, especially after denser vegetation. A
-  direct run can exceed four minutes. Do not mistake silence for a hang; use focused tests during
+- `game_system_tests` is comprehensive and slow in Debug because it constructs many full sessions.
+  A direct run can take several minutes. Do not mistake silence for a hang; use focused tests during
   iteration and run the complete suite before a milestone/commit handoff.
 - Hidden renderer integration creates an OpenGL context and is expected to take longer than unit
   tests. OpenGL debug output should contain no `GL_INVALID_OPERATION` errors.

@@ -17,7 +17,7 @@ struct Material {
 };
 struct ModelShaderBindings {
     std::uint32_t program{0};
-    std::int32_t viewProjection{-1}, model{-1}, useSkinning{-1}, bones{-1};
+    std::int32_t viewProjection{-1}, model{-1}, useSkinning{-1}, useInstancing{-1}, bones{-1};
     std::int32_t baseColorTexture{-1}, materialDiffuse{-1}, materialOpacity{-1};
     std::int32_t hasBaseColorTexture{-1};
 };
@@ -34,6 +34,10 @@ class Model final {
               const std::string& animation = {},
               double animationSeconds = 0.0,
               std::uint32_t overrideTexture = 0) const;
+    void drawInstanced(const ModelShaderBindings& shader,
+                       const glm::mat4& viewProjection,
+                       const std::vector<glm::mat4>& transforms,
+                       std::uint32_t overrideTexture = 0) const;
     [[nodiscard]] std::size_t meshCount() const {
         return meshes_.size();
     }
@@ -44,6 +48,7 @@ class Model final {
     static constexpr std::size_t maxBones = ModelAsset::maxBones;
     struct Mesh {
         std::uint32_t vao{0}, vbo{0}, ebo{0}, indexCount{0};
+        mutable std::uint32_t instanceVbo{0};
         glm::mat4 nodeTransform{1};
         Material material;
         bool skinned{false};

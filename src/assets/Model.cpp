@@ -142,6 +142,7 @@ Model::Model(std::shared_ptr<ModelAsset> asset) {
 
 Model::~Model() {
     for (const auto& m : meshes_) {
+        glDeleteBuffers(1, &m.instanceVbo);
         glDeleteBuffers(1, &m.ebo);
         glDeleteBuffers(1, &m.vbo);
         glDeleteVertexArrays(1, &m.vao);
@@ -194,6 +195,7 @@ void Model::draw(const ModelShaderBindings& shader,
     }
     glUseProgram(shader.program);
     glUniformMatrix4fv(shader.viewProjection, 1, GL_FALSE, glm::value_ptr(vp));
+    glUniform1i(shader.useInstancing, GL_FALSE);
     // Static meshes do not use the bone array. Uploading the full declared array for
     // those draws is invalid on drivers that optimize the inactive array away. For an
     // animated model, upload only the matrices that can actually be referenced by its
@@ -221,5 +223,48 @@ void Model::draw(const ModelShaderBindings& shader,
     }
     glBindVertexArray(0);
     glBindTexture(GL_TEXTURE_2D, 0);
+}
+
+void Model::drawInstanced(const ModelShaderBindings& shader,
+                          const glm::mat4& vp,
+                          const std::vector<glm::mat4>& transforms,
+                          std::uint32_t overrideTexture) const {
+    if (transforms.empty()) return;
+    glUseProgram(shader.program);
+    glUniformMatrix4fv(shader.viewProjection, 1, GL_FALSE, glm::value_ptr(vp));
+    glUniform1i(shader.useSkinning, GL_FALSE);
+    glUniform1i(shader.useInstancing, GL_TRUE);
+    glActiveTexture(GL_TEXTURE0);
+    glUniform1i(shader.baseColorTexture, 0);
+    for (const Mesh& mesh : meshes_) {
+        glUniformMatrix4fv(shader.model, 1, GL_FALSE, glm::value_ptr(mesh.nodeTransform));
+        glUniform3fv(shader.materialDiffuse, 1, glm::value_ptr(mesh.material.diffuse));
+        glUniform1f(shader.materialOpacity, mesh.material.opacity);
+        const std::uint32_t texture = overrideTexture ? overrideTexture : mesh.material.baseColorTexture;
+        glUniform1i(shader.hasBaseColorTexture, texture != 0);
+        glBindTexture(GL_TEXTURE_2D, texture);
+        glBindVertexArray(mesh.vao);
+        if (mesh.instanceVbo == 0) {
+            glGenBuffers(1, &mesh.instanceVbo);
+            glBindBuffer(GL_ARRAY_BUFFER, mesh.instanceVbo);
+            for (std::uint32_t column = 0; column < 4; ++column) {
+                const std::uint32_t location = 5 + column;
+                glEnableVertexAttribArray(location);
+                glVertexAttribPointer(location, 4, GL_FLOAT, GL_FALSE, sizeof(glm::mat4),
+                                      reinterpret_cast<void*>(sizeof(glm::vec4) * column));
+                glVertexAttribDivisor(location, 1);
+            }
+        }
+        glBindBuffer(GL_ARRAY_BUFFER, mesh.instanceVbo);
+        glBufferData(GL_ARRAY_BUFFER,
+                     static_cast<GLsizeiptr>(transforms.size() * sizeof(glm::mat4)),
+                     transforms.data(), GL_STREAM_DRAW);
+        glDrawElementsInstanced(GL_TRIANGLES, static_cast<GLsizei>(mesh.indexCount),
+                                GL_UNSIGNED_INT, nullptr,
+                                static_cast<GLsizei>(transforms.size()));
+    }
+    glBindVertexArray(0);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glUniform1i(shader.useInstancing, GL_FALSE);
 }
 } // namespace strategy

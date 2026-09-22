@@ -8,6 +8,7 @@
 #include "terrain/Terrain.hpp"
 #include "world/Navigation.hpp"
 #include "world/World.hpp"
+#include "world/Vegetation.hpp"
 
 #include <cstdint>
 #include <deque>
@@ -16,6 +17,8 @@
 #include <vector>
 
 namespace strategy {
+
+class WorldGenerationProgress;
 
 class GameSession final {
   public:
@@ -29,7 +32,12 @@ class GameSession final {
                          std::string playerTwoSpecialization = "unassigned",
                          std::uint32_t mapChunksPerSide = Terrain::chunksPerSide,
                          float startingResourcesScale = 1.0F,
-                         float resourceAbundanceScale = 1.0F);
+                         float resourceAbundanceScale = 1.0F,
+                         WorldGenerationProgress* generationProgress = nullptr);
+
+    GameSession(const GameSession&) = delete;
+    GameSession& operator=(const GameSession&) = delete;
+    GameSession(GameSession&&) = default;
 
     void update(double elapsedSeconds);
     void advanceTicks(std::uint32_t count = 1);
@@ -48,6 +56,8 @@ class GameSession final {
     [[nodiscard]] const World& world() const {
         return world_;
     }
+    [[nodiscard]] const VegetationField& vegetation() const { return vegetation_; }
+    [[nodiscard]] const Terrain& terrain() const { return terrain_; }
     [[nodiscard]] const PlayerRegistry& players() const {
         return players_;
     }
@@ -81,6 +91,7 @@ class GameSession final {
     PlayerRegistry players_;
     const DefinitionRegistry& gameplay_;
     World world_;
+    VegetationField vegetation_;
     std::deque<PlayerCommand> commands_;
     std::map<PlayerId, std::uint64_t> lastSequence_;
     std::uint64_t tick_{0};

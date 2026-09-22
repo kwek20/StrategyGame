@@ -12,6 +12,7 @@
 #include "ui/GameHudLayout.hpp"
 #include "ui/EntityHudModel.hpp"
 #include "world/World.hpp"
+#include "world/Vegetation.hpp"
 
 #include <SDL3/SDL.h>
 #include <array>
@@ -25,6 +26,7 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <iomanip>
 #include <limits>
+#include <map>
 #include <unordered_map>
 #include <sstream>
 #include <stdexcept>
@@ -488,6 +490,7 @@ void Renderer::refreshModelShaderBindings() {
                                    shaders_.uniform(handle, "viewProjection"),
                                    shaders_.uniform(handle, "model"),
                                    shaders_.uniform(handle, "useSkinning"),
+                                   shaders_.uniform(handle, "useInstancing"),
                                    shaders_.uniform(handle, "bones[0]"),
                                    shaders_.uniform(handle, "baseColorTexture"),
                                    shaders_.uniform(handle, "materialDiffuse"),
@@ -518,6 +521,15 @@ void Renderer::beginFrame(int width, int height) {
     viewportWidth_ = width;
     viewportHeight_ = height;
     pendingText_.clear();
+    // Initial terrain is intentionally uploaded in small batches so the loading screen and OS
+    // event queue remain responsive. OpenGL ownership never leaves this thread.
+    constexpr std::size_t initialChunksPerFrame = 4;
+    for (std::size_t uploaded = 0;
+         uploaded < initialChunksPerFrame && !pendingInitialTerrainUploads_.empty(); ++uploaded) {
+        const auto [chunkX, chunkZ] = pendingInitialTerrainUploads_.back();
+        pendingInitialTerrainUploads_.pop_back();
+        uploadTerrainChunk(chunkX, chunkZ);
+    }
     // Upload a complete connected deformation region in one frame. Splitting adjacent
     // chunks across frames exposes stale shared-edge vertices and produces a visible seam.
     if (!pendingTerrainChunkUploads_.empty()) {
@@ -964,6 +976,49 @@ void Renderer::drawWorld(const World& world,
         glEnable(GL_CULL_FACE);
         glEnable(GL_DEPTH_TEST);
     }
+}
+
+void Renderer::drawVegetation(const VegetationField& vegetation,
+                              const CameraView& camera,
+                              const Player* player) const {
+    renderGraph_.enter(RenderPassKind::world);
+    ProfileScope profile(profiler_, "render.vegetation");
+    const glm::mat4 viewProjection = camera.viewProjection();
+    std::map<std::string, std::vector<glm::mat4>> batches;
+    constexpr float renderDistance = 300.0F;
+    for (const VegetationChunk& chunk : vegetation.chunks()) {
+        const glm::vec2 delta = chunk.center - glm::vec2{camera.position.x, camera.position.z};
+        const float maximumDistance = renderDistance + chunk.radius;
+        if (glm::dot(delta, delta) > maximumDistance * maximumDistance) continue;
+        for (const VegetationInstance& instance : chunk.instances) {
+            const std::string& renderId = instance.presentation.value;
+            const Model* model = resources_.modelOrMarker(modelHandle(renderId));
+            if (!model) continue;
+            batches[renderId].push_back(groundedEntityTransform(
+                terrain_, instance.transform, resources_.entityDefinition(renderId), 0,
+                model->baseY()));
+        }
+    }
+    if (batches.empty()) return;
+
+    shaders_.use(modelProgram_);
+    glUniform3fv(shaders_.uniform(modelProgram_, "cameraPosition"), 1,
+                 glm::value_ptr(camera.position));
+    glUniform2f(shaders_.uniform(modelProgram_, "fogRange"), 140.0F, 280.0F);
+    glUniform1i(shaders_.uniform(modelProgram_, "rememberedEntity"), 0);
+    glUniform1i(shaders_.uniform(modelProgram_, "visibilityMode"), player ? 1 : 0);
+    glUniform1i(shaders_.uniform(modelProgram_, "explorationMap"), 7);
+    glUniform1f(shaders_.uniform(modelProgram_, "explorationExtent"), activeWorldExtent());
+    const RenderMaterial& material = materials_.get(worldMaterial_);
+    // Most natural ground-cover meshes use crossed alpha cards and need both faces.
+    glDisable(GL_CULL_FACE);
+    glUniform4fv(shaders_.uniform(modelProgram_, "materialTint"), 1,
+                 glm::value_ptr(material.tint));
+    glUniform1f(shaders_.uniform(modelProgram_, "materialRoughness"), material.roughness);
+    for (const auto& [renderId, transforms] : batches)
+        if (const Model* model = resources_.modelOrMarker(modelHandle(renderId)))
+            model->drawInstanced(modelBindings_, viewProjection, transforms);
+    glEnable(GL_CULL_FACE);
 }
 
 void Renderer::drawDebugHud(const RtsCamera& camera, std::size_t entityCount) const {
@@ -1571,6 +1626,33 @@ void Renderer::regenerateTerrain(std::uint32_t seed, std::uint32_t chunksPerSide
         }
     }
     glBindBuffer(GL_ARRAY_BUFFER, 0);
+}
+
+void Renderer::stageGeneratedTerrain(const Terrain& terrain, std::uint32_t seed,
+                                     std::uint32_t chunksPerSide,
+                                     const std::vector<TerrainFoundation>& foundations) {
+    clearParticles();
+    terrainSeed_ = seed;
+    activeTerrainChunksPerSide_ = std::clamp(
+        chunksPerSide, 10U, static_cast<std::uint32_t>(Terrain::chunksPerSide));
+    terrain_ = terrain;
+    terrainFoundations_ = foundations;
+    terrain_.rebuildFoundations(terrainFoundations_);
+    syncFoundationMeshes();
+    pendingInitialTerrainUploads_.clear();
+    pendingInitialTerrainUploads_.reserve(
+        static_cast<std::size_t>(activeTerrainChunksPerSide_ * activeTerrainChunksPerSide_));
+    // Reverse insertion makes pop_back() upload from the visible map's first chunk onward.
+    for (int z = static_cast<int>(activeTerrainChunksPerSide_) - 1; z >= 0; --z)
+        for (int x = static_cast<int>(activeTerrainChunksPerSide_) - 1; x >= 0; --x)
+            pendingInitialTerrainUploads_.push_back({x, z});
+    initialTerrainUploadCount_ = pendingInitialTerrainUploads_.size();
+}
+
+float Renderer::terrainUploadProgress() const {
+    if (initialTerrainUploadCount_ == 0) return 1.0F;
+    return 1.0F - static_cast<float>(pendingInitialTerrainUploads_.size()) /
+                      static_cast<float>(initialTerrainUploadCount_);
 }
 
 void Renderer::setTerrainFoundations(const std::vector<TerrainFoundation>& foundations) {

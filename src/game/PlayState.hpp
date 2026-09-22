@@ -22,6 +22,7 @@ namespace strategy {
 class PlayState final : public GameState {
   public:
     PlayState(StateContext& context, MatchSetupOptions setup);
+    PlayState(StateContext& context, MatchSetupOptions setup, GameSession preparedSession);
     PlayState(StateContext& context, SaveData data);
     void handleEvent(const SDL_Event& event) override;
     void update(float deltaSeconds) override;
@@ -95,6 +96,7 @@ class PlayState final : public GameState {
 
     void setMouseCaptured(bool captured);
     void sanitizeEntityReferences();
+    void initializeStartingView();
 
     void handlePauseEvent(const SDL_Event& event);
     [[nodiscard]] UiDocument pauseUi(int width, int height) const;

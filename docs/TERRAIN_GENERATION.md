@@ -250,22 +250,21 @@ Each resource definition should support:
     "requiredTerrainTags": ["land"],
     "forbiddenTerrainTags": ["deep-water"],
     "allowedBiomes": ["dry_lowland", "temperate_plain"],
-    "heightRange": [0.16, 0.62],
+    "minimumHeight": 0.16,
+    "maximumHeight": 0.62,
     "maximumSlopeDegrees": 12,
     "regionThreshold": 0.48,
     "regionScale": 90,
     "clustersPerSquareChunk": [0.04, 0.11],
     "clusterRadius": [3, 10],
     "nodesPerCluster": [2, 9],
-    "densityFalloff": "irregular",
+    "placementAttemptsPerCluster": 90,
     "minimumNodeSpacing": 2.5,
     "minimumClusterSpacing": 12,
     "capacityMultiplier": [0.75, 1.35],
-    "startingGuarantee": {
-      "perPlayer": 1,
-      "minimumTotalCapacity": 360,
-      "travelDistance": [16, 28]
-    }
+    "startingNodesPerPlayer": 3,
+    "startingMinimumDistance": 16,
+    "startingMaximumDistance": 28
   }
 }
 ```
@@ -319,9 +318,16 @@ presentation-only detail:
 - Dry, aged, and fresh grass clumps
 - Shader-level grass coverage and color variation
 - Pebbles and tiny stones that are not harvestable nodes
-- Flowers, weeds, reeds, shoreline debris, and bare patches
+- Multiple small flower and grass species selected by biome and surface
+- Actual reed clusters restricted to shoreline terrain
+- Several pebble and small-stone forms on suitable dry, upland, and rocky surfaces
 - Decals for dirt, cracks, damp soil, and resource-region character
 - Optional ambient particles such as dust or pollen
+
+Do not scatter generic dirt patches or shoreline debris as mesh decorations. Ground variation
+belongs in terrain materials/decals, while the shoreline silhouette should come from reeds, stones,
+water, and the terrain itself. Current realistic scatter assets are normalized to metre scale and
+triangle budgets by `tools/normalize_scatter_asset.py` before entering the runtime manifest.
 
 Decorations must:
 
@@ -406,18 +412,16 @@ not thousands of authoritative `Entity` records.
 
 Map loading should expose these stages:
 
-1. Regional fields
-2. Biome classification
-3. Base terrain
-4. Water and terrain semantics
-5. Navigation
-6. Starting-region selection
-7. Resource regions and clusters
-8. Fairness/playability validation
-9. Terrain mesh upload
-10. Decorative scatter
-11. Required asset upload
-12. Match ready
+1. Terrain fields and base height
+2. Water, shoreline, biome, and terrain semantics
+3. Navigation
+4. Starting-region selection
+5. Resource regions and clusters
+6. Fairness/playability validation
+7. Decorative scatter
+8. Incremental terrain mesh upload
+9. Required asset upload
+10. Match ready
 
 Progress should be based on completed deterministic work units, such as generated chunks and tested
 candidates, rather than simulated timers.
@@ -542,22 +546,43 @@ biome, surface, traversal/buildability, slope, and regional fields beneath the c
 10. ~~Replace fixed start coordinates with candidate scoring and pair selection.~~ Complete.
     Headquarters require a dry, slope-valid footprint, sufficient connected local land, and viable
     nearby opening-resource sites. Guaranteed resources consume the selected anchors directly.
-11. Extend resource-node definitions with biome, field, variable cluster, density, and capacity rules.
-12. Replace mirrored pair generation with resource regions and irregular clusters.
+11. ~~Extend resource-node definitions with biome, field, variable cluster, density, and capacity
+    rules.~~ Complete. Each raw resource now defines biome and terrain tags, moisture/elevation/slope
+    limits, an independent named potential field, cluster-density/radius/node-count ranges, spacing,
+    attempt budgets, and capacity variance.
+12. ~~Replace mirrored pair generation with resource regions and irregular clusters.~~ Complete.
+    Cluster counts scale with playable map area and abundance, centers require high resource-specific
+    potential and deterministic spacing, and nodes use irregular radial masks with minimum spacing.
+    No generated node receives an automatic mirrored counterpart.
 13. Add path-cost fairness validation and deterministic compensation/retry.
-14. Preserve explicit opening Scrap guarantees without mirroring the rest of the map.
+14. ~~Preserve explicit opening Scrap guarantees without mirroring the rest of the map.~~ Complete.
+    Opening Scrap is placed independently around each selected starting anchor using its own named
+    per-player stream; regional Scrap, Oil, and Uranium remain asymmetric.
 
 ### Phase D: environmental detail
 
-15. Move dense non-gameplay vegetation out of authoritative `World` entities into chunk scatter
-    resources.
+15. ~~Move dense non-gameplay vegetation out of authoritative `World` entities into chunk scatter
+    resources.~~ Complete. `VegetationField` is deterministic presentation state owned by the
+    session, grouped and culled per terrain chunk, excluded from saves/checksums/collision, and
+    submitted to the renderer in model-instanced batches. Harvestable resource trees remain
+    authoritative entities.
 16. ~~Drive dry, aged, and fresh grass from biome/moisture/surface rules.~~ Complete.
-17. Add instanced pebbles, weeds, shoreline detail, and surface decals.
-18. Ensure construction clears/hides decoration through the same footprint mask.
+17. ~~Add instanced pebbles, weeds, shoreline detail, and surface decals.~~ Complete at the
+    scatter-system level. Multiple pebble, short-grass, weed, wildflower, and shore-reed variants
+    have independent named streams, biome/surface/tag filters, scale and slope ranges, and
+    normalized instanced presentations. Generic dirt patches and shoreline debris were removed;
+    ground variation remains terrain-material/decal work rather than freestanding geometry.
+18. ~~Ensure construction clears/hides decoration through the same footprint mask.~~ Complete.
+    Accepted placement removes intersecting scatter instances through the authoritative building
+    `SpatialShape`; loading regenerates scatter against the loaded authoritative world.
 
 ### Phase E: tools and hardening
 
-19. Add loading-stage progress and cancellation-safe generation jobs.
+19. ~~Add loading-stage progress and cancellation-safe generation jobs.~~ Complete for match
+    startup. CPU terrain, navigation, starts, resources, validation, and decoration execute in a
+    cancellable background job. Atomic phase/work progress drives the live loading screen. The
+    accepted authoritative terrain is copied to the renderer and uploaded in bounded chunk batches
+    on the OpenGL thread while asset imports/uploads continue through the resource manager.
 20. Add field/biome/navigation/resource debug views and generation reports.
 21. Add deterministic, connectivity, fairness, statistical, and chunk-seam tests.
 22. Profile 10x10, 15x15, and 20x20 maps and establish time/memory budgets.

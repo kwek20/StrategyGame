@@ -16,6 +16,7 @@ namespace strategy {
 class DefinitionRegistry;
 class Terrain;
 class World;
+class WorldGenerationProgress;
 
 struct NavigationGoalRegion {
     SpatialShape target;
@@ -29,8 +30,9 @@ class Navigation final {
   public:
     static constexpr float cellSize = 2.0F;
     Navigation(const Terrain& terrain, const DefinitionRegistry& definitions,
-               std::uint32_t mapChunksPerSide);
-    void rebuildTerrain(const Terrain& terrain, std::uint32_t mapChunksPerSide);
+               std::uint32_t mapChunksPerSide, WorldGenerationProgress* progress = nullptr);
+    void rebuildTerrain(const Terrain& terrain, std::uint32_t mapChunksPerSide,
+                        WorldGenerationProgress* progress = nullptr);
     [[nodiscard]] std::vector<glm::vec3> findPath(
         const World& world, glm::vec3 start, glm::vec3 destination, float radius, EntityId ignored,
         NavigationProfile profile = {});

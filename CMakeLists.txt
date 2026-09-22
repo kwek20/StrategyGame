@@ -82,6 +82,7 @@ add_library(strategy_world STATIC
     src/world/Navigation.cpp
     src/world/SpatialShape.cpp
     src/world/WorldGeneration.cpp
+    src/world/Vegetation.cpp
 )
 strategy_target(strategy_world)
 target_link_libraries(strategy_world

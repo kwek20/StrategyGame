@@ -4,19 +4,47 @@
     "scrap_field": {
       "presentation": "tree", "nameKey": "entity.scrap_field", "collisionRadius": 1.2,
       "resourceType": "scrap", "capacity": 160,
-      "generation": { "stream": "resources.scrap", "clusterPairs": 18, "nodesPerCluster": 3, "attemptsPerCluster": 80, "spread": 4.5, "centerExtent": 78, "startingNodesPerPlayer": 3, "startingMinimumDistance": 16, "startingMaximumDistance": 24, "requiredTerrainTags": ["land"] },
+      "generation": {
+        "stream": "resources.scrap", "allowedBiomes": ["dry_lowland", "temperate_plain", "upland"],
+        "requiredTerrainTags": ["land"], "moistureRange": [0.0, 0.78],
+        "minimumHeight": 0.24, "maximumHeight": 0.70, "maximumSlopeDegrees": 18,
+        "regionScale": 82, "regionThreshold": 0.43,
+        "clustersPerSquareChunk": [0.055, 0.085], "clusterRadius": [4.0, 10.0],
+        "nodesPerCluster": [2, 7], "placementAttemptsPerCluster": 90,
+        "minimumNodeSpacing": 2.7, "minimumClusterSpacing": 11.0,
+        "capacityMultiplier": [0.75, 1.35],
+        "startingNodesPerPlayer": 3, "startingMinimumDistance": 16, "startingMaximumDistance": 24
+      },
       "components": ["resource"], "tags": ["resource", "raw", "scrap"], "stats": {}
     },
     "oil_deposit": {
       "presentation": "stone", "nameKey": "entity.oil_deposit", "collisionRadius": 1.5,
       "resourceType": "oil", "capacity": 220,
-      "generation": { "stream": "resources.oil", "clusterPairs": 6, "nodesPerCluster": 2, "attemptsPerCluster": 80, "spread": 3.0, "centerExtent": 78, "requiredTerrainTags": ["land"] },
+      "generation": {
+        "stream": "resources.oil", "allowedBiomes": ["dry_lowland", "temperate_plain"],
+        "requiredTerrainTags": ["land"], "moistureRange": [0.18, 1.0],
+        "minimumHeight": 0.22, "maximumHeight": 0.56, "maximumSlopeDegrees": 12,
+        "regionScale": 118, "regionThreshold": 0.56,
+        "clustersPerSquareChunk": [0.018, 0.032], "clusterRadius": [3.0, 7.0],
+        "nodesPerCluster": [2, 5], "placementAttemptsPerCluster": 100,
+        "minimumNodeSpacing": 3.0, "minimumClusterSpacing": 18.0,
+        "capacityMultiplier": [0.85, 1.45]
+      },
       "components": ["resource"], "tags": ["resource", "raw", "oil"], "stats": {}
     },
     "uranium_deposit": {
       "presentation": "gold", "nameKey": "entity.uranium_deposit", "collisionRadius": 1.5,
       "resourceType": "uranium", "capacity": 120,
-      "generation": { "stream": "resources.uranium", "clusterPairs": 3, "nodesPerCluster": 2, "attemptsPerCluster": 80, "spread": 2.5, "centerExtent": 78, "requiredTerrainTags": ["land"] },
+      "generation": {
+        "stream": "resources.uranium", "allowedBiomes": ["upland", "rocky_highland"],
+        "requiredTerrainTags": ["land", "rocky"], "moistureRange": [0.0, 0.72],
+        "minimumHeight": 0.48, "maximumHeight": 0.82, "maximumSlopeDegrees": 24,
+        "regionScale": 145, "regionThreshold": 0.64,
+        "clustersPerSquareChunk": [0.008, 0.018], "clusterRadius": [2.5, 6.0],
+        "nodesPerCluster": [1, 4], "placementAttemptsPerCluster": 120,
+        "minimumNodeSpacing": 3.2, "minimumClusterSpacing": 24.0,
+        "capacityMultiplier": [0.70, 1.30]
+      },
       "components": ["resource"], "tags": ["resource", "raw", "uranium", "rare"], "stats": {}
     }
   }

@@ -8,6 +8,7 @@
 #include "world/Navigation.hpp"
 #include "world/MapArea.hpp"
 #include "world/WorldGeneration.hpp"
+#include "world/GenerationProgress.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -170,32 +171,37 @@ GameSession::GameSession(const DefinitionRegistry& definitions,
                          std::string playerTwoSpecialization,
                          std::uint32_t mapChunksPerSide,
                          float startingResourcesScale,
-                         float resourceAbundanceScale)
+                         float resourceAbundanceScale,
+                         WorldGenerationProgress* generationProgress)
     : players_(std::move(playerOneCountry),
                std::move(playerTwoCountry),
                std::move(playerOneSpecialization),
                std::move(playerTwoSpecialization))
     , gameplay_(definitions)
     , terrainSeed_(terrainSeed)
-    , terrain_(terrainSeed)
+    , terrain_(terrainSeed, generationProgress)
     , mapChunksPerSide_(std::clamp(mapChunksPerSide, 10U,
                                   static_cast<std::uint32_t>(Terrain::chunksPerSide)))
-    , navigation_(terrain_, gameplay_, mapChunksPerSide_)
+    , navigation_(terrain_, gameplay_, mapChunksPerSide_, generationProgress)
     , resourceAbundanceScale_(std::clamp(resourceAbundanceScale, 0.5F, 2.0F)) {
     for (Player& player : players_.players())
         for (const auto& [resource, amount] : gameplay_.matchRules().startingResources)
             player.resources[resource] =
                 amount * std::clamp(startingResourcesScale, 0.0F, 4.0F);
     std::vector<StartingRegion> startingRegions;
+    if (generationProgress) generationProgress->report(WorldGenerationPhase::starts, 0.0F);
     const std::uint32_t requestedSeed = terrainSeed_;
     const std::uint32_t maximumAttempts = terrain_.maximumGenerationAttempts();
     for (std::uint32_t attempt = 0; attempt < maximumAttempts; ++attempt) {
         terrainSeed_ = retryTerrainSeed(requestedSeed, attempt);
         if (attempt > 0) {
-            terrain_ = Terrain{terrainSeed_};
-            navigation_.rebuildTerrain(terrain_, mapChunksPerSide_);
+            terrain_ = Terrain{terrainSeed_, generationProgress};
+            navigation_.rebuildTerrain(terrain_, mapChunksPerSide_, generationProgress);
         }
         try {
+            if (generationProgress)
+                generationProgress->report(WorldGenerationPhase::starts,
+                    static_cast<float>(attempt) / std::max(1U, maximumAttempts));
             startingRegions = selectStartingRegions(
                 terrain_, gameplay_, mapChunksPerSide_, players_.players().size());
             break;
@@ -206,6 +212,7 @@ GameSession::GameSession(const DefinitionRegistry& definitions,
                     std::to_string(maximumAttempts) + " deterministic attempts");
         }
     }
+    if (generationProgress) generationProgress->report(WorldGenerationPhase::starts, 1.0F);
     for (const StartingRegion& region : startingRegions)
         startingAnchors_.push_back(region.anchor);
     const auto createStartingEntities = [this](PlayerId player,
@@ -247,9 +254,18 @@ GameSession::GameSession(const DefinitionRegistry& definitions,
         terrain_.applyFoundation(foundation);
     }
     populateResources(world_, terrain_, gameplay_, terrainSeed,
-                      mapChunksPerSide_, resourceAbundanceScale_, startingAnchors_);
-    populateVegetation(world_, terrain_, gameplay_, terrainSeed_, mapChunksPerSide_);
+                      mapChunksPerSide_, resourceAbundanceScale_, startingAnchors_,
+                      generationProgress);
+    if (generationProgress) generationProgress->report(WorldGenerationPhase::validation, 0.0F);
+    // Start selection validates usable land and reachability; resource generation validates each
+    // guaranteed opening deposit before this phase is reported complete.
+    if (startingAnchors_.size() != players_.players().size())
+        throw std::runtime_error("Terrain validation did not produce one start per player");
+    if (generationProgress) generationProgress->report(WorldGenerationPhase::validation, 1.0F);
+    vegetation_ = generateVegetation(world_, terrain_, gameplay_, terrainSeed_, mapChunksPerSide_,
+                                     generationProgress);
     updateExploration();
+    if (generationProgress) generationProgress->report(WorldGenerationPhase::complete, 1.0F);
 }
 
 float GameSession::stat(const Entity& entity, GameplayStat requested) const {
@@ -700,7 +716,7 @@ void GameSession::apply(const PlayerCommand& command) {
                 const MapArea map{mapChunksPerSide_};
                 if (std::abs(placementShape.center.x) + bounds.x > map.halfExtent() ||
                     std::abs(placementShape.center.y) + bounds.y > map.halfExtent()) return;
-                if (overlapsObject(world_, gameplay_, placementShape, 0, true)) return;
+                if (overlapsObject(world_, gameplay_, placementShape)) return;
                 const TerrainPlacementResult placement = terrain_.evaluatePlacement(
                     payload.position.x, payload.position.z, shape,
                     buildingDefinition ? buildingDefinition->placement
@@ -709,7 +725,7 @@ void GameSession::apply(const PlayerCommand& command) {
                 for (const auto& [resource, amount] : recipe->cost)
                     if (player->resources[resource] < amount) return;
                 for (const auto& [resource, amount] : recipe->cost) player->resources[resource] -= amount;
-                clearVegetationWithin(world_, gameplay_, placementShape);
+                vegetation_.clearWithin(placementShape);
                 Entity& building = world_.createEntity(recipe->product.id, recipe->product.id, command.player);
                 gameplay_.initializeEntity(building);
                 building.transform.position = {payload.position.x, 0.0F, payload.position.z};
@@ -1777,6 +1793,7 @@ void GameSession::replaceWorld(std::vector<Entity> entities, std::uint32_t terra
     terrain_ = Terrain{terrainSeed};
     terrain_.rebuildFoundations(world_.foundations());
     navigation_.rebuildTerrain(terrain_, mapChunksPerSide_);
+    vegetation_ = generateVegetation(world_, terrain_, gameplay_, terrainSeed_, mapChunksPerSide_);
     commands_.clear();
     lastSequence_.clear();
     powerTopologySignatures_.clear();

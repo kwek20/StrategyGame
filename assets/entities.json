@@ -89,6 +89,86 @@
       "selection": { "radius": 0.0, "height": 0.8 },
       "animations": {}
     },
+    "field_weed": {
+      "icon": "status_asset_ready",
+      "model": "environment/realistic_scatter/game_ready/weed_plant_02",
+      "scale": 1.0,
+      "grounding": { "groundOffset": -0.02, "alignToTerrain": true, "maximumTilt": 18.0, "foundationRadius": 0.0 },
+      "selection": { "radius": 0.0, "height": 0.6 },
+      "animations": {}
+    },
+    "wildflower_clump": {
+      "icon": "status_asset_ready",
+      "model": "environment/realistic_scatter/game_ready/flower_gazania",
+      "scale": 1.0,
+      "grounding": { "groundOffset": -0.02, "alignToTerrain": true, "maximumTilt": 16.0, "foundationRadius": 0.0 },
+      "selection": { "radius": 0.0, "height": 0.55 },
+      "animations": {}
+    },
+    "wildflower_empodium": {
+      "icon": "status_asset_ready",
+      "model": "environment/realistic_scatter/game_ready/flower_empodium",
+      "scale": 1.0,
+      "grounding": { "groundOffset": -0.01, "alignToTerrain": true, "maximumTilt": 16.0, "foundationRadius": 0.0 },
+      "selection": { "radius": 0.0, "height": 0.35 },
+      "animations": {}
+    },
+    "wildflower_dandelion": {
+      "icon": "status_asset_ready",
+      "model": "environment/realistic_scatter/game_ready/dandelion_01",
+      "scale": 1.0,
+      "grounding": { "groundOffset": -0.01, "alignToTerrain": true, "maximumTilt": 16.0, "foundationRadius": 0.0 },
+      "selection": { "radius": 0.0, "height": 0.35 },
+      "animations": {}
+    },
+    "grass_meadow": {
+      "icon": "status_asset_ready",
+      "model": "environment/realistic_scatter/game_ready/grass_medium_02",
+      "scale": 1.0,
+      "grounding": { "groundOffset": -0.01, "alignToTerrain": true, "maximumTilt": 18.0, "foundationRadius": 0.0 },
+      "selection": { "radius": 0.0, "height": 0.4 },
+      "animations": {}
+    },
+    "grass_bermuda": {
+      "icon": "status_asset_ready",
+      "model": "environment/realistic_scatter/game_ready/grass_bermuda_01",
+      "scale": 1.0,
+      "grounding": { "groundOffset": -0.01, "alignToTerrain": true, "maximumTilt": 18.0, "foundationRadius": 0.0 },
+      "selection": { "radius": 0.0, "height": 0.35 },
+      "animations": {}
+    },
+    "shore_reeds": {
+      "icon": "status_asset_ready",
+      "model": "environment/realistic_scatter/game_ready/reed",
+      "scale": 1.0,
+      "grounding": { "groundOffset": -0.03, "alignToTerrain": true, "maximumTilt": 12.0, "foundationRadius": 0.0 },
+      "selection": { "radius": 0.0, "height": 1.2 },
+      "animations": {}
+    },
+    "pebble_cluster": {
+      "icon": "status_asset_ready",
+      "model": "environment/realistic_scatter/game_ready/rock_09",
+      "scale": 1.0,
+      "grounding": { "groundOffset": -0.04, "alignToTerrain": true, "maximumTilt": 30.0, "foundationRadius": 0.0 },
+      "selection": { "radius": 0.0, "height": 0.25 },
+      "animations": {}
+    },
+    "pebble_stone": {
+      "icon": "status_asset_ready",
+      "model": "environment/realistic_scatter/game_ready/stone_01",
+      "scale": 1.0,
+      "grounding": { "groundOffset": -0.02, "alignToTerrain": true, "maximumTilt": 30.0, "foundationRadius": 0.0 },
+      "selection": { "radius": 0.0, "height": 0.2 },
+      "animations": {}
+    },
+    "pebble_rock": {
+      "icon": "status_asset_ready",
+      "model": "environment/realistic_scatter/game_ready/rock_08",
+      "scale": 1.0,
+      "grounding": { "groundOffset": -0.02, "alignToTerrain": true, "maximumTilt": 30.0, "foundationRadius": 0.0 },
+      "selection": { "radius": 0.0, "height": 0.25 },
+      "animations": {}
+    },
     "stone": {
       "icon": "resource_stone",
       "model": "buildings/Resource_Rock_1",

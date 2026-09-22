@@ -3,6 +3,8 @@
 #include "render/ShaderManager.hpp"
 #include "ui/UiDocument.hpp"
 #include "world/World.hpp"
+#include "world/Vegetation.hpp"
+#include "terrain/Terrain.hpp"
 
 #include <SDL3/SDL.h>
 #include <chrono>
@@ -103,7 +105,10 @@ out vec4 color;void main(){color=vec4(1);})";
         strategy::Logger logger{std::filesystem::temp_directory_path() /
                                 "strategy-renderer-test.log"};
         strategy::Renderer renderer{&logger};
-        renderer.regenerateTerrain(12345);
+        const strategy::Terrain generatedTerrain{12345};
+        renderer.stageGeneratedTerrain(generatedTerrain, 12345, 10);
+        valid = !renderer.terrainUploadFinished() && renderer.terrainUploadProgress() == 0.0F &&
+                valid;
 
         strategy::CameraView camera;
         camera.position = {24, 30, 35};
@@ -121,6 +126,16 @@ out vec4 color;void main(){color=vec4(1);})";
         const strategy::EntityId workerId = worker.id;
         strategy::Entity& missing = world.createEntity("Missing", "missing_test_asset", 1);
         missing.transform.position = {-4, 0, 2};
+        strategy::VegetationField vegetation;
+        strategy::VegetationChunk vegetationChunk;
+        vegetationChunk.center = {0.0F, 0.0F};
+        vegetationChunk.radius = 16.0F;
+        strategy::VegetationInstance vegetationInstance;
+        vegetationInstance.archetype = strategy::EntityArchetypeId{"grass_fresh"};
+        vegetationInstance.presentation = strategy::PresentationId{"grass_fresh"};
+        vegetationInstance.transform.position = {2.0F, 0.0F, -2.0F};
+        vegetationChunk.instances.push_back(vegetationInstance);
+        vegetation.chunks().push_back(std::move(vegetationChunk));
 
         strategy::UiDocument ui;
         ui.panel("panel", {12, 12, 240, 90}, {0.04F, 0.07F, 0.10F});
@@ -128,10 +143,12 @@ out vec4 color;void main(){color=vec4(1);})";
 
         renderer.preloadAssetGroup("match");
         strategy::AssetLoadProgress loadProgress = renderer.assetProgress("match");
-        for (int frame = 0; frame < 400 && !loadProgress.finished(); ++frame) {
+        for (int frame = 0; frame < 400 &&
+             (!loadProgress.finished() || !renderer.terrainUploadFinished()); ++frame) {
             renderer.beginProfileFrame();
             renderer.beginFrame(640, 360);
             renderer.drawTerrain(camera);
+            renderer.drawVegetation(vegetation, camera);
             renderer.drawWorld(world, camera);
             renderer.drawUi(ui);
             renderer.endFrame();
@@ -142,14 +159,17 @@ out vec4 color;void main(){color=vec4(1);})";
         }
         const strategy::TextureHandle texture = renderer.requestTexture("ui/placeholder");
         renderer.bindTexture(texture, 0);
-        // The match manifest contains seventeen presentation models and fifteen textures.
-        valid = loadProgress.total == 32 && loadProgress.completed == 32 &&
-                loadProgress.failed == 0 && renderer.loadedModelCount() == 17 && valid;
+        // The manifest contains twenty-seven presentation models and fifteen textures.
+        valid = loadProgress.total == 42 && loadProgress.completed == 42 &&
+                loadProgress.failed == 0 && renderer.loadedModelCount() == 27 &&
+                renderer.terrainUploadFinished() &&
+                renderer.terrainUploadProgress() == 1.0F && valid;
         valid = renderer.textureState(texture) == strategy::ResourceState::ready &&
                 noGlErrors("standalone texture") && valid;
         renderer.beginProfileFrame();
         renderer.beginFrame(640, 360);
         renderer.drawTerrain(camera, nullptr, true);
+        renderer.drawVegetation(vegetation, camera);
         renderer.drawWorld(world, camera);
         renderer.drawEntityOutline(world, workerId, camera);
         renderer.drawUi(ui);

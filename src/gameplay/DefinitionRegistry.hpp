@@ -172,8 +172,15 @@ struct EntityArchetype {
     float processorCapacity{0.0F}; // zero means unlimited
     struct Generation {
         std::string stream;
-        std::uint32_t clusterPairs{0}, nodesPerCluster{0}, attemptsPerCluster{0};
-        float spread{0.0F}, centerExtent{0.0F};
+        std::vector<TerrainBiomeId> allowedBiomes;
+        float minimumMoisture{0.0F}, maximumMoisture{1.0F};
+        float regionScale{90.0F}, regionThreshold{0.48F};
+        float minimumClustersPerSquareChunk{0.02F}, maximumClustersPerSquareChunk{0.06F};
+        float minimumClusterRadius{3.0F}, maximumClusterRadius{9.0F};
+        std::uint32_t minimumNodesPerCluster{2}, maximumNodesPerCluster{6};
+        std::uint32_t placementAttemptsPerCluster{80};
+        float minimumNodeSpacing{2.5F}, minimumClusterSpacing{12.0F};
+        float minimumCapacityMultiplier{0.75F}, maximumCapacityMultiplier{1.35F};
         std::uint32_t startingNodesPerPlayer{0};
         float startingMinimumDistance{0.0F}, startingMaximumDistance{0.0F};
         TerrainTagMask requiredTerrainTags{terrainTagBit(TerrainTag::land)};
@@ -205,6 +212,8 @@ struct VegetationGenerationDefinition {
     float instancesPerChunk{0.0F};
     std::vector<TerrainBiomeId> allowedBiomes;
     std::vector<TerrainSurfaceId> allowedSurfaces;
+    TerrainTagMask requiredTerrainTags{0};
+    TerrainTagMask forbiddenTerrainTags{0};
     float maximumSlopeDegrees{90.0F};
     float minimumSpacing{0.0F};
     float minimumScale{1.0F};

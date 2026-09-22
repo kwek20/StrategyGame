@@ -22,16 +22,11 @@ class World;
 [[nodiscard]] bool overlapsObject(const World& world,
                                   const DefinitionRegistry& definitions,
                                   const SpatialShape& shape,
-                                  EntityId ignored = 0,
-                                  bool ignoreClearableVegetation = false);
+                                  EntityId ignored = 0);
 [[nodiscard]] bool
 overlapsObject(const World& world,
                const DefinitionRegistry& definitions,
                glm::vec2 position,
                float radius,
-               EntityId ignored = 0,
-               bool ignoreClearableVegetation = false);
-void clearVegetationWithin(World& world,
-                           const DefinitionRegistry& definitions,
-                           const SpatialShape& shape);
+               EntityId ignored = 0);
 } // namespace strategy
