@@ -59,9 +59,6 @@ std::uint32_t upload(const ModelTextureAsset& texture) {
     return id;
 }
 } // namespace
-Model::Model(const std::filesystem::path& path)
-    : Model(importModelAsset(path)) {}
-
 Model::Model(std::shared_ptr<ModelAsset> asset) {
     if (!asset)
         return;

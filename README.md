@@ -39,6 +39,11 @@ C:\Users\Brord\Desktop\Work\self\vcpkg
 
 ## Configure and build
 
+The Windows presets use the project-owned `x64-windows-strategy` vcpkg triplet. It disables
+Assimp's obsolete glTF 1 reader while retaining glTF 2, preventing caught `DeadlyImportError`
+first-chance exceptions for valid GLB assets. Configure through `CMakePresets.json` so this triplet
+is applied consistently.
+
 From a Developer PowerShell for Visual Studio:
 
 ```powershell

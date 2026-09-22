@@ -366,8 +366,4 @@ void ResourceManager::update() const {
     launchQueuedImports();
 }
 
-bool ResourceManager::containsModel(const std::string& key) const {
-    return !resolveKey(key).empty();
-}
-
 } // namespace strategy

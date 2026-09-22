@@ -2,7 +2,6 @@
 #include "assets/ModelAsset.hpp"
 #include <array>
 #include <cstdint>
-#include <filesystem>
 #include <glm/gtc/quaternion.hpp>
 #include <glm/mat4x4.hpp>
 #include <glm/vec3.hpp>
@@ -23,7 +22,6 @@ struct ModelShaderBindings {
 };
 class Model final {
   public:
-    explicit Model(const std::filesystem::path& path);
     explicit Model(std::shared_ptr<ModelAsset> asset);
     ~Model();
     Model(const Model&) = delete;

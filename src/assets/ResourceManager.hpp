@@ -56,7 +56,6 @@ class ResourceManager final {
     [[nodiscard]] AssetLoadProgress progress(const AssetPreloadSet& handles) const;
     // Completes ready CPU imports and uploads them on the render thread.
     void update() const;
-    [[nodiscard]] bool containsModel(const std::string& key) const;
     [[nodiscard]] const EntityDefinition* entityDefinition(const std::string& key) const;
     [[nodiscard]] const EntityDefinition* entityDefinition(PresentationId key) const {
         return entityDefinition(key.value);

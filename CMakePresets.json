@@ -8,7 +8,9 @@
       "architecture": "x64",
       "binaryDir": "${sourceDir}/build/debug",
       "cacheVariables": {
-        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+        "VCPKG_TARGET_TRIPLET": "x64-windows-strategy",
+        "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/cmake/triplets"
       }
     },
     {
