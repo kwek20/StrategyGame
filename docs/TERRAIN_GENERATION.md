@@ -310,6 +310,11 @@ small compensating cluster in the deficient player's eligible region. If that ca
 map, retry the resource-layout stream with a deterministic attempt index. Do not regenerate terrain
 unless terrain itself fails starting-region validation.
 
+Implemented: land travel-cost fields are calculated once per player and reused across every
+resource category and retry. Each resource definition owns its bands, comparison threshold,
+minimum reachable capacity, tolerance ratio, compensation count, and retry limit. Compensation is
+independently randomized per player and attempt; fairness therefore does not imply visual symmetry.
+
 ### 10. Scatter non-gameplay surface detail
 
 After authoritative terrain, navigation, starts, buildings, and resources are accepted, generate
@@ -560,7 +565,7 @@ biome, surface, traversal/buildability, slope, and regional fields beneath the c
     Cluster counts scale with playable map area and abundance, centers require high resource-specific
     potential and deterministic spacing, and nodes use irregular radial masks with minimum spacing.
     No generated node receives an automatic mirrored counterpart.
-13. Add path-cost fairness validation and deterministic compensation/retry.
+13. **Complete:** path-cost fairness validation and deterministic compensation/retry.
     - Measure path cost and reachable capacity from every starting anchor to each generated
       resource category, including Scrap, Oil, and Uranium.
     - Compare capacity inside expanding definition-backed travel-cost bands rather than using

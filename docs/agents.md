@@ -89,13 +89,15 @@ legacy behavior. There are no public save files and no requirement for legacy sa
 Do not begin additional vegetation work unless the user explicitly resumes it. Before Milestone 6,
 work through this order:
 
-1. Resource path-cost fairness, deterministic compensation, and resource-stream retry.
-2. Navigation congestion, arrival slots, local avoidance, and F3 path/stuck diagnostics.
-3. Drone charger-loss/stranded recovery, deterministic task resumption, and long-running loop tests.
-4. Construction concurrency, failure/save-load coverage, and terrain-foundation profiling.
-5. Power topology/storage/priority/limit stress tests and large-grid profiling.
-6. Repeatable 10–15 minute opening-economy validation and balance measurements.
-7. 10x10, 15x15, and 20x20 generation/simulation/memory/render profiling.
+Resource path-cost fairness, deterministic compensation, and resource-stream retry are complete.
+The active order is now:
+
+1. Navigation congestion, arrival slots, local avoidance, and F3 path/stuck diagnostics.
+2. Drone charger-loss/stranded recovery, deterministic task resumption, and long-running loop tests.
+3. Construction concurrency, failure/save-load coverage, and terrain-foundation profiling.
+4. Power topology/storage/priority/limit stress tests and large-grid profiling.
+5. Repeatable 10–15 minute opening-economy validation and balance measurements.
+6. 10x10, 15x15, and 20x20 generation/simulation/memory/render profiling.
 
 Then proceed to Milestone 6, the first combat slice.
 

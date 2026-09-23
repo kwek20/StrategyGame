@@ -90,13 +90,16 @@ Vegetation generation is currently in a satisfactory state and further vegetatio
 asset expansion, visual tuning, and LOD work are deferred. Complete the following work in order
 before starting Milestone 6:
 
-1. **Resource fairness validation**
+1. **Resource fairness validation — complete**
    - Measure navigation path cost from every start to Scrap, Oil, and Uranium.
    - Compare accessible capacity inside definition-backed travel-cost bands.
    - Detect resource denial caused by water, mountains, or isolated regions.
    - Add or relocate a small deterministic compensating cluster for a deficient player.
    - If compensation fails, retry only the resource-layout stream with a deterministic attempt
      index; regenerate terrain only when terrain validation itself fails.
+   - Implemented as definition-backed per-resource travel-cost bands with deliberately loose
+     capacity ratios. Positions are not mirrored; independent deterministic compensation streams
+     preserve distance and angle variation while preventing meaningful resource denial.
 2. **Navigation congestion and diagnostics**
    - Add deterministic arrival slots around buildings, resources, and other shared destinations.
    - Add local avoidance without making unit iteration order authoritative.

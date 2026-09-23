@@ -65,6 +65,38 @@
       "selection": { "radius": 1.5, "height": 5.0 },
       "animations": {}
     },
+    "scrap_pile": {
+      "icon": "resource_scrap",
+      "model": "gen/resources/scrap_pile_sketchfab",
+      "scale": 1.4,
+      "grounding": { "groundOffset": -0.06, "alignToTerrain": true, "maximumTilt": 16.0, "foundationRadius": 0.0 },
+      "selection": { "radius": 1.35, "height": 1.2 },
+      "animations": {}
+    },
+    "oil_pump_jack": {
+      "icon": "resource_oil",
+      "model": "gen/resources/oil_pump_jack",
+      "scale": 0.65,
+      "grounding": { "groundOffset": -0.05, "alignToTerrain": true, "maximumTilt": 10.0, "foundationRadius": 0.0 },
+      "selection": { "radius": 2.2, "height": 4.0 },
+      "animations": {}
+    },
+    "offshore_oil_rig": {
+      "icon": "resource_oil",
+      "model": "gen/resources/offshore_oil_rig_sketchfab",
+      "scale": 0.12,
+      "grounding": { "groundOffset": 0.0, "alignToTerrain": false, "maximumTilt": 0.0, "foundationRadius": 0.0 },
+      "selection": { "radius": 7.0, "height": 22.0 },
+      "animations": {}
+    },
+    "uranium_crystal": {
+      "icon": "resource_uranium",
+      "model": "gen/resources/uranium_crystal_cluster",
+      "scale": 1.0,
+      "grounding": { "groundOffset": -0.04, "alignToTerrain": true, "maximumTilt": 18.0, "foundationRadius": 0.0 },
+      "selection": { "radius": 1.6, "height": 2.5 },
+      "animations": {}
+    },
     "grass_dry": {
       "icon": "status_asset_ready",
       "model": "environment/grass_pack/grass_dry",

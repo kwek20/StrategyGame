@@ -9,7 +9,7 @@ namespace strategy {
 
 class RtsCamera final {
   public:
-    void pan(float forward, float right, float deltaSeconds, bool accelerated);
+    void pan(float forward, float right, float deltaSeconds, bool accelerated = false);
     void orbit(float deltaX, float deltaY);
     void dragPan(float deltaX, float deltaY);
     void zoom(float wheelDelta);

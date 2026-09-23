@@ -41,6 +41,10 @@ int main() {
     const auto* uraniumDeposit = gameplay.resource(strategy::ResourceArchetypeId{"uranium_deposit"});
     for (const auto* resource : {scrapField, oilDeposit, uraniumDeposit})
         valid = valid && resource && resource->generation &&
+                resource->generation->fairness &&
+                !resource->generation->fairness->travelCostBands.empty() &&
+                resource->generation->fairness->minimumCapacityRatio < 1.0F &&
+                resource->generation->fairness->maximumLayoutAttempts > 1 &&
                 (resource->generation->requiredTerrainTags &
                  strategy::terrainTagBit(strategy::TerrainTag::land)) != 0 &&
                 (resource->generation->requiredTerrainTags &

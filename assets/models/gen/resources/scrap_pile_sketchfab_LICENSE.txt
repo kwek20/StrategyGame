@@ -1,0 +1,11 @@
+Model Information:
+* title:	Scrap metal (lowpoly)
+* source:	https://sketchfab.com/3d-models/scrap-metal-lowpoly-439ed4e66a87433ca0a76b9351f91da7
+* author:	Zuckergelee (https://sketchfab.com/knorke)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Scrap metal (lowpoly)" (https://sketchfab.com/3d-models/scrap-metal-lowpoly-439ed4e66a87433ca0a76b9351f91da7) by Zuckergelee (https://sketchfab.com/knorke) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)

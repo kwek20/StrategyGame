@@ -183,6 +183,15 @@ struct EntityArchetype {
         float minimumCapacityMultiplier{0.75F}, maximumCapacityMultiplier{1.35F};
         std::uint32_t startingNodesPerPlayer{0};
         float startingMinimumDistance{0.0F}, startingMaximumDistance{0.0F};
+        struct Fairness {
+            std::vector<float> travelCostBands;
+            float minimumCapacityRatio{0.6F};
+            float minimumComparedCapacity{0.0F};
+            float minimumReachableCapacity{0.0F};
+            std::uint32_t maximumLayoutAttempts{4};
+            std::uint32_t compensationNodesPerAttempt{1};
+        };
+        std::optional<Fairness> fairness;
         TerrainTagMask requiredTerrainTags{terrainTagBit(TerrainTag::land)};
         TerrainTagMask forbiddenTerrainTags{0};
         float minimumHeight{-1.0F}, maximumHeight{-1.0F}, maximumSlope{-1.0F};

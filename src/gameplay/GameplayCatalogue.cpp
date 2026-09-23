@@ -290,6 +290,38 @@ void DefinitionRegistry::loadArchetypes(const std::filesystem::path& path,
             settings.startingMaximumDistance =
                 generation.HasMember("startingMaximumDistance") && generation["startingMaximumDistance"].IsNumber()
                     ? generation["startingMaximumDistance"].GetFloat() : 0.0F;
+            if (generation.HasMember("fairness")) {
+                const auto& fairness = generation["fairness"];
+                if (!fairness.IsObject() || !fairness.HasMember("travelCostBands") ||
+                    !fairness["travelCostBands"].IsArray())
+                    throw std::runtime_error(context + " has invalid fairness settings");
+                EntityArchetype::Generation::Fairness policy;
+                for (const auto& band : fairness["travelCostBands"].GetArray()) {
+                    if (!band.IsNumber() || band.GetFloat() <= 0.0F)
+                        throw std::runtime_error(context + " has invalid fairness travel-cost band");
+                    policy.travelCostBands.push_back(band.GetFloat());
+                }
+                policy.minimumCapacityRatio = requiredNumber(
+                    fairness, "minimumCapacityRatio", context + " fairness");
+                policy.minimumComparedCapacity = requiredNumber(
+                    fairness, "minimumComparedCapacity", context + " fairness");
+                policy.minimumReachableCapacity = requiredNumber(
+                    fairness, "minimumReachableCapacity", context + " fairness");
+                if (!fairness.HasMember("maximumLayoutAttempts") ||
+                    !fairness["maximumLayoutAttempts"].IsUint() ||
+                    !fairness.HasMember("compensationNodesPerAttempt") ||
+                    !fairness["compensationNodesPerAttempt"].IsUint())
+                    throw std::runtime_error(context + " has invalid fairness attempt settings");
+                policy.maximumLayoutAttempts = fairness["maximumLayoutAttempts"].GetUint();
+                policy.compensationNodesPerAttempt = fairness["compensationNodesPerAttempt"].GetUint();
+                if (policy.travelCostBands.empty() ||
+                    !std::is_sorted(policy.travelCostBands.begin(), policy.travelCostBands.end()) ||
+                    policy.minimumCapacityRatio <= 0.0F || policy.minimumCapacityRatio > 1.0F ||
+                    policy.minimumComparedCapacity < 0.0F ||
+                    policy.minimumReachableCapacity < 0.0F || policy.maximumLayoutAttempts == 0)
+                    throw std::runtime_error(context + " has invalid fairness settings");
+                settings.fairness = std::move(policy);
+            }
             archetype.generation = std::move(settings);
             if (generation.HasMember("requiredTerrainTags"))
                 archetype.generation->requiredTerrainTags =
