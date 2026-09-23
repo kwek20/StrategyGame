@@ -56,6 +56,10 @@ class PlayState final : public GameState {
     bool detailedDebug_{false};
     bool terrainDebug_{false};
     bool powerOverlayVisible_{false};
+    // This presentation capability is deliberately separate from exploration state. A future
+    // satellite-imagery upgrade can grant access without rewriting or destroying fog-of-war data.
+    bool satelliteImageryAvailable_{true};
+    bool satelliteRevealActive_{false};
     enum class PowerLinkMode { none, connect, disconnect };
     PowerLinkMode powerLinkMode_{PowerLinkMode::none};
     EntityId powerLinkSource_{0};

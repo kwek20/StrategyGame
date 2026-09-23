@@ -9,6 +9,7 @@ namespace strategy {
 UiDocument GameHudLayout::resources(std::size_t localResourceCount,
                                     std::size_t powerDeviceCount,
                                     bool powerOverlayVisible,
+                                    bool satelliteRevealActive,
                                     int viewportWidth,
                                     int viewportHeight,
                                     float uiScale) {
@@ -39,6 +40,15 @@ UiDocument GameHudLayout::resources(std::size_t localResourceCount,
     auto& menu = ui.button("hud.menu", menuBounds, Text::get("hud.menu"),
                            {0.16F, 0.17F, 0.18F}, {0.27F, 0.29F, 0.31F});
     menu.textScale = 1.6F * canvas.scale();
+    const UiRect satelliteBounds = canvas.rect(UiAnchor::topRight, 130, 10, 142, 34, 118, 34);
+    auto& satellite = ui.button(
+        "hud.satellite", satelliteBounds,
+        satelliteRevealActive ? Text::get("hud.satellite.active") : Text::get("hud.satellite"),
+        satelliteRevealActive ? glm::vec3{0.15F, 0.42F, 0.28F}
+                              : glm::vec3{0.16F, 0.17F, 0.18F},
+        {0.27F, 0.48F, 0.36F});
+    satellite.textScale = 1.25F * canvas.scale();
+    satellite.tooltip = Text::get("hud.satellite.tooltip");
     if (powerOverlayVisible) {
         const float desiredHeight = 102.0F + static_cast<float>(powerDeviceCount) * 22.0F;
         const UiRect overlay = canvas.rect(UiAnchor::topLeft, 330, 52, 320,

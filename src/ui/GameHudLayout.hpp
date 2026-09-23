@@ -13,6 +13,7 @@ class GameHudLayout final {
     [[nodiscard]] static UiDocument resources(std::size_t localResourceCount,
                                               std::size_t powerDeviceCount,
                                               bool powerOverlayVisible,
+                                              bool satelliteRevealActive,
                                               int viewportWidth,
                                               int viewportHeight,
                                               float uiScale = 1.0F);

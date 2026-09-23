@@ -437,7 +437,8 @@ void PlayState::handleEvent(const SDL_Event& event) {
         if (SDL_Window* window = SDL_GetWindowFromID(inputWindowId_))
             SDL_GetWindowSize(window, &width, &height);
         UiDocument resourceUi = GameHudLayout::resources(
-            localResourceCount, powerDeviceCount, powerOverlayVisible_, width, height,
+            localResourceCount, powerDeviceCount, powerOverlayVisible_, satelliteRevealActive_,
+            width, height,
             config_.uiScale);
         const std::optional<std::string> hudAction =
             uiController_.press(resourceUi, {event.button.x, event.button.y});
@@ -450,6 +451,10 @@ void PlayState::handleEvent(const SDL_Event& event) {
         }
         if (hudAction == "resources.power") {
             powerOverlayVisible_ = !powerOverlayVisible_;
+            return;
+        }
+        if (hudAction == "hud.satellite" && satelliteImageryAvailable_) {
+            satelliteRevealActive_ = !satelliteRevealActive_;
             return;
         }
         if (const UiElement* panel = resourceUi.find("power.panel");
@@ -1094,6 +1099,16 @@ void PlayState::render(Renderer& renderer) const {
     renderer.setTerrainFoundations(session_.world().foundations());
     const glm::vec3 focus = camera_.focus();
     const Player* local = session_.players().find(localPlayer_);
+    // Satellite imagery is a non-authoritative visibility view. It never modifies saved
+    // discovery data, simulation vision, checksums, or the owning player's resource state.
+    std::optional<Player> satelliteView;
+    const Player* visibilityPlayer = local;
+    if (local && satelliteImageryAvailable_ && satelliteRevealActive_) {
+        satelliteView = *local;
+        std::fill(satelliteView->discovered.begin(), satelliteView->discovered.end(), 255);
+        std::fill(satelliteView->visible.begin(), satelliteView->visible.end(), 255);
+        visibilityPlayer = &*satelliteView;
+    }
     CameraView view =
         camera_.view(renderer.aspectRatio(), renderer.terrainHeightAt(focus.x, focus.z));
     if (viewMode_ == ViewMode::unitControl && possessedEntity_ != 0) {
@@ -1109,7 +1124,8 @@ void PlayState::render(Renderer& renderer) const {
     }
     if (pendingMoveScreen_) {
         pendingOrderTarget_ = renderer.pickEntity(
-            pendingMoveScreen_->x, pendingMoveScreen_->y, session_.world(), view, local, true);
+            pendingMoveScreen_->x, pendingMoveScreen_->y, session_.world(), view,
+            visibilityPlayer, true);
         pendingMoveDestination_ =
             renderer.screenToTerrain(pendingMoveScreen_->x, pendingMoveScreen_->y, view);
         pendingMoveScreen_.reset();
@@ -1120,7 +1136,8 @@ void PlayState::render(Renderer& renderer) const {
     }
     if (pendingSelection_) {
         const EntityId selected = renderer.pickEntity(
-            pendingSelection_->x, pendingSelection_->y, session_.world(), view, local, true);
+            pendingSelection_->x, pendingSelection_->y, session_.world(), view,
+            visibilityPlayer, true);
         pickedEntity_ = selected;
         pickedEntityAdditive_ = pendingSelectionAdditive_;
         pickedEntityDoubleClick_ = pendingSelectionDoubleClick_;
@@ -1139,13 +1156,15 @@ void PlayState::render(Renderer& renderer) const {
     }
     if (hoverPosition_ && viewMode_ == ViewMode::strategy) {
         hoveredEntity_ = renderer.pickEntity(
-            hoverPosition_->x, hoverPosition_->y, session_.world(), view, local, false);
+            hoverPosition_->x, hoverPosition_->y, session_.world(), view,
+            visibilityPlayer, false);
         hoverPosition_.reset();
     }
-    renderer.drawTerrain(view, local, terrainDebug_);
-    particlePresenter_.sync(renderer, session_.world(), local, session_.mapChunksPerSide());
-    renderer.drawVegetation(session_.vegetation(), view, local);
-    renderer.drawWorld(session_.world(), view, local, powerOverlayVisible_);
+    renderer.drawTerrain(view, visibilityPlayer, terrainDebug_);
+    particlePresenter_.sync(renderer, session_.world(), visibilityPlayer,
+                            session_.mapChunksPerSide());
+    renderer.drawVegetation(session_.vegetation(), view, visibilityPlayer);
+    renderer.drawWorld(session_.world(), view, visibilityPlayer, powerOverlayVisible_);
     renderer.drawParticles(view);
     if (constructionPlacementMode_ && constructionCursorScreen_) {
         const RecipeDefinition* selectedRecipe =
@@ -1175,8 +1194,10 @@ void PlayState::render(Renderer& renderer) const {
                 {position.x, position.z}, Player::explorationCells);
             const auto index = static_cast<std::size_t>(
                 cell.y * Player::explorationCells + cell.x);
-            currentlyVisible = index < local->visible.size() && local->visible[index] != 0;
-            previouslyExplored = index < local->discovered.size() && local->discovered[index] != 0;
+            currentlyVisible = index < visibilityPlayer->visible.size() &&
+                               visibilityPlayer->visible[index] != 0;
+            previouslyExplored = index < visibilityPlayer->discovered.size() &&
+                                 visibilityPlayer->discovered[index] != 0;
         }
         constructionPreviewValid_ = true;
         constructionPreviewReason_.clear();
@@ -1220,11 +1241,11 @@ void PlayState::render(Renderer& renderer) const {
         renderer.drawOrderMarkers(session_.world(), selectedEntity_, selectedUnits_, view);
     if (!selectedUnits_.empty())
         for (EntityId selected : selectedUnits_)
-            renderer.drawEntityOutline(session_.world(), selected, view, local);
+            renderer.drawEntityOutline(session_.world(), selected, view, visibilityPlayer);
     else if (selectedEntity_ != 0)
-        renderer.drawEntityOutline(session_.world(), selectedEntity_, view, local);
+        renderer.drawEntityOutline(session_.world(), selectedEntity_, view, visibilityPlayer);
     if (hoveredEntity_ != 0 && viewMode_ == ViewMode::strategy)
-        renderer.drawEntityOutline(session_.world(), hoveredEntity_, view, local);
+        renderer.drawEntityOutline(session_.world(), hoveredEntity_, view, visibilityPlayer);
     if (powerOverlayVisible_)
         renderer.drawPowerConnections(session_.world(), view, localPlayer_);
     if (draggingSelection_ && viewMode_ == ViewMode::strategy)
@@ -1234,7 +1255,7 @@ void PlayState::render(Renderer& renderer) const {
         renderer.drawVisionRanges(view, session_.world().findEntity(detailEntity));
         renderer.drawDetailedDebugHud(view,
                                       session_.world().findEntity(detailEntity),
-                                      local,
+                                      visibilityPlayer,
                                       session_.terrainSeed(),
                                       session_.tick(),
                                       session_.world().size());
@@ -1252,7 +1273,7 @@ void PlayState::render(Renderer& renderer) const {
     } else {
         UiDocument minimap = GameHudLayout::minimap(
             renderer.viewportWidth(), renderer.viewportHeight(), config_.uiScale);
-        renderer.drawStrategyHud(session_.world(), selectedEntity_, local, minimap);
+        renderer.drawStrategyHud(session_.world(), selectedEntity_, visibilityPlayer, minimap);
         const Entity* selected = session_.world().findEntity(selectedEntity_);
         const bool sameType = selected && isHomogeneousSelection(
             session_.world(), selectedUnits_, selected->archetype.value);
@@ -1303,7 +1324,7 @@ void PlayState::render(Renderer& renderer) const {
                 return entity.authority.owner == localPlayer_ && archetype && archetype->powerDevice;
             });
         UiDocument resourceUi = GameHudLayout::resources(
-            localCount, deviceCount, powerOverlayVisible_,
+            localCount, deviceCount, powerOverlayVisible_, satelliteRevealActive_,
             renderer.viewportWidth(), renderer.viewportHeight(), config_.uiScale);
         uiController_.apply(resourceUi);
         renderer.drawResourceHud(*local, session_.world(), context_.definitions,

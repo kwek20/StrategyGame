@@ -131,13 +131,16 @@ int main() {
     valid = valid && controller.moveFocus(layout, 1) &&
             controller.activateFocused(layout).has_value();
 
-    strategy::UiDocument resources = strategy::GameHudLayout::resources(3, 2, true, 1280, 720);
+    strategy::UiDocument resources =
+        strategy::GameHudLayout::resources(3, 2, true, false, 1280, 720);
     valid = valid && resources.find("hud.top_bar") && resources.find("resources.panel") &&
             resources.find("resources.power") &&
+            resources.find("hud.satellite") &&
             resources.find("hud.menu") &&
             resources.find("power.panel") &&
             resources.hitTest({345.0F, 25.0F})->id == "resources.power" &&
             resources.hitTest({1220.0F, 25.0F})->id == "hud.menu" &&
+            resources.hitTest({1080.0F, 25.0F})->id == "hud.satellite" &&
             resources.find("resources.panel")->color == glm::vec3{0.16F, 0.17F, 0.18F} &&
             resources.find("hud.top_bar")->bounds.left == 0.0F &&
             resources.find("hud.top_bar")->bounds.right == 1280.0F &&
