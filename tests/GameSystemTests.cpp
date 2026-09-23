@@ -27,7 +27,8 @@ int main() {
             gameplay.unit(strategy::UnitArchetypeId{"town_center"}) == nullptr &&
             gameplay.building(strategy::BuildingArchetypeId{"town_center"}) != nullptr &&
             gameplay.building(strategy::BuildingArchetypeId{"worker"}) == nullptr &&
-            gameplay.resource(strategy::ResourceArchetypeId{"scrap_field"}) != nullptr &&
+            gameplay.resource(strategy::ResourceArchetypeId{"scrap_node_medium"}) != nullptr &&
+            gameplay.resourceField(strategy::ResourceFieldId{"scrap_field"}) != nullptr &&
             std::abs(gameplay.collisionRadius("worker") - 0.65F) < 0.001F &&
             std::abs(gameplay.collisionRadius("town_center") - 10.5F) < 0.001F;
     const auto* alloy = gameplay.resourceType(strategy::ResourceId{"alloy"});
@@ -36,18 +37,17 @@ int main() {
     const auto* workerWeapon = gameplay.weapon(strategy::WeaponId{"worker_unarmed"});
     const auto* constructionDrone =
         gameplay.unit(strategy::UnitArchetypeId{"construction_drone"});
-    const auto* scrapField = gameplay.resource(strategy::ResourceArchetypeId{"scrap_field"});
-    const auto* oilDeposit = gameplay.resource(strategy::ResourceArchetypeId{"oil_deposit"});
-    const auto* uraniumDeposit = gameplay.resource(strategy::ResourceArchetypeId{"uranium_deposit"});
-    for (const auto* resource : {scrapField, oilDeposit, uraniumDeposit})
-        valid = valid && resource && resource->generation &&
-                resource->generation->fairness &&
-                !resource->generation->fairness->travelCostBands.empty() &&
-                resource->generation->fairness->minimumCapacityRatio < 1.0F &&
-                resource->generation->fairness->maximumLayoutAttempts > 1 &&
-                (resource->generation->requiredTerrainTags &
+    const auto* scrapField = gameplay.resourceField(strategy::ResourceFieldId{"scrap_field"});
+    const auto* oilField = gameplay.resourceField(strategy::ResourceFieldId{"oil_field"});
+    const auto* uraniumField = gameplay.resourceField(strategy::ResourceFieldId{"uranium_field"});
+    for (const auto* field : {scrapField, oilField, uraniumField})
+        valid = valid && field && field->generation.fairness && !field->variants.empty() &&
+                !field->generation.fairness->travelCostBands.empty() &&
+                field->generation.fairness->minimumCapacityRatio < 1.0F &&
+                field->generation.fairness->maximumLayoutAttempts > 1 &&
+                (field->generation.requiredTerrainTags &
                  strategy::terrainTagBit(strategy::TerrainTag::land)) != 0 &&
-                (resource->generation->requiredTerrainTags &
+                (field->generation.requiredTerrainTags &
                  strategy::terrainTagBit(strategy::TerrainTag::water)) == 0;
     const auto* commandHub = gameplay.building(strategy::BuildingArchetypeId{"command_hub"});
     const auto* chargingPad = gameplay.building(strategy::BuildingArchetypeId{"charging_pad"});
@@ -642,11 +642,13 @@ int main() {
         ++resourceCount;
         const auto* definition = gameplay.resource(
             strategy::ResourceArchetypeId{resource.archetype.value});
-        if (!definition || !definition->generation) {
+        const auto* generatedField = gameplay.resourceFieldForNode(
+            strategy::ResourceArchetypeId{resource.archetype.value});
+        if (!definition || !generatedField) {
             valid = false;
             continue;
         }
-        const auto& generation = *definition->generation;
+        const auto& generation = generatedField->generation;
         const auto& sample = sessionResourceTerrain.sampleAt(
             resource.transform.position.x, resource.transform.position.z);
         valid = valid && (sample.tags & generation.requiredTerrainTags) ==
@@ -671,6 +673,21 @@ int main() {
     }
     valid = valid && resourceCount >= 20 && foundAsymmetricResource &&
             maximumGeneratedCapacity > minimumGeneratedCapacity;
+    std::vector<const strategy::Entity*> generatedResourceNodes;
+    for (const strategy::Entity& entity : session.world().entities())
+        if (entity.authority.owner == 0 && entity.resource)
+            generatedResourceNodes.push_back(&entity);
+    for (std::size_t leftIndex = 0; leftIndex < generatedResourceNodes.size(); ++leftIndex)
+        for (std::size_t rightIndex = leftIndex + 1;
+             rightIndex < generatedResourceNodes.size(); ++rightIndex) {
+            const strategy::Entity& leftNode = *generatedResourceNodes[leftIndex];
+            const strategy::Entity& rightNode = *generatedResourceNodes[rightIndex];
+            const float required = gameplay.collisionRadius(leftNode.archetype.value) +
+                                   gameplay.collisionRadius(rightNode.archetype.value);
+            const glm::vec2 delta{leftNode.transform.position.x - rightNode.transform.position.x,
+                                  leftNode.transform.position.z - rightNode.transform.position.z};
+            valid = valid && glm::length(delta) + 0.001F >= required;
+        }
     valid = valid && session.startingAnchors().size() == 2;
     const float chunkWidth = static_cast<float>(strategy::Terrain::chunkCellCount) *
                              strategy::Terrain::spacing;
@@ -682,7 +699,7 @@ int main() {
         std::size_t nearbyScrap = 0;
         float nearbyCapacity = 0.0F;
         for (const strategy::Entity& resource : session.world().entities()) {
-            if (resource.archetype.value != "scrap_field" || !resource.resource) continue;
+            if (!resource.resource || resource.resource.type != "scrap") continue;
             const glm::vec2 position{resource.transform.position.x, resource.transform.position.z};
             if (glm::distance(position, base) <= 42.01F) {
                 ++nearbyScrap;
@@ -709,7 +726,7 @@ int main() {
         "unassigned", "unassigned", 15};
     std::size_t defaultScrapCount = 0;
     for (const strategy::Entity& entity : defaultWaterMatch.world().entities())
-        if (entity.archetype.value == "scrap_field" && entity.resource)
+        if (entity.resource && entity.resource.type == "scrap")
             ++defaultScrapCount;
     valid = valid && defaultScrapCount >= 6;
     const auto playerOneStart = playerOneUnit->transform.position;
@@ -933,7 +950,8 @@ int main() {
         }
     valid = valid && startingWorker != nullptr && !startingWorker->gatherer;
     if (startingWorker) {
-        strategy::Entity& tree = gatheringSession.world().createEntity("Test Scrap", "scrap_field", 0);
+        strategy::Entity& tree = gatheringSession.world().createEntity(
+            "Test Scrap", "scrap_node_medium", 0);
         tree.transform.position = startingWorker->transform.position;
         tree.resource.emplace();
         tree.resource.type = "scrap";
@@ -1072,7 +1090,7 @@ int main() {
     gameplay.initializeEntity(loopDrone);
     const strategy::EntityId loopDroneId = loopDrone.id;
     strategy::Entity& loopSource = repeatedGatherSession.world().createEntity(
-        "Loop Scrap", "scrap_field", 0);
+        "Loop Scrap", "scrap_node_medium", 0);
     gameplay.initializeEntity(loopSource);
     const strategy::EntityId loopSourceId = loopSource.id;
     repeatedGatherSession.world().findEntity(loopHubId)->transform.position = {0, 0, 0};

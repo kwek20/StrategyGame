@@ -21,7 +21,7 @@ BuildState::BuildState(StateContext& context, std::uint32_t terrainSeed)
     , gameplay_(context.definitions)
     , status_(Text::get("status.ready")) {
     const Terrain terrain{terrainSeed};
-    populateResources(world_, terrain, gameplay_, terrainSeed);
+    (void)populateResources(world_, terrain, gameplay_, terrainSeed);
 }
 
 EntityHudModel BuildState::paletteHud() const {

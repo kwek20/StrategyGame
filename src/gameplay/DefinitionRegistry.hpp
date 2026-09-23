@@ -17,6 +17,7 @@ namespace strategy {
 struct EntityArchetypeTag;
 struct BuildingArchetypeTag;
 struct ResourceArchetypeTag;
+struct ResourceFieldTag;
 struct ResourceTag;
 struct WeaponTag;
 struct PowerDeviceTag;
@@ -25,6 +26,7 @@ struct ConversionTag;
 using UnitArchetypeId = DefinitionId<EntityArchetypeTag>;
 using BuildingArchetypeId = DefinitionId<EntityArchetypeTag>;
 using ResourceArchetypeId = DefinitionId<EntityArchetypeTag>;
+using ResourceFieldId = DefinitionId<ResourceFieldTag>;
 using ResourceId = DefinitionId<ResourceTag>;
 using WeaponId = DefinitionId<WeaponTag>;
 using PowerDeviceId = DefinitionId<PowerDeviceTag>;
@@ -158,6 +160,33 @@ struct BatteryDefinition {
     float capacity{0.0F}, movementDrainPerSecond{0.0F}, reserveThreshold{0.0F};
 };
 
+struct ResourceFieldGenerationDefinition {
+    std::string stream;
+    std::vector<TerrainBiomeId> allowedBiomes;
+    float minimumMoisture{0.0F}, maximumMoisture{1.0F};
+    float regionScale{90.0F}, regionThreshold{0.48F};
+    float minimumFieldsPerSquareChunk{0.02F}, maximumFieldsPerSquareChunk{0.06F};
+    float minimumFieldRadius{3.0F}, maximumFieldRadius{9.0F};
+    std::uint32_t minimumNodesPerField{2}, maximumNodesPerField{6};
+    std::uint32_t placementAttemptsPerField{80};
+    float minimumNodeSpacing{2.5F};
+    float minimumCapacityMultiplier{0.75F}, maximumCapacityMultiplier{1.35F};
+    std::uint32_t startingNodesPerPlayer{0};
+    float startingMinimumDistance{0.0F}, startingMaximumDistance{0.0F};
+    struct Fairness {
+        std::vector<float> travelCostBands;
+        float minimumCapacityRatio{0.6F};
+        float minimumComparedCapacity{0.0F};
+        float minimumReachableCapacity{0.0F};
+        std::uint32_t maximumLayoutAttempts{4};
+        std::uint32_t compensationNodesPerAttempt{1};
+    };
+    std::optional<Fairness> fairness;
+    TerrainTagMask requiredTerrainTags{terrainTagBit(TerrainTag::land)};
+    TerrainTagMask forbiddenTerrainTags{0};
+    float minimumHeight{-1.0F}, maximumHeight{-1.0F}, maximumSlope{-1.0F};
+};
+
 struct EntityArchetype {
     std::string id;
     std::string nameKey, presentation;
@@ -170,33 +199,6 @@ struct EntityArchetype {
     float resourceCapacity{0.0F};
     float rawProductionPerTick{0.0F};
     float processorCapacity{0.0F}; // zero means unlimited
-    struct Generation {
-        std::string stream;
-        std::vector<TerrainBiomeId> allowedBiomes;
-        float minimumMoisture{0.0F}, maximumMoisture{1.0F};
-        float regionScale{90.0F}, regionThreshold{0.48F};
-        float minimumClustersPerSquareChunk{0.02F}, maximumClustersPerSquareChunk{0.06F};
-        float minimumClusterRadius{3.0F}, maximumClusterRadius{9.0F};
-        std::uint32_t minimumNodesPerCluster{2}, maximumNodesPerCluster{6};
-        std::uint32_t placementAttemptsPerCluster{80};
-        float minimumNodeSpacing{2.5F}, minimumClusterSpacing{12.0F};
-        float minimumCapacityMultiplier{0.75F}, maximumCapacityMultiplier{1.35F};
-        std::uint32_t startingNodesPerPlayer{0};
-        float startingMinimumDistance{0.0F}, startingMaximumDistance{0.0F};
-        struct Fairness {
-            std::vector<float> travelCostBands;
-            float minimumCapacityRatio{0.6F};
-            float minimumComparedCapacity{0.0F};
-            float minimumReachableCapacity{0.0F};
-            std::uint32_t maximumLayoutAttempts{4};
-            std::uint32_t compensationNodesPerAttempt{1};
-        };
-        std::optional<Fairness> fairness;
-        TerrainTagMask requiredTerrainTags{terrainTagBit(TerrainTag::land)};
-        TerrainTagMask forbiddenTerrainTags{0};
-        float minimumHeight{-1.0F}, maximumHeight{-1.0F}, maximumSlope{-1.0F};
-    };
-    std::optional<Generation> generation;
     MovementDefinition movement;
     std::optional<BatteryDefinition> battery;
     std::optional<TerrainFootprint> footprint;
@@ -242,7 +244,7 @@ struct VegetationGenerationDefinition {
 
 struct MatchRulesDefinition {
     std::vector<StartingEntityDefinition> playerOne, playerTwo;
-    std::vector<std::string> buildPalette, generatedResourceNodes;
+    std::vector<std::string> buildPalette, generatedResourceFields;
     std::string trainingUpgradeProduct;
     std::uint32_t unitLimit{100};
     std::map<std::string, float> startingResources;
@@ -255,6 +257,18 @@ struct MatchRulesDefinition {
 using UnitDefinition = EntityArchetype;
 using BuildingDefinition = EntityArchetype;
 using ResourceNodeDefinition = EntityArchetype;
+
+struct ResourceNodeVariant {
+    ResourceArchetypeId node;
+    float weight{1.0F};
+};
+
+struct ResourceFieldDefinition {
+    std::string id;
+    ResourceId resourceType;
+    std::vector<ResourceNodeVariant> variants;
+    ResourceFieldGenerationDefinition generation;
+};
 
 class DefinitionRegistry final {
   public:
@@ -274,7 +288,8 @@ class DefinitionRegistry final {
         const std::filesystem::path& rules = "assets/gameplay/rules.json",
         const std::filesystem::path& upgrades = "assets/gameplay/upgrades.json",
         const std::filesystem::path& conversions = "assets/gameplay/conversions.json",
-        const std::filesystem::path& decorations = "assets/gameplay/decorations.json");
+        const std::filesystem::path& decorations = "assets/gameplay/decorations.json",
+        const std::filesystem::path& resourceFields = "assets/gameplay/resource_fields.json");
 
     [[nodiscard]] float resolve(GameplayStat stat,
                                 const std::string& country,
@@ -295,6 +310,9 @@ class DefinitionRegistry final {
     [[nodiscard]] const UnitDefinition* unit(UnitArchetypeId id) const;
     [[nodiscard]] const BuildingDefinition* building(BuildingArchetypeId id) const;
     [[nodiscard]] const ResourceNodeDefinition* resource(ResourceArchetypeId id) const;
+    [[nodiscard]] const ResourceFieldDefinition* resourceField(ResourceFieldId id) const;
+    [[nodiscard]] const ResourceFieldDefinition*
+    resourceFieldForNode(ResourceArchetypeId id) const;
     [[nodiscard]] const ResourceDefinition* resourceType(ResourceId id) const;
     [[nodiscard]] std::vector<const ResourceDefinition*> enabledResources() const;
     [[nodiscard]] const WeaponDefinition* weapon(WeaponId id) const;
@@ -321,6 +339,7 @@ class DefinitionRegistry final {
   private:
     std::unordered_map<std::string, EntityArchetype> entities_;
     std::unordered_set<std::string> unitIds_, buildingIds_, resourceIds_;
+    std::unordered_map<std::string, ResourceFieldDefinition> resourceFields_;
     std::unordered_map<std::string, ResourceDefinition> resourceTypes_;
     std::vector<std::string> resourceOrder_;
     std::unordered_map<std::string, WeaponDefinition> weapons_;
@@ -338,6 +357,7 @@ class DefinitionRegistry final {
 
     void loadArchetypes(const std::filesystem::path&, const char* collection, EntityKind);
     void loadResources(const std::filesystem::path&);
+    void loadResourceFields(const std::filesystem::path&);
     void loadWeapons(const std::filesystem::path&);
     void loadPowerDevices(const std::filesystem::path&);
     void loadRecipes(const std::filesystem::path&);

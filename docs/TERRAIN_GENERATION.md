@@ -615,18 +615,24 @@ biome, surface, traversal/buildability, slope, and regional fields beneath the c
 
 The existing cluster generator is the migration source, not the final field implementation:
 
-1. Introduce typed `ResourceFieldDefinition` and weighted `ResourceNodeVariant` references.
-2. Keep harvestable node archetypes in `resource_nodes.json`; move distribution, potential,
-   fairness, opening guarantees, and field-shape rules to `resource_fields.json`.
-3. Replace `generatedResourceNodes` in match rules with `generatedResourceFields`.
-4. Generate a plain `ResourceLayout` containing deterministic field descriptors and node spawn
-   records before mutating `World`. Fields are not entities; node spawn records become entities.
-5. Remove minimum field-to-field spacing. Validate only the field center's broad regional rules,
-   then validate every node against its selected variant and terrain sample.
-6. Use one global spatial index for generated resource nodes so variants and resource families
-   cannot overlap even where their fields do.
-7. Make opening guarantees and fairness compensation create small fields rather than isolated
-   hard-coded node archetypes. Continue evaluating actual resulting capacity by travel-cost band.
+1. ~~Introduce typed `ResourceFieldDefinition` and weighted `ResourceNodeVariant` references.~~
+   Complete.
+2. ~~Keep harvestable node archetypes in `resource_nodes.json`; move distribution, potential,
+   fairness, opening guarantees, and field-shape rules to `resource_fields.json`.~~ Complete.
+3. ~~Replace `generatedResourceNodes` in match rules with `generatedResourceFields`.~~ Complete.
+4. ~~Generate a plain `ResourceLayout` containing deterministic field descriptors and node spawn
+   records before mutating `World`. Fields are not entities; node spawn records become entities.~~
+   Complete, including opening and compensation layouts.
+5. ~~Remove minimum field-to-field spacing. Validate only the field center's broad regional rules,
+   then validate every node against its selected variant and terrain sample.~~ Complete. Field
+   footprints can cross biome boundaries and overlap; every resulting node is sampled separately.
+6. ~~Use one global spatial index for generated resource nodes so variants and resource families
+   cannot overlap even where their fields do.~~ Complete. The grid is rebuilt deterministically on
+   a layout retry and includes previously accepted resource families.
+7. ~~Make opening guarantees and fairness compensation create small fields rather than isolated
+   hard-coded node archetypes. Continue evaluating actual resulting capacity by travel-cost band.~~
+   Complete. Opening fields use provisional placement and commit only when their complete node set
+   fits; compensation records one small field at each accepted correction site.
 8. Add deterministic tests for variable node counts, weighted variants, overlapping/cross-biome
    fields, global node non-overlap, per-node capacity, retry isolation, and equal-seed layouts.
 
@@ -656,12 +662,15 @@ The existing cluster generator is the migration source, not the final field impl
     cancellable background job. Atomic phase/work progress drives the live loading screen. The
     accepted authoritative terrain is copied to the renderer and uploaded in bounded chunk batches
     on the OpenGL thread while asset imports/uploads continue through the resource manager.
-20. Add field/biome/navigation/resource debug views and generation reports. Prioritize connected
-    navigation regions, resource suitability/rejection reasons, chosen starts, fairness bands, and
-    generation timings. Vegetation-specific diagnostics are deferred.
-21. Add deterministic, connectivity, fairness, statistical, and chunk-seam tests. Include
-    multi-seed resource-distribution tolerances and confirmation that resource compensation changes
-    neither accepted terrain nor unrelated named random streams.
+20. Add field/biome/navigation/resource debug views and generation reports. F4 resource-field
+    bounds, centers, generated-node markers, cursor membership, and nearest-node distance are
+    complete. Next prioritize connected navigation regions, resource suitability/rejection reasons,
+    chosen starts, fairness bands, and generation timings. Vegetation-specific diagnostics are
+    deferred.
+21. Add deterministic, connectivity, fairness, statistical, and chunk-seam tests. Exact multi-seed
+    resource-layout determinism, field membership, variant validity, and global node non-overlap are
+    covered. Next add statistical distribution tolerances and confirmation that resource
+    compensation changes neither accepted terrain nor unrelated named random streams.
 22. Profile 10x10, 15x15, and 20x20 maps and establish generation-time, simulation-time, memory,
     terrain-upload, and rendering budgets. Record repeatable test seeds and machine configuration.
 

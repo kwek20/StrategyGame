@@ -12,6 +12,7 @@
 #include "ui/GameHudLayout.hpp"
 #include "ui/EntityHudModel.hpp"
 #include "world/World.hpp"
+#include "world/WorldGeneration.hpp"
 #include "world/Vegetation.hpp"
 
 #include <SDL3/SDL.h>
@@ -1148,7 +1149,82 @@ void Renderer::drawVisionRanges(const CameraView& camera, const Entity* entity) 
     glBindVertexArray(0);
 }
 
-void Renderer::drawTerrainDebugHud(glm::vec3 worldPosition) const {
+void Renderer::drawResourceFieldDebug(const ResourceLayout& layout,
+                                      const CameraView& camera) const {
+    renderGraph_.enter(RenderPassKind::overlay);
+    constexpr int segments = 64;
+    const auto colorFor = [](const ResourceFieldId& id) {
+        if (id.value.find("scrap") != std::string::npos)
+            return glm::vec3{1.0F, 0.72F, 0.18F};
+        if (id.value.find("oil") != std::string::npos)
+            return glm::vec3{0.24F, 0.78F, 1.0F};
+        if (id.value.find("uranium") != std::string::npos)
+            return glm::vec3{0.30F, 1.0F, 0.34F};
+        return glm::vec3{0.92F, 0.42F, 1.0F};
+    };
+    std::vector<TerrainVertex> lines;
+    for (const GeneratedResourceField& field : layout.fields) {
+        const glm::vec3 color = colorFor(field.definition);
+        for (int index = 0; index < segments; ++index) {
+            const float first = glm::two_pi<float>() * static_cast<float>(index) / segments;
+            const float second = glm::two_pi<float>() * static_cast<float>(index + 1) / segments;
+            for (const float angle : {first, second}) {
+                const float x = field.center.x + std::cos(angle) * field.radius;
+                const float z = field.center.y + std::sin(angle) * field.radius;
+                lines.push_back({{x, terrain_.heightAt(x, z) + 0.28F, z}, {0, 1, 0}, color});
+            }
+        }
+        constexpr float marker = 0.8F;
+        const float y = terrain_.heightAt(field.center.x, field.center.y) + 0.34F;
+        lines.push_back({{field.center.x - marker, y, field.center.y}, {0, 1, 0}, color});
+        lines.push_back({{field.center.x + marker, y, field.center.y}, {0, 1, 0}, color});
+        lines.push_back({{field.center.x, y, field.center.y - marker}, {0, 1, 0}, color});
+        lines.push_back({{field.center.x, y, field.center.y + marker}, {0, 1, 0}, color});
+    }
+    for (const GeneratedResourceNode& node : layout.nodes) {
+        const glm::vec3 color = colorFor(node.field);
+        constexpr float marker = 0.45F;
+        const float y = terrain_.heightAt(node.position.x, node.position.y) + 0.42F;
+        lines.push_back({{node.position.x - marker, y, node.position.y - marker}, {0, 1, 0}, color});
+        lines.push_back({{node.position.x + marker, y, node.position.y + marker}, {0, 1, 0}, color});
+        lines.push_back({{node.position.x - marker, y, node.position.y + marker}, {0, 1, 0}, color});
+        lines.push_back({{node.position.x + marker, y, node.position.y - marker}, {0, 1, 0}, color});
+    }
+    if (lines.empty()) return;
+    shaders_.use(program_);
+    const glm::mat4 viewProjection = camera.viewProjection();
+    glUniformMatrix4fv(shaders_.uniform(program_, "viewProjection"), 1, GL_FALSE,
+                       glm::value_ptr(viewProjection));
+    glUniform3fv(shaders_.uniform(program_, "cameraPosition"), 1,
+                 glm::value_ptr(camera.position));
+    glUniform2f(shaders_.uniform(program_, "fogRange"), 10000.0F, 10001.0F);
+    glUniform1i(shaders_.uniform(program_, "useExploration"), 0);
+    glUniform1i(shaders_.uniform(program_, "terrainDebug"), 0);
+    glBindVertexArray(hudVao_);
+    glBindBuffer(GL_ARRAY_BUFFER, hudVbo_);
+    glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(lines.size() * sizeof(TerrainVertex)),
+                 lines.data(), GL_DYNAMIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glEnableVertexAttribArray(1);
+    glEnableVertexAttribArray(2);
+    glDisableVertexAttribArray(3);
+    glVertexAttrib4f(3, 0.0F, 0.0F, 0.0F, 0.0F);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(TerrainVertex),
+                          reinterpret_cast<void*>(offsetof(TerrainVertex, position)));
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(TerrainVertex),
+                          reinterpret_cast<void*>(offsetof(TerrainVertex, normal)));
+    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(TerrainVertex),
+                          reinterpret_cast<void*>(offsetof(TerrainVertex, color)));
+    glLineWidth(2.0F);
+    glDrawArrays(GL_LINES, 0, static_cast<GLsizei>(lines.size()));
+    glLineWidth(1.0F);
+    glDisableVertexAttribArray(1);
+    glDisableVertexAttribArray(2);
+    glBindVertexArray(0);
+}
+
+void Renderer::drawTerrainDebugHud(glm::vec3 worldPosition,
+                                   const ResourceLayout& resources) const {
     renderGraph_.enter(RenderPassKind::userInterface);
     const TerrainSample& sample = terrain_.sampleAt(worldPosition.x, worldPosition.z);
     const auto number = [](float value, int precision = 2) {
@@ -1174,12 +1250,31 @@ void Renderer::drawTerrainDebugHud(glm::vec3 worldPosition) const {
     };
 
     constexpr float width = 430.0F;
-    constexpr float height = 266.0F;
+    constexpr float height = 320.0F;
     const float left = std::max(8.0F, (static_cast<float>(viewportWidth_) - width) * 0.5F);
     const float top = 52.0F;
     UiDocument ui;
     ui.modal("terrain_debug.panel", {left, top, left + width, top + height},
              {0.025F, 0.035F, 0.045F});
+    const glm::vec2 cursor{worldPosition.x, worldPosition.z};
+    std::vector<std::string> containingFields;
+    const GeneratedResourceNode* nearestNode = nullptr;
+    float nearestNodeDistance = std::numeric_limits<float>::max();
+    for (const GeneratedResourceField& field : resources.fields)
+        if (glm::distance(cursor, field.center) <= field.radius)
+            containingFields.push_back(field.definition.value);
+    for (const GeneratedResourceNode& node : resources.nodes) {
+        const float distance = glm::distance(cursor, node.position);
+        if (distance < nearestNodeDistance) {
+            nearestNodeDistance = distance;
+            nearestNode = &node;
+        }
+    }
+    std::ostringstream fieldNames;
+    for (std::size_t index = 0; index < containingFields.size(); ++index) {
+        if (index) fieldNames << ", ";
+        fieldNames << containingFields[index];
+    }
     const std::vector<std::string> lines{
         Text::get("terrain_debug.title"),
         Text::format("terrain_debug.cursor",
@@ -1199,7 +1294,13 @@ void Renderer::drawTerrainDebugHud(glm::vec3 worldPosition) const {
         Text::format("terrain_debug.domains",
                      {number(sample.movementCosts[0]), number(sample.movementCosts[1]),
                       number(sample.movementCosts[2])}),
-        Text::format("terrain_debug.grid", {number(Terrain::semanticCellSize, 1)})};
+        Text::format("terrain_debug.grid", {number(Terrain::semanticCellSize, 1)}),
+        Text::format("terrain_debug.resource_fields",
+                     {std::to_string(resources.fields.size()),
+                      fieldNames.str().empty() ? "none" : fieldNames.str()}),
+        Text::format("terrain_debug.resource_node",
+                     {nearestNode ? nearestNode->archetype.value : "none",
+                      nearestNode ? number(nearestNodeDistance, 1) : "-"})};
     for (std::size_t index = 0; index < lines.size(); ++index)
         ui.label("terrain_debug.line." + std::to_string(index),
                  {left + 14.0F, top + 13.0F + static_cast<float>(index) * 27.0F,

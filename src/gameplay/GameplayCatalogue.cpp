@@ -5,6 +5,7 @@
 #include <rapidjson/document.h>
 #include <rapidjson/istreamwrapper.h>
 #include <stdexcept>
+#include <tuple>
 namespace strategy {
 namespace {
 rapidjson::Document document(const std::filesystem::path& path) {
@@ -230,6 +231,10 @@ void DefinitionRegistry::loadArchetypes(const std::filesystem::path& path,
                 throw std::runtime_error("Definition '" + archetype.id +
                                          "' has invalid processorCapacity");
         }
+        if (item->value.HasMember("generation"))
+            throw std::runtime_error("Entity definition '" + archetype.id +
+                                     "' cannot contain generation; use resource_fields.json");
+#if 0 // Removed entity-generation parser retained outside the compiled implementation.
         if (item->value.HasMember("generation")) {
             const auto& generation = item->value["generation"];
             if (!generation.IsObject() || !generation.HasMember("stream") ||
@@ -375,6 +380,7 @@ void DefinitionRegistry::loadArchetypes(const std::filesystem::path& path,
                 throw std::runtime_error("Definition '" + archetype.id +
                                          "' has invalid starting resource guarantee");
         }
+#endif
         if (item->value.HasMember("nameKey") && item->value["nameKey"].IsString())
             archetype.nameKey = item->value["nameKey"].GetString();
         if (item->value.HasMember("presentation") && item->value["presentation"].IsString())
@@ -538,6 +544,130 @@ void DefinitionRegistry::loadResources(const std::filesystem::path& path) {
         if (!resourceTypes_.emplace(definition.id, std::move(definition)).second)
             throw std::runtime_error("Duplicate resource definition id '" +
                                      std::string(item->name.GetString()) + "'");
+    }
+}
+
+void DefinitionRegistry::loadResourceFields(const std::filesystem::path& path) {
+    const auto data = document(path);
+    if (!data.HasMember("resourceFields") || !data["resourceFields"].IsObject())
+        throw std::runtime_error("Missing resourceFields collection");
+    for (auto item = data["resourceFields"].MemberBegin();
+         item != data["resourceFields"].MemberEnd(); ++item) {
+        if (!item->value.IsObject())
+            throw std::runtime_error("Invalid resource field definition");
+        ResourceFieldDefinition field;
+        field.id = item->name.GetString();
+        const auto& value = item->value;
+        const std::string context = "Resource field '" + field.id + "'";
+        if (!value.HasMember("resourceType") || !value["resourceType"].IsString() ||
+            !value.HasMember("variants") || !value["variants"].IsArray() ||
+            value["variants"].Empty() || !value.HasMember("generation") ||
+            !value["generation"].IsObject())
+            throw std::runtime_error(context + " is incomplete");
+        field.resourceType = ResourceId{value["resourceType"].GetString()};
+        for (const auto& variant : value["variants"].GetArray()) {
+            if (!variant.IsObject() || !variant.HasMember("node") ||
+                !variant["node"].IsString() || !variant.HasMember("weight") ||
+                !variant["weight"].IsNumber() || variant["weight"].GetFloat() <= 0.0F)
+                throw std::runtime_error(context + " has an invalid node variant");
+            field.variants.push_back(
+                {ResourceArchetypeId{variant["node"].GetString()}, variant["weight"].GetFloat()});
+        }
+        const auto& generation = value["generation"];
+        const auto numberRange = [&](const char* key) {
+            if (!generation.HasMember(key) || !generation[key].IsArray() ||
+                generation[key].Size() != 2 || !generation[key][0].IsNumber() ||
+                !generation[key][1].IsNumber())
+                throw std::runtime_error(context + " requires two-number range '" + key + "'");
+            return std::pair{generation[key][0].GetFloat(), generation[key][1].GetFloat()};
+        };
+        const auto unsignedRange = [&](const char* key) {
+            if (!generation.HasMember(key) || !generation[key].IsArray() ||
+                generation[key].Size() != 2 || !generation[key][0].IsUint() ||
+                !generation[key][1].IsUint())
+                throw std::runtime_error(context + " requires two-unsigned range '" + key + "'");
+            return std::pair{generation[key][0].GetUint(), generation[key][1].GetUint()};
+        };
+        auto& settings = field.generation;
+        if (!generation.HasMember("stream") || !generation["stream"].IsString())
+            throw std::runtime_error(context + " requires stream");
+        settings.stream = generation["stream"].GetString();
+        for (const std::string& biome : strings(generation, "allowedBiomes"))
+            settings.allowedBiomes.emplace_back(biome);
+        std::tie(settings.minimumMoisture, settings.maximumMoisture) = numberRange("moistureRange");
+        settings.regionScale = requiredNumber(generation, "regionScale", context);
+        settings.regionThreshold = requiredNumber(generation, "regionThreshold", context);
+        std::tie(settings.minimumFieldsPerSquareChunk,
+                 settings.maximumFieldsPerSquareChunk) = numberRange("fieldsPerSquareChunk");
+        std::tie(settings.minimumFieldRadius,
+                 settings.maximumFieldRadius) = numberRange("fieldRadius");
+        std::tie(settings.minimumNodesPerField,
+                 settings.maximumNodesPerField) = unsignedRange("nodesPerField");
+        if (!generation.HasMember("placementAttemptsPerNode") ||
+            !generation["placementAttemptsPerNode"].IsUint())
+            throw std::runtime_error(context + " requires placementAttemptsPerNode");
+        settings.placementAttemptsPerField =
+            generation["placementAttemptsPerNode"].GetUint() * settings.maximumNodesPerField;
+        settings.minimumNodeSpacing = requiredNumber(generation, "minimumNodeSpacing", context);
+        if (generation.HasMember("capacityMultiplier"))
+            std::tie(settings.minimumCapacityMultiplier,
+                     settings.maximumCapacityMultiplier) = numberRange("capacityMultiplier");
+        else {
+            settings.minimumCapacityMultiplier = 1.0F;
+            settings.maximumCapacityMultiplier = 1.0F;
+        }
+        settings.startingNodesPerPlayer = generation.HasMember("startingNodesPerPlayer")
+            ? generation["startingNodesPerPlayer"].GetUint() : 0U;
+        settings.startingMinimumDistance = generation.HasMember("startingMinimumDistance")
+            ? generation["startingMinimumDistance"].GetFloat() : 0.0F;
+        settings.startingMaximumDistance = generation.HasMember("startingMaximumDistance")
+            ? generation["startingMaximumDistance"].GetFloat() : 0.0F;
+        settings.requiredTerrainTags = generation.HasMember("requiredTerrainTags")
+            ? terrainTags(generation, "requiredTerrainTags", context)
+            : terrainTagBit(TerrainTag::land);
+        settings.forbiddenTerrainTags = terrainTags(generation, "forbiddenTerrainTags", context);
+        if (generation.HasMember("minimumHeight"))
+            settings.minimumHeight = requiredNumber(generation, "minimumHeight", context);
+        if (generation.HasMember("maximumHeight"))
+            settings.maximumHeight = requiredNumber(generation, "maximumHeight", context);
+        if (generation.HasMember("maximumSlopeDegrees"))
+            settings.maximumSlope = requiredNumber(generation, "maximumSlopeDegrees", context);
+        if (generation.HasMember("fairness")) {
+            const auto& fairness = generation["fairness"];
+            ResourceFieldGenerationDefinition::Fairness policy;
+            if (!fairness.IsObject() || !fairness.HasMember("travelCostBands") ||
+                !fairness["travelCostBands"].IsArray())
+                throw std::runtime_error(context + " has invalid fairness settings");
+            for (const auto& band : fairness["travelCostBands"].GetArray())
+                policy.travelCostBands.push_back(band.GetFloat());
+            policy.minimumCapacityRatio = requiredNumber(fairness, "minimumCapacityRatio", context);
+            policy.minimumComparedCapacity = requiredNumber(fairness, "minimumComparedCapacity", context);
+            policy.minimumReachableCapacity = requiredNumber(fairness, "minimumReachableCapacity", context);
+            policy.maximumLayoutAttempts = fairness["maximumLayoutAttempts"].GetUint();
+            policy.compensationNodesPerAttempt = fairness["compensationNodesPerAttempt"].GetUint();
+            settings.fairness = std::move(policy);
+        }
+        if (settings.allowedBiomes.empty() || settings.minimumMoisture < 0.0F ||
+            settings.maximumMoisture > 1.0F ||
+            settings.minimumMoisture > settings.maximumMoisture ||
+            settings.regionScale <= 0.0F || settings.regionThreshold < 0.0F ||
+            settings.regionThreshold > 1.0F ||
+            settings.minimumFieldsPerSquareChunk < 0.0F ||
+            settings.minimumFieldsPerSquareChunk > settings.maximumFieldsPerSquareChunk ||
+            settings.minimumFieldRadius <= 0.0F ||
+            settings.minimumFieldRadius > settings.maximumFieldRadius ||
+            settings.minimumNodesPerField == 0 ||
+            settings.minimumNodesPerField > settings.maximumNodesPerField ||
+            settings.placementAttemptsPerField == 0 || settings.minimumNodeSpacing <= 0.0F ||
+            settings.minimumCapacityMultiplier <= 0.0F ||
+            settings.minimumCapacityMultiplier > settings.maximumCapacityMultiplier ||
+            (settings.startingNodesPerPlayer > 0 &&
+             (settings.startingMinimumDistance <= 0.0F ||
+              settings.startingMaximumDistance < settings.startingMinimumDistance)))
+            throw std::runtime_error(context + " has invalid generation settings");
+        if (resourceFields_.contains(field.id))
+            throw std::runtime_error("Duplicate resource field '" + field.id + "'");
+        resourceFields_.emplace(field.id, std::move(field));
     }
 }
 
@@ -794,9 +924,21 @@ void DefinitionRegistry::validateReferences() const {
     for (const std::string& id : matchRules_.buildPalette)
         if (!entities_.contains(id))
             throw std::runtime_error("Build palette references unknown entity '" + id + "'");
-    for (const std::string& id : matchRules_.generatedResourceNodes)
-        if (!resourceIds_.contains(id) || !entities_.at(id).generation)
-            throw std::runtime_error("Generated resource list references invalid node '" + id + "'");
+    for (const std::string& id : matchRules_.generatedResourceFields) {
+        const auto found = resourceFields_.find(id);
+        if (found == resourceFields_.end())
+            throw std::runtime_error("Generated resource list references invalid field '" + id + "'");
+        if (!resourceTypes_.contains(found->second.resourceType.value))
+            throw std::runtime_error("Resource field '" + id + "' references unknown resource type");
+        for (const ResourceNodeVariant& variant : found->second.variants) {
+            const auto node = entities_.find(variant.node.value);
+            if (node == entities_.end() || node->second.kind != EntityKind::resource ||
+                node->second.resourceType != found->second.resourceType.value)
+                throw std::runtime_error("Resource field '" + id +
+                                         "' references an incompatible node variant '" +
+                                         variant.node.value + "'");
+        }
+    }
     for (const VegetationGenerationDefinition& vegetation : matchRules_.vegetation) {
         const auto found = entities_.find(vegetation.archetype);
         if (found == entities_.end() || found->second.kind != EntityKind::decoration ||
@@ -1031,7 +1173,7 @@ void DefinitionRegistry::loadRules(const std::filesystem::path& path) {
         throw std::runtime_error("Match rules require trainingUpgradeProduct");
     matchRules_.trainingUpgradeProduct = data["trainingUpgradeProduct"].GetString();
     matchRules_.buildPalette = strings(data, "buildPalette");
-    matchRules_.generatedResourceNodes = strings(data, "generatedResourceNodes");
+    matchRules_.generatedResourceFields = strings(data, "generatedResourceFields");
     if (!data.HasMember("vegetation") || !data["vegetation"].IsArray())
         throw std::runtime_error("Match rules require vegetation array");
     for (const auto& value : data["vegetation"].GetArray()) {
@@ -1197,12 +1339,14 @@ DefinitionRegistry::DefinitionRegistry(const std::filesystem::path& unitPath,
                                        const std::filesystem::path& rulesPath,
                                        const std::filesystem::path& upgradePath,
                                        const std::filesystem::path& conversionPath,
-                                       const std::filesystem::path& decorationPath)
+                                       const std::filesystem::path& decorationPath,
+                                       const std::filesystem::path& resourceFieldPath)
     : textureRoot_(textureRoot) {
     loadReferenceKeys(presentationPath, localizationPath);
     loadArchetypes(unitPath, "units", EntityKind::unit);
     loadArchetypes(buildingPath, "buildings", EntityKind::building);
     loadArchetypes(resourceNodePath, "resourceNodes", EntityKind::resource);
+    loadResourceFields(resourceFieldPath);
     loadArchetypes(decorationPath, "decorations", EntityKind::decoration);
     loadResources(resourcePath);
     loadWeapons(weaponPath);
@@ -1465,6 +1609,21 @@ const BuildingDefinition* DefinitionRegistry::building(BuildingArchetypeId id) c
 
 const ResourceNodeDefinition* DefinitionRegistry::resource(ResourceArchetypeId id) const {
     return resourceIds_.contains(id.value) ? archetype(id.value) : nullptr;
+}
+
+const ResourceFieldDefinition* DefinitionRegistry::resourceField(ResourceFieldId id) const {
+    const auto found = resourceFields_.find(id.value);
+    return found == resourceFields_.end() ? nullptr : &found->second;
+}
+
+const ResourceFieldDefinition*
+DefinitionRegistry::resourceFieldForNode(ResourceArchetypeId id) const {
+    for (const auto& [fieldId, field] : resourceFields_)
+        if (std::any_of(field.variants.begin(), field.variants.end(), [&](const auto& variant) {
+                return variant.node == id;
+            }))
+            return &field;
+    return nullptr;
 }
 
 const ResourceDefinition* DefinitionRegistry::resourceType(ResourceId id) const {

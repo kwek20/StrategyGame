@@ -94,6 +94,13 @@ The next resource-generation revision uses explicit non-entity resource fields. 
 one another and cross biome boundaries; their deterministically generated resource-node entities
 may not overlap. Node variants own presentation, collision, and capacity, while fairness continues
 to measure reachable resulting capacity rather than field count.
+Accepted `ResourceLayout` data is retained by `GameSession` only as transient diagnostics: it is not
+saved or checksummed. F4 renders accepted field/node geometry and reports cursor field membership.
+Focused multi-seed tests cover exact repeatability, field membership, variant validity, and global
+node non-overlap.
+Resource node presentations now use distinct model assets at each size: Scrap pile/salvage variants,
+Oil seep/barrel/pump-jack variants, and small/medium/large Uranium crystal clusters. Raw CC0 sources
+live under `assets/sources/resources`; `tools/process_resource_variants.py` rebuilds normalized GLBs.
 The active order is now:
 
 1. Resource-field/node-variant generation realignment.

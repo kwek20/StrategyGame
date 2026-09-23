@@ -1,5 +1,6 @@
 #include "diagnostics/Logger.hpp"
 #include "render/Renderer.hpp"
+#include "world/WorldGeneration.hpp"
 #include "render/ShaderManager.hpp"
 #include "ui/UiDocument.hpp"
 #include "world/World.hpp"
@@ -173,7 +174,7 @@ out vec4 color;void main(){color=vec4(1);})";
         renderer.drawWorld(world, camera);
         renderer.drawEntityOutline(world, workerId, camera);
         renderer.drawUi(ui);
-        renderer.drawTerrainDebugHud({0.0F, 0.0F, 0.0F});
+        renderer.drawTerrainDebugHud({0.0F, 0.0F, 0.0F}, {});
         renderer.endFrame();
         glFinish();
         valid = noGlErrors("complete render") && valid;

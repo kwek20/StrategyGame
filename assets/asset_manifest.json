@@ -9,14 +9,14 @@
       "definitions": ["entities", "gameplay", "countries", "text"]
     },
     "match": {
-      "models": ["town_center", "worker", "construction_drone", "scrap_pile", "oil_pump_jack", "uranium_crystal", "material_processor", "basic_generator", "storage_silo", "electricity_pole", "charging_pad", "resource_extractor", "drone_factory", "sensor_tower", "grass_dry", "grass_aged", "grass_fresh", "field_weed", "wildflower_clump", "wildflower_empodium", "wildflower_dandelion", "grass_meadow", "grass_bermuda", "shore_reeds", "pebble_cluster", "pebble_stone", "pebble_rock"],
+      "models": ["town_center", "worker", "construction_drone", "scrap_pile_small", "scrap_pile", "scrap_pile_large", "oil_seep_small", "oil_barrel", "oil_pump_jack_large", "uranium_crystal_small", "uranium_crystal", "uranium_crystal_large", "material_processor", "basic_generator", "storage_silo", "electricity_pole", "charging_pad", "resource_extractor", "drone_factory", "sensor_tower", "grass_dry", "grass_aged", "grass_fresh", "field_weed", "wildflower_clump", "wildflower_empodium", "wildflower_dandelion", "grass_meadow", "grass_bermuda", "shore_reeds", "pebble_cluster", "pebble_stone", "pebble_rock"],
       "textures": ["ui/placeholder", "icons/icons_atlas", "terrain/grass", "terrain/dirt", "terrain/rock", "terrain/dry_ground", "foundation_concrete", "particles/kenney/spark", "particles/kenney/smoke", "particles/kenney/dust", "particles/kenney/droplet", "particles/kenney/energy", "particles/kenney/muzzle_flash", "particles/kenney/tracer", "particles/kenney/explosion"],
       "shaders": ["terrain", "model", "outline", "hud", "ui", "font", "particles"],
       "sounds": ["game_ambient", "selection", "move_order", "building_open", "building_upgrade", "training_upgrade", "train_unit", "save_game", "load_game", "possess_unit"],
       "definitions": ["entities", "gameplay", "decorations", "countries", "text"]
     },
     "build": {
-      "models": ["town_center", "worker", "construction_drone", "scrap_pile", "oil_pump_jack", "uranium_crystal", "material_processor", "basic_generator", "storage_silo", "electricity_pole", "charging_pad", "resource_extractor", "drone_factory", "sensor_tower"],
+      "models": ["town_center", "worker", "construction_drone", "scrap_pile_small", "scrap_pile", "scrap_pile_large", "oil_seep_small", "oil_barrel", "oil_pump_jack_large", "uranium_crystal_small", "uranium_crystal", "uranium_crystal_large", "material_processor", "basic_generator", "storage_silo", "electricity_pole", "charging_pad", "resource_extractor", "drone_factory", "sensor_tower"],
       "textures": ["ui/placeholder", "icons/icons_atlas", "terrain/grass", "terrain/dirt", "terrain/rock", "terrain/dry_ground", "foundation_concrete"],
       "shaders": ["terrain", "model", "outline", "hud", "ui", "font"],
       "sounds": ["build_ambient", "ui_click", "save_game"],

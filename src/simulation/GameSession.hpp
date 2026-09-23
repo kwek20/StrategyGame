@@ -8,6 +8,7 @@
 #include "terrain/Terrain.hpp"
 #include "world/Navigation.hpp"
 #include "world/World.hpp"
+#include "world/WorldGeneration.hpp"
 #include "world/Vegetation.hpp"
 
 #include <cstdint>
@@ -57,6 +58,7 @@ class GameSession final {
         return world_;
     }
     [[nodiscard]] const VegetationField& vegetation() const { return vegetation_; }
+    [[nodiscard]] const ResourceLayout& resourceLayout() const { return resourceLayout_; }
     [[nodiscard]] const Terrain& terrain() const { return terrain_; }
     [[nodiscard]] const PlayerRegistry& players() const {
         return players_;
@@ -92,6 +94,8 @@ class GameSession final {
     const DefinitionRegistry& gameplay_;
     World world_;
     VegetationField vegetation_;
+    // Transient generation diagnostics. This is derived data and is not saved or checksummed.
+    ResourceLayout resourceLayout_;
     std::deque<PlayerCommand> commands_;
     std::map<PlayerId, std::uint64_t> lastSequence_;
     std::uint64_t tick_{0};

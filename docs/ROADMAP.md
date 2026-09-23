@@ -101,9 +101,22 @@ before starting Milestone 6:
      capacity ratios. Positions are not mirrored; independent deterministic compensation streams
      preserve distance and angle variation while preventing meaningful resource denial.
 
-2. **Resource-field generation realignment — planned**
-   - Replace the current one-archetype cluster implementation with explicit field definitions and
-     weighted node variants.
+2. **Resource-field generation realignment — active**
+   - Typed field definitions, weighted node references, the `resource_fields.json` split, and
+     `generatedResourceFields` match rules are complete.
+   - Standalone deterministic `ResourceLayout`, weighted variant selection, overlapping field
+     footprints, and global cross-family node spacing are complete.
+   - Small, medium, and large Scrap, Oil, and Uranium variants now have weighted selection,
+     independent capacity/collision data, and scaled presentations.
+   - Opening guarantees and fairness compensation now create field records rather than isolated
+     legacy nodes.
+   - Deterministic multi-seed layout coverage and F4 field/node diagnostics are complete. F4 shows
+     accepted field bounds, centers, node positions, cursor membership, and nearest-node distance.
+   - Distinct small, medium, and large Scrap, Oil, and Uranium models are complete and explicitly
+     preloaded through the match/build asset manifests. Blender retains a reproducible normalization
+     pipeline and the original licensed sources remain outside the runtime model index.
+   - Next add statistical distribution tolerances, independent-stream isolation coverage, and
+     non-circular field shapes.
    - Permit deterministic field footprints to cross biomes and overlap other fields.
    - Keep node placement globally non-overlapping and validate terrain per node.
    - Give small, medium, and large nodes independent presentations, collision shapes, and capacities.

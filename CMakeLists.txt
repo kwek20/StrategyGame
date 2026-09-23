@@ -260,6 +260,13 @@ if(STRATEGY_BUILD_TESTS)
     add_test(NAME vegetation_generation COMMAND vegetation_tests)
     set_tests_properties(vegetation_generation PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
+    add_executable(resource_field_generation_tests tests/ResourceFieldGenerationTests.cpp)
+    strategy_target(resource_field_generation_tests)
+    target_link_libraries(resource_field_generation_tests PRIVATE strategy_gameplay strategy_world)
+    add_test(NAME resource_field_generation COMMAND resource_field_generation_tests)
+    set_tests_properties(resource_field_generation
+        PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
     add_executable(entity_hud_model_tests tests/EntityHudModelTests.cpp)
     strategy_target(entity_hud_model_tests)
     target_link_libraries(entity_hud_model_tests PRIVATE strategy_ui_model)

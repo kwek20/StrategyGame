@@ -21,7 +21,7 @@
     { "archetype": "construction_drone", "nameKey": "unit.construction_drone", "position": [-6, 6, 8], "directlyControllable": false }
   ],
   "buildPalette": ["command_hub", "alloy_processor", "fuel_processor", "synthetic_mine", "basic_generator", "storage_silo", "electricity_pole", "charging_pad", "resource_extractor", "drone_factory", "sensor_tower"],
-  "generatedResourceNodes": ["scrap_field", "oil_deposit", "uranium_deposit"],
+  "generatedResourceFields": ["scrap_field", "oil_field", "uranium_field"],
   "vegetation": [
     { "archetype": "grass_dry", "stream": "vegetation.grass_dry", "spacingGroup": "ground_cover", "coverage": 0.65, "densityScale": 110, "clustersPerChunk": 1.2, "minimumInstancesPerCluster": 3, "maximumInstancesPerCluster": 7, "minimumClusterRadius": 4, "maximumClusterRadius": 9, "allowedBiomes": ["dry_lowland"], "allowedSurfaces": ["dry_ground"], "maximumSlopeDegrees": 18, "minimumSpacing": 2.3, "minimumScale": 0.85, "maximumScale": 1.35 },
     { "archetype": "grass_aged", "stream": "vegetation.grass_aged", "spacingGroup": "ground_cover", "coverage": 0.65, "densityScale": 120, "clustersPerChunk": 1.2, "minimumInstancesPerCluster": 3, "maximumInstancesPerCluster": 7, "minimumClusterRadius": 4, "maximumClusterRadius": 9, "allowedBiomes": ["dry_lowland", "upland"], "allowedSurfaces": ["dry_ground", "upland_grass"], "maximumSlopeDegrees": 20, "minimumSpacing": 2.3, "minimumScale": 0.85, "maximumScale": 1.35 },

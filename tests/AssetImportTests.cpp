@@ -48,5 +48,14 @@ int main() {
         imports("assets/models/buildings/TownCenter_FirstAge_Level1.gltf", false);
     const bool electricityPole = imports("assets/models/gen/electricity_pole.glb", false);
     const bool worker = imports("assets/models/units/Worker_Male.gltf", true);
-    return importerConfiguration && townCenter && electricityPole && worker ? 0 : 1;
+    const bool resourceVariants =
+        imports("assets/models/gen/resources/scrap_pile_small.glb", false) &&
+        imports("assets/models/gen/resources/scrap_pile_medium.glb", false) &&
+        imports("assets/models/gen/resources/oil_seep_small.glb", false) &&
+        imports("assets/models/gen/resources/oil_barrel_medium.glb", false) &&
+        imports("assets/models/gen/resources/uranium_crystal_small.glb", false) &&
+        imports("assets/models/gen/resources/uranium_crystal_large.glb", false);
+    return importerConfiguration && townCenter && electricityPole && worker && resourceVariants
+               ? 0
+               : 1;
 }

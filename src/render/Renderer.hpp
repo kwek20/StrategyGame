@@ -39,6 +39,7 @@ class DefinitionRegistry;
 class ParticleSystem;
 struct ParticleEmitterDesc;
 struct EntityHudModel;
+struct ResourceLayout;
 
 class Renderer final {
   public:
@@ -91,7 +92,10 @@ class Renderer final {
                               std::uint64_t tick,
                               std::size_t entityCount) const;
     void drawVisionRanges(const CameraView& camera, const Entity* entity) const;
-    void drawTerrainDebugHud(glm::vec3 worldPosition) const;
+    void drawResourceFieldDebug(const ResourceLayout& layout,
+                                const CameraView& camera) const;
+    void drawTerrainDebugHud(glm::vec3 worldPosition,
+                             const ResourceLayout& resources) const;
     void drawEntityHud(const EntityHudModel& model, const UiDocument& layout) const;
     void
     drawStrategyHud(const World& world, EntityId selected, const Player* player,

@@ -65,21 +65,41 @@
       "selection": { "radius": 1.5, "height": 5.0 },
       "animations": {}
     },
+    "scrap_pile_small": {
+      "icon": "resource_scrap", "model": "gen/resources/scrap_pile_small", "scale": 1.0,
+      "grounding": { "groundOffset": -0.04, "alignToTerrain": true, "maximumTilt": 16.0, "foundationRadius": 0.0 },
+      "selection": { "radius": 0.95, "height": 0.85 }, "animations": {}
+    },
     "scrap_pile": {
       "icon": "resource_scrap",
-      "model": "gen/resources/scrap_pile_sketchfab",
-      "scale": 1.4,
+      "model": "gen/resources/scrap_pile_medium",
+      "scale": 1.0,
       "grounding": { "groundOffset": -0.06, "alignToTerrain": true, "maximumTilt": 16.0, "foundationRadius": 0.0 },
       "selection": { "radius": 1.35, "height": 1.2 },
       "animations": {}
     },
-    "oil_pump_jack": {
+    "scrap_pile_large": {
+      "icon": "resource_scrap", "model": "gen/resources/scrap_pile_sketchfab", "scale": 1.9,
+      "grounding": { "groundOffset": -0.08, "alignToTerrain": true, "maximumTilt": 16.0, "foundationRadius": 0.0 },
+      "selection": { "radius": 1.8, "height": 1.65 }, "animations": {}
+    },
+    "oil_seep_small": {
+      "icon": "resource_oil", "model": "gen/resources/oil_seep_small", "scale": 1.0,
+      "grounding": { "groundOffset": -0.04, "alignToTerrain": true, "maximumTilt": 10.0, "foundationRadius": 0.0 },
+      "selection": { "radius": 1.1, "height": 0.8 }, "animations": {}
+    },
+    "oil_barrel": {
       "icon": "resource_oil",
-      "model": "gen/resources/oil_pump_jack",
-      "scale": 0.65,
+      "model": "gen/resources/oil_barrel_medium",
+      "scale": 1.0,
       "grounding": { "groundOffset": -0.05, "alignToTerrain": true, "maximumTilt": 10.0, "foundationRadius": 0.0 },
-      "selection": { "radius": 2.2, "height": 4.0 },
+      "selection": { "radius": 1.5, "height": 2.1 },
       "animations": {}
+    },
+    "oil_pump_jack_large": {
+      "icon": "resource_oil", "model": "gen/resources/oil_pump_jack", "scale": 0.9,
+      "grounding": { "groundOffset": -0.07, "alignToTerrain": true, "maximumTilt": 10.0, "foundationRadius": 0.0 },
+      "selection": { "radius": 3.0, "height": 5.5 }, "animations": {}
     },
     "offshore_oil_rig": {
       "icon": "resource_oil",
@@ -89,6 +109,11 @@
       "selection": { "radius": 7.0, "height": 22.0 },
       "animations": {}
     },
+    "uranium_crystal_small": {
+      "icon": "resource_uranium", "model": "gen/resources/uranium_crystal_small", "scale": 1.0,
+      "grounding": { "groundOffset": -0.03, "alignToTerrain": true, "maximumTilt": 18.0, "foundationRadius": 0.0 },
+      "selection": { "radius": 1.0, "height": 1.65 }, "animations": {}
+    },
     "uranium_crystal": {
       "icon": "resource_uranium",
       "model": "gen/resources/uranium_crystal_cluster",
@@ -96,6 +121,11 @@
       "grounding": { "groundOffset": -0.04, "alignToTerrain": true, "maximumTilt": 18.0, "foundationRadius": 0.0 },
       "selection": { "radius": 1.6, "height": 2.5 },
       "animations": {}
+    },
+    "uranium_crystal_large": {
+      "icon": "resource_uranium", "model": "gen/resources/uranium_crystal_large", "scale": 1.0,
+      "grounding": { "groundOffset": -0.06, "alignToTerrain": true, "maximumTilt": 18.0, "foundationRadius": 0.0 },
+      "selection": { "radius": 2.25, "height": 3.6 }, "animations": {}
     },
     "grass_dry": {
       "icon": "status_asset_ready",

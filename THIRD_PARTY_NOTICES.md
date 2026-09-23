@@ -25,3 +25,11 @@ Source assets: `weed_plant_02`, `flower_gazania`, `flower_empodium`, `dandelion_
 `reed` is based on [LowPoly Reed](https://opengameart.org/content/lowpoly-reed) by Aredon,
 released under CC0 1.0. It is processed into a normalized, game-ready GLB with the Blender
 scripts in `tools/`.
+
+## Resource-node variants
+
+The small and medium Scrap piles, medium Oil barrel, and large crystal source are from
+[3DAssets.dev](https://3dassets.dev/) and released under CC0 1.0. The small Oil seep also uses the
+CC0 [Drops](https://opengameart.org/content/drops) mesh by plaggy. Source provenance and direct
+asset pages are retained in `assets/sources/resources/LICENSES.md`; normalized derivatives
+are rebuilt with `tools/process_resource_variants.py`.

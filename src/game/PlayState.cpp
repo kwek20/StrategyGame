@@ -1265,6 +1265,8 @@ void PlayState::render(Renderer& renderer) const {
         renderer.drawEntityOutline(session_.world(), hoveredEntity_, view, visibilityPlayer);
     if (powerOverlayVisible_)
         renderer.drawPowerConnections(session_.world(), view, localPlayer_);
+    if (terrainDebug_)
+        renderer.drawResourceFieldDebug(session_.resourceLayout(), view);
     if (draggingSelection_ && viewMode_ == ViewMode::strategy)
         renderer.drawSelectionBox(selectionStart_, selectionEnd_);
     if (detailedDebug_) {
@@ -1370,7 +1372,7 @@ void PlayState::render(Renderer& renderer) const {
     // showing through its opaque panel.
     if (terrainDebug_) {
         const glm::vec3 cursor = renderer.screenToTerrain(pointerScreen_.x, pointerScreen_.y, view);
-        renderer.drawTerrainDebugHud(cursor);
+        renderer.drawTerrainDebugHud(cursor, session_.resourceLayout());
     }
     if (paused_) {
         UiDocument document = pauseUi(renderer.viewportWidth(), renderer.viewportHeight());

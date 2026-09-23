@@ -253,9 +253,9 @@ GameSession::GameSession(const DefinitionRegistry& definitions,
         world_.foundations().push_back(foundation);
         terrain_.applyFoundation(foundation);
     }
-    populateResources(world_, terrain_, gameplay_, terrainSeed,
-                      mapChunksPerSide_, resourceAbundanceScale_, startingAnchors_,
-                      generationProgress);
+    resourceLayout_ = populateResources(world_, terrain_, gameplay_, terrainSeed,
+                                        mapChunksPerSide_, resourceAbundanceScale_,
+                                        startingAnchors_, generationProgress);
     if (generationProgress) generationProgress->report(WorldGenerationPhase::validation, 0.0F);
     // Start selection validates usable land and reachability; resource generation validates each
     // guaranteed opening deposit before this phase is reported complete.
@@ -1792,6 +1792,7 @@ void GameSession::replaceWorld(std::vector<Entity> entities, std::uint32_t terra
                                    static_cast<std::uint32_t>(Terrain::chunksPerSide));
     terrain_ = Terrain{terrainSeed};
     terrain_.rebuildFoundations(world_.foundations());
+    resourceLayout_ = {};
     navigation_.rebuildTerrain(terrain_, mapChunksPerSide_);
     vegetation_ = generateVegetation(world_, terrain_, gameplay_, terrainSeed_, mapChunksPerSide_);
     commands_.clear();
