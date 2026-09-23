@@ -329,6 +329,12 @@ belongs in terrain materials/decals, while the shoreline silhouette should come 
 water, and the terrain itself. Current realistic scatter assets are normalized to metre scale and
 triangle budgets by `tools/normalize_scatter_asset.py` before entering the runtime manifest.
 
+Vegetation rules define a named smooth density field, coverage threshold, cluster frequency,
+per-cluster instance and radius ranges, optional moisture/elevation limits, and a spacing group.
+Placement uses deterministic cluster streams and a spatial grid. Only members of the same spacing
+group exclude one another, so ground cover, flowers, reeds, weeds, and stones can overlap naturally
+without returning to a global quadratic distance scan.
+
 Decorations must:
 
 - Use separate named streams per decoration family.
@@ -570,8 +576,10 @@ biome, surface, traversal/buildability, slope, and regional fields beneath the c
 17. ~~Add instanced pebbles, weeds, shoreline detail, and surface decals.~~ Complete at the
     scatter-system level. Multiple pebble, short-grass, weed, wildflower, and shore-reed variants
     have independent named streams, biome/surface/tag filters, scale and slope ranges, and
-    normalized instanced presentations. Generic dirt patches and shoreline debris were removed;
-    ground variation remains terrain-material/decal work rather than freestanding geometry.
+    normalized instanced presentations. Smooth family-specific density fields produce deterministic
+    clusters, while spacing-group spatial grids enforce local separation across chunk boundaries.
+    Generic dirt patches and shoreline debris were removed; ground variation remains
+    terrain-material/decal work rather than freestanding geometry.
 18. ~~Ensure construction clears/hides decoration through the same footprint mask.~~ Complete.
     Accepted placement removes intersecting scatter instances through the authoritative building
     `SpatialShape`; loading regenerates scatter against the loaded authoritative world.

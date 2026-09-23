@@ -1010,13 +1010,41 @@ void DefinitionRegistry::loadRules(const std::filesystem::path& path) {
         VegetationGenerationDefinition vegetation;
         vegetation.archetype = value["archetype"].GetString();
         vegetation.stream = value["stream"].GetString();
+        if (!value.HasMember("spacingGroup") || !value["spacingGroup"].IsString() ||
+            std::string_view{value["spacingGroup"].GetString()}.empty())
+            throw std::runtime_error("Vegetation '" + vegetation.archetype +
+                                     "' requires spacingGroup");
+        vegetation.spacingGroup = value["spacingGroup"].GetString();
         const auto field = [&](const char* name) {
             if (!value.HasMember(name) || !value[name].IsNumber())
                 throw std::runtime_error("Vegetation '" + vegetation.archetype +
                                          "' requires numeric " + name);
             return value[name].GetFloat();
         };
-        vegetation.instancesPerChunk = field("instancesPerChunk");
+        const auto count = [&](const char* name) {
+            if (!value.HasMember(name) || !value[name].IsUint())
+                throw std::runtime_error("Vegetation '" + vegetation.archetype +
+                                         "' requires unsigned " + name);
+            return value[name].GetUint();
+        };
+        const auto optionalField = [&](const char* name, float fallback) {
+            if (!value.HasMember(name)) return fallback;
+            if (!value[name].IsNumber())
+                throw std::runtime_error("Vegetation '" + vegetation.archetype +
+                                         "' requires numeric " + name);
+            return value[name].GetFloat();
+        };
+        vegetation.coverage = field("coverage");
+        vegetation.densityScale = field("densityScale");
+        vegetation.clustersPerChunk = field("clustersPerChunk");
+        vegetation.minimumInstancesPerCluster = count("minimumInstancesPerCluster");
+        vegetation.maximumInstancesPerCluster = count("maximumInstancesPerCluster");
+        vegetation.minimumClusterRadius = field("minimumClusterRadius");
+        vegetation.maximumClusterRadius = field("maximumClusterRadius");
+        vegetation.minimumMoisture = optionalField("minimumMoisture", 0.0F);
+        vegetation.maximumMoisture = optionalField("maximumMoisture", 1.0F);
+        vegetation.minimumHeight = optionalField("minimumHeight", 0.0F);
+        vegetation.maximumHeight = optionalField("maximumHeight", 1.0F);
         vegetation.maximumSlopeDegrees = field("maximumSlopeDegrees");
         vegetation.minimumSpacing = field("minimumSpacing");
         vegetation.minimumScale = field("minimumScale");
@@ -1054,7 +1082,17 @@ void DefinitionRegistry::loadRules(const std::filesystem::path& path) {
         parseTerrainTags("requiredTerrainTags", vegetation.requiredTerrainTags);
         parseTerrainTags("forbiddenTerrainTags", vegetation.forbiddenTerrainTags);
         if (vegetation.allowedBiomes.empty() || vegetation.allowedSurfaces.empty() ||
-            vegetation.instancesPerChunk < 0.0F || vegetation.maximumSlopeDegrees < 0.0F ||
+            vegetation.coverage <= 0.0F || vegetation.coverage > 1.0F ||
+            vegetation.densityScale <= 0.0F || vegetation.clustersPerChunk < 0.0F ||
+            vegetation.minimumInstancesPerCluster == 0 ||
+            vegetation.maximumInstancesPerCluster < vegetation.minimumInstancesPerCluster ||
+            vegetation.minimumClusterRadius < 0.0F ||
+            vegetation.maximumClusterRadius < vegetation.minimumClusterRadius ||
+            vegetation.minimumMoisture < 0.0F || vegetation.maximumMoisture > 1.0F ||
+            vegetation.maximumMoisture < vegetation.minimumMoisture ||
+            vegetation.minimumHeight < 0.0F || vegetation.maximumHeight > 1.0F ||
+            vegetation.maximumHeight < vegetation.minimumHeight ||
+            vegetation.maximumSlopeDegrees < 0.0F ||
             vegetation.maximumSlopeDegrees > 90.0F || vegetation.minimumSpacing < 0.0F ||
             vegetation.minimumScale <= 0.0F ||
             vegetation.maximumScale < vegetation.minimumScale)

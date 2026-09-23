@@ -209,7 +209,18 @@ struct StartingEntityDefinition {
 struct VegetationGenerationDefinition {
     std::string archetype;
     std::string stream;
-    float instancesPerChunk{0.0F};
+    std::string spacingGroup;
+    float coverage{0.0F};
+    float densityScale{1.0F};
+    float clustersPerChunk{0.0F};
+    std::uint32_t minimumInstancesPerCluster{1};
+    std::uint32_t maximumInstancesPerCluster{1};
+    float minimumClusterRadius{0.0F};
+    float maximumClusterRadius{0.0F};
+    float minimumMoisture{0.0F};
+    float maximumMoisture{1.0F};
+    float minimumHeight{0.0F};
+    float maximumHeight{1.0F};
     std::vector<TerrainBiomeId> allowedBiomes;
     std::vector<TerrainSurfaceId> allowedSurfaces;
     TerrainTagMask requiredTerrainTags{0};

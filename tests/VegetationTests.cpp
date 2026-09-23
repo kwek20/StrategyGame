@@ -5,8 +5,10 @@
 #include "world/WorldGeneration.hpp"
 
 #include <algorithm>
+#include <glm/geometric.hpp>
 #include <iostream>
 #include <map>
+#include <set>
 #include <vector>
 
 namespace {
@@ -31,6 +33,13 @@ int main() {
     bool valid = first.instanceCount() > 0 && positions(first) == positions(second) &&
                  world.entities().empty();
     std::map<std::string, std::size_t> grassVariants;
+    struct SpacedInstance {
+        glm::vec2 position;
+        float spacing;
+        std::string archetype;
+        float clusterRadius;
+    };
+    std::map<std::string, std::vector<SpacedInstance>> spacingGroups;
     for (const auto& chunk : first.chunks()) for (const auto& entity : chunk.instances) {
         const auto* type = definitions.archetype(entity.archetype);
         valid = valid && type && type->kind == strategy::EntityKind::decoration &&
@@ -51,7 +60,33 @@ int main() {
                           terrainSample.biome) != rule->allowedBiomes.end() &&
                 std::find(rule->allowedSurfaces.begin(), rule->allowedSurfaces.end(),
                           terrainSample.surface) != rule->allowedSurfaces.end() &&
+                terrainSample.moisture >= rule->minimumMoisture &&
+                terrainSample.moisture <= rule->maximumMoisture &&
+                terrainSample.baseHeight / strategy::Terrain::heightScale >= rule->minimumHeight &&
+                terrainSample.baseHeight / strategy::Terrain::heightScale <= rule->maximumHeight &&
                 terrainSample.slopeDegrees <= rule->maximumSlopeDegrees;
+        if (rule != vegetation.end())
+            spacingGroups[rule->spacingGroup].push_back(
+                {{entity.transform.position.x, entity.transform.position.z},
+                 rule->minimumSpacing,
+                 entity.archetype.value,
+                 rule->maximumClusterRadius});
+    }
+    std::set<std::string> clusteredVariants;
+    for (const auto& [group, instances] : spacingGroups) {
+        (void)group;
+        for (std::size_t firstIndex = 0; firstIndex < instances.size(); ++firstIndex)
+            for (std::size_t secondIndex = firstIndex + 1; secondIndex < instances.size();
+                 ++secondIndex) {
+                const float distance = glm::distance(instances[firstIndex].position,
+                                                     instances[secondIndex].position);
+                valid = valid && distance + 0.0001F >=
+                                     std::max(instances[firstIndex].spacing,
+                                              instances[secondIndex].spacing);
+                if (instances[firstIndex].archetype == instances[secondIndex].archetype &&
+                    distance <= instances[firstIndex].clusterRadius * 2.0F)
+                    clusteredVariants.insert(instances[firstIndex].archetype);
+            }
     }
     valid = valid && grassVariants["grass_dry"] > 0 &&
             grassVariants["grass_aged"] > 0 &&
@@ -64,7 +99,7 @@ int main() {
             grassVariants["grass_bermuda"] > 0 &&
             grassVariants["pebble_cluster"] > 0 &&
             grassVariants["pebble_stone"] > 0 &&
-            grassVariants["pebble_rock"] > 0;
+            grassVariants["pebble_rock"] > 0 && clusteredVariants.size() >= 6;
 
     const glm::vec3 center = positions(first).front();
     const std::size_t oldCount = first.instanceCount();
