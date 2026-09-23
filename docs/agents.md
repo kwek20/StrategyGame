@@ -1,6 +1,6 @@
 # Agent Recovery Context
 
-Snapshot date: 2026-09-14. Baseline commit when written: `234b639 particles and environment additions`.
+Snapshot updated: 2026-09-23. Always inspect the current commit and working-tree diff.
 Always inspect newer commits and diffs before relying on this snapshot.
 
 This file is optimized for an agent recovering the project without conversation history. Treat
@@ -78,10 +78,26 @@ legacy behavior. There are no public save files and no requirement for legacy sa
 - Players spawn on opposite sides with definition-backed edge inset/lateral placement.
 - Terrain is seeded and chunked, with LOD and blended materials.
 - Resources and presentation-only vegetation use named deterministic streams.
-- Decorative grass and small trees are configured in `assets/gameplay/rules.json` and archetyped in
-  `decorations.json`. `wild_tree` uses the grass-pack tall clump presentation, not the harvestable
-  resource pine. Decorative vegetation lives in chunked `VegetationField` render data rather than
-  authoritative `World` entities, is GPU-instanced, and is cleared by accepted building placement.
+- Decorative grass, flowers, weeds, reeds, and stones are configured in
+  `assets/gameplay/rules.json` and archetyped in `decorations.json`. They use deterministic smooth
+  density fields, clustered placement, and family spacing groups. Decorative vegetation lives in
+  chunked `VegetationField` render data rather than authoritative `World` entities, is GPU-instanced,
+  and is cleared by accepted building placement. Further vegetation work is intentionally deferred.
+
+## Immediate active backlog
+
+Do not begin additional vegetation work unless the user explicitly resumes it. Before Milestone 6,
+work through this order:
+
+1. Resource path-cost fairness, deterministic compensation, and resource-stream retry.
+2. Navigation congestion, arrival slots, local avoidance, and F3 path/stuck diagnostics.
+3. Drone charger-loss/stranded recovery, deterministic task resumption, and long-running loop tests.
+4. Construction concurrency, failure/save-load coverage, and terrain-foundation profiling.
+5. Power topology/storage/priority/limit stress tests and large-grid profiling.
+6. Repeatable 10–15 minute opening-economy validation and balance measurements.
+7. 10x10, 15x15, and 20x20 generation/simulation/memory/render profiling.
+
+Then proceed to Milestone 6, the first combat slice.
 
 ### Selection and camera
 

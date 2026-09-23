@@ -84,6 +84,50 @@ Current work is integration and stabilization of milestones 2–5: drone task ro
 delivery and processor capacity → construction and progressive terrain foundations → connected
 grid failure handling → complete opening-loop tests and performance profiling.
 
+## Immediate stabilization backlog
+
+Vegetation generation is currently in a satisfactory state and further vegetation diagnostics,
+asset expansion, visual tuning, and LOD work are deferred. Complete the following work in order
+before starting Milestone 6:
+
+1. **Resource fairness validation**
+   - Measure navigation path cost from every start to Scrap, Oil, and Uranium.
+   - Compare accessible capacity inside definition-backed travel-cost bands.
+   - Detect resource denial caused by water, mountains, or isolated regions.
+   - Add or relocate a small deterministic compensating cluster for a deficient player.
+   - If compensation fails, retry only the resource-layout stream with a deterministic attempt
+     index; regenerate terrain only when terrain validation itself fails.
+2. **Navigation congestion and diagnostics**
+   - Add deterministic arrival slots around buildings, resources, and other shared destinations.
+   - Add local avoidance without making unit iteration order authoritative.
+   - Expose destination, waypoint, path length, retry state, and stuck time in F3 diagnostics.
+   - Verify that multiple drones can approach interaction edges from every valid side.
+3. **Drone recovery validation**
+   - Test destroyed, disconnected, occupied, inaccessible, and absent chargers.
+   - Make the stranded state and recovery route visible to the player.
+   - Preserve interrupted work through charging and resume it deterministically.
+   - Add long-running gather/deliver/recharge and save/load task-loop tests.
+4. **Construction hardening**
+   - Test simultaneous projects, multiple drones, cancellation, destruction, save/load, and
+     insufficient Alloy or battery power.
+   - Validate every construction recipe against preview and authoritative placement rules.
+   - Profile progressive terrain-foundation updates and remove placement/construction spikes.
+5. **Power-grid stress testing**
+   - Test relay destruction/rebuilding, deterministic grid splitting/merging, storage cycles,
+     priority shortage allocation, transfer limits, and maximum-connection failures.
+   - Profile large grids and improve disconnected, overloaded, and underpowered overlay feedback.
+6. **Opening-economy validation**
+   - Measure time to first processor, generator, second drone, and factory.
+   - Validate Scrap depletion, expansion pressure, dedicated-processor versus hub efficiency, and
+     Oil/Uranium/Synthetic routes.
+   - Add a repeatable automated 10–15 minute opening-loop scenario with clear blocked-logistics
+     diagnostics.
+7. **Map-size profiling**
+   - Establish generation-time, simulation-time, memory, and rendering budgets for 10x10, 15x15,
+     and 20x20 maps.
+
+After this backlog passes its exit criteria, proceed to Milestone 6: first combat slice.
+
 ## Working rules
 
 Every gameplay milestone follows these rules:

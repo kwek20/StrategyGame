@@ -9,6 +9,24 @@ The resource system is designed around matches lasting approximately **60–120 
 
 The economy should become operational quickly, with complexity emerging through territorial competition rather than through increasingly complicated resource management.
 
+## Current validation backlog
+
+Before adding the first combat roster, validate the opening with a repeatable automated 10–15
+minute scenario and recorded playtests. Measure:
+
+- Time to first dedicated processor, generator, second drone, and factory.
+- Starting Scrap travel cost, capacity, and depletion timing for every player.
+- Command Hub emergency processing versus dedicated-processor efficiency.
+- Time and path cost to ordinary Oil and contested Uranium.
+- Synthetic production and deliberate Alloy/Fuel routing.
+- Downtime caused by power loss, full processors, inaccessible delivery edges, charging, or stuck
+  navigation.
+
+Run the scenario on 10x10, 15x15, and 20x20 maps. Resource fairness uses bounded path-cost and
+reachable-capacity tolerances, not mirrored layouts or straight-line distance. Failed fairness
+first triggers deterministic resource compensation or resource-stream retry without changing
+accepted terrain.
+
 ---
 
 ## Opening — approximately 0–15 minutes

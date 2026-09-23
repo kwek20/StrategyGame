@@ -63,6 +63,20 @@ This keeps the harvesting system visually important without forcing the player t
 
 The values above mirror the current JSON definitions and remain balance data, not code constants.
 
+## Immediate validation work
+
+- Validate each player's path cost and reachable capacity for Scrap, Oil, and Uranium across the
+  supported map sizes.
+- Add deterministic compensating clusters and resource-layout-only retries when bounded fairness
+  tolerances fail.
+- Exercise long-running gather, deliver, wait-for-power, reroute-on-full, recharge, and resume loops.
+- Verify every cargo, processor-buffer, resource reservation, conversion, and destination state
+  through save/load and checksums.
+- Measure the opening timing targets recorded in `match progress.md`, including hub-versus-dedicated
+  conversion efficiency and the transition from safe Scrap to contested fuel sources.
+- Keep failures legible through cargo markers, route/destination state, processor status, alerts,
+  navigation diagnostics, and the power overlay.
+
 ---
 
 # Scrap — Raw Resource

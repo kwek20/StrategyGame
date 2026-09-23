@@ -561,6 +561,15 @@ biome, surface, traversal/buildability, slope, and regional fields beneath the c
     potential and deterministic spacing, and nodes use irregular radial masks with minimum spacing.
     No generated node receives an automatic mirrored counterpart.
 13. Add path-cost fairness validation and deterministic compensation/retry.
+    - Measure path cost and reachable capacity from every starting anchor to each generated
+      resource category, including Scrap, Oil, and Uranium.
+    - Compare capacity inside expanding definition-backed travel-cost bands rather than using
+      straight-line distance or exact mirrored equality.
+    - Detect denial caused by water, mountains, disconnected land regions, or insufficient valid
+      harvesting edges.
+    - First add or relocate a small compensating cluster in the deficient player's eligible region.
+    - If compensation cannot satisfy the bounded tolerance, retry only resource layout with a
+      deterministic attempt index. Do not regenerate accepted terrain for a resource-only failure.
 14. ~~Preserve explicit opening Scrap guarantees without mirroring the rest of the map.~~ Complete.
     Opening Scrap is placed independently around each selected starting anchor using its own named
     per-player stream; regional Scrap, Oil, and Uranium remain asymmetric.
@@ -591,9 +600,14 @@ biome, surface, traversal/buildability, slope, and regional fields beneath the c
     cancellable background job. Atomic phase/work progress drives the live loading screen. The
     accepted authoritative terrain is copied to the renderer and uploaded in bounded chunk batches
     on the OpenGL thread while asset imports/uploads continue through the resource manager.
-20. Add field/biome/navigation/resource debug views and generation reports.
-21. Add deterministic, connectivity, fairness, statistical, and chunk-seam tests.
-22. Profile 10x10, 15x15, and 20x20 maps and establish time/memory budgets.
+20. Add field/biome/navigation/resource debug views and generation reports. Prioritize connected
+    navigation regions, resource suitability/rejection reasons, chosen starts, fairness bands, and
+    generation timings. Vegetation-specific diagnostics are deferred.
+21. Add deterministic, connectivity, fairness, statistical, and chunk-seam tests. Include
+    multi-seed resource-distribution tolerances and confirmation that resource compensation changes
+    neither accepted terrain nor unrelated named random streams.
+22. Profile 10x10, 15x15, and 20x20 maps and establish generation-time, simulation-time, memory,
+    terrain-upload, and rendering budgets. Record repeatable test seeds and machine configuration.
 
 ## First playable target
 
