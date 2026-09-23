@@ -10,6 +10,28 @@ The economy is built around two raw resource chains, two strategic resources, an
 
 Raw resources are not intended to become additional stockpiled currencies. They exist physically on the map, are collected, and are delivered to the appropriate processor.
 
+## Map-generation contract
+
+Natural raw resources are generated as fields containing nodes:
+
+- A generated resource position creates a resource field rather than one deposit.
+- Each field deterministically chooses a variable node count from its definition.
+- Every node stores its own remaining raw-resource amount.
+- A field can mix small, medium, and large node archetypes. Those archetypes may use different
+  models, collision shapes, capacities, and weighted occurrence rates while yielding the same raw
+  resource type.
+- A field footprint may cross biome boundaries and may overlap another resource field.
+- Resource nodes themselves may not overlap any other resource node, including nodes belonging to
+  another field or resource family.
+- Node terrain suitability is evaluated at each node position. The abstract field is not clipped to
+  biome boundaries.
+- Named deterministic streams must make the same seed, rules, map size, and abundance settings
+  produce the same fields, variants, node positions, and capacities.
+
+Fields are generation metadata and are not selectable, harvestable, saved as gameplay entities, or
+included separately in the match checksum. Their resulting nodes are authoritative entities and are
+handled by normal gathering, persistence, fairness, and checksum systems.
+
 The starting Command Hub provides inefficient emergency processing so the opening economy cannot
 deadlock before dedicated infrastructure is constructed. It accepts Scrap, Oil, and Uranium at
 half of their dedicated-processor output yields. It does **not** accept Synthetic. Synthetic must

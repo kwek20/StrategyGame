@@ -100,32 +100,41 @@ before starting Milestone 6:
    - Implemented as definition-backed per-resource travel-cost bands with deliberately loose
      capacity ratios. Positions are not mirrored; independent deterministic compensation streams
      preserve distance and angle variation while preventing meaningful resource denial.
-2. **Navigation congestion and diagnostics**
+
+2. **Resource-field generation realignment — planned**
+   - Replace the current one-archetype cluster implementation with explicit field definitions and
+     weighted node variants.
+   - Permit deterministic field footprints to cross biomes and overlap other fields.
+   - Keep node placement globally non-overlapping and validate terrain per node.
+   - Give small, medium, and large nodes independent presentations, collision shapes, and capacities.
+   - Preserve current path-cost fairness by evaluating the resulting node capacity rather than the
+     number or position of abstract fields.
+3. **Navigation congestion and diagnostics**
    - Add deterministic arrival slots around buildings, resources, and other shared destinations.
    - Add local avoidance without making unit iteration order authoritative.
    - Expose destination, waypoint, path length, retry state, and stuck time in F3 diagnostics.
    - Verify that multiple drones can approach interaction edges from every valid side.
-3. **Drone recovery validation**
+4. **Drone recovery validation**
    - Test destroyed, disconnected, occupied, inaccessible, and absent chargers.
    - Make the stranded state and recovery route visible to the player.
    - Preserve interrupted work through charging and resume it deterministically.
    - Add long-running gather/deliver/recharge and save/load task-loop tests.
-4. **Construction hardening**
+5. **Construction hardening**
    - Test simultaneous projects, multiple drones, cancellation, destruction, save/load, and
      insufficient Alloy or battery power.
    - Validate every construction recipe against preview and authoritative placement rules.
    - Profile progressive terrain-foundation updates and remove placement/construction spikes.
-5. **Power-grid stress testing**
+6. **Power-grid stress testing**
    - Test relay destruction/rebuilding, deterministic grid splitting/merging, storage cycles,
      priority shortage allocation, transfer limits, and maximum-connection failures.
    - Profile large grids and improve disconnected, overloaded, and underpowered overlay feedback.
-6. **Opening-economy validation**
+7. **Opening-economy validation**
    - Measure time to first processor, generator, second drone, and factory.
    - Validate Scrap depletion, expansion pressure, dedicated-processor versus hub efficiency, and
      Oil/Uranium/Synthetic routes.
    - Add a repeatable automated 10–15 minute opening-loop scenario with clear blocked-logistics
      diagnostics.
-7. **Map-size profiling**
+8. **Map-size profiling**
    - Establish generation-time, simulation-time, memory, and rendering budgets for 10x10, 15x15,
      and 20x20 maps.
 

@@ -90,14 +90,19 @@ Do not begin additional vegetation work unless the user explicitly resumes it. B
 work through this order:
 
 Resource path-cost fairness, deterministic compensation, and resource-stream retry are complete.
+The next resource-generation revision uses explicit non-entity resource fields. Fields may overlap
+one another and cross biome boundaries; their deterministically generated resource-node entities
+may not overlap. Node variants own presentation, collision, and capacity, while fairness continues
+to measure reachable resulting capacity rather than field count.
 The active order is now:
 
-1. Navigation congestion, arrival slots, local avoidance, and F3 path/stuck diagnostics.
-2. Drone charger-loss/stranded recovery, deterministic task resumption, and long-running loop tests.
-3. Construction concurrency, failure/save-load coverage, and terrain-foundation profiling.
-4. Power topology/storage/priority/limit stress tests and large-grid profiling.
-5. Repeatable 10–15 minute opening-economy validation and balance measurements.
-6. 10x10, 15x15, and 20x20 generation/simulation/memory/render profiling.
+1. Resource-field/node-variant generation realignment.
+2. Navigation congestion, arrival slots, local avoidance, and F3 path/stuck diagnostics.
+3. Drone charger-loss/stranded recovery, deterministic task resumption, and long-running loop tests.
+4. Construction concurrency, failure/save-load coverage, and terrain-foundation profiling.
+5. Power topology/storage/priority/limit stress tests and large-grid profiling.
+6. Repeatable 10–15 minute opening-economy validation and balance measurements.
+7. 10x10, 15x15, and 20x20 generation/simulation/memory/render profiling.
 
 Then proceed to Milestone 6, the first combat slice.
 

@@ -224,10 +224,35 @@ Generate many candidates, score them deterministically, then select a pair with 
 and a bounded fairness difference. Do not mirror terrain or resources. After selection, run an
 opening-playability validator and retry using the next deterministic candidate pair if required.
 
-### 8. Generate resource regions and clusters
+### 8. Generate resource regions and fields
 
-Resources should be driven by biome suitability, independent potential fields, and local cluster
-rules. The result should contain rich areas, sparse areas, and occasional absence where permitted.
+Resources should be driven by biome suitability, independent potential fields, and local resource-
+field rules. The result should contain rich areas, sparse areas, and occasional absence where
+permitted.
+
+The authoritative generation hierarchy is:
+
+```text
+resource-family potential
+  -> generated resource-field position and footprint
+    -> deterministic node count
+      -> individually placed resource nodes
+```
+
+A resource field is generation metadata, not a harvestable entity. It owns a center, radius/shape,
+resource family, deterministic stream identity, and desired node count. Every node is a normal
+resource entity with its own presentation variant and remaining capacity.
+
+Field footprints are deliberately allowed to cross biome and surface boundaries. Fields may also
+overlap other fields, including fields belonging to another resource family. A field center may be
+chosen from the resource's regional potential and broad placement rules, but the field footprint is
+not clipped at a biome boundary. Every node candidate is validated independently against the node
+variant's terrain requirements.
+
+Nodes may never overlap another authoritative resource node, regardless of which fields or resource
+families produced them. Ordinary entity collision, map boundaries, terrain suitability, and access
+validation still apply. Field overlap therefore creates natural mixed-resource areas without
+allowing intersecting harvestable geometry.
 
 Resource placement now has a typed terrain-tag boundary. Existing Scrap, Oil, and Uranium nodes
 explicitly require `land`, so ordinary resources cannot be generated under water. Definitions may
@@ -241,7 +266,7 @@ Vegetation generation always rejects submerged samples independently of its biom
 allowlists. Grass and trees therefore remain land-only even if a future data edit accidentally
 adds a water biome to one of those lists.
 
-Each resource definition should support:
+Each resource-field definition should support field distribution separately from node variants:
 
 ```json
 {
@@ -255,13 +280,16 @@ Each resource definition should support:
     "maximumSlopeDegrees": 12,
     "regionThreshold": 0.48,
     "regionScale": 90,
-    "clustersPerSquareChunk": [0.04, 0.11],
-    "clusterRadius": [3, 10],
-    "nodesPerCluster": [2, 9],
-    "placementAttemptsPerCluster": 90,
+    "fieldsPerSquareChunk": [0.04, 0.11],
+    "fieldRadius": [3, 10],
+    "nodesPerField": [2, 9],
+    "placementAttemptsPerNode": 20,
     "minimumNodeSpacing": 2.5,
-    "minimumClusterSpacing": 12,
-    "capacityMultiplier": [0.75, 1.35],
+    "variants": [
+      { "node": "scrap_small", "weight": 5 },
+      { "node": "scrap_medium", "weight": 3 },
+      { "node": "scrap_large", "weight": 1 }
+    ],
     "startingNodesPerPlayer": 3,
     "startingMinimumDistance": 16,
     "startingMaximumDistance": 28
@@ -269,29 +297,32 @@ Each resource definition should support:
 }
 ```
 
-Cluster generation should:
+Resource-field generation should:
 
 1. Build a resource suitability field from biome, height, slope, moisture, and the resource's named
    potential noise.
 2. Identify contiguous high-suitability regions.
-3. Choose a variable number of cluster centers proportional to map area and abundance settings.
-4. Generate irregular cluster masks using radial falloff plus warped noise.
-5. Place a variable number of nodes inside each mask using deterministic blue-noise/Poisson-like
-   spacing.
-6. Vary node scale, rotation, and capacity within definition bounds.
-7. Reject collisions and inaccessible nodes.
-8. Validate global and per-player access after placement.
+3. Choose a variable number of field centers proportional to map area and abundance settings.
+   Do not reject a field because its footprint overlaps another field or crosses a biome boundary.
+4. Give each field a deterministic radius/shape and node count.
+5. Sample each node independently inside the field using deterministic blue-noise/Poisson-like
+   spacing, validating terrain at the sampled node rather than clipping the field itself.
+6. Select a weighted node archetype such as small, medium, or large. The selected archetype owns
+   its model/presentation, collision shape, base capacity, and optional terrain restrictions.
+7. Vary rotation and definition-backed capacity only where the selected variant permits it.
+8. Reject node-to-node overlap globally, including nodes generated by other overlapping fields.
+9. Reject inaccessible nodes and validate global and per-player access after placement.
 
 Suggested initial tendencies:
 
-- **Scrap:** common in dry lowlands and plains; broad clusters with many medium-capacity nodes.
-- **Oil:** uncommon in low basins, wetlands, and selected plains; compact clusters with high local
+- **Scrap:** common in dry lowlands and plains; broad fields with many mixed-size nodes.
+- **Oil:** uncommon in low basins, wetlands, and selected plains; compact fields with high local
   value.
-- **Uranium:** rare in uplands and rocky highlands; small, widely separated clusters.
+- **Uranium:** rare in uplands and rocky highlands; small fields with a few distinct crystal sizes.
 - **Synthetic:** remains produced/generated by its intended gameplay systems rather than becoming a
   universally scattered raw node unless the resource design document changes.
 
-The abundance match setting should affect cluster frequency and/or total regional capacity, not
+The abundance match setting should affect field frequency, nodes per field, and/or total regional capacity, not
 simply multiply a fixed mirrored pair count.
 
 ### 9. Validate resource fairness without visible symmetry
@@ -557,11 +588,12 @@ biome, surface, traversal/buildability, slope, and regional fields beneath the c
 10. ~~Replace fixed start coordinates with candidate scoring and pair selection.~~ Complete.
     Headquarters require a dry, slope-valid footprint, sufficient connected local land, and viable
     nearby opening-resource sites. Guaranteed resources consume the selected anchors directly.
-11. ~~Extend resource-node definitions with biome, field, variable cluster, density, and capacity
-    rules.~~ Complete. Each raw resource now defines biome and terrain tags, moisture/elevation/slope
-    limits, an independent named potential field, cluster-density/radius/node-count ranges, spacing,
-    attempt budgets, and capacity variance.
-12. ~~Replace mirrored pair generation with resource regions and irregular clusters.~~ Complete.
+11. ~~Extend the original resource-node definitions with biome, regional-potential, variable
+    cluster, density, and capacity rules.~~ Complete for the current single-archetype generator.
+    This is the legacy foundation for the planned explicit resource-field/node-variant split.
+12. ~~Replace mirrored pair generation with resource regions and irregular clusters.~~ Complete for
+    single-archetype nodes. The next revision renames clusters to explicit fields, permits field
+    overlap and biome crossing, and selects weighted small/medium/large node archetypes per field.
     Cluster counts scale with playable map area and abundance, centers require high resource-specific
     potential and deterministic spacing, and nodes use irregular radial masks with minimum spacing.
     No generated node receives an automatic mirrored counterpart.
@@ -578,6 +610,25 @@ biome, surface, traversal/buildability, slope, and regional fields beneath the c
 14. ~~Preserve explicit opening Scrap guarantees without mirroring the rest of the map.~~ Complete.
     Opening Scrap is placed independently around each selected starting anchor using its own named
     per-player stream; regional Scrap, Oil, and Uranium remain asymmetric.
+
+#### Planned resource-field realignment
+
+The existing cluster generator is the migration source, not the final field implementation:
+
+1. Introduce typed `ResourceFieldDefinition` and weighted `ResourceNodeVariant` references.
+2. Keep harvestable node archetypes in `resource_nodes.json`; move distribution, potential,
+   fairness, opening guarantees, and field-shape rules to `resource_fields.json`.
+3. Replace `generatedResourceNodes` in match rules with `generatedResourceFields`.
+4. Generate a plain `ResourceLayout` containing deterministic field descriptors and node spawn
+   records before mutating `World`. Fields are not entities; node spawn records become entities.
+5. Remove minimum field-to-field spacing. Validate only the field center's broad regional rules,
+   then validate every node against its selected variant and terrain sample.
+6. Use one global spatial index for generated resource nodes so variants and resource families
+   cannot overlap even where their fields do.
+7. Make opening guarantees and fairness compensation create small fields rather than isolated
+   hard-coded node archetypes. Continue evaluating actual resulting capacity by travel-cost band.
+8. Add deterministic tests for variable node counts, weighted variants, overlapping/cross-biome
+   fields, global node non-overlap, per-node capacity, retry isolation, and equal-seed layouts.
 
 ### Phase D: environmental detail
 
