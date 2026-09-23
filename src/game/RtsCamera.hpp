@@ -9,7 +9,7 @@ namespace strategy {
 
 class RtsCamera final {
   public:
-    void pan(float forward, float right, float deltaSeconds);
+    void pan(float forward, float right, float deltaSeconds, bool accelerated);
     void orbit(float deltaX, float deltaY);
     void dragPan(float deltaX, float deltaY);
     void zoom(float wheelDelta);
@@ -37,6 +37,7 @@ class RtsCamera final {
     float yawDegrees_{0.0F};
     float pitchDegrees_{42.0F};
     float distance_{55.0F};
+    float panAcceleration_{0.0F};
 };
 
 } // namespace strategy

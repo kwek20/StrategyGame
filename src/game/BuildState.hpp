@@ -35,7 +35,7 @@ class BuildState final : public GameState {
     mutable std::optional<glm::vec2> hoverPosition_;
     mutable EntityId hoveredEntity_{0};
     bool forward_{false}, backward_{false}, left_{false}, right_{false}, orbiting_{false},
-        mousePanning_{false};
+        mousePanning_{false}, acceleratedCamera_{false}, leftShift_{false}, rightShift_{false};
     StateRequest request_{StateRequest::none};
     mutable UiController uiController_;
     [[nodiscard]] EntityHudModel paletteHud() const;

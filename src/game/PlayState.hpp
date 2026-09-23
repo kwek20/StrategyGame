@@ -44,6 +44,8 @@ class PlayState final : public GameState {
     bool left_{false};
     bool right_{false};
     bool running_{false};
+    bool leftShift_{false};
+    bool rightShift_{false};
     bool orbiting_{false};
     bool mousePanning_{false};
     float rightDragDistance_{0.0F};

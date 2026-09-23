@@ -193,13 +193,24 @@ void BuildState::handleEvent(const SDL_Event& event) {
     case SDLK_D:
         right_ = pressed;
         break;
+    case SDLK_LSHIFT:
+        leftShift_ = pressed;
+        acceleratedCamera_ = leftShift_ || rightShift_;
+        break;
+    case SDLK_RSHIFT:
+        rightShift_ = pressed;
+        acceleratedCamera_ = leftShift_ || rightShift_;
+        break;
     default:
         break;
     }
 }
 void BuildState::update(float deltaSeconds) {
     uiController_.advance(deltaSeconds);
-    camera_.pan(float(forward_) - float(backward_), float(right_) - float(left_), deltaSeconds);
+    camera_.pan(float(forward_) - float(backward_),
+                float(right_) - float(left_),
+                deltaSeconds,
+                acceleratedCamera_);
 }
 void BuildState::render(Renderer& renderer) const {
     const glm::vec3 focus = camera_.focus();

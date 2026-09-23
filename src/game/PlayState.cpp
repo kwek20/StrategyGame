@@ -749,8 +749,12 @@ void PlayState::handleEvent(const SDL_Event& event) {
     else
         switch (event.key.key) {
         case SDLK_LSHIFT:
+            leftShift_ = pressed;
+            running_ = leftShift_ || rightShift_;
+            break;
         case SDLK_RSHIFT:
-            running_ = pressed;
+            rightShift_ = pressed;
+            running_ = leftShift_ || rightShift_;
             break;
         default:
             break;
@@ -972,7 +976,7 @@ void PlayState::update(float deltaSeconds) {
                                                 running_,
                                                 thirdPersonCamera_.characterFacingDegrees()}});
     } else {
-        camera_.pan(forward, right, deltaSeconds);
+        camera_.pan(forward, right, deltaSeconds, running_);
     }
     session_.update(deltaSeconds);
     sanitizeEntityReferences();

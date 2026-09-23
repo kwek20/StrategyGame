@@ -236,6 +236,11 @@ if(STRATEGY_BUILD_TESTS)
     add_test(NAME game_systems COMMAND game_system_tests)
     set_tests_properties(game_systems PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
+    add_executable(camera_tests tests/CameraTests.cpp)
+    strategy_target(camera_tests)
+    target_link_libraries(camera_tests PRIVATE strategy_camera)
+    add_test(NAME camera_controls COMMAND camera_tests)
+
     add_executable(resource_delivery_tests tests/ResourceDeliveryTests.cpp)
     strategy_target(resource_delivery_tests)
     target_link_libraries(resource_delivery_tests

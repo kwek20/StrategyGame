@@ -8,9 +8,21 @@
 
 namespace strategy {
 
-void RtsCamera::pan(float forward, float right, float deltaSeconds) {
-    constexpr float speed = 28.0F;
+void RtsCamera::pan(float forward, float right, float deltaSeconds, bool accelerated) {
+    constexpr float baseSpeed = 28.0F;
+    constexpr float maximumMultiplier = 3.0F;
+    constexpr float accelerationSeconds = 1.25F;
     const glm::vec2 ground = groundMovement(forward, right);
+    if (!accelerated) {
+        panAcceleration_ = 0.0F;
+    } else if (glm::dot(ground, ground) > 0.0F) {
+        panAcceleration_ = std::clamp(
+            panAcceleration_ + deltaSeconds / accelerationSeconds, 0.0F, 1.0F);
+    }
+    const float easedAcceleration = panAcceleration_ * panAcceleration_ *
+                                    (3.0F - 2.0F * panAcceleration_);
+    const float speed = baseSpeed *
+                        std::lerp(1.0F, maximumMultiplier, easedAcceleration);
     focus_.x += ground.x * speed * deltaSeconds;
     focus_.z += ground.y * speed * deltaSeconds;
 }
