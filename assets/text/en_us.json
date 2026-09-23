@@ -216,6 +216,7 @@
   ,"entity_hud.processor_empty": "EMPTY"
   ,"entity_hud.processor_waiting_power": "WAITING FOR POWER"
   ,"entity_hud.resource_source": "RESOURCE SOURCE"
+  ,"entity_hud.resource_remaining": "RESOURCE LEFT"
   ,"entity_hud.delivery_destination": "DELIVERY DESTINATION"
   ,"entity_hud.no_compatible_processor": "NO COMPATIBLE PROCESSOR"
   ,"entity_hud.queue": "QUEUE"

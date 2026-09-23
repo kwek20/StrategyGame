@@ -6,6 +6,7 @@
 #include "ui/UiLayout.hpp"
 #include "world/World.hpp"
 
+#include <algorithm>
 #include <iostream>
 
 int main() {
@@ -46,6 +47,19 @@ int main() {
     valid = valid && buildingHud.totalEntities == 1 && !buildingHud.bars.empty() &&
             buildingHud.stats.size() >= 3 && !buildingHud.processorInputs.empty() &&
             !buildingHud.processorState.empty();
+
+    strategy::Entity& resource = world.createEntity("Scrap field", "scrap_node_small", 0);
+    definitions.initializeEntity(resource);
+    resource.resource.remaining = 137.5F;
+    const strategy::EntityHudModel resourceHud = strategy::EntityHudModelBuilder::build(
+        world, resource.id, {}, definitions);
+    const auto remaining = std::find_if(
+        resourceHud.stats.begin(), resourceHud.stats.end(), [](const auto& stat) {
+            return stat.label == "RESOURCE LEFT";
+        });
+    valid = valid && resourceHud.totalEntities == 1 &&
+            remaining != resourceHud.stats.end() &&
+            remaining->value.find("137.5") != std::string::npos;
 
     strategy::EntityHudModel interactive = buildingHud;
     interactive.actions.push_back(

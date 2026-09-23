@@ -71,6 +71,18 @@ void presentVision(const Entity& entity, const DefinitionRegistry&, EntityHudMod
         model.stats.push_back({Text::get("entity_hud.vision"), decimal(entity.vision.sightRange)});
 }
 
+void presentResource(const Entity& entity, const DefinitionRegistry& definitions,
+                     EntityHudModel& model) {
+    if (!entity.resource) return;
+    const ResourceDefinition* resource = definitions.resourceType(
+        ResourceId{entity.resource.type});
+    const std::string resourceName = resource ? Text::get(resource->nameKey)
+                                              : entity.resource.type;
+    model.stats.push_back(
+        {Text::get("entity_hud.resource_remaining"),
+         decimal(std::max(0.0F, entity.resource.remaining)) + " " + resourceName});
+}
+
 void presentConstruction(const Entity& entity, const DefinitionRegistry&, EntityHudModel& model) {
     if (entity.construction && !isOperational(entity))
         model.bars.push_back({Text::get("entity_hud.construction"),
@@ -152,9 +164,10 @@ void presentUpgrades(const Entity& entity, const DefinitionRegistry&, EntityHudM
 }
 
 using ComponentPresenter = void (*)(const Entity&, const DefinitionRegistry&, EntityHudModel&);
-constexpr std::array<ComponentPresenter, 10> componentPresenters{
+constexpr std::array<ComponentPresenter, 11> componentPresenters{
     presentHealth, presentBattery, presentGatherer, presentMovement, presentVision,
-    presentConstruction, presentPowerDevice, presentProcessor, presentProduction, presentUpgrades};
+    presentResource, presentConstruction, presentPowerDevice, presentProcessor,
+    presentProduction, presentUpgrades};
 
 HudEntityCardModel card(const Entity& entity, const DefinitionRegistry& definitions) {
     HudEntityCardModel result;

@@ -1313,6 +1313,14 @@ void PlayState::render(Renderer& renderer) const {
             uiController_.apply(layout);
             renderer.drawEntityHud(hud, layout);
         }
+        if (selected && selected->resource &&
+            (selectedUnits_.empty() || sameType)) {
+            EntityHudModel hud = EntityHudModelBuilder::build(
+                session_.world(), selectedEntity_, selectedUnits_, context_.definitions);
+            UiDocument layout = EntityHudLayout::directControl(
+                hud, renderer.viewportWidth(), renderer.viewportHeight(), config_.uiScale);
+            renderer.drawEntityHud(hud, layout);
+        }
         if (selected && selected->authority.owner == localPlayer_ &&
             selected->archetype.value != "construction_drone" &&
             (selectedUnits_.empty() || sameType)) {
