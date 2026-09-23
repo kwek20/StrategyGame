@@ -103,6 +103,8 @@ class PlayState final : public GameState {
     void setMouseCaptured(bool captured);
     void sanitizeEntityReferences();
     void initializeStartingView();
+    [[nodiscard]] std::optional<glm::vec2> minimapWorldAt(float screenX,
+                                                          float screenY) const;
 
     void handlePauseEvent(const SDL_Event& event);
     [[nodiscard]] UiDocument pauseUi(int width, int height) const;

@@ -299,6 +299,28 @@ EntityHudModel PlayState::buildEntityActionHudModel(const Entity& selected,
     return hud;
 }
 
+std::optional<glm::vec2> PlayState::minimapWorldAt(float screenX, float screenY) const {
+    int width = config_.resolutionWidth;
+    int height = config_.resolutionHeight;
+    if (SDL_Window* window = SDL_GetWindowFromID(inputWindowId_))
+        SDL_GetWindowSize(window, &width, &height);
+
+    const UiDocument minimap = GameHudLayout::minimap(width, height, config_.uiScale);
+    const UiElement* map = minimap.find("strategy.minimap");
+    if (!map || !map->bounds.contains({screenX, screenY}))
+        return std::nullopt;
+
+    // These insets match the title and map-content area drawn by drawStrategyHud.
+    const float left = map->bounds.left + 8.0F;
+    const float right = map->bounds.right - 8.0F;
+    const float top = map->bounds.top + 28.0F;
+    const float bottom = map->bounds.bottom - 8.0F;
+    const float normalizedX = std::clamp((screenX - left) / (right - left), 0.0F, 1.0F);
+    const float normalizedZ = std::clamp((screenY - top) / (bottom - top), 0.0F, 1.0F);
+    return MapArea{session_.mapChunksPerSide()}.worldFromNormalized(
+        {normalizedX, normalizedZ});
+}
+
 void PlayState::handleEvent(const SDL_Event& event) {
     const auto bound = [this](const char* action, SDL_Keycode fallback) {
         const auto found = config_.keybinds.find(action);
@@ -420,6 +442,14 @@ void PlayState::handleEvent(const SDL_Event& event) {
     if (paused_) {
         handlePauseEvent(event);
         return;
+    }
+    if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN &&
+        event.button.button == SDL_BUTTON_LEFT && viewMode_ == ViewMode::strategy) {
+        if (const auto world = minimapWorldAt(event.button.x, event.button.y)) {
+            camera_.focusAt({world->x, camera_.focus().y, world->y});
+            draggingSelection_ = false;
+            return;
+        }
     }
     const auto hudResources = context_.definitions.enabledResources();
     const std::size_t localResourceCount = std::count_if(
@@ -678,22 +708,9 @@ void PlayState::handleEvent(const SDL_Event& event) {
     }
     if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_RIGHT &&
         viewMode_ == ViewMode::strategy) {
-        int width = config_.resolutionWidth, height = config_.resolutionHeight;
-        if (SDL_Window* window = SDL_GetWindowFromID(inputWindowId_))
-            SDL_GetWindowSize(window, &width, &height);
-        const UiDocument minimap = GameHudLayout::minimap(width, height, config_.uiScale);
-        if (const UiElement* map = minimap.find("strategy.minimap");
-            map && map->bounds.contains({event.button.x, event.button.y})) {
-            const float left = map->bounds.left + 8.0F;
-            const float right = map->bounds.right - 8.0F;
-            const float top = map->bounds.top + 28.0F;
-            const float bottom = map->bounds.bottom - 8.0F;
-            const MapArea mapArea{session_.mapChunksPerSide()};
-            const float x = std::clamp((event.button.x - left) / (right - left), 0.0F, 1.0F);
-            const float z = std::clamp((event.button.y - top) / (bottom - top), 0.0F, 1.0F);
+        if (const auto world = minimapWorldAt(event.button.x, event.button.y)) {
             pendingOrderTarget_ = 0;
-            const glm::vec2 world = mapArea.worldFromNormalized({x, z});
-            pendingMoveDestination_ = glm::vec3{world.x, 0.0F, world.y};
+            pendingMoveDestination_ = glm::vec3{world->x, 0.0F, world->y};
             return;
         }
         mousePanning_ = true;
