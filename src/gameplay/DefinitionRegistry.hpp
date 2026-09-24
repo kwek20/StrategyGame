@@ -251,6 +251,7 @@ struct MatchRulesDefinition {
     float startingEdgeInsetChunks{1.5F}, startingLateralNormalized{0.5F};
     float terrainEdgeMargin{0.0F}, minimumResourceHeight{0.0F}, maximumResourceHeight{1.0F};
     float maximumResourceSlope{0.0F}, baseExclusionRadius{0.0F};
+    float foliageDensityMultiplier{1.0F};
     std::vector<VegetationGenerationDefinition> vegetation;
 };
 

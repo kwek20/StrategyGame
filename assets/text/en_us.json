@@ -272,6 +272,8 @@
   ,"entity.grass_meadow": "MEADOW GRASS"
   ,"entity.grass_bermuda": "BERMUDA GRASS"
   ,"entity.shore_reeds": "SHORE REEDS"
+  ,"entity.foliage_tree_broadleaf_1": "BROADLEAF TREE"
+  ,"entity.foliage_tree_broadleaf_2": "BROADLEAF TREE"
   ,"entity.pebble_cluster": "PEBBLES"
   ,"entity.pebble_stone": "SMALL STONES"
   ,"entity.pebble_rock": "SMALL ROCKS"

@@ -97,6 +97,8 @@ int main() {
             grassVariants["wildflower_dandelion"] > 0 &&
             grassVariants["grass_meadow"] > 0 &&
             grassVariants["grass_bermuda"] > 0 &&
+            grassVariants["foliage_tree_broadleaf_1"] > 0 &&
+            grassVariants["foliage_tree_broadleaf_2"] > 0 &&
             grassVariants["pebble_cluster"] > 0 &&
             grassVariants["pebble_stone"] > 0 &&
             grassVariants["pebble_rock"] > 0 && clusteredVariants.size() >= 6;

@@ -1164,6 +1164,9 @@ void DefinitionRegistry::loadRules(const std::filesystem::path& path) {
     matchRules_.maximumResourceHeight = number("maximumResourceHeight");
     matchRules_.maximumResourceSlope = number("maximumResourceSlope");
     matchRules_.baseExclusionRadius = number("baseExclusionRadius");
+    matchRules_.foliageDensityMultiplier = number("foliageDensityMultiplier");
+    if (matchRules_.foliageDensityMultiplier <= 0.0F)
+        throw std::runtime_error("Match rules require a positive foliageDensityMultiplier");
     if (!data.HasMember("unitLimit") || !data["unitLimit"].IsUint() ||
         data["unitLimit"].GetUint() == 0)
         throw std::runtime_error("Match rules require a positive unitLimit");

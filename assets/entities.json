@@ -207,6 +207,16 @@
       "selection": { "radius": 0.0, "height": 1.2 },
       "animations": {}
     },
+    "foliage_tree_broadleaf_1": {
+      "icon": "status_asset_ready", "model": "buildings/Resource_Tree1", "scale": 4.5,
+      "grounding": { "groundOffset": -0.08, "alignToTerrain": false, "maximumTilt": 0.0, "foundationRadius": 0.0 },
+      "selection": { "radius": 0.0, "height": 4.0 }, "animations": {}
+    },
+    "foliage_tree_broadleaf_2": {
+      "icon": "status_asset_ready", "model": "buildings/Resource_Tree2", "scale": 4.5,
+      "grounding": { "groundOffset": -0.08, "alignToTerrain": false, "maximumTilt": 0.0, "foundationRadius": 0.0 },
+      "selection": { "radius": 0.0, "height": 4.0 }, "animations": {}
+    },
     "pebble_cluster": {
       "icon": "status_asset_ready",
       "model": "environment/realistic_scatter/game_ready/rock_09",

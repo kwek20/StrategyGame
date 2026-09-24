@@ -807,15 +807,21 @@ VegetationField generateVegetation(const World& world,
         const VegetationGenerationDefinition& settings = vegetationRules[ruleIndex];
         const EntityArchetype* type = definitions.archetype(settings.archetype);
         if (!type) continue;
+        const bool isPlantFoliage = type->tags.contains("grass") ||
+                                    type->tags.contains("weed") ||
+                                    type->tags.contains("flower") ||
+                                    type->tags.contains("tree");
+        const float clustersPerChunk = settings.clustersPerChunk *
+            (isPlantFoliage ? definitions.matchRules().foliageDensityMultiplier : 1.0F);
         const std::uint32_t densitySeed =
             resourceStreamSeed(terrainSeed, settings.stream + ".density");
         for (VegetationChunk& chunk : result.chunks()) {
             const std::string stream = settings.stream + "." +
                 std::to_string(chunk.coordinate.x) + "." + std::to_string(chunk.coordinate.y);
             DeterministicRandom random(terrainSeed, stream);
-            const float integral = std::floor(settings.clustersPerChunk);
+            const float integral = std::floor(clustersPerChunk);
             std::uint32_t clusterOpportunities = static_cast<std::uint32_t>(integral);
-            if (random.range(0.0F, 1.0F) < settings.clustersPerChunk - integral)
+            if (random.range(0.0F, 1.0F) < clustersPerChunk - integral)
                 ++clusterOpportunities;
             for (std::uint32_t cluster = 0; cluster < clusterOpportunities; ++cluster) {
                 const glm::vec2 center{

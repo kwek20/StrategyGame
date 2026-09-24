@@ -81,6 +81,16 @@
       "tags": ["decoration", "vegetation", "shoreline", "clear-on-build"],
       "stats": {}
     },
+    "foliage_tree_broadleaf_1": {
+      "presentation": "foliage_tree_broadleaf_1", "nameKey": "entity.foliage_tree_broadleaf_1",
+      "collisionRadius": 0, "components": [],
+      "tags": ["decoration", "vegetation", "tree", "clear-on-build"], "stats": {}
+    },
+    "foliage_tree_broadleaf_2": {
+      "presentation": "foliage_tree_broadleaf_2", "nameKey": "entity.foliage_tree_broadleaf_2",
+      "collisionRadius": 0, "components": [],
+      "tags": ["decoration", "vegetation", "tree", "clear-on-build"], "stats": {}
+    },
     "pebble_cluster": {
       "presentation": "pebble_cluster",
       "nameKey": "entity.pebble_cluster",
