@@ -21,7 +21,7 @@ std::vector<glm::vec3> positions(const strategy::VegetationField& vegetation) {
 }
 }
 
-int main() {
+int strategyTestMain() {
     const strategy::DefinitionRegistry definitions;
     const strategy::Terrain terrain{0x13572468U};
     strategy::World world;

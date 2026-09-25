@@ -1,6 +1,11 @@
 #version 450 core
 in vec3 worldPosition;
 in float terrainHeight;
+in float localWaterLevel;
+in float waterCoverage;
+in vec2 waterFlow;
+in float generatedDepth;
+in float smoothedDepth;
 
 uniform vec3 cameraPosition;
 uniform float waterLevel;
@@ -9,19 +14,52 @@ uniform vec2 fogRange;
 uniform sampler2D explorationMap;
 uniform float explorationExtent;
 uniform bool useExploration;
+uniform int waterDebugMode;
 
 out vec4 outColor;
 
 void main() {
-    float visualDepth = waterLevel - terrainHeight;
-    if (visualDepth <= 0.01)
+    float visualDepth = localWaterLevel - terrainHeight;
+    if (waterCoverage <= 0.01 || visualDepth <= 0.01)
         discard;
     if (useExploration &&
         any(greaterThan(abs(worldPosition.xz), vec2(explorationExtent * 0.5))))
         discard;
 
-    float phaseA = worldPosition.x * 0.115 + worldPosition.z * 0.073 + timeSeconds * 0.72;
-    float phaseB = worldPosition.x * -0.061 + worldPosition.z * 0.149 + timeSeconds * 0.47;
+    if (waterDebugMode > 0) {
+        vec2 flow = length(waterFlow) > 0.1 ? normalize(waterFlow) : vec2(0.0);
+        float angle = atan(flow.y, flow.x) / 6.2831853 + 0.5;
+        vec3 directionColor = 0.55 + 0.45 * cos(6.2831853 *
+            (angle + vec3(0.0, 0.33, 0.67)));
+        float along = dot(worldPosition.xz, flow);
+        float across = dot(worldPosition.xz, vec2(-flow.y, flow.x));
+        float movingStripe = smoothstep(0.68, 0.92,
+            sin(along * 1.35 - timeSeconds * 2.4) * 0.5 + 0.5);
+        float centerStroke = 1.0 - smoothstep(0.05, 0.24, abs(fract(across / 3.0) - 0.5));
+        float flowMarker = movingStripe * centerStroke * step(0.1, length(flow));
+        vec3 debugColor;
+        if (waterDebugMode == 1)
+            debugColor = mix(vec3(0.42, 0.08, 0.62), directionColor, 0.42);
+        else if (waterDebugMode == 2)
+            debugColor = mix(vec3(0.02, 0.42, 0.72), directionColor, 0.42);
+        else {
+            float delta = smoothedDepth - generatedDepth;
+            float magnitude = clamp(abs(delta) * 3.0, 0.0, 1.0);
+            debugColor = delta >= 0.0 ? mix(vec3(0.05, 0.13, 0.18),
+                                            vec3(0.12, 0.95, 0.30), magnitude)
+                                      : mix(vec3(0.05, 0.13, 0.18),
+                                            vec3(0.98, 0.18, 0.08), magnitude);
+        }
+        debugColor = mix(debugColor, vec3(1.0), flowMarker * 0.8);
+        outColor = vec4(debugColor, 0.94);
+        return;
+    }
+
+    vec2 visualFlow = length(waterFlow) > 0.1 ? normalize(waterFlow)
+                                              : normalize(vec2(0.78, 0.62));
+    vec2 visualCross = vec2(-visualFlow.y, visualFlow.x);
+    float phaseA = dot(worldPosition.xz, visualFlow) * 0.14 - timeSeconds * 0.72;
+    float phaseB = dot(worldPosition.xz, visualCross) * 0.11 - timeSeconds * 0.47;
     float phaseC = worldPosition.x * 0.31 - worldPosition.z * 0.27 + timeSeconds * 1.18;
     float waveA = sin(phaseA);
     float waveB = sin(phaseB);
@@ -44,10 +82,10 @@ void main() {
     water = mix(water, vec3(0.62, 0.78, 0.77), foam);
 
     float shoreFade = smoothstep(0.08, 0.85, visualDepth);
-    float dhdx = (cos(phaseA) * 0.035 * 0.115 +
-                  cos(phaseB) * 0.020 * -0.061) * shoreFade;
-    float dhdz = (cos(phaseA) * 0.035 * 0.073 +
-                  cos(phaseB) * 0.020 * 0.149) * shoreFade;
+    float dhdx = (cos(phaseA) * 0.035 * 0.14 * visualFlow.x +
+                  cos(phaseB) * 0.020 * 0.11 * visualCross.x) * shoreFade;
+    float dhdz = (cos(phaseA) * 0.035 * 0.14 * visualFlow.y +
+                  cos(phaseB) * 0.020 * 0.11 * visualCross.y) * shoreFade;
     vec3 waterNormal = normalize(vec3(-dhdx * 5.0, 1.0, -dhdz * 5.0));
     vec3 lightDirection = normalize(vec3(-0.45, 0.82, 0.35));
     vec3 viewDirection = normalize(cameraPosition - worldPosition);
@@ -67,7 +105,7 @@ void main() {
         water = vec3(0.008, 0.012, 0.018);
     else if (explored < 0.75)
         water *= 0.42;
-    float alpha = mix(0.50, 0.82, smoothstep(0.04, 2.4, visualDepth));
+    float alpha = mix(0.50, 0.82, smoothstep(0.04, 2.4, visualDepth)) * waterCoverage;
     alpha = max(alpha, foam * 0.55);
     outColor = vec4(water, explored < 0.12 ? 0.82 : alpha);
 }

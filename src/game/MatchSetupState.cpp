@@ -2,21 +2,50 @@
 
 #include "app/GameEvents.hpp"
 #include "core/EventBus.hpp"
+#include "diagnostics/Logger.hpp"
 #include "gameplay/DefinitionRegistry.hpp"
 #include "localization/Text.hpp"
 #include "render/Renderer.hpp"
 
 #include <SDL3/SDL.h>
 #include <charconv>
+#include <cmath>
+#include <exception>
 
 namespace strategy {
 
 MatchSetupState::MatchSetupState(StateContext& context)
-    : GameState(context), config_(GameConfig::load(context.configPath)) {
+    : GameState(context)
+    , config_(GameConfig::load(context.configPath))
+    , terrainDefinitions_(TerrainGenerationDefinitions::load()) {
     const auto& countries = context_.definitions.countries();
     for (std::size_t index = 0; index < countries.size(); ++index) {
         if (countries[index].id == "spain") playerOneCountry_ = index;
         if (countries[index].id == "japan") playerTwoCountry_ = index;
+    }
+    try {
+        const MatchSetupProfile saved = MatchSetupProfileStore::load(config_.matchSetupPath());
+        seedText_ = std::to_string(saved.terrainSeed);
+        for (std::size_t index = 0; index < countries.size(); ++index) {
+            if (countries[index].id == saved.playerOneCountry) playerOneCountry_ = index;
+            if (countries[index].id == saved.playerTwoCountry) playerTwoCountry_ = index;
+        }
+        const auto closestPreset = [](const auto& presets, float wanted) {
+            std::size_t closest = 0;
+            for (std::size_t index = 1; index < presets.size(); ++index)
+                if (std::abs(presets[index].value - wanted) <
+                    std::abs(presets[closest].value - wanted)) closest = index;
+            return closest;
+        };
+        mapSize_ = closestPreset(mapSizes, static_cast<float>(saved.mapChunksPerSide));
+        startingResources_ = closestPreset(resourceStarts, saved.startingResourcesScale);
+        abundance_ = closestPreset(resourceAbundance, saved.resourceAbundanceScale);
+        const auto& layouts = terrainDefinitions_.layouts();
+        for (std::size_t index = 0; index < layouts.size(); ++index)
+            if (layouts[index].id.value == saved.terrainLayout) terrainLayout_ = index;
+    } catch (const std::exception& error) {
+        context_.logger.warning("configuration",
+            std::string{"Could not load match setup profile; using defaults: "} + error.what());
     }
 }
 
@@ -33,15 +62,18 @@ UiDocument MatchSetupState::document(int width, int height) const {
         ui.button(id, {160, top + 25, 600, top + 70}, "<     " + value + "     >");
     };
     const auto& countries = context_.definitions.countries();
-    selector("match.player_country", 155, Text::get("match_setup.player_country"),
+    selector("match.player_country", 145, Text::get("match_setup.player_country"),
              Text::get(countries[playerOneCountry_].nameKey));
-    selector("match.opponent_country", 245, Text::get("match_setup.opponent_country"),
+    selector("match.opponent_country", 225, Text::get("match_setup.opponent_country"),
              Text::get(countries[playerTwoCountry_].nameKey));
-    selector("match.map_size", 335, Text::get("match_setup.map_size"),
+    const auto& layouts = terrainDefinitions_.layouts();
+    selector("match.terrain_layout", 305, Text::get("match_setup.terrain_layout"),
+             Text::get(layouts[terrainLayout_].nameKey));
+    selector("match.map_size", 385, Text::get("match_setup.map_size"),
              Text::get(mapSizes[mapSize_].nameKey));
-    selector("match.starting_resources", 425, Text::get("match_setup.starting_resources"),
+    selector("match.starting_resources", 465, Text::get("match_setup.starting_resources"),
              Text::get(resourceStarts[startingResources_].nameKey));
-    selector("match.abundance", 515, Text::get("match_setup.resource_abundance"),
+    selector("match.abundance", 545, Text::get("match_setup.resource_abundance"),
              Text::get(resourceAbundance[abundance_].nameKey));
 
     ui.label("match.seed.label", {680, 155, 0, 0}, Text::get("match_setup.seed"), 1.45F);
@@ -71,14 +103,25 @@ void MatchSetupState::cycle(std::size_t& value, std::size_t count, int direction
 
 void MatchSetupState::activate(std::string_view id, int direction) {
     const std::size_t countries = context_.definitions.countries().size();
+    bool changed = true;
     if (id == "match.player_country") cycle(playerOneCountry_, countries, direction);
     else if (id == "match.opponent_country") cycle(playerTwoCountry_, countries, direction);
     else if (id == "match.map_size") cycle(mapSize_, mapSizes.size(), direction);
+    else if (id == "match.terrain_layout")
+        cycle(terrainLayout_, terrainDefinitions_.layouts().size(), direction);
     else if (id == "match.starting_resources")
         cycle(startingResources_, resourceStarts.size(), direction);
     else if (id == "match.abundance") cycle(abundance_, resourceAbundance.size(), direction);
-    else if (id == "match.start") request_ = StateRequest::startGame;
-    else if (id == "match.back") request_ = StateRequest::returnToMainMenu;
+    else if (id == "match.start") {
+        persist();
+        request_ = StateRequest::startGame;
+        return;
+    } else if (id == "match.back") {
+        persist();
+        request_ = StateRequest::returnToMainMenu;
+        return;
+    } else changed = false;
+    if (changed) persist();
 }
 
 void MatchSetupState::handleEvent(const SDL_Event& event) {
@@ -105,10 +148,18 @@ void MatchSetupState::handleEvent(const SDL_Event& event) {
     }
     if (event.type == SDL_EVENT_KEY_DOWN) {
         if (controller_.focusedId() == "match.seed") {
-            if (event.key.key == SDLK_BACKSPACE && !seedText_.empty()) seedText_.pop_back();
-            else if (event.key.key >= SDLK_0 && event.key.key <= SDLK_9 && seedText_.size() < 10)
+            bool changed = false;
+            if (event.key.key == SDLK_BACKSPACE && !seedText_.empty()) {
+                seedText_.pop_back();
+                changed = true;
+            } else if (event.key.key >= SDLK_0 && event.key.key <= SDLK_9 && seedText_.size() < 10) {
                 seedText_.push_back(static_cast<char>('0' + event.key.key - SDLK_0));
-            else if (event.key.key == SDLK_ESCAPE) request_ = StateRequest::returnToMainMenu;
+                changed = true;
+            } else if (event.key.key == SDLK_ESCAPE) {
+                persist();
+                request_ = StateRequest::returnToMainMenu;
+            }
+            if (changed) persist();
             if (event.key.key != SDLK_TAB) return;
         }
         if (event.key.key == SDLK_TAB)
@@ -149,15 +200,28 @@ StateRequest MatchSetupState::takeRequest() {
     return result;
 }
 
-MatchSetupOptions MatchSetupState::matchSetup() const {
+MatchSetupOptions MatchSetupState::currentSetup() const {
     std::uint32_t seed = 0x5EED1234U;
     const auto parsed = std::from_chars(seedText_.data(), seedText_.data() + seedText_.size(), seed);
     if (parsed.ec != std::errc{}) seed = 0x5EED1234U;
     const auto& countries = context_.definitions.countries();
+    const auto& layouts = terrainDefinitions_.layouts();
     return {seed, countries[playerOneCountry_].id, countries[playerTwoCountry_].id,
             static_cast<std::uint32_t>(mapSizes[mapSize_].value),
             resourceStarts[startingResources_].value,
-            resourceAbundance[abundance_].value};
+            resourceAbundance[abundance_].value,
+            layouts[terrainLayout_].id.value};
+}
+
+MatchSetupOptions MatchSetupState::matchSetup() const { return currentSetup(); }
+
+void MatchSetupState::persist() {
+    try {
+        MatchSetupProfileStore::write(config_.matchSetupPath(), currentSetup());
+    } catch (const std::exception& error) {
+        context_.logger.error("configuration",
+            std::string{"Could not persist match setup: "} + error.what());
+    }
 }
 
 } // namespace strategy

@@ -17,6 +17,7 @@ class PlayerRegistry;
 struct SaveData {
     std::uint32_t terrainSeed{0};
     std::uint32_t mapChunksPerSide{20};
+    std::string terrainLayout{"continental"};
     std::vector<Entity> entities;
     std::vector<TerrainFoundation> foundations;
     std::string playerOneCountry{"spain"};
@@ -30,11 +31,15 @@ struct SaveData {
 
 class SaveGame final {
   public:
+    // Pre-release policy: this is the only accepted schema. Keep it at 1 until the project
+    // explicitly adopts versioned save migrations.
+    static constexpr std::uint32_t formatVersion = 1;
     static void write(const std::filesystem::path& path,
                       std::uint32_t terrainSeed,
                       const World& world,
                       const PlayerRegistry* players = nullptr,
-                      std::uint32_t mapChunksPerSide = 20);
+                      std::uint32_t mapChunksPerSide = 20,
+                      std::string terrainLayout = "continental");
     [[nodiscard]] static SaveData read(const std::filesystem::path& path);
 };
 

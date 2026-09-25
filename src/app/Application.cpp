@@ -242,7 +242,9 @@ int Application::run() {
                                        std::move(setup.playerTwoCountry), "unassigned",
                                        "unassigned", setup.mapChunksPerSide,
                                        setup.startingResourcesScale,
-                                       setup.resourceAbundanceScale, &generationProgress);
+                                       setup.resourceAbundanceScale,
+                                       TerrainLayoutId{std::move(setup.terrainLayout)},
+                                       &generationProgress);
                 });
             const auto phaseText = [](WorldGenerationPhase phase) -> std::string {
                 switch (phase) {
@@ -346,7 +348,8 @@ int Application::run() {
                 const GameConfig config = GameConfig::load(stateContext_->configPath);
                 SaveData data = SaveGame::read(config.savePath());
                 showLoading(0.30F, Text::get("loading.terrain"));
-                renderer_->regenerateTerrain(data.terrainSeed, data.mapChunksPerSide);
+                renderer_->regenerateTerrain(data.terrainSeed, data.mapChunksPerSide,
+                                              TerrainLayoutId{data.terrainLayout});
                 showLoading(0.36F, Text::get("loading.world"));
                 preloadAssets("match", 0.40F, 0.52F);
                 states_->replace<PlayState>(std::move(data));

@@ -1,4 +1,5 @@
 #include "persistence/GameConfig.hpp"
+#include "persistence/MatchSetupProfile.hpp"
 #include "persistence/SaveGame.hpp"
 #include "players/PlayerRegistry.hpp"
 #include "world/World.hpp"
@@ -8,20 +9,22 @@
 #include <fstream>
 #include <iostream>
 
-int main() {
+int strategyTestMain() {
     const std::filesystem::path directory =
         std::filesystem::temp_directory_path() / "strategy_game_persistence_test";
     std::filesystem::create_directories(directory);
     const std::filesystem::path configPath = directory / "config.json";
     const std::filesystem::path savePath = directory / "roundtrip.json";
+    const std::filesystem::path matchSetupPath = directory / "match-setup.json";
     {
         std::ofstream config{configPath};
-        config << R"({"configuration":{"saveDirectory":"gamedata/saves/","saveFile":"test.json"}})";
+        config << R"({"configuration":{"saveDirectory":"gamedata/saves/","saveFile":"test.json","matchSetupFile":"gamedata/custom-match.json"}})";
     }
 
-    bool valid = true;
+    bool valid = strategy::SaveGame::formatVersion == 1;
     strategy::GameConfig config = strategy::GameConfig::load(configPath);
     valid = valid && config.savePath() == std::filesystem::path{"gamedata/saves/test.json"};
+    valid = valid && config.matchSetupPath() == std::filesystem::path{"gamedata/custom-match.json"};
     config.resolutionWidth = 1920;
     config.resolutionHeight = 1080;
     config.fullscreen = true;
@@ -39,6 +42,30 @@ int main() {
             settingsRoundTrip.keybinds.at("forward") == 42 &&
             settingsRoundTrip.masterVolume == 0.7F && settingsRoundTrip.musicVolume == 0.4F &&
             settingsRoundTrip.effectsVolume == 0.9F && settingsRoundTrip.muted;
+
+    {
+        std::ofstream profile{matchSetupPath};
+        profile << R"({"matchSetup":{"terrainSeed":1,"playerOneCountry":"france","playerTwoCountry":"brazil","mapChunksPerSide":20,"startingResourcesScale":2.0,"resourceAbundanceScale":1.5,"terrainLayout":"archipelago","biomes":{"wetland":{"enabled":false}}}})";
+    }
+    strategy::MatchSetupProfile profile = strategy::MatchSetupProfileStore::load(matchSetupPath);
+    valid = valid && profile.terrainSeed == 1 && profile.mapChunksPerSide == 20 &&
+            profile.playerOneCountry == "france" && profile.playerTwoCountry == "brazil" &&
+            profile.startingResourcesScale == 2.0F &&
+            profile.resourceAbundanceScale == 1.5F && profile.terrainLayout == "archipelago";
+    profile.terrainSeed = 99;
+    profile.mapChunksPerSide = 10;
+    strategy::MatchSetupProfileStore::write(matchSetupPath, profile);
+    const strategy::MatchSetupProfile profileRoundTrip =
+        strategy::MatchSetupProfileStore::load(matchSetupPath);
+    valid = valid && profileRoundTrip.terrainSeed == 99 &&
+            profileRoundTrip.mapChunksPerSide == 10;
+    {
+        std::ifstream persisted{matchSetupPath};
+        const std::string contents((std::istreambuf_iterator<char>(persisted)),
+                                   std::istreambuf_iterator<char>());
+        valid = valid && contents.find("\"biomes\"") != std::string::npos &&
+                contents.find("\"wetland\"") != std::string::npos;
+    }
 
     strategy::World world;
     strategy::Entity& entity = world.createEntity("Town Center", "town_center");
@@ -115,9 +142,16 @@ int main() {
     players.find(1)->resources["alloy"] = 125.0F;
     players.find(1)->intelligence.push_back(
         {42, "town_center", {8, 0, 9}, {0, 45, 0}, {1, 1, 1}, true});
-    strategy::SaveGame::write(savePath, 424242U, world, &players, 10);
+    strategy::SaveGame::write(savePath, 424242U, world, &players, 10, "central_hill");
+    {
+        std::ifstream saved{savePath};
+        const std::string contents((std::istreambuf_iterator<char>(saved)),
+                                   std::istreambuf_iterator<char>());
+        valid = valid && contents.find("\"formatVersion\": 1") != std::string::npos;
+    }
     const strategy::SaveData loaded = strategy::SaveGame::read(savePath);
     valid = valid && loaded.terrainSeed == 424242U && loaded.mapChunksPerSide == 10 &&
+            loaded.terrainLayout == "central_hill" &&
             loaded.entities.size() == 2;
     valid = valid && loaded.foundations.size() == 1 &&
             loaded.foundations[0].center == glm::vec3{1.0F, 6.0F, 3.0F} &&

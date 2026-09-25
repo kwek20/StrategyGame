@@ -1,0 +1,12 @@
+{
+    "matchSetup": {
+        "biomes": {},
+        "startingResourcesScale": 1.0,
+        "resourceAbundanceScale": 1.0,
+        "terrainSeed": 1,
+        "playerOneCountry": "spain",
+        "playerTwoCountry": "japan",
+        "mapChunksPerSide": 20,
+        "terrainLayout": "central_water"
+    }
+}

@@ -23,7 +23,7 @@ The prototype already provides:
 - Gathering, production queues, upgrades, health, and combat foundations
 - Per-player fog of war and visibility
 - Country and specialization modifier foundations
-- JSON configuration and versioned save/load
+- JSON configuration and strict format-1 save/load (updated in place during pre-release)
 - State stack, event bus, dependency injection, and separated engine libraries
 - Resource handles, manifests, asynchronous asset loading, materials, and shader management
 - Renderer passes, UI framework, audio event foundations, logging, and diagnostics
@@ -87,8 +87,10 @@ grid failure handling → complete opening-loop tests and performance profiling.
 ## Immediate stabilization backlog
 
 Vegetation generation is currently in a satisfactory state and further vegetation diagnostics,
-asset expansion, visual tuning, and LOD work are deferred. Complete the following work in order
-before starting Milestone 6:
+asset expansion, visual tuning, and LOD work are deferred. Water generation is also paused: its
+authoritative foundation, diagnostics, and optional `TerrainWaterGenerator` stage remain supported,
+but river continuity and presentation refinement are not current blockers. Complete the following
+non-water work in order before starting Milestone 6:
 
 1. **Resource fairness validation — complete**
    - Measure navigation path cost from every start to Scrap, Oil, and Uranium.
@@ -116,13 +118,14 @@ before starting Milestone 6:
      preloaded through the match/build asset manifests. Blender retains a reproducible normalization
      pipeline and the original licensed sources remain outside the runtime model index.
    - Next add statistical distribution tolerances, independent-stream isolation coverage, and
-     non-circular field shapes.
-   - Permit deterministic field footprints to cross biomes and overlap other fields.
-   - Keep node placement globally non-overlapping and validate terrain per node.
-   - Give small, medium, and large nodes independent presentations, collision shapes, and capacities.
-   - Preserve current path-cost fairness by evaluating the resulting node capacity rather than the
-     number or position of abstract fields.
+     non-circular field shapes. Field overlap, biome crossing, global node non-overlap, per-node
+     validation, size-specific presentations/capacities, and path-cost capacity fairness are
+     already implemented foundations and must remain covered by regression tests.
 3. **Navigation congestion and diagnostics**
+   - Visualize connected navigation regions, movement-domain reachability, and rejected paths.
+   - Profile long-distance orders and remove remaining synchronous path work from frame-critical
+     presentation code.
+   - Add congestion and blocked-destination tests on 10x10, 15x15, and 20x20 layouts.
    - Add deterministic arrival slots around buildings, resources, and other shared destinations.
    - Add local avoidance without making unit iteration order authoritative.
    - Expose destination, waypoint, path length, retry state, and stuck time in F3 diagnostics.
@@ -150,6 +153,14 @@ before starting Milestone 6:
 8. **Map-size profiling**
    - Establish generation-time, simulation-time, memory, and rendering budgets for 10x10, 15x15,
      and 20x20 maps.
+   - Record deterministic stage timings, retry counts, accepted seed, terrain/resource coverage,
+     and memory use.
+   - Retain representative seeds and machine details for visual and performance regressions.
+9. **Layout and biome extensibility**
+   - Move layout-specific parameters into explicit definition blocks rather than shared assumptions.
+   - Allow future match-profile biome enable/disable and parameter overrides without changing the
+     deterministic stage interface.
+   - Expand authored-map layers only after the procedural definition boundary is stable.
 
 After this backlog passes its exit criteria, proceed to Milestone 6: first combat slice.
 
@@ -394,8 +405,8 @@ Validate the modular faction system with a small but strategically distinct sele
 - Each country supports a distinct strategy without a universally stronger economy.
 - A unit produced in different buildings receives the correct production time.
 - Modifier resolution is inspectable, deterministic, and covered by tests.
-- Current-schema saves fail clearly when their version or authoritative fields are invalid; no legacy
-  save migration is planned before public release.
+- Format-1 saves fail clearly when authoritative fields are invalid. Format 1 is updated in place;
+  no legacy migration or compatibility loading exists unless the save policy is explicitly changed.
 
 ## Milestone 9: strategic economy expansion
 

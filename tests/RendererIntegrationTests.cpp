@@ -28,7 +28,7 @@ bool noGlErrors(const char* stage) {
 }
 } // namespace
 
-int main() {
+int strategyTestMain() {
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         std::cout << "Renderer test skipped: " << SDL_GetError() << '\n';
         return 0;
@@ -160,9 +160,11 @@ out vec4 color;void main(){color=vec4(1);})";
         }
         const strategy::TextureHandle texture = renderer.requestTexture("ui/placeholder");
         renderer.bindTexture(texture, 0);
-        // The manifest contains twenty-seven presentation models and fifteen textures.
-        valid = loadProgress.total == 42 && loadProgress.completed == 42 &&
-                loadProgress.failed == 0 && renderer.loadedModelCount() == 27 &&
+        // Asset groups can grow without requiring this renderer behavior test to duplicate the
+        // manifest's exact inventory. Verify that every declared item completed and that all
+        // currently required presentation models were uploaded.
+        valid = loadProgress.total >= 44 && loadProgress.completed == loadProgress.total &&
+                loadProgress.failed == 0 && renderer.loadedModelCount() >= 29 &&
                 renderer.terrainUploadFinished() &&
                 renderer.terrainUploadProgress() == 1.0F && valid;
         valid = renderer.textureState(texture) == strategy::ResourceState::ready &&

@@ -25,7 +25,7 @@ class TestState final : public strategy::GameState {
 
 } // namespace
 
-int main() {
+int strategyTestMain() {
     strategy::AudioSystem audio;
     strategy::EventBus events;
     strategy::Logger logger{std::filesystem::temp_directory_path() / "strategy-test.log"};

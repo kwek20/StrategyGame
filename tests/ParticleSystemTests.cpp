@@ -8,7 +8,7 @@ namespace {
 bool close(float lhs, float rhs) { return std::abs(lhs - rhs) < 0.00001F; }
 }
 
-int main() {
+int strategyTestMain() {
     const strategy::ParticleEffectCatalogue catalogue =
         strategy::ParticleEffectCatalogue::load();
     const auto burst = catalogue.handle(strategy::ParticleEffectId{"weapon.muzzle_kinetic"});

@@ -4,6 +4,7 @@
 #include "persistence/GameConfig.hpp"
 #include "ui/UiController.hpp"
 #include "ui/UiDocument.hpp"
+#include "terrain/TerrainGeneration.hpp"
 
 #include <array>
 #include <string>
@@ -38,11 +39,14 @@ class MatchSetupState final : public GameState {
     StateRequest request_{StateRequest::none};
     std::string seedText_{"1592594996"};
     std::size_t playerOneCountry_{0}, playerTwoCountry_{0};
-    std::size_t mapSize_{1}, startingResources_{1}, abundance_{1};
+    std::size_t mapSize_{1}, startingResources_{1}, abundance_{1}, terrainLayout_{0};
     GameConfig config_;
+    TerrainGenerationDefinitions terrainDefinitions_;
     mutable UiController controller_;
 
     [[nodiscard]] UiDocument document(int width, int height) const;
+    [[nodiscard]] MatchSetupOptions currentSetup() const;
+    void persist();
     void activate(std::string_view id, int direction = 1);
     void cycle(std::size_t& value, std::size_t count, int direction);
 };

@@ -106,17 +106,199 @@ TerrainGenerationDefinitions TerrainGenerationDefinitions::load(
         generator.height.mountainThreshold = requiredFloat(height, "mountainThreshold", context);
         generator.height.erosionStrength = requiredFloat(height, "erosionStrength", context);
         generator.height.ridgePower = requiredFloat(height, "ridgePower", context);
-        generator.height.minimumHeight = requiredFloat(height, "minimumHeight", context);
-        generator.height.maximumHeight = requiredFloat(height, "maximumHeight", context);
         generator.height.warpScale = requiredFloat(height, "warpScale", context);
         generator.height.warpStrength = requiredFloat(height, "warpStrength", context);
-        if (!height.HasMember("smoothingPasses") || !height["smoothingPasses"].IsUint())
-            throw std::runtime_error(context + " requires unsigned smoothingPasses");
-        generator.height.smoothingPasses = height["smoothingPasses"].GetUint();
-        if (generator.height.minimumHeight < 0.0F || generator.height.maximumHeight > 1.0F ||
-            generator.height.minimumHeight >= generator.height.maximumHeight ||
-            generator.height.warpScale <= 0.0F || generator.height.ridgePower <= 0.0F)
-            throw std::runtime_error(context + " has invalid height bounds");
+        if (generator.height.warpScale <= 0.0F || generator.height.ridgePower <= 0.0F)
+            throw std::runtime_error(context + " has invalid height settings");
+
+        if (!value.HasMember("landforms") || !value["landforms"].IsObject())
+            throw std::runtime_error(context + " requires landform settings");
+        const rapidjson::Value& landforms = value["landforms"];
+        generator.landforms.plainCompression =
+            requiredFloat(landforms, "plainCompression", context);
+        generator.landforms.hillAmplitude =
+            requiredFloat(landforms, "hillAmplitude", context);
+        generator.landforms.mountainBeltStrength =
+            requiredFloat(landforms, "mountainBeltStrength", context);
+        generator.landforms.outcropAmplitude =
+            requiredFloat(landforms, "outcropAmplitude", context);
+        generator.landforms.basinDepth = requiredFloat(landforms, "basinDepth", context);
+        generator.landforms.coastalShelfStrength =
+            requiredFloat(landforms, "coastalShelfStrength", context);
+        generator.landforms.offshoreIslandAmplitude =
+            requiredFloat(landforms, "offshoreIslandAmplitude", context);
+        generator.landforms.coastalBayDepth =
+            requiredFloat(landforms, "coastalBayDepth", context);
+        generator.landforms.chainAngleDegrees =
+            requiredFloat(landforms, "chainAngleDegrees", context);
+        generator.landforms.chainAnisotropy =
+            requiredFloat(landforms, "chainAnisotropy", context);
+        generator.landforms.chainSharpness =
+            requiredFloat(landforms, "chainSharpness", context);
+        generator.landforms.chainThresholdLow =
+            requiredFloat(landforms, "chainThresholdLow", context);
+        generator.landforms.chainThresholdHigh =
+            requiredFloat(landforms, "chainThresholdHigh", context);
+        generator.landforms.secondaryChainWeight =
+            requiredFloat(landforms, "secondaryChainWeight", context);
+        generator.landforms.foothillAmplitude =
+            requiredFloat(landforms, "foothillAmplitude", context);
+        generator.landforms.plainElevationCompression =
+            requiredFloat(landforms, "plainElevationCompression", context);
+        generator.landforms.hillCurvePower =
+            requiredFloat(landforms, "hillCurvePower", context);
+        generator.landforms.mountainCurvePower =
+            requiredFloat(landforms, "mountainCurvePower", context);
+        generator.landforms.cliffCurveThreshold =
+            requiredFloat(landforms, "cliffCurveThreshold", context);
+        generator.landforms.cliffCurveStrength =
+            requiredFloat(landforms, "cliffCurveStrength", context);
+        if (generator.landforms.plainCompression < 0.0F ||
+            generator.landforms.plainCompression > 1.0F ||
+            generator.landforms.hillAmplitude < 0.0F ||
+            generator.landforms.mountainBeltStrength < 0.0F ||
+            generator.landforms.outcropAmplitude < 0.0F ||
+            generator.landforms.basinDepth < 0.0F ||
+            generator.landforms.coastalShelfStrength < 0.0F ||
+            generator.landforms.coastalShelfStrength > 1.0F ||
+            generator.landforms.offshoreIslandAmplitude < 0.0F ||
+            generator.landforms.coastalBayDepth < 0.0F ||
+            generator.landforms.chainAngleDegrees < -180.0F ||
+            generator.landforms.chainAngleDegrees > 180.0F ||
+            generator.landforms.chainAnisotropy < 1.0F ||
+            generator.landforms.chainSharpness <= 0.0F ||
+            generator.landforms.chainThresholdLow < 0.0F ||
+            generator.landforms.chainThresholdHigh > 1.0F ||
+            generator.landforms.chainThresholdLow >= generator.landforms.chainThresholdHigh ||
+            generator.landforms.secondaryChainWeight < 0.0F ||
+            generator.landforms.secondaryChainWeight > 1.0F ||
+            generator.landforms.foothillAmplitude < 0.0F ||
+            generator.landforms.plainElevationCompression < 0.0F ||
+            generator.landforms.plainElevationCompression > 1.0F ||
+            generator.landforms.hillCurvePower <= 0.0F ||
+            generator.landforms.mountainCurvePower <= 0.0F ||
+            generator.landforms.cliffCurveThreshold < 0.0F ||
+            generator.landforms.cliffCurveThreshold >= 1.0F ||
+            generator.landforms.cliffCurveStrength < 0.0F)
+            throw std::runtime_error(context + " has invalid landform settings");
+
+        if (!value.HasMember("postProcessing") || !value["postProcessing"].IsObject())
+            throw std::runtime_error(context + " requires postProcessing settings");
+        const rapidjson::Value& post = value["postProcessing"];
+        const auto requiredUint = [&](const char* field) {
+            if (!post.HasMember(field) || !post[field].IsUint())
+                throw std::runtime_error(context + " requires unsigned postProcessing '" +
+                                         field + "'");
+            return post[field].GetUint();
+        };
+        generator.postProcessing.regionalSampleStride =
+            requiredUint("regionalSampleStride");
+        generator.postProcessing.plainBlurRadius = requiredUint("plainBlurRadius");
+        generator.postProcessing.plainFlattenStrength =
+            requiredFloat(post, "plainFlattenStrength", context);
+        generator.postProcessing.hillBlurRadius = requiredUint("hillBlurRadius");
+        generator.postProcessing.hillSmoothingStrength =
+            requiredFloat(post, "hillSmoothingStrength", context);
+        generator.postProcessing.mountainErosionPasses =
+            requiredUint("mountainErosionPasses");
+        generator.postProcessing.mountainErosionStrength =
+            requiredFloat(post, "mountainErosionStrength", context);
+        generator.postProcessing.coastalBlurRadius = requiredUint("coastalBlurRadius");
+        generator.postProcessing.coastalSmoothingStrength =
+            requiredFloat(post, "coastalSmoothingStrength", context);
+        if (generator.postProcessing.regionalSampleStride == 0 ||
+            generator.postProcessing.plainBlurRadius == 0 ||
+            generator.postProcessing.hillBlurRadius == 0 ||
+            generator.postProcessing.coastalBlurRadius == 0 ||
+            generator.postProcessing.plainFlattenStrength < 0.0F ||
+            generator.postProcessing.plainFlattenStrength > 1.0F ||
+            generator.postProcessing.hillSmoothingStrength < 0.0F ||
+            generator.postProcessing.hillSmoothingStrength > 1.0F ||
+            generator.postProcessing.mountainErosionStrength < 0.0F ||
+            generator.postProcessing.mountainErosionStrength > 1.0F ||
+            generator.postProcessing.coastalSmoothingStrength < 0.0F ||
+            generator.postProcessing.coastalSmoothingStrength > 1.0F)
+            throw std::runtime_error(context + " has invalid postProcessing settings");
+
+        if (!value.HasMember("hydrology") || !value["hydrology"].IsObject())
+            throw std::runtime_error(context + " requires hydrology settings");
+        const rapidjson::Value& hydrology = value["hydrology"];
+        generator.hydrology.gridCellSize = requiredFloat(hydrology, "gridCellSize", context);
+        generator.hydrology.riverCatchmentArea =
+            requiredFloat(hydrology, "riverCatchmentArea", context);
+        generator.hydrology.wetlandCatchmentArea =
+            requiredFloat(hydrology, "wetlandCatchmentArea", context);
+        generator.hydrology.riverCarveDepth =
+            requiredFloat(hydrology, "riverCarveDepth", context);
+        generator.hydrology.riverHalfWidth =
+            requiredFloat(hydrology, "riverHalfWidth", context);
+        generator.hydrology.riverMeanderStrength =
+            requiredFloat(hydrology, "riverMeanderStrength", context);
+        generator.hydrology.riverPathSampleSpacing =
+            requiredFloat(hydrology, "riverPathSampleSpacing", context);
+        generator.hydrology.minimumFirstOrderLength =
+            requiredFloat(hydrology, "minimumFirstOrderLength", context);
+        if (!hydrology.HasMember("riverSmoothingIterations") ||
+            !hydrology["riverSmoothingIterations"].IsUint())
+            throw std::runtime_error(context + " requires unsigned riverSmoothingIterations");
+        generator.hydrology.riverSmoothingIterations =
+            hydrology["riverSmoothingIterations"].GetUint();
+        generator.hydrology.meanderMaximumSlopeDegrees =
+            requiredFloat(hydrology, "meanderMaximumSlopeDegrees", context);
+        generator.hydrology.riverBankFalloff =
+            requiredFloat(hydrology, "riverBankFalloff", context);
+        generator.hydrology.riverFloodplainWidthMultiplier =
+            requiredFloat(hydrology, "riverFloodplainWidthMultiplier", context);
+        generator.hydrology.riverFloodplainFlattenStrength =
+            requiredFloat(hydrology, "riverFloodplainFlattenStrength", context);
+        generator.hydrology.riverBankHeight =
+            requiredFloat(hydrology, "riverBankHeight", context);
+        generator.hydrology.riverMaximumIncision =
+            requiredFloat(hydrology, "riverMaximumIncision", context);
+        generator.hydrology.confluenceWidthMultiplier =
+            requiredFloat(hydrology, "confluenceWidthMultiplier", context);
+        generator.hydrology.estuaryLength =
+            requiredFloat(hydrology, "estuaryLength", context);
+        generator.hydrology.estuaryWidthMultiplier =
+            requiredFloat(hydrology, "estuaryWidthMultiplier", context);
+        if (!hydrology.HasMember("waterEdgeSmoothingRadius") ||
+            !hydrology["waterEdgeSmoothingRadius"].IsUint())
+            throw std::runtime_error(context + " requires unsigned waterEdgeSmoothingRadius");
+        generator.hydrology.waterEdgeSmoothingRadius =
+            hydrology["waterEdgeSmoothingRadius"].GetUint();
+        generator.hydrology.minimumRenderedWaterDepth =
+            requiredFloat(hydrology, "minimumRenderedWaterDepth", context);
+        generator.hydrology.lakeMinimumDepth =
+            requiredFloat(hydrology, "lakeMinimumDepth", context);
+        generator.hydrology.lakeMaximumDepth =
+            requiredFloat(hydrology, "lakeMaximumDepth", context);
+        generator.hydrology.wetlandMaximumSlopeDegrees =
+            requiredFloat(hydrology, "wetlandMaximumSlopeDegrees", context);
+        if (generator.hydrology.gridCellSize <= 0.0F ||
+            generator.hydrology.riverCatchmentArea <= 0.0F ||
+            generator.hydrology.wetlandCatchmentArea <= 0.0F ||
+            generator.hydrology.riverCarveDepth <= 0.0F ||
+            generator.hydrology.riverHalfWidth <= 0.0F ||
+            generator.hydrology.riverMeanderStrength < 0.0F ||
+            generator.hydrology.riverPathSampleSpacing <= 0.0F ||
+            generator.hydrology.minimumFirstOrderLength < 0.0F ||
+            generator.hydrology.riverSmoothingIterations > 4 ||
+            generator.hydrology.meanderMaximumSlopeDegrees <= 0.0F ||
+            generator.hydrology.riverBankFalloff <= 0.0F ||
+            generator.hydrology.riverFloodplainWidthMultiplier < 0.0F ||
+            generator.hydrology.riverFloodplainFlattenStrength < 0.0F ||
+            generator.hydrology.riverFloodplainFlattenStrength > 1.0F ||
+            generator.hydrology.riverBankHeight < 0.0F ||
+            generator.hydrology.riverMaximumIncision <= 0.0F ||
+            generator.hydrology.confluenceWidthMultiplier < 1.0F ||
+            generator.hydrology.estuaryLength < 0.0F ||
+            generator.hydrology.estuaryWidthMultiplier < 1.0F ||
+            generator.hydrology.waterEdgeSmoothingRadius == 0 ||
+            generator.hydrology.minimumRenderedWaterDepth <= 0.0F ||
+            generator.hydrology.lakeMinimumDepth <= 0.0F ||
+            generator.hydrology.lakeMaximumDepth < generator.hydrology.lakeMinimumDepth ||
+            generator.hydrology.wetlandMaximumSlopeDegrees <= 0.0F)
+            throw std::runtime_error(context + " has invalid hydrology settings");
 
         if (!value.HasMember("barriers") || !value["barriers"].IsObject() ||
             !value.HasMember("connectivity") || !value["connectivity"].IsObject())
@@ -170,8 +352,10 @@ TerrainGenerationDefinitions TerrainGenerationDefinitions::load(
                 throw std::runtime_error(fieldContext + " has invalid noise parameters");
             generator.fields.emplace(field->name.GetString(), definition);
         }
-        for (const char* required :
-             {"continentalness", "erosion", "peaks", "moisture", "temperature", "detail"})
+        for (const char* required : {"continentalness", "erosion", "peaks", "moisture",
+                                     "temperature", "detail", "plains", "hills",
+                                     "mountain_belt", "rocky_outcrops", "coastal_shelf",
+                                     "basin"})
             if (!generator.fields.contains(required))
                 throw std::runtime_error(context + " is missing field '" + required + "'");
         result.generators_.emplace(id, std::move(generator));
@@ -179,6 +363,91 @@ TerrainGenerationDefinitions TerrainGenerationDefinitions::load(
     if (!result.generators_.contains(result.activeGeneratorId_.value))
         throw std::runtime_error("Active terrain generator does not exist: " +
                                  result.activeGeneratorId_.value);
+
+    const rapidjson::Document layouts = loadDocument(directory / "layouts.json");
+    if (!layouts.HasMember("activeLayout") || !layouts["activeLayout"].IsString() ||
+        !layouts.HasMember("layouts") || !layouts["layouts"].IsArray())
+        throw std::runtime_error("Terrain layouts require activeLayout and a layouts array");
+    result.activeLayoutId_ = TerrainLayoutId{layouts["activeLayout"].GetString()};
+    for (const rapidjson::Value& value : layouts["layouts"].GetArray()) {
+        if (!value.IsObject()) throw std::runtime_error("Terrain layout must be an object");
+        TerrainLayoutDefinition layout;
+        const std::string id = requiredString(value, "id", "Terrain layout");
+        const std::string context = "Terrain layout '" + id + "'";
+        layout.id = TerrainLayoutId{id};
+        layout.nameKey = requiredString(value, "nameKey", context);
+        if (!value.HasMember("version") || !value["version"].IsUint())
+            throw std::runtime_error(context + " requires unsigned version");
+        layout.version = value["version"].GetUint();
+        const std::string source = requiredString(value, "source", context);
+        if (source == "procedural") {
+            layout.source = TerrainLayoutSource::procedural;
+            layout.generator = TerrainGeneratorId{requiredString(value, "generator", context)};
+            if (!result.generators_.contains(layout.generator.value))
+                throw std::runtime_error(context + " references missing generator: " +
+                                         layout.generator.value);
+            const std::string shape = value.HasMember("shape") && value["shape"].IsString()
+                                          ? value["shape"].GetString()
+                                          : "natural";
+            if (shape == "natural") layout.shape = TerrainLayoutShape::natural;
+            else if (shape == "plains") layout.shape = TerrainLayoutShape::plains;
+            else if (shape == "hills") layout.shape = TerrainLayoutShape::hills;
+            else if (shape == "central_hill") layout.shape = TerrainLayoutShape::centralHill;
+            else if (shape == "central_water") layout.shape = TerrainLayoutShape::centralWater;
+            else if (shape == "islands") layout.shape = TerrainLayoutShape::islands;
+            else throw std::runtime_error(context + " has unknown shape: " + shape);
+        } else if (source == "custom_map") {
+            layout.source = TerrainLayoutSource::customMap;
+            layout.customMap = requiredString(value, "map", context);
+            if (value.HasMember("generator") && value["generator"].IsString())
+                layout.generator = TerrainGeneratorId{value["generator"].GetString()};
+            else
+                layout.generator = result.activeGeneratorId_;
+            if (!result.generators_.contains(layout.generator.value))
+                throw std::runtime_error(context + " references missing fallback generator: " +
+                                         layout.generator.value);
+        } else {
+            throw std::runtime_error(context + " has unknown source: " + source);
+        }
+        if (value.HasMember("hydrologyEnabled")) {
+            if (!value["hydrologyEnabled"].IsBool())
+                throw std::runtime_error(context + " hydrologyEnabled must be boolean");
+            layout.hydrologyEnabled = value["hydrologyEnabled"].GetBool();
+        }
+        if (value.HasMember("parameters")) {
+            if (!value["parameters"].IsObject())
+                throw std::runtime_error(context + " parameters must be an object");
+            const auto& parameters = value["parameters"];
+            if (parameters.HasMember("featureStrength"))
+                layout.featureStrength =
+                    requiredFloat(parameters, "featureStrength", context);
+            if (parameters.HasMember("featureRadius"))
+                layout.featureRadius = requiredFloat(parameters, "featureRadius", context);
+            if (parameters.HasMember("islandCount")) {
+                if (!parameters["islandCount"].IsUint())
+                    throw std::runtime_error(context + " islandCount must be unsigned");
+                layout.islandCount = parameters["islandCount"].GetUint();
+            }
+            if (layout.featureStrength < 0.0F || layout.featureRadius <= 0.0F ||
+                layout.featureRadius > 1.0F || layout.islandCount == 0)
+                throw std::runtime_error(context + " has invalid layout parameters");
+        }
+        if (value.HasMember("enabledBiomes")) {
+            if (!value["enabledBiomes"].IsArray())
+                throw std::runtime_error(context + " enabledBiomes must be an array");
+            for (const rapidjson::Value& biome : value["enabledBiomes"].GetArray()) {
+                if (!biome.IsString())
+                    throw std::runtime_error(context + " enabledBiomes entries must be strings");
+                layout.enabledBiomes.emplace_back(biome.GetString());
+            }
+        }
+        result.layoutList_.push_back(layout);
+        if (!result.layouts_.emplace(id, std::move(layout)).second)
+            throw std::runtime_error("Duplicate terrain layout: " + id);
+    }
+    if (!result.layouts_.contains(result.activeLayoutId_.value))
+        throw std::runtime_error("Active terrain layout does not exist: " +
+                                 result.activeLayoutId_.value);
 
     const rapidjson::Document biomes = loadDocument(directory / "biomes.json");
     if (!biomes.HasMember("fallbackBiome") || !biomes["fallbackBiome"].IsString() ||
@@ -194,6 +463,14 @@ TerrainGenerationDefinitions TerrainGenerationDefinitions::load(
             throw std::runtime_error("Terrain biome requires priority and enabled: " + id);
         biome.priority = value["priority"].GetInt();
         biome.enabled = value["enabled"].GetBool();
+        if (value.HasMember("generator")) {
+            if (!value["generator"].IsString())
+                throw std::runtime_error("Terrain biome generator must be a string: " + id);
+            biome.generator = value["generator"].GetString();
+        }
+        if (biome.generator != "range" && biome.generator != "disabled")
+            throw std::runtime_error("Unknown terrain biome generator '" + biome.generator +
+                                     "' for " + id);
         const auto [minimumHeight, maximumHeight] = requiredRange(value, "height", id);
         const auto [minimumMoisture, maximumMoisture] = requiredRange(value, "moisture", id);
         const auto [minimumErosion, maximumErosion] = requiredRange(value, "erosion", id);
@@ -286,11 +563,55 @@ TerrainGenerationDefinitions TerrainGenerationDefinitions::load(
                          }))
             throw std::runtime_error("Terrain biome references missing surface: " +
                                      biome.surface.value);
+    for (const auto& [id, layout] : result.layouts_) {
+        if (layout.enabledBiomes.empty()) continue;
+        const auto contains = [&](const TerrainBiomeId& biomeId) {
+            return std::find(layout.enabledBiomes.begin(), layout.enabledBiomes.end(), biomeId) !=
+                   layout.enabledBiomes.end();
+        };
+        for (const TerrainBiomeId& biomeId : layout.enabledBiomes) {
+            if (std::none_of(result.biomes_.begin(), result.biomes_.end(),
+                             [&](const auto& biome) {
+                                 return biome.id == biomeId && biome.enabled &&
+                                        biome.generator != "disabled";
+                             }))
+                throw std::runtime_error("Terrain layout '" + id +
+                                         "' enables missing or disabled biome: " +
+                                         biomeId.value);
+        }
+        if (!contains(result.fallbackBiome_))
+            throw std::runtime_error("Terrain layout '" + id +
+                                     "' must enable the fallback biome: " +
+                                     result.fallbackBiome_.value);
+        if (layout.hydrologyEnabled &&
+            (!contains(TerrainBiomeId{"deep_water"}) ||
+             !contains(TerrainBiomeId{"shallow_water"})))
+            throw std::runtime_error("Hydrology layout '" + id +
+                                     "' must enable deep_water and shallow_water");
+    }
     return result;
 }
 
 const TerrainGeneratorDefinition& TerrainGenerationDefinitions::activeGenerator() const {
-    return generators_.at(activeGeneratorId_.value);
+    return generator(activeLayout().generator);
+}
+
+const TerrainLayoutDefinition& TerrainGenerationDefinitions::activeLayout() const {
+    return layout(activeLayoutId_);
+}
+
+const TerrainLayoutDefinition& TerrainGenerationDefinitions::layout(TerrainLayoutId id) const {
+    const auto found = layouts_.find(id.value);
+    if (found == layouts_.end()) throw std::runtime_error("Unknown terrain layout: " + id.value);
+    return found->second;
+}
+
+const TerrainGeneratorDefinition& TerrainGenerationDefinitions::generator(
+    TerrainGeneratorId id) const {
+    const auto found = generators_.find(id.value);
+    if (found == generators_.end())
+        throw std::runtime_error("Unknown terrain generator: " + id.value);
+    return found->second;
 }
 
 TerrainFieldGenerator::TerrainFieldGenerator(std::uint32_t worldSeed,
@@ -304,6 +625,15 @@ TerrainFieldGenerator::TerrainFieldGenerator(std::uint32_t worldSeed,
     , temperature_{&definition.fields.at("temperature"),
                    namedSeed(worldSeed, "terrain.temperature")}
     , detail_{&definition.fields.at("detail"), namedSeed(worldSeed, "terrain.detail")}
+    , plains_{&definition.fields.at("plains"), namedSeed(worldSeed, "terrain.landform.plains")}
+    , hills_{&definition.fields.at("hills"), namedSeed(worldSeed, "terrain.landform.hills")}
+    , mountainBelt_{&definition.fields.at("mountain_belt"),
+                    namedSeed(worldSeed, "terrain.landform.mountain_belt")}
+    , rockyOutcrops_{&definition.fields.at("rocky_outcrops"),
+                     namedSeed(worldSeed, "terrain.landform.rocky_outcrops")}
+    , coastalShelf_{&definition.fields.at("coastal_shelf"),
+                    namedSeed(worldSeed, "terrain.landform.coastal_shelf")}
+    , basin_{&definition.fields.at("basin"), namedSeed(worldSeed, "terrain.landform.basin")}
     , warpXSeed_(namedSeed(worldSeed, "terrain.domain_warp.x"))
     , warpZSeed_(namedSeed(worldSeed, "terrain.domain_warp.z")) {}
 
@@ -393,6 +723,31 @@ TerrainRegionalFields TerrainFieldGenerator::sample(float worldX, float worldZ) 
     result.moisture = sampleField(moisture_, x, z);
     result.temperature = sampleField(temperature_, x, z);
     result.detail = sampleField(detail_, x, z);
+    result.plains = smoothstep(0.40F, 0.72F, sampleField(plains_, x, z));
+    result.hills = smoothstep(0.38F, 0.74F, sampleField(hills_, x, z));
+    const TerrainLandformDefinition& landforms = definition_->landforms;
+    const float angle = landforms.chainAngleDegrees * 0.017453292519943295F;
+    const auto chainRidge = [&](float direction, std::uint32_t seedOffset) {
+        const float cosine = std::cos(direction);
+        const float sine = std::sin(direction);
+        const float along = x * cosine + z * sine;
+        const float across = -x * sine + z * cosine;
+        const float noise = fractalNoise(
+            along / (mountainBelt_.definition->scale * landforms.chainAnisotropy),
+            across / mountainBelt_.definition->scale,
+            mountainBelt_.seed + seedOffset,
+            mountainBelt_.definition->octaves,
+            mountainBelt_.definition->persistence);
+        const float ridge = std::pow(1.0F - std::abs(noise), landforms.chainSharpness);
+        return smoothstep(landforms.chainThresholdLow, landforms.chainThresholdHigh, ridge);
+    };
+    const float primaryChain = chainRidge(angle, 0U);
+    const float secondaryChain =
+        chainRidge(-angle * 0.73F, 0x6D2B79F5U) * landforms.secondaryChainWeight;
+    result.mountainBelt = std::clamp(std::max(primaryChain, secondaryChain), 0.0F, 1.0F);
+    result.rockyOutcrops = smoothstep(0.58F, 0.78F, sampleField(rockyOutcrops_, x, z));
+    result.coastalShelf = smoothstep(0.42F, 0.75F, sampleField(coastalShelf_, x, z));
+    result.basin = smoothstep(0.55F, 0.78F, sampleField(basin_, x, z));
     return result;
 }
 
@@ -405,22 +760,89 @@ float TerrainFieldGenerator::heightAt(float worldX, float worldZ) const {
     fields.peaks =
         std::pow(1.0F - std::abs(peakNoise), definition_->height.ridgePower);
     fields.detail = sampleField(detail_, x, z);
+    fields.plains = smoothstep(0.40F, 0.72F, sampleField(plains_, x, z));
+    fields.hills = smoothstep(0.38F, 0.74F, sampleField(hills_, x, z));
+    const TerrainLandformDefinition& landforms = definition_->landforms;
+    const float angle = landforms.chainAngleDegrees * 0.017453292519943295F;
+    const auto chainRidge = [&](float direction, std::uint32_t seedOffset) {
+        const float cosine = std::cos(direction);
+        const float sine = std::sin(direction);
+        const float along = x * cosine + z * sine;
+        const float across = -x * sine + z * cosine;
+        const float noise = fractalNoise(
+            along / (mountainBelt_.definition->scale * landforms.chainAnisotropy),
+            across / mountainBelt_.definition->scale,
+            mountainBelt_.seed + seedOffset,
+            mountainBelt_.definition->octaves,
+            mountainBelt_.definition->persistence);
+        const float ridge = std::pow(1.0F - std::abs(noise), landforms.chainSharpness);
+        return smoothstep(landforms.chainThresholdLow, landforms.chainThresholdHigh, ridge);
+    };
+    fields.mountainBelt = std::clamp(
+        std::max(chainRidge(angle, 0U),
+                 chainRidge(-angle * 0.73F, 0x6D2B79F5U) *
+                     landforms.secondaryChainWeight),
+        0.0F, 1.0F);
+    fields.rockyOutcrops = smoothstep(0.58F, 0.78F, sampleField(rockyOutcrops_, x, z));
+    fields.coastalShelf = smoothstep(0.42F, 0.75F, sampleField(coastalShelf_, x, z));
+    fields.basin = smoothstep(0.55F, 0.78F, sampleField(basin_, x, z));
     return height(fields);
 }
 
 float TerrainFieldGenerator::height(const TerrainRegionalFields& fields) const {
     const TerrainHeightDefinition& definition = definition_->height;
+    const TerrainLandformDefinition& landforms = definition_->landforms;
     const float continent = (fields.continentalness - 0.5F) * 2.0F;
-    const float base = definition.baseHeight + continent * definition.continentalAmplitude;
-    const float detail = (fields.detail - 0.5F) * 2.0F * definition.detailAmplitude;
-    const float mountainSignal = fields.continentalness * 0.58F + fields.peaks * 0.42F;
+    float base = definition.baseHeight + continent * definition.continentalAmplitude;
+    const float plainMask = fields.plains * (1.0F - fields.mountainBelt * 0.85F) *
+                            (1.0F - fields.rockyOutcrops * 0.65F);
+    const float detailScale = std::lerp(1.0F, landforms.plainCompression, plainMask);
+    const float detail =
+        (fields.detail - 0.5F) * 2.0F * definition.detailAmplitude * detailScale;
+    const float signedHill = (fields.hills - 0.5F) * 2.0F;
+    const float curvedHill = std::copysign(
+        std::pow(std::abs(signedHill), landforms.hillCurvePower), signedHill);
+    const float hills = curvedHill * landforms.hillAmplitude *
+                        (1.0F - plainMask * 0.75F);
+    const float compressedPlain = definition.baseHeight +
+        continent * definition.continentalAmplitude * landforms.plainElevationCompression;
+    base = std::lerp(base, compressedPlain, plainMask);
+    const float mountainSignal = fields.mountainBelt * 0.72F + fields.peaks * 0.28F;
     const float mountainWeight = smoothstep(definition.mountainThreshold, 1.0F, mountainSignal);
     const float erosion = 1.0F - fields.erosion * definition.erosionStrength;
-    const float mountains =
-        fields.peaks * mountainWeight * erosion * definition.mountainAmplitude;
-    return std::clamp(base + detail + mountains,
-                      definition.minimumHeight,
-                      definition.maximumHeight);
+    const float beltStrength = std::lerp(0.10F, landforms.mountainBeltStrength,
+                                         fields.mountainBelt);
+    const float mountainRidge = std::pow(fields.peaks, landforms.mountainCurvePower);
+    const float mountains = mountainRidge * mountainWeight * erosion *
+                            definition.mountainAmplitude * beltStrength;
+    const float foothillMask = smoothstep(0.12F, 0.62F, fields.mountainBelt) *
+                               (1.0F - mountainWeight);
+    const float foothills = foothillMask * (0.35F + fields.hills * 0.65F) *
+                            landforms.foothillAmplitude * erosion;
+    const float outcrops = fields.peaks * fields.rockyOutcrops *
+                           landforms.outcropAmplitude * (1.0F - plainMask * 0.6F);
+    const float basin = fields.basin * landforms.basinDepth *
+                        (1.0F - fields.mountainBelt * 0.8F);
+    const float cliffSignal = smoothstep(landforms.cliffCurveThreshold, 1.0F,
+                                         mountainRidge * fields.mountainBelt);
+    const float cliffs = cliffSignal * cliffSignal * landforms.cliffCurveStrength;
+    base += detail + hills + foothills + mountains + cliffs + outcrops - basin;
+    const float coastProximity =
+        1.0F - smoothstep(0.025F, 0.16F, std::abs(base - definition_->waterLevel));
+    // Broad basins bite into the continental edge to form bays. Sparse rocky/peak overlap lifts
+    // a few shelf locations into islands without distributing dots uniformly along the coast.
+    base -= fields.basin * fields.coastalShelf * coastProximity *
+            landforms.coastalBayDepth;
+    const float islandMask = fields.rockyOutcrops * fields.peaks * fields.coastalShelf *
+                             coastProximity;
+    base += islandMask * landforms.offshoreIslandAmplitude;
+    const float shelfDistance = std::abs(base - definition_->waterLevel);
+    const float shelfBand = 1.0F - smoothstep(0.02F, 0.14F, shelfDistance);
+    base = std::lerp(base, definition_->waterLevel,
+                     fields.coastalShelf * shelfBand * landforms.coastalShelfStrength);
+    // The normalized representation remains bounded, but no authored min/max clips the seed's
+    // natural elevation range.
+    return std::clamp(base, 0.0F, 1.0F);
 }
 
 } // namespace strategy

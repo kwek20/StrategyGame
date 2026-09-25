@@ -21,6 +21,20 @@ class MapArea final {
         return static_cast<float>(chunksPerSide_ * Terrain::chunkCellCount) * Terrain::spacing;
     }
     [[nodiscard]] float halfExtent() const { return extent() * 0.5F; }
+    // Match maps are centered inside the renderer's maximum terrain. Odd-sized maps intersect
+    // half a chunk at each edge, so their upload range contains one more chunk than the nominal
+    // map size.
+    [[nodiscard]] int firstTerrainChunk() const {
+        return static_cast<int>(std::floor(
+            (static_cast<float>(Terrain::chunksPerSide) - chunksPerSide_) * 0.5F));
+    }
+    [[nodiscard]] int terrainChunkEnd() const {
+        return static_cast<int>(std::ceil(
+            (static_cast<float>(Terrain::chunksPerSide) + chunksPerSide_) * 0.5F));
+    }
+    [[nodiscard]] int intersectingTerrainChunksPerSide() const {
+        return terrainChunkEnd() - firstTerrainChunk();
+    }
     [[nodiscard]] glm::vec2 normalized(glm::vec2 world) const {
         return world / extent() + glm::vec2{0.5F};
     }

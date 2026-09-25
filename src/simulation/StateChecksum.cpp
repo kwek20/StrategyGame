@@ -28,8 +28,10 @@ std::uint64_t authoritativeStateChecksum(const World& world,
                                          const PlayerRegistry& players,
                                          std::uint32_t terrainSeed,
                                          std::uint64_t tick,
-                                         std::uint32_t mapChunksPerSide) {
+                                         std::uint32_t mapChunksPerSide,
+                                         std::string_view terrainLayout) {
     Hash hash; hash.value(terrainSeed); hash.value(tick); hash.value(mapChunksPerSide);
+    hash.text(terrainLayout);
     hash.value(static_cast<std::uint64_t>(world.foundations().size()));
     for (const TerrainFoundation& foundation : world.foundations()) {
         hash.vector(foundation.center);

@@ -70,7 +70,11 @@ target_link_libraries(strategy_players PUBLIC strategy_core)
 
 add_library(strategy_terrain STATIC
     src/terrain/Terrain.cpp
+    src/terrain/TerrainBiomeGenerator.cpp
     src/terrain/TerrainGeneration.cpp
+    src/terrain/TerrainGenerationPipeline.cpp
+    src/terrain/TerrainLayoutGenerator.cpp
+    src/terrain/TerrainWaterGenerator.cpp
 )
 strategy_target(strategy_terrain)
 target_link_libraries(strategy_terrain PUBLIC strategy_core RapidJSON)
@@ -123,6 +127,7 @@ target_link_libraries(strategy_simulation
 # Storage and configuration are independent of presentation.
 add_library(strategy_persistence STATIC
     src/persistence/GameConfig.cpp
+    src/persistence/MatchSetupProfile.cpp
     src/persistence/SaveGame.cpp
 )
 strategy_target(strategy_persistence)
@@ -322,4 +327,26 @@ if(STRATEGY_BUILD_TESTS)
     strategy_target(render_architecture_tests)
     target_link_libraries(render_architecture_tests PRIVATE strategy_render)
     add_test(NAME render_architecture COMMAND render_architecture_tests)
+
+    set(STRATEGY_TEST_TARGETS
+        terrain_tests
+        game_system_tests
+        camera_tests
+        resource_delivery_tests
+        spatial_shape_tests
+        vegetation_tests
+        resource_field_generation_tests
+        entity_hud_model_tests
+        definition_registry_tests
+        persistence_tests
+        asset_import_tests
+        particle_effect_definition_tests
+        particle_system_tests
+        state_stack_tests
+        renderer_integration_tests
+        render_architecture_tests
+    )
+    foreach(TEST_TARGET IN LISTS STRATEGY_TEST_TARGETS)
+        target_sources(${TEST_TARGET} PRIVATE tests/TestMain.cpp)
+    endforeach()
 endif()

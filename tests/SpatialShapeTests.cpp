@@ -9,7 +9,7 @@ bool near(glm::vec2 left, glm::vec2 right) {
 }
 }
 
-int main() {
+int strategyTestMain() {
     using namespace strategy;
     bool valid = true;
     const SpatialShape circle{FootprintShape::circle, {0.0F, 0.0F}, 3.0F};

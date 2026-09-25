@@ -43,6 +43,11 @@ struct TerrainVertex {
     glm::vec3 color;
     glm::vec4 materialWeights{0.0F};
     float traversalClass{0.0F};
+    float waterSurfaceHeight{0.0F};
+    float waterCoverage{0.0F};
+    glm::vec2 waterFlow{0.0F};
+    float generatedWaterSurfaceHeight{0.0F};
+    float generatedWaterCoverage{0.0F};
 };
 
 void GLAPIENTRY openGlDebugMessage(GLenum,
@@ -312,7 +317,12 @@ Renderer::Renderer(Logger* logger)
                                             : (terrain_.traversalAt(worldX, worldZ) ==
                                                        TerrainTraversalClass::difficult
                                                    ? 0.5F
-                                                   : 0.0F)});
+                                                   : 0.0F),
+                                        terrain_.waterSurfaceAt(worldX, worldZ),
+                                        terrain_.waterCoverageAt(worldX, worldZ),
+                                        terrain_.riverFlowAt(worldX, worldZ),
+                                        terrain_.generatedWaterSurfaceAt(worldX, worldZ),
+                                        terrain_.generatedWaterCoverageAt(worldX, worldZ)});
                 }
             }
 
@@ -398,6 +408,25 @@ Renderer::Renderer(Logger* logger)
             glVertexAttribPointer(4, 1, GL_FLOAT, GL_FALSE, sizeof(TerrainVertex),
                                   reinterpret_cast<void*>(offsetof(TerrainVertex,
                                                                    traversalClass)));
+            glEnableVertexAttribArray(5);
+            glVertexAttribPointer(5, 1, GL_FLOAT, GL_FALSE, sizeof(TerrainVertex),
+                                  reinterpret_cast<void*>(offsetof(TerrainVertex,
+                                                                   waterSurfaceHeight)));
+            glEnableVertexAttribArray(6);
+            glVertexAttribPointer(6, 1, GL_FLOAT, GL_FALSE, sizeof(TerrainVertex),
+                                  reinterpret_cast<void*>(offsetof(TerrainVertex,
+                                                                  waterCoverage)));
+            glEnableVertexAttribArray(7);
+            glVertexAttribPointer(7, 2, GL_FLOAT, GL_FALSE, sizeof(TerrainVertex),
+                                  reinterpret_cast<void*>(offsetof(TerrainVertex, waterFlow)));
+            glEnableVertexAttribArray(8);
+            glVertexAttribPointer(
+                8, 1, GL_FLOAT, GL_FALSE, sizeof(TerrainVertex),
+                reinterpret_cast<void*>(offsetof(TerrainVertex, generatedWaterSurfaceHeight)));
+            glEnableVertexAttribArray(9);
+            glVertexAttribPointer(
+                9, 1, GL_FLOAT, GL_FALSE, sizeof(TerrainVertex),
+                reinterpret_cast<void*>(offsetof(TerrainVertex, generatedWaterCoverage)));
             glBindVertexArray(0);
             terrainChunks_.push_back(chunk);
         }
@@ -646,7 +675,8 @@ void Renderer::drawText(
 
 void Renderer::drawTerrain(const CameraView& camera,
                            const Player* player,
-                           bool terrainDebug) const {
+                           bool terrainDebug,
+                           int waterDebugMode) const {
     renderGraph_.enter(RenderPassKind::terrain);
     ProfileScope profile(profiler_, "render.terrain");
     RenderPass pass(RenderPassKind::terrain);
@@ -661,6 +691,7 @@ void Renderer::drawTerrain(const CameraView& camera,
     glUniform1i(shaders_.uniform(program_, "dryGroundTexture"), 3);
     glUniform1i(shaders_.uniform(program_, "useFoundationTexture"), 0);
     glUniform1i(shaders_.uniform(program_, "terrainDebug"), terrainDebug ? 1 : 0);
+    glUniform1i(shaders_.uniform(program_, "waterDebugMode"), waterDebugMode);
     glUniform1f(shaders_.uniform(program_, "waterLevel"), terrain_.waterLevel());
     const GLint location = shaders_.uniform(program_, "viewProjection");
     glUniformMatrix4fv(location, 1, GL_FALSE, glm::value_ptr(viewProjection));
@@ -668,7 +699,8 @@ void Renderer::drawTerrain(const CameraView& camera,
         shaders_.uniform(program_, "cameraPosition"), 1, glm::value_ptr(camera.position));
     const bool closeView = camera.detailDistance < 20.0F;
     glUniform2f(shaders_.uniform(program_, "fogRange"), 140.0F, 280.0F);
-    glUniform1i(shaders_.uniform(program_, "useExploration"), player && !terrainDebug ? 1 : 0);
+    glUniform1i(shaders_.uniform(program_, "useExploration"),
+                player && !terrainDebug && waterDebugMode == 0 ? 1 : 0);
     glUniform1f(shaders_.uniform(program_, "explorationExtent"), activeWorldExtent());
     if (player) {
         std::vector<std::uint8_t> map(player->discovered.size());
@@ -689,12 +721,16 @@ void Renderer::drawTerrain(const CameraView& camera,
         glUniform1i(shaders_.uniform(program_, "explorationMap"), 7);
         glActiveTexture(GL_TEXTURE0);
     }
-    constexpr float renderDistance = 190.0F;
+    constexpr float closeViewRenderDistance = 190.0F;
     for (const TerrainChunk& chunk : terrainChunks_) {
         const float dx = chunk.center.x - focus.x;
         const float dz = chunk.center.z - focus.z;
-        const float maximumDistance = renderDistance + chunk.radius;
-        if (dx * dx + dz * dz > maximumDistance * maximumDistance) {
+        const float maximumDistance = closeViewRenderDistance + chunk.radius;
+        // Strategy view must retain the complete active map. Distance-culling whole chunks here
+        // exposed a hard grid-aligned boundary while water and fog continued rendering beyond it,
+        // especially after taller landforms made the missing geometry easier to see. Close view
+        // keeps the bounded distance because distant terrain is outside its useful horizon.
+        if (closeView && dx * dx + dz * dz > maximumDistance * maximumDistance) {
             continue;
         }
         std::size_t lodLevel;
@@ -729,12 +765,13 @@ void Renderer::drawTerrain(const CameraView& camera,
     }
     glUniform1i(shaders_.uniform(program_, "useFoundationTexture"), 0);
     glUniform1i(shaders_.uniform(program_, "terrainDebug"), 0);
+    glUniform1i(shaders_.uniform(program_, "waterDebugMode"), 0);
     glActiveTexture(GL_TEXTURE0);
     glBindVertexArray(0);
-    drawWater(camera, player);
+    drawWater(camera, player, waterDebugMode);
 }
 
-void Renderer::drawWater(const CameraView& camera, const Player* player) const {
+void Renderer::drawWater(const CameraView& camera, const Player* player, int debugMode) const {
     renderGraph_.enter(RenderPassKind::water);
     ProfileScope profile(profiler_, "render.water");
     RenderPass pass(RenderPassKind::water);
@@ -751,7 +788,9 @@ void Renderer::drawWater(const CameraView& camera, const Player* player) const {
     glUniform2f(shaders_.uniform(waterProgram_, "fogRange"), 140.0F, 280.0F);
     glUniform1f(shaders_.uniform(waterProgram_, "explorationExtent"), activeWorldExtent());
     glUniform1i(shaders_.uniform(waterProgram_, "explorationMap"), 7);
-    glUniform1i(shaders_.uniform(waterProgram_, "useExploration"), player ? 1 : 0);
+    glUniform1i(shaders_.uniform(waterProgram_, "useExploration"),
+                player && debugMode == 0 ? 1 : 0);
+    glUniform1i(shaders_.uniform(waterProgram_, "waterDebugMode"), debugMode);
 
     const glm::vec3 focus = camera.target;
     constexpr float renderDistance = 190.0F;
@@ -1250,7 +1289,7 @@ void Renderer::drawTerrainDebugHud(glm::vec3 worldPosition,
     };
 
     constexpr float width = 430.0F;
-    constexpr float height = 320.0F;
+    constexpr float height = 420.0F;
     const float left = std::max(8.0F, (static_cast<float>(viewportWidth_) - width) * 0.5F);
     const float top = 52.0F;
     UiDocument ui;
@@ -1288,9 +1327,30 @@ void Renderer::drawTerrainDebugHud(glm::vec3 worldPosition,
         Text::format("terrain_debug.fields_b",
                      {number(sample.peaks, 3), number(sample.moisture, 3),
                       number(sample.temperature, 3)}),
+        Text::format("terrain_debug.landforms_a",
+                     {number(sample.plains, 3), number(sample.hills, 3),
+                      number(sample.mountainBelt, 3)}),
+        Text::format("terrain_debug.landforms_b",
+                     {number(sample.rockyOutcrops, 3), number(sample.coastalShelf, 3),
+                      number(sample.basin, 3)}),
         Text::format("terrain_debug.water",
                      {number(terrain_.waterLevel()), number(sample.waterDepth),
                       sample.submerged ? "yes" : "no"}),
+        Text::format("terrain_debug.hydrology",
+                     {number(sample.waterSurfaceHeight), number(sample.drainage, 3),
+                      sample.river ? "river" : sample.lake ? "lake" :
+                      sample.waterKind == WaterKind::ocean ? "ocean" :
+                      sample.wetland ? "wetland" : "none",
+                      number(sample.waterCoverage, 3)}),
+        Text::format("terrain_debug.river",
+                     {number(sample.riverDistance, 2), number(sample.riverHalfWidth, 2),
+                      std::to_string(sample.streamOrder),
+                      sample.floodplain ? "yes" : "no"}),
+        Text::format("terrain_debug.river_zones",
+                     {sample.riverBank ? "yes" : "no",
+                      sample.confluence ? "yes" : "no",
+                      sample.estuary ? "yes" : "no",
+                      sample.sediment ? "yes" : "no"}),
         Text::format("terrain_debug.domains",
                      {number(sample.movementCosts[0]), number(sample.movementCosts[1]),
                       number(sample.movementCosts[2])}),
@@ -1308,6 +1368,52 @@ void Renderer::drawTerrainDebugHud(glm::vec3 worldPosition,
                  lines[index], index == 0 ? 1.25F : 1.05F,
                  index == 0 ? glm::vec3{1.0F, 0.82F, 0.28F}
                             : glm::vec3{0.92F, 0.95F, 0.98F});
+    uiRenderer_->draw(ui, viewportWidth_, viewportHeight_);
+}
+
+void Renderer::drawWaterDebugHud(glm::vec3 worldPosition, int mode) const {
+    renderGraph_.enter(RenderPassKind::userInterface);
+    const TerrainSample& sample = terrain_.sampleAt(worldPosition.x, worldPosition.z);
+    const float generatedSurface =
+        terrain_.generatedWaterSurfaceAt(worldPosition.x, worldPosition.z);
+    const float generatedCoverage =
+        terrain_.generatedWaterCoverageAt(worldPosition.x, worldPosition.z);
+    const float generatedDepth = std::max(0.0F, generatedSurface - sample.baseHeight);
+    const float smoothedDepth = std::max(0.0F, sample.waterSurfaceHeight - sample.baseHeight);
+    const glm::vec2 flow = terrain_.riverFlowAt(worldPosition.x, worldPosition.z);
+    const auto number = [](float value, int precision = 3) {
+        std::ostringstream stream;
+        stream << std::fixed << std::setprecision(precision) << value;
+        return stream.str();
+    };
+    const char* modeName = mode == 1 ? "RAW GENERATION"
+                           : mode == 2 ? "SMOOTHED RESULT"
+                                       : "SMOOTHING DIFFERENCE";
+    constexpr float width = 430.0F;
+    constexpr float height = 205.0F;
+    const float left = std::max(8.0F, (static_cast<float>(viewportWidth_) - width) * 0.5F);
+    const float top = 52.0F;
+    UiDocument ui;
+    ui.modal("water_debug.panel", {left, top, left + width, top + height},
+             {0.018F, 0.030F, 0.045F});
+    const std::vector<std::string> lines{
+        std::string{"WATER DEBUG - "} + modeName + "  F6 TO CYCLE",
+        "CURSOR  X " + number(worldPosition.x, 2) + "  Z " + number(worldPosition.z, 2),
+        "GENERATED  SURFACE " + number(generatedSurface) + "  DEPTH " +
+            number(generatedDepth) + "  COVERAGE " + number(generatedCoverage),
+        "SMOOTHED   SURFACE " + number(sample.waterSurfaceHeight) + "  DEPTH " +
+            number(smoothedDepth) + "  COVERAGE " + number(sample.waterCoverage),
+        "DELTA      SURFACE " + number(sample.waterSurfaceHeight - generatedSurface) +
+            "  DEPTH " + number(smoothedDepth - generatedDepth),
+        "FLOW       X " + number(flow.x) + "  Z " + number(flow.y) +
+            "  LENGTH " + number(glm::length(flow))};
+    for (std::size_t index = 0; index < lines.size(); ++index)
+        ui.label("water_debug.line." + std::to_string(index),
+                 {left + 14.0F, top + 13.0F + static_cast<float>(index) * 29.0F,
+                  left + width - 14.0F, top + 39.0F + static_cast<float>(index) * 29.0F},
+                 lines[index], index == 0 ? 1.15F : 1.0F,
+                 index == 0 ? glm::vec3{0.25F, 0.82F, 1.0F}
+                            : glm::vec3{0.90F, 0.95F, 0.98F});
     uiRenderer_->draw(ui, viewportWidth_, viewportHeight_);
 }
 
@@ -1678,12 +1784,13 @@ void Renderer::drawPowerConnections(const World& world,
 
 
 
-void Renderer::regenerateTerrain(std::uint32_t seed, std::uint32_t chunksPerSide) {
+void Renderer::regenerateTerrain(std::uint32_t seed, std::uint32_t chunksPerSide,
+                                 TerrainLayoutId layout) {
     clearParticles();
     terrainSeed_ = seed;
     activeTerrainChunksPerSide_ = std::clamp(
         chunksPerSide, 10U, static_cast<std::uint32_t>(Terrain::chunksPerSide));
-    terrain_ = Terrain(seed);
+    terrain_ = Terrain(seed, std::move(layout));
     terrain_.rebuildFoundations(terrainFoundations_);
     constexpr int chunkSide = Terrain::chunkCellCount + 1;
     constexpr float halfExtent = static_cast<float>(Terrain::cellCount) * Terrain::spacing * 0.5F;
@@ -1714,7 +1821,12 @@ void Renderer::regenerateTerrain(std::uint32_t seed, std::uint32_t chunksPerSide
                                             : (terrain_.traversalAt(worldX, worldZ) ==
                                                        TerrainTraversalClass::difficult
                                                    ? 0.5F
-                                                   : 0.0F)});
+                                                   : 0.0F),
+                                        terrain_.waterSurfaceAt(worldX, worldZ),
+                                        terrain_.waterCoverageAt(worldX, worldZ),
+                                        terrain_.riverFlowAt(worldX, worldZ),
+                                        terrain_.generatedWaterSurfaceAt(worldX, worldZ),
+                                        terrain_.generatedWaterCoverageAt(worldX, worldZ)});
                 }
             }
             const std::size_t chunkIndex =
@@ -1740,12 +1852,16 @@ void Renderer::stageGeneratedTerrain(const Terrain& terrain, std::uint32_t seed,
     terrainFoundations_ = foundations;
     terrain_.rebuildFoundations(terrainFoundations_);
     syncFoundationMeshes();
+    const MapArea map = activeMapArea();
+    const int firstChunk = map.firstTerrainChunk();
+    const int chunkEnd = map.terrainChunkEnd();
+    const int uploadSide = map.intersectingTerrainChunksPerSide();
     pendingInitialTerrainUploads_.clear();
     pendingInitialTerrainUploads_.reserve(
-        static_cast<std::size_t>(activeTerrainChunksPerSide_ * activeTerrainChunksPerSide_));
+        static_cast<std::size_t>(uploadSide * uploadSide));
     // Reverse insertion makes pop_back() upload from the visible map's first chunk onward.
-    for (int z = static_cast<int>(activeTerrainChunksPerSide_) - 1; z >= 0; --z)
-        for (int x = static_cast<int>(activeTerrainChunksPerSide_) - 1; x >= 0; --x)
+    for (int z = chunkEnd - 1; z >= firstChunk; --z)
+        for (int x = chunkEnd - 1; x >= firstChunk; --x)
             pendingInitialTerrainUploads_.push_back({x, z});
     initialTerrainUploadCount_ = pendingInitialTerrainUploads_.size();
 }
@@ -1889,10 +2005,15 @@ void Renderer::uploadTerrainChunk(int chunkX, int chunkZ) {
                                 terrain_.traversalAt(worldX, worldZ) ==
                                         TerrainTraversalClass::impassable
                                     ? 1.0F
-                                    : (terrain_.traversalAt(worldX, worldZ) ==
+                                   : (terrain_.traversalAt(worldX, worldZ) ==
                                                TerrainTraversalClass::difficult
                                            ? 0.5F
-                                           : 0.0F)});
+                                           : 0.0F),
+                                terrain_.waterSurfaceAt(worldX, worldZ),
+                                terrain_.waterCoverageAt(worldX, worldZ),
+                                terrain_.riverFlowAt(worldX, worldZ),
+                                terrain_.generatedWaterSurfaceAt(worldX, worldZ),
+                                terrain_.generatedWaterCoverageAt(worldX, worldZ)});
         }
     const std::size_t index = static_cast<std::size_t>(chunkZ * Terrain::chunksPerSide + chunkX);
     if (index < terrainChunks_.size()) {

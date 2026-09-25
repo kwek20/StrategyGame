@@ -36,7 +36,7 @@ bool rejects(const std::filesystem::path& units,
 
 } // namespace
 
-int main() {
+int strategyTestMain() {
     const std::filesystem::path directory =
         std::filesystem::temp_directory_path() / "strategy_definition_validation";
     std::filesystem::create_directories(directory);

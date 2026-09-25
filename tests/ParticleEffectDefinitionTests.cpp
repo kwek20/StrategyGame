@@ -5,7 +5,7 @@
 #include <iostream>
 #include <stdexcept>
 
-int main() {
+int strategyTestMain() {
     bool valid = true;
     const strategy::ParticleEffectCatalogue catalogue =
         strategy::ParticleEffectCatalogue::load();

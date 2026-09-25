@@ -10,6 +10,7 @@ namespace strategy {
 struct GameConfig {
     std::filesystem::path saveDirectory{"gamedata/saves/"};
     std::string saveFile{"autosave.json"};
+    std::filesystem::path matchSetupFile{"gamedata/match_setup.json"};
     int resolutionWidth{1280};
     int resolutionHeight{720};
     bool fullscreen{false};
@@ -24,11 +25,13 @@ struct GameConfig {
                                                            {"right", 100},
                                                            {"debug", 1073741884},
                                                            {"terrain_debug", 1073741885},
+                                                           {"water_debug", 1073741887},
                                                            {"pause", 27}};
 
     [[nodiscard]] static GameConfig load(const std::filesystem::path& path);
     void write(const std::filesystem::path& path) const;
     [[nodiscard]] std::filesystem::path savePath() const;
+    [[nodiscard]] const std::filesystem::path& matchSetupPath() const { return matchSetupFile; }
 };
 
 } // namespace strategy

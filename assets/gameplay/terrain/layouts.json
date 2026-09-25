@@ -1,0 +1,70 @@
+{
+  "version": 1,
+  "activeLayout": "continental",
+  "layouts": [
+    {
+      "id": "continental",
+      "nameKey": "terrain.layout.continental",
+      "version": 1,
+      "source": "procedural",
+      "generator": "continental_v1",
+      "hydrologyEnabled": true,
+      "enabledBiomes": []
+    },
+    {
+      "id": "open_plains",
+      "nameKey": "terrain.layout.open_plains",
+      "version": 1,
+      "source": "procedural",
+      "generator": "continental_v1",
+      "shape": "plains",
+      "hydrologyEnabled": true,
+      "parameters": { "featureStrength": 0.58, "featureRadius": 0.30 },
+      "enabledBiomes": []
+    },
+    {
+      "id": "central_hill",
+      "nameKey": "terrain.layout.central_hill",
+      "version": 1,
+      "source": "procedural",
+      "generator": "continental_v1",
+      "shape": "central_hill",
+      "hydrologyEnabled": true,
+      "parameters": { "featureStrength": 0.24, "featureRadius": 0.42 },
+      "enabledBiomes": []
+    },
+    {
+      "id": "rolling_hills",
+      "nameKey": "terrain.layout.rolling_hills",
+      "version": 1,
+      "source": "procedural",
+      "generator": "continental_v1",
+      "shape": "hills",
+      "hydrologyEnabled": true,
+      "parameters": { "featureStrength": 0.08, "featureRadius": 0.30 },
+      "enabledBiomes": []
+    },
+    {
+      "id": "central_water",
+      "nameKey": "terrain.layout.central_water",
+      "version": 1,
+      "source": "procedural",
+      "generator": "continental_v1",
+      "shape": "central_water",
+      "hydrologyEnabled": true,
+      "parameters": { "featureStrength": 0.28, "featureRadius": 0.36 },
+      "enabledBiomes": []
+    },
+    {
+      "id": "archipelago",
+      "nameKey": "terrain.layout.archipelago",
+      "version": 1,
+      "source": "procedural",
+      "generator": "continental_v1",
+      "shape": "islands",
+      "hydrologyEnabled": true,
+      "parameters": { "featureStrength": 0.18, "featureRadius": 0.30, "islandCount": 7 },
+      "enabledBiomes": []
+    }
+  ]
+}

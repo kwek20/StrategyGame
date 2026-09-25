@@ -4,7 +4,7 @@
 
 #include <stdexcept>
 
-int main() {
+int strategyTestMain() {
     strategy::MaterialManager materials;
     const strategy::ShaderHandle shader{2, 1};
     const strategy::MaterialHandle world = materials.create({"world", shader});

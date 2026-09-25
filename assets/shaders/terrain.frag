@@ -16,6 +16,7 @@ uniform sampler2D foundationTexture;
 uniform bool useExploration;
 uniform bool useFoundationTexture;
 uniform bool terrainDebug;
+uniform int waterDebugMode;
 uniform float waterLevel;
 out vec4 outColor;
 
@@ -60,6 +61,12 @@ void main() {
                                          : vertexColor);
         vec3 semanticColor = mix(traversalColor, traversalColor * 0.22, grid * 0.72);
         outColor = vec4(semanticColor, 1.0);
+        return;
+    }
+    if (waterDebugMode > 0) {
+        float contours = smoothstep(0.46, 0.50,
+            abs(fract(worldPosition.y * 0.35) - 0.5));
+        outColor = vec4(mix(vec3(0.035), vec3(0.11), contours), 1.0);
         return;
     }
 

@@ -16,7 +16,7 @@ strategy::Entity& create(strategy::GameSession& session,
 }
 }
 
-int main() {
+int strategyTestMain() {
     const strategy::DefinitionRegistry definitions;
     bool valid = true;
 

@@ -42,7 +42,7 @@ bool usesOnlyModernGltfImporter() {
 
 } // namespace
 
-int main() {
+int strategyTestMain() {
     const bool importerConfiguration = usesOnlyModernGltfImporter();
     const bool townCenter =
         imports("assets/models/buildings/TownCenter_FirstAge_Level1.gltf", false);

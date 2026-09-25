@@ -39,7 +39,8 @@ void SaveGame::write(const std::filesystem::path& path,
                      std::uint32_t terrainSeed,
                      const World& world,
                      const PlayerRegistry* players,
-                     std::uint32_t mapChunksPerSide) {
+                     std::uint32_t mapChunksPerSide,
+                     std::string terrainLayout) {
     std::filesystem::create_directories(path.parent_path());
     std::ofstream stream(path, std::ios::trunc);
     if (!stream) {
@@ -49,11 +50,13 @@ void SaveGame::write(const std::filesystem::path& path,
     rapidjson::PrettyWriter<rapidjson::OStreamWrapper> writer{output};
     writer.StartObject();
     writer.Key("formatVersion");
-    writer.Uint(7);
+    writer.Uint(formatVersion);
     writer.Key("terrainSeed");
     writer.Uint(terrainSeed);
     writer.Key("mapChunksPerSide");
     writer.Uint(mapChunksPerSide);
+    writer.Key("terrainLayout");
+    writer.String(terrainLayout.c_str());
     writer.Key("foundations");
     writer.StartArray();
     for (const TerrainFoundation& foundation : world.foundations()) {
@@ -151,8 +154,6 @@ void SaveGame::write(const std::filesystem::path& path,
             writer.StartObject();
             writer.Key("directlyControllable");
             writer.Bool(entity.unitControl.directlyControllable);
-            writer.Key("directController");
-            writer.Uint64(entity.authority.directController);
             writer.Key("directInput");
             writer.StartArray();
             writer.Double(entity.unitControl.directInput.x);
@@ -343,17 +344,20 @@ SaveData SaveGame::read(const std::filesystem::path& path) {
     rapidjson::Document document;
     document.ParseStream(input);
     if (document.HasParseError() || !document.IsObject() || !document.HasMember("formatVersion") ||
-        !document["formatVersion"].IsUint() || document["formatVersion"].GetUint() != 7 ||
+        !document["formatVersion"].IsUint() ||
+        document["formatVersion"].GetUint() != formatVersion ||
         !document.HasMember("terrainSeed") || !document["terrainSeed"].IsUint() ||
         !document.HasMember("mapChunksPerSide") || !document["mapChunksPerSide"].IsUint() ||
+        !document.HasMember("terrainLayout") || !document["terrainLayout"].IsString() ||
         !document.HasMember("players") || !document["players"].IsArray() ||
         !document.HasMember("entities") || !document["entities"].IsArray()) {
-        throw std::runtime_error("Invalid or unsupported save file: " + path.string());
+        throw std::runtime_error("Save file does not match the current format: " + path.string());
     }
 
     SaveData result;
     result.terrainSeed = document["terrainSeed"].GetUint();
     result.mapChunksPerSide = document["mapChunksPerSide"].GetUint();
+    result.terrainLayout = document["terrainLayout"].GetString();
     if (result.mapChunksPerSide < 10 || result.mapChunksPerSide > 20)
         throw std::runtime_error("Invalid save map chunk count");
     if (!document.HasMember("foundations") || !document["foundations"].IsArray())
@@ -371,59 +375,52 @@ SaveData SaveGame::read(const std::filesystem::path& path) {
             throw std::runtime_error("Invalid terrain foundation radii");
         result.foundations.push_back(foundation);
     }
-    {
-        for (const auto& player : document["players"].GetArray())
-            if (player.IsObject() && player.HasMember("id") && player["id"].IsUint64() &&
-                player.HasMember("country") && player["country"].IsString()) {
-                const std::string specialization =
-                    player.HasMember("specialization") && player["specialization"].IsString()
-                        ? player["specialization"].GetString()
-                        : "unassigned";
-                const auto id = player["id"].GetUint64();
-                if (id == 1) {
-                    result.playerOneCountry = player["country"].GetString();
-                    result.playerOneSpecialization = specialization;
-                } else if (id == 2) {
-                    result.playerTwoCountry = player["country"].GetString();
-                    result.playerTwoSpecialization = specialization;
-                }
-                if (id >= 1 && id <= 2) {
-                    const std::size_t index = static_cast<std::size_t>(id - 1);
-                    if (!player.HasMember("resources") || !player["resources"].IsObject())
-                        throw std::runtime_error("Invalid player resources");
-                    if (player.HasMember("resources") && player["resources"].IsObject())
-                        for (auto resource = player["resources"].MemberBegin();
-                             resource != player["resources"].MemberEnd();
-                             ++resource) {
-                            if (!resource->value.IsNumber() || resource->value.GetFloat() < 0.0F)
-                                throw std::runtime_error("Invalid player resource amount");
-                            result.resources[index][resource->name.GetString()] =
-                                resource->value.GetFloat();
-                        }
-                    if (player.HasMember("discovered") && player["discovered"].IsString()) {
-                        const std::string cells = player["discovered"].GetString();
-                        result.discovered[index].reserve(cells.size());
-                        for (char cell : cells)
-                            result.discovered[index].push_back(cell == '1' ? 255 : 0);
-                    }
-                }
-                if (id >= 1 && id <= 2 && player.HasMember("intelligence") &&
-                    player["intelligence"].IsArray()) {
-                    auto& records = result.intelligence[static_cast<std::size_t>(id - 1)];
-                    for (const auto& item : player["intelligence"].GetArray()) {
-                        if (!item.IsObject() || !item.HasMember("id") || !item["id"].IsUint64() ||
-                            !item.HasMember("model") || !item["model"].IsString() ||
-                            !item.HasMember("building") || !item["building"].IsBool())
-                            throw std::runtime_error("Invalid intelligence record");
-                        records.push_back({item["id"].GetUint64(),
-                                           item["model"].GetString(),
-                                           readVector(item, "position"),
-                                           readVector(item, "rotation"),
-                                           readVector(item, "scale"),
-                                           item["building"].GetBool()});
-                    }
-                }
-            }
+    if (document["players"].Size() != 2)
+        throw std::runtime_error("Current save format requires exactly two players");
+    std::array<bool, 2> loadedPlayers{};
+    for (const auto& player : document["players"].GetArray()) {
+        if (!player.IsObject() || !player.HasMember("id") || !player["id"].IsUint64() ||
+            !player.HasMember("country") || !player["country"].IsString() ||
+            !player.HasMember("specialization") || !player["specialization"].IsString() ||
+            !player.HasMember("resources") || !player["resources"].IsObject() ||
+            !player.HasMember("discovered") || !player["discovered"].IsString() ||
+            !player.HasMember("intelligence") || !player["intelligence"].IsArray())
+            throw std::runtime_error("Invalid player in current save format");
+        const auto id = player["id"].GetUint64();
+        if (id < 1 || id > 2 || loadedPlayers[static_cast<std::size_t>(id - 1)])
+            throw std::runtime_error("Invalid or duplicate saved player ID");
+        const std::size_t index = static_cast<std::size_t>(id - 1);
+        loadedPlayers[index] = true;
+        if (id == 1) {
+            result.playerOneCountry = player["country"].GetString();
+            result.playerOneSpecialization = player["specialization"].GetString();
+        } else {
+            result.playerTwoCountry = player["country"].GetString();
+            result.playerTwoSpecialization = player["specialization"].GetString();
+        }
+        for (auto resource = player["resources"].MemberBegin();
+             resource != player["resources"].MemberEnd(); ++resource) {
+            if (!resource->value.IsNumber() || resource->value.GetFloat() < 0.0F)
+                throw std::runtime_error("Invalid player resource amount");
+            result.resources[index][resource->name.GetString()] = resource->value.GetFloat();
+        }
+        const std::string cells = player["discovered"].GetString();
+        result.discovered[index].reserve(cells.size());
+        for (char cell : cells) {
+            if (cell != '0' && cell != '1')
+                throw std::runtime_error("Invalid discovered-map encoding");
+            result.discovered[index].push_back(cell == '1' ? 255 : 0);
+        }
+        auto& records = result.intelligence[index];
+        for (const auto& item : player["intelligence"].GetArray()) {
+            if (!item.IsObject() || !item.HasMember("id") || !item["id"].IsUint64() ||
+                !item.HasMember("model") || !item["model"].IsString() ||
+                !item.HasMember("building") || !item["building"].IsBool())
+                throw std::runtime_error("Invalid intelligence record");
+            records.push_back({item["id"].GetUint64(), item["model"].GetString(),
+                               readVector(item, "position"), readVector(item, "rotation"),
+                               readVector(item, "scale"), item["building"].GetBool()});
+        }
     }
     const GameplayCatalogue gameplayCatalogue;
     for (const auto& value : document["entities"].GetArray()) {
@@ -443,9 +440,12 @@ SaveData SaveGame::read(const std::filesystem::path& path) {
         entity.transform.scale = readVector(value, "scale");
         {
             if (!value.HasMember("owner") || !value["owner"].IsUint64() ||
+                !value.HasMember("directController") ||
+                !value["directController"].IsUint64() ||
                 !value.HasMember("components") || !value["components"].IsObject())
                 throw std::runtime_error("Invalid component entity");
             entity.authority.owner = value["owner"].GetUint64();
+            entity.authority.directController = value["directController"].GetUint64();
             gameplayCatalogue.initializeEntity(entity);
             const auto& components = value["components"];
             if (components.HasMember("health")) {
@@ -457,28 +457,29 @@ SaveData SaveGame::read(const std::filesystem::path& path) {
                 entity.health.current = item["current"].GetFloat();
                 entity.health.maximum = item["maximum"].GetFloat();
             }
+            if (components.HasMember("vision")) {
+                if (!components["vision"].IsObject())
+                    throw std::runtime_error("Invalid vision component");
+                entity.vision.emplace();
+            }
             if (components.HasMember("unit")) {
                 const auto& item = components["unit"];
                 entity.unitControl.emplace();
                 if (!item.IsObject() || !item.HasMember("directlyControllable") ||
                     !item["directlyControllable"].IsBool() || !item.HasMember("directInput") ||
                     !item["directInput"].IsArray() || item["directInput"].Size() != 2 ||
+                    !item.HasMember("running") || !item["running"].IsBool() ||
+                    !item.HasMember("destination") || !item["destination"].IsArray() ||
+                    !item.HasMember("hasDestination") || !item["hasDestination"].IsBool() ||
                     !item.HasMember("order") || !item["order"].IsUint() ||
                     !item.HasMember("orderTarget") || !item["orderTarget"].IsUint64())
                     throw std::runtime_error("Invalid unit component");
                 entity.unitControl.directlyControllable = item["directlyControllable"].GetBool();
-                entity.authority.directController =
-                    item.HasMember("directController") && item["directController"].IsUint64()
-                        ? item["directController"].GetUint64()
-                        : 0;
                 entity.unitControl.directInput = {item["directInput"][0].GetFloat(),
                                                   item["directInput"][1].GetFloat()};
-                entity.unitControl.running = item.HasMember("running") &&
-                                             item["running"].IsBool() && item["running"].GetBool();
+                entity.unitControl.running = item["running"].GetBool();
                 entity.unitControl.strategicDestination = readVector(item, "destination");
-                entity.unitControl.hasStrategicDestination = item.HasMember("hasDestination") &&
-                                                             item["hasDestination"].IsBool() &&
-                                                             item["hasDestination"].GetBool();
+                entity.unitControl.hasStrategicDestination = item["hasDestination"].GetBool();
                 entity.unitControl.order = static_cast<UnitOrderKind>(item["order"].GetUint());
                 entity.unitControl.orderTarget = item["orderTarget"].GetUint64();
                 if (item["order"].GetUint() > static_cast<unsigned>(UnitOrderKind::stranded))
@@ -725,14 +726,33 @@ SaveData SaveGame::read(const std::filesystem::path& path) {
             if (components.HasMember("upgrades")) {
                 entity.upgrades.emplace();
                 const auto& item = components["upgrades"];
-                if (item.IsObject() && item.HasMember("levels") && item["levels"].IsObject())
-                    for (auto upgrade = item["levels"].MemberBegin();
-                         upgrade != item["levels"].MemberEnd();
-                         ++upgrade)
-                        if (upgrade->value.IsUint())
-                            entity.upgrades.levels[upgrade->name.GetString()] =
-                                upgrade->value.GetUint();
+                if (!item.IsObject() || !item.HasMember("levels") ||
+                    !item["levels"].IsObject())
+                    throw std::runtime_error("Invalid upgrades component");
+                for (auto upgrade = item["levels"].MemberBegin();
+                     upgrade != item["levels"].MemberEnd(); ++upgrade) {
+                    if (!upgrade->value.IsUint())
+                        throw std::runtime_error("Invalid saved upgrade level");
+                    entity.upgrades.levels[upgrade->name.GetString()] =
+                        upgrade->value.GetUint();
+                }
             }
+            // Format 1 stores the exact authoritative component set. Definition-backed defaults
+            // initialize component values, but an absent component is absent after loading.
+            if (!components.HasMember("health")) entity.health.reset();
+            if (!components.HasMember("vision")) entity.vision.reset();
+            if (!components.HasMember("unit")) entity.unitControl.reset();
+            if (!components.HasMember("gatherer")) entity.gatherer.reset();
+            if (!components.HasMember("flight")) entity.flight.reset();
+            if (!components.HasMember("battery")) entity.battery.reset();
+            if (!components.HasMember("construction")) entity.construction.reset();
+            if (!components.HasMember("combat")) entity.combat.reset();
+            if (!components.HasMember("resource")) entity.resource.reset();
+            if (!components.HasMember("processor")) entity.processor.reset();
+            if (!components.HasMember("power")) entity.power.reset();
+            if (!components.HasMember("production")) entity.production.reset();
+            if (!components.HasMember("buildingUpgrades")) entity.buildingUpgrades.reset();
+            if (!components.HasMember("upgrades")) entity.upgrades.reset();
             result.entities.push_back(std::move(entity));
         }
     }

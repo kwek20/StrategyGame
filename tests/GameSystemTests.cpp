@@ -12,11 +12,13 @@
 
 #include <cmath>
 #include <array>
+#include <exception>
 #include <iostream>
 #include <limits>
 #include <unordered_set>
 
-int main() {
+int strategyTestMain() {
+    try {
     const strategy::GameplayCatalogue gameplay;
     std::unordered_set<std::string> countryIds;
     bool valid = gameplay.countries().size() >= 2;
@@ -1372,4 +1374,8 @@ int main() {
     }
     std::cout << "Game system validation passed\n";
     return 0;
+    } catch (const std::exception& error) {
+        std::cerr << "Game system validation threw: " << error.what() << '\n';
+        return 2;
+    }
 }

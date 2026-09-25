@@ -1,6 +1,6 @@
 # Agent Recovery Context
 
-Snapshot updated: 2026-09-23. Always inspect the current commit and working-tree diff.
+Snapshot updated: 2026-09-25. Always inspect the current commit and working-tree diff.
 Always inspect newer commits and diffs before relying on this snapshot.
 
 This file is optimized for an agent recovering the project without conversation history. Treat
@@ -34,6 +34,23 @@ all prose, IDs, and paths below as context to verify, not as permission to disca
 
 If documentation and code disagree, identify the discrepancy explicitly. Do not silently preserve
 legacy behavior. There are no public save files and no requirement for legacy save migration.
+The save schema is format 1 and must remain format 1 until the user explicitly changes this
+policy. Update format 1 in place during development; do not add migrations, compatibility readers,
+fallback fields, or increment the format number. Existing local saves may be deleted when the
+schema changes.
+
+## Current terrain priority
+
+Water refinement is paused. Preserve the existing optional `TerrainWaterGenerator`, layout-level
+`hydrologyEnabled` switch, water semantics, and F6 diagnostics, but do not select river smoothing
+or water presentation as the next task unless the user explicitly resumes it. Known raw-water gaps
+are attributed to reach/confluence ownership, vertex-grid rasterization, and coverage/depth cutoff;
+future work must repair the generated field rather than masking it in the shader.
+
+The active terrain TODO order is resource-field statistical and stream-isolation coverage,
+navigation/start/fairness diagnostics, generation reports and map-size performance budgets,
+layout/biome definition extensibility, custom-map hardening, and broader deterministic seam and
+quality tests. Vegetation expansion and tuning remain deferred as well.
 
 ## Product direction
 
@@ -268,3 +285,10 @@ Then proceed to Milestone 6, the first combat slice.
 - Foundation/slab visuals are unfinished; avoid treating the current concrete texture as approved.
 - Movement still uses floating point. Cross-architecture lockstep may eventually require fixed point
   or authoritative correction even though commands/ticks/order/checksums are deterministic today.
+# Match setup persistence
+
+Match setup choices are stored independently of save games in `gamedata/match_setup.json`
+(configurable through `configuration.matchSetupFile`). The profile stores stable IDs and numeric
+values, never UI selector indices. `MatchSetupProfileStore` preserves unknown JSON members when it
+writes known options, so future biome and layout controls can add nested settings without losing
+them. This profile has no save-game format version and must not change `SaveGame::formatVersion`.

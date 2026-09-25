@@ -15,17 +15,24 @@ world metadata become richer.
 This document defines the target design. Gameplay values must live in definitions rather than in
 rendering or interface code.
 
-## Current system and limitations
+## Current system
 
 The current `Terrain` implementation:
 
-- Generates one fixed maximum 20x20-chunk heightfield from domain-warped fractal, billow, and ridge
-  noise.
-- Globally normalizes every seed to the full 0–1 height range. This makes relative terrain readable
-  but forces every map to contain similar extremes and prevents stable water/biome thresholds.
-- Uses height primarily as terrain color and as a shared filter for all resource types.
-- Smooths the complete heightfield four times, reducing small artifacts but also erasing regional
-  character.
+- Generates a maximum 20x20-chunk heightfield from domain-warped regional fields, directional
+  mountain chains, plains, hills, basins, rocky outcrops, and coastal shelves.
+- Uses stable authored curves without per-seed normalization or authored min/max clipping. The
+  normalized storage range is only a representation boundary; the generator is free to use all of
+  it.
+- Uses a 30-world-unit vertical scale so mountain silhouettes and valleys remain legible against
+  the 480-world-unit maximum map extent.
+- Samples expensive regional noise on a configurable coarse grid, then interpolates it across the
+  render heightfield. This makes large-scale forms continuous and keeps loading work bounded.
+- Runs explicit post-processing passes: broad plain leveling, smaller-radius hill rounding, light
+  mountain erosion, and final coastal smoothing. Each pass is masked by its landform rather than
+  uniformly flattening the map.
+- Derives biome, traversal, buildability, water, mountain barriers, and passes from the resulting
+  authoritative terrain.
 - Builds navigation from slope after terrain generation.
 - Supports immutable base heights plus derived construction foundations.
 
@@ -54,6 +61,89 @@ are presentation-only decorations and are cleared by construction.
    borders and neighbor sampling.
 8. **Inspectable output** — F3/debug tools should expose fields, biome IDs, traversal class, water
    depth, resource suitability, and generation decisions.
+
+## Modular generation architecture
+
+Terrain generation is selected through `assets/gameplay/terrain/layouts.json`. A layout is a
+match-level choice and is separate from the lower-level noise generator:
+
+- `TerrainGenerationPipeline` owns the stable stage order.
+- `TerrainLayoutGenerator` applies broad topology such as natural continents, open plains,
+  rolling hills, a central hill, central water, or an archipelago.
+- `TerrainFieldGenerator` produces reusable regional fields and the base procedural heightfield.
+- `TerrainWaterGenerator` owns the optional hydrology stage and consumes the completed layout
+  instead of defining the layout itself. Its dry path initializes every water, river, wetland,
+  flow, and diagnostic field to a valid empty state.
+- `TerrainBiomeGenerator` classifies one independently enabled set of biome definitions.
+- Resource, start, vegetation, navigation, and validation stages consume the resulting terrain
+  metadata and remain outside the layout generator.
+
+Layouts can select a procedural generator, toggle hydrology, and optionally restrict the enabled
+biome set. An empty `enabledBiomes` list means every enabled biome is available. A non-empty list
+must include the fallback biome and, when hydrology is active, both water biomes. Individual biome
+definitions can use `"generator": "range"` or `"generator": "disabled"`; `enabled: false` remains
+the global switch for a biome.
+
+Set `"hydrologyEnabled": false` on a layout to omit oceans, rivers, lakes, and wetlands for that
+generation. Direct procedural callers can pass `waterEnabled = false`; both routes use the same
+`TerrainWaterGenerator::clear` behavior, so rendering, semantics, diagnostics, and navigation see
+one consistent dry map rather than stale or partially initialized water data.
+
+Authored maps use a layout with `"source": "custom_map"` and a `map` path. The initial authored
+map contract is a JSON height grid:
+
+```json
+{
+  "width": 3,
+  "height": 3,
+  "heights": [0.2, 0.3, 0.2, 0.3, 0.6, 0.3, 0.2, 0.3, 0.2]
+}
+```
+
+Values are normalized heights and are deterministically resampled to the terrain mesh. The layout
+still chooses a generator preset because its water, barrier, connectivity, and regional-field
+settings are reused by later stages. This keeps custom maps compatible with the same simulation
+systems while allowing future authored biome, water, start, and resource layers to be added to the
+manifest without creating a second world representation.
+
+The built-in layout definitions currently include `continental`, `open_plains`, `rolling_hills`,
+`central_hill`, `central_water`, and `archipelago`. Only `continental` is active by default; match
+setup can select another layout by constructing terrain with its stable `TerrainLayoutId`.
+
+### Water diagnostics
+
+F6 cycles a water-only diagnostic through raw generation, the smoothed render result, a smoothing
+difference view, and off. Hydrology retains raw surface and coverage fields before shoreline
+smoothing so the view compares real pipeline stages rather than attempting to reconstruct the
+input afterward. The overlay reports both surfaces, depths, coverages, their deltas, and the local
+flow vector. Animated white bands travel along the flow field; their direction and discontinuities
+make incorrect reach ownership and confluence transitions visible. F4 and F6 are mutually
+exclusive to keep terrain-semantic and water-stage diagnostics unambiguous.
+
+### Current terrain work priority
+
+Water refinement is intentionally paused. Oceans, rivers, lakes, wetlands, traversal semantics,
+F6 diagnostics, and the optional `TerrainWaterGenerator` stage remain part of the supported
+foundation, but visual river repair is not an active TODO. Known raw-field discontinuities at
+reach ownership changes, confluences, narrow vertex-sampled channels, and depth/coverage cutoffs
+are retained as future hydrology work rather than being hidden with additional shader smoothing.
+
+Active terrain-generation work proceeds in this order:
+
+1. Complete resource-field statistical tolerances, independent named-stream isolation tests, and
+   non-circular field shapes.
+2. Extend F4 with connected navigation regions, resource suitability/rejection reasons, selected
+   starts, fairness travel-cost bands, retries, and per-stage generation timings.
+3. Add deterministic generation reports and performance/memory budgets for 10x10, 15x15, and
+   20x20 maps.
+4. Formalize layout-specific and biome-specific definition blocks so future match setup can toggle
+   biomes and supply overrides without hard-coded generator branches.
+5. Harden custom-map layers and validation after the procedural definition contract is stable.
+6. Expand multi-seed, chunk-boundary, connectivity, and statistical tests using broad quality
+   bounds and a small set of documented regression seeds.
+
+Deferred work consists of river/water visual refinement and further vegetation assets, tuning,
+diagnostics, and LOD. Resume those only when explicitly reprioritized.
 
 ## Target generation pipeline
 
@@ -131,7 +221,7 @@ Height-based grass variants are a first presentation rule:
 These clumps do not affect collision, navigation, visibility, resources, or checksums. Biome surface
 coverage should also drive shader-level grass color/detail independently of spawned clump models.
 
-### 4. Synthesize the base heightfield
+### 4. Synthesize and shape the base heightfield
 
 Combine the regional fields with biome-specific terrain profiles:
 
@@ -144,12 +234,31 @@ macro elevation
 = immutable base height
 ```
 
-Important changes from the current generator:
+The current shaping pipeline is:
+
+1. Sample low-resolution deterministic regional fields and bilinearly interpolate them across the
+   render mesh.
+2. Compose continental elevation, rolling hills, narrow directional mountain belts, foothills,
+   basins, rocky outcrops, restrained detail, and the initial coastal shelf.
+3. Level plains with a broad blur masked away from mountains and outcrops. This forms naturally
+   buildable areas without stamping flat circles.
+4. Round hills with a smaller kernel so their broad silhouettes and intervening valleys survive.
+5. Apply light repeated erosion only to mountain/outcrop masks, removing needle peaks without
+   erasing ridgelines.
+6. Smooth coastal shelves last, preventing the landform passes from reintroducing stepped shores.
+7. Clamp only to the normalized storage representation, then preserve the result as immutable base
+   height.
+
+Generator JSON owns the regional sampling stride, pass radii, and pass strengths. Mountain-chain
+thresholds independently control how much of the broad ridge noise becomes a mountain belt; this
+prevents a map-wide raised blanket while allowing substantially taller peaks.
+
+Rules retained by the implementation:
 
 - Do not normalize each map using its observed minimum and maximum. Use stable configured curves
   and clamp only at the end. This preserves meaningful biome and water thresholds across seeds.
 - Use terrace-free continuous curves for plains and uplift curves for hills/mountains.
-- Apply smoothing selectively by biome and erosion field, not uniformly to the entire map.
+- Apply smoothing selectively by landform and erosion field, not uniformly to the entire map.
 - Reserve contiguous buildable plateaus without forcing perfectly flat circles.
 - Generate cliffs from slope/uplift masks rather than single-cell spikes.
 - Sample beyond map boundaries when calculating noise and normals, preventing edge artifacts.
@@ -159,10 +268,53 @@ modify biome identity or regenerate resources.
 
 ### 5. Hydrology and water
 
-The first water implementation can use a stable global water level:
+Water uses a stable ocean level plus deterministic local inland water surfaces:
 
-- Terrain below the water level renders with a water surface.
-- Store authoritative `waterDepth` and `isSubmerged` values per terrain/navigation cell.
+- Terrain below the ocean level renders with a water surface.
+- A configurable coarse hydrology grid runs a deterministic priority flood. Every inland cell gets
+  a downstream receiver that reaches the ocean or map boundary, including cells inside closed
+  depressions.
+- The drainage grid currently samples every 2 world units, independently of the denser render
+  mesh. River and wetland thresholds are expressed as upstream catchment area rather than cell
+  counts, so changing hydrology resolution does not change the intended drainage density.
+- Drainage is accumulated from high cells toward those receivers in stable elevation/index order.
+  High-accumulation cells are first assembled into an authoritative river graph rather than being
+  stamped directly into terrain. The graph is split into stable connected reaches between sources,
+  confluences, and outlets; short first-order stubs are pruned deterministically.
+- Every active channel cell receives a Strahler stream order. Equal-order tributaries raise the
+  downstream order, while a larger tributary retains its order. Width and carving strength consume
+  both stream order and accumulated drainage, producing a clear tributary-to-main-river hierarchy.
+- River reaches are displaced only in low-slope terrain, projected toward the local valley floor,
+  smoothed with deterministic Chaikin passes, and resampled at a fixed world-space interval. Their
+  stored water surfaces are constrained to descend monotonically. This yields continuous paths for
+  later distance-field carving without allowing decorative meanders to cross ridges or flow uphill.
+- Complete paths are rasterized into a signed river-distance field together with nearest flow
+  direction, local half-width, water surface, drainage, and stream order. Overlapping tributaries
+  use the minimum signed distance, so bends and confluences form a continuous union rather than a
+  stack of circular or line-segment stamps.
+- One terrain pass derives a consistent cross-section from that field: a gently curved channel bed,
+  a smooth bank transition, and a wider low-strength floodplain flattening zone. Channel depth and
+  floodplain width scale downstream with the authoritative path attributes. A final configurable
+  blur and minimum-depth cutoff operate on the water-depth field—not the terrain—to remove
+  saw-tooth water slivers without softening the surrounding landform.
+- Confluences are detected from the authoritative upstream graph. Their channel fields widen and
+  blend into the downstream reach, receive a stable downstream flow vector, and may expose a
+  deterministic sediment bar on one side of the junction. River reaches that terminate in ocean
+  widen progressively over a configurable estuary length instead of ending at full river width.
+- Channel, bank, floodplain, wetland, sediment, confluence, and estuary masks remain distinct.
+  Semantic terrain samples use these masks to blend wet-bed rock/dirt, muddy banks, greener
+  floodplains, wetland soil, and sediment deposits. The masks are also exposed as terrain tags so
+  vegetation and later gameplay rules can target them without inferring zones from color.
+- Shallow filled depressions with sufficient drainage become small lakes. Lower-accumulation,
+  low-gradient drainage areas become wetlands instead of open water.
+- Terrain vertices store an explicit water kind (`none`, `ocean`, `river`, or `lake`), continuous
+  water coverage, local water-surface height, and drainage metadata. Wetlands are a separate land
+  tag and do not imply an open-water surface.
+- The water shader reads both coverage and local surface height. It never infers water merely
+  because a stored surface happens to be above a later terrain deformation. This permits elevated
+  rivers and lakes without forcing their beds to sea level or producing water around foundations.
+- Authoritative `waterDepth`, `waterCoverage`, `waterKind`, and `isSubmerged` values are stored per
+  terrain/navigation cell. A water surface height is meaningful only where coverage is nonzero.
 - Terrain supplies independent traversal costs for land, water, and air domains. Deep water denies
   land movement while allowing water and air movement.
 - Building definitions state whether shallow/deep water placement is permitted; initially all
@@ -171,10 +323,25 @@ The first water implementation can use a stable global water level:
   obstacles is a separate property and does not grant access through terrain barriers.
 - Fog and visibility continue across water unless a future rule changes them.
 
-Later hydrology may add lakes and rivers using basin/fill and flow fields. River generation should
-be a separate deterministic stage, not an ad hoc height deformation. Water rendering, reflections,
-foam, and shoreline decoration are presentation-only; water occupancy and traversal are
-authoritative.
+River/lake/wetland classifications and local water depth are authoritative. Reflections, foam,
+waves, and decorative reeds remain presentation-only consumers of those results.
+
+Construction foundations modify only the derived land height layer. Their influence fades to zero
+at occupied water vertices; they neither move water surfaces nor rewrite ocean, river, or lake
+identity. Removing a foundation therefore restores base terrain without requiring hydrology to be
+regenerated.
+
+### 5a. Coast formation
+
+Coasts are shaped before drainage and classified after local water occupancy is known:
+
+- A masked final smoothing pass creates shallow coastal shelves.
+- Low, gently sloped coast cells classify as beaches and use the beach surface blend.
+- Peak/rock overlap creates occasional rocky coasts with difficult traversal.
+- Broad basin masks deepen selected continental edges into bays.
+- Sparse peak/outcrop overlap lifts parts of the coastal shelf into small offshore islands.
+- Shoreline tags are derived around ocean, river, and lake boundaries. Wetlands also carry the
+  shoreline tag, allowing the existing reed vegetation rule to populate low-gradient wet areas.
 
 ### 6. Derive terrain semantics and navigation
 
@@ -529,6 +696,20 @@ visual regression screenshots and known edge cases.
 Completed in the first terrain-rewrite slice:
 
 - Terrain generator, biome, and surface definition files with validated loading.
+- Six deterministic landform masks—plains, hills, mountain belts, rocky outcrops, coastal shelves,
+  and basins—now participate directly in height synthesis. Their named streams and definition-backed
+  strengths spatially separate broad playable ground, rolling relief, uplift, local rock, shelves,
+  and depressions without changing authoritative terrain ownership. F4 exposes all six masks.
+- Mountain belts use two configurable directional, anisotropic, domain-warped ridge families. A
+  broad foothill envelope bridges plains into the sharper mountain curve, while a high-ridge cliff
+  curve adds silhouette without applying equivalent roughness to the whole map.
+- Elevation shaping is landform-specific: plains compress continental relief, hills use a signed
+  continuous power curve, mountains and cliffs use sharper uplift curves, basins depress land, and
+  coastal shelves pull only a narrow band toward water level.
+- Smoothing is now selective. Each generated vertex keeps a deterministic smoothing influence:
+  plains and shelves receive strong smoothing, hills moderate smoothing, and mountain belts and
+  rocky outcrops preserve their detail. The configured pass count remains a global work budget,
+  not a global blur strength.
 - Named deterministic continentalness, erosion, peaks, moisture, temperature, detail, and domain
   warp fields sampled in world coordinates.
 - Definition-backed height synthesis with stable configured bounds and no per-seed min/max
@@ -561,7 +742,7 @@ biome, surface, traversal/buildability, slope, and regional fields beneath the c
    amphibious profiles can select either land or water per cell, entity-obstacle bypass is separate,
    and explicit universal barriers block every domain.
 
-### Phase B: water and barriers
+### Phase B: water and barriers — foundation complete, refinement paused
 
 6. ~~Add stable water levels, water occupancy, and a basic water render pass.~~ Complete. The
    generator owns a normalized water level, semantic cells expose deterministic depth/submersion,
@@ -582,6 +763,11 @@ biome, surface, traversal/buildability, slope, and regional fields beneath the c
    retains the local footprint, expansion-space, resource-site, edge, and separation checks. If a
    requested seed cannot produce a playable layout, match creation tries a bounded sequence of
    deterministically derived seeds and stores the successful resolved seed.
+
+Further river continuity and water presentation work is deferred. When resumed, address the raw
+signed water field and reach/confluence ownership before shader polish: continuous sub-vertex
+rasterization, one coherent junction surface/flow solution, and tests that reject dry holes inside
+connected channels. Do not treat extra blur as the durable fix.
 
 ### Phase C: starts and resources
 
@@ -662,16 +848,16 @@ The existing cluster generator is the migration source, not the final field impl
     cancellable background job. Atomic phase/work progress drives the live loading screen. The
     accepted authoritative terrain is copied to the renderer and uploaded in bounded chunk batches
     on the OpenGL thread while asset imports/uploads continue through the resource manager.
-20. Add field/biome/navigation/resource debug views and generation reports. F4 resource-field
+20. **Active:** add field/biome/navigation/resource debug views and generation reports. F4 resource-field
     bounds, centers, generated-node markers, cursor membership, and nearest-node distance are
     complete. Next prioritize connected navigation regions, resource suitability/rejection reasons,
     chosen starts, fairness bands, and generation timings. Vegetation-specific diagnostics are
     deferred.
-21. Add deterministic, connectivity, fairness, statistical, and chunk-seam tests. Exact multi-seed
+21. **Active:** add deterministic, connectivity, fairness, statistical, and chunk-seam tests. Exact multi-seed
     resource-layout determinism, field membership, variant validity, and global node non-overlap are
     covered. Next add statistical distribution tolerances and confirmation that resource
     compensation changes neither accepted terrain nor unrelated named random streams.
-22. Profile 10x10, 15x15, and 20x20 maps and establish generation-time, simulation-time, memory,
+22. **Next:** profile 10x10, 15x15, and 20x20 maps and establish generation-time, simulation-time, memory,
     terrain-upload, and rendering budgets. Record repeatable test seeds and machine configuration.
 
 ## First playable target

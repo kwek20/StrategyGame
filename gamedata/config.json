@@ -2,6 +2,7 @@
     "configuration": {
         "saveDirectory": "gamedata/saves/",
         "saveFile": "autosave.json",
+        "matchSetupFile": "gamedata/match_setup.json",
         "video": {
             "width": 1280,
             "height": 720,
@@ -18,6 +19,7 @@
             "backward": 115,
             "debug": 1073741884,
             "terrain_debug": 1073741885,
+            "water_debug": 1073741887,
             "forward": 119,
             "left": 97,
             "pause": 27,

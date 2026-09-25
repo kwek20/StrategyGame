@@ -35,16 +35,17 @@ bool sameLayout(const strategy::ResourceLayout& left,
 }
 
 std::vector<glm::vec2> anchors(const strategy::Terrain& terrain,
-                               const strategy::DefinitionRegistry& definitions) {
+                               const strategy::DefinitionRegistry& definitions,
+                               std::uint32_t mapChunksPerSide = 10) {
     std::vector<glm::vec2> result;
     for (const strategy::StartingRegion& region :
-         strategy::selectStartingRegions(terrain, definitions, 10, 2))
+         strategy::selectStartingRegions(terrain, definitions, mapChunksPerSide, 2))
         result.push_back(region.anchor);
     return result;
 }
 }
 
-int main() {
+int strategyTestMain() {
     const strategy::DefinitionRegistry definitions;
     const std::vector<std::uint32_t> seeds{0x13572468U, 0x24681357U, 0x51A7F00DU};
     bool valid = true;
@@ -109,6 +110,18 @@ int main() {
             for (const auto& variant : field->variants)
                 observed = observed || observedVariants.contains(variant.node.value);
         valid = valid && observed;
+    }
+
+    // Regression seed covering the default 15x15 match: landform shaping must not deny either
+    // player the opening Scrap capacity guaranteed by the fairness policy.
+    {
+        constexpr std::uint32_t regressionSeed = 123U;
+        const strategy::Terrain terrain{regressionSeed};
+        const std::vector<glm::vec2> starts = anchors(terrain, definitions, 15);
+        strategy::World world;
+        const strategy::ResourceLayout layout = strategy::populateResources(
+            world, terrain, definitions, regressionSeed, 15, 1.0F, starts);
+        valid = valid && !layout.nodes.empty();
     }
 
     if (!valid)

@@ -113,7 +113,8 @@ PlayState::PlayState(StateContext& context, MatchSetupOptions setup)
                "unassigned",
                setup.mapChunksPerSide,
                setup.startingResourcesScale,
-               setup.resourceAbundanceScale)
+               setup.resourceAbundanceScale,
+               TerrainLayoutId{std::move(setup.terrainLayout)})
     , config_(GameConfig::load(context.configPath)) {
     initializeStartingView();
 }
@@ -145,10 +146,12 @@ PlayState::PlayState(StateContext& context, SaveData data)
                data.playerTwoCountry,
                data.playerOneSpecialization,
                data.playerTwoSpecialization,
-               data.mapChunksPerSide)
+               data.mapChunksPerSide, 1.0F, 1.0F,
+               TerrainLayoutId{data.terrainLayout})
     , config_(GameConfig::load(context.configPath)) {
     session_.replaceWorld(std::move(data.entities), data.terrainSeed,
-                          std::move(data.foundations), data.mapChunksPerSide);
+                          std::move(data.foundations), data.mapChunksPerSide,
+                          TerrainLayoutId{data.terrainLayout});
     session_.restorePlayerProgress(1,
                                    std::move(data.resources[0]),
                                    std::move(data.discovered[0]),
@@ -342,13 +345,20 @@ void PlayState::handleEvent(const SDL_Event& event) {
     if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
         event.key.key == bound("terrain_debug", SDLK_F4)) {
         terrainDebug_ = !terrainDebug_;
+        if (terrainDebug_) waterDebugMode_ = 0;
+        return;
+    }
+    if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
+        event.key.key == bound("water_debug", SDLK_F6)) {
+        waterDebugMode_ = (waterDebugMode_ + 1) % 4;
+        if (waterDebugMode_ != 0) terrainDebug_ = false;
         return;
     }
     if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat && event.key.key == SDLK_F5) {
         try {
             SaveGame::write(
                 config_.savePath(), session_.terrainSeed(), session_.world(), &session_.players(),
-                session_.mapChunksPerSide());
+                session_.mapChunksPerSide(), session_.terrainLayout().value);
             context_.logger.info("persistence",
                                  "Saved game to " + config_.savePath().string());
             context_.events.enqueue(AudioEvent{AudioCue::saveGame});
@@ -362,8 +372,10 @@ void PlayState::handleEvent(const SDL_Event& event) {
             SaveData data = SaveGame::read(config_.savePath());
             pendingTerrainSeed_ = data.terrainSeed;
             pendingTerrainChunksPerSide_ = data.mapChunksPerSide;
+            pendingTerrainLayout_ = TerrainLayoutId{data.terrainLayout};
             session_.replaceWorld(std::move(data.entities), data.terrainSeed,
-                                  std::move(data.foundations), data.mapChunksPerSide);
+                                  std::move(data.foundations), data.mapChunksPerSide,
+                                  TerrainLayoutId{data.terrainLayout});
             possessedEntity_ = 0;
             viewMode_ = ViewMode::strategy;
             setMouseCaptured(false);
@@ -1109,9 +1121,11 @@ void PlayState::sanitizeEntityReferences() {
 void PlayState::render(Renderer& renderer) const {
     if (pendingTerrainSeed_) {
         renderer.regenerateTerrain(*pendingTerrainSeed_,
-            pendingTerrainChunksPerSide_.value_or(Terrain::chunksPerSide));
+            pendingTerrainChunksPerSide_.value_or(Terrain::chunksPerSide),
+            pendingTerrainLayout_.value_or(TerrainLayoutId{"continental"}));
         pendingTerrainSeed_.reset();
         pendingTerrainChunksPerSide_.reset();
+        pendingTerrainLayout_.reset();
     }
     renderer.setTerrainFoundations(session_.world().foundations());
     const glm::vec3 focus = camera_.focus();
@@ -1177,7 +1191,7 @@ void PlayState::render(Renderer& renderer) const {
             visibilityPlayer, false);
         hoverPosition_.reset();
     }
-    renderer.drawTerrain(view, visibilityPlayer, terrainDebug_);
+    renderer.drawTerrain(view, visibilityPlayer, terrainDebug_, waterDebugMode_);
     particlePresenter_.sync(renderer, session_.world(), visibilityPlayer,
                             session_.mapChunksPerSide());
     renderer.drawVegetation(session_.vegetation(), view, visibilityPlayer);
@@ -1381,6 +1395,10 @@ void PlayState::render(Renderer& renderer) const {
     if (terrainDebug_) {
         const glm::vec3 cursor = renderer.screenToTerrain(pointerScreen_.x, pointerScreen_.y, view);
         renderer.drawTerrainDebugHud(cursor, session_.resourceLayout());
+    }
+    if (waterDebugMode_ != 0) {
+        const glm::vec3 cursor = renderer.screenToTerrain(pointerScreen_.x, pointerScreen_.y, view);
+        renderer.drawWaterDebugHud(cursor, waterDebugMode_);
     }
     if (paused_) {
         UiDocument document = pauseUi(renderer.viewportWidth(), renderer.viewportHeight());

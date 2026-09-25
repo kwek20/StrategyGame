@@ -14,9 +14,11 @@
 namespace strategy {
 
 struct TerrainGeneratorTag;
+struct TerrainLayoutTag;
 struct TerrainBiomeTag;
 struct TerrainSurfaceTag;
 using TerrainGeneratorId = DefinitionId<TerrainGeneratorTag>;
+using TerrainLayoutId = DefinitionId<TerrainLayoutTag>;
 using TerrainBiomeId = DefinitionId<TerrainBiomeTag>;
 using TerrainSurfaceId = DefinitionId<TerrainSurfaceTag>;
 
@@ -34,11 +36,71 @@ struct TerrainHeightDefinition {
     float mountainThreshold{0.55F};
     float erosionStrength{0.55F};
     float ridgePower{2.5F};
-    float minimumHeight{0.02F};
-    float maximumHeight{0.95F};
     float warpScale{180.0F};
     float warpStrength{18.0F};
-    std::uint32_t smoothingPasses{2};
+};
+
+struct TerrainLandformDefinition {
+    float plainCompression{0.55F};
+    float hillAmplitude{0.07F};
+    float mountainBeltStrength{1.25F};
+    float outcropAmplitude{0.06F};
+    float basinDepth{0.08F};
+    float coastalShelfStrength{0.65F};
+    float offshoreIslandAmplitude{0.12F};
+    float coastalBayDepth{0.05F};
+    float chainAngleDegrees{28.0F};
+    float chainAnisotropy{3.0F};
+    float chainSharpness{1.8F};
+    float chainThresholdLow{0.55F};
+    float chainThresholdHigh{0.86F};
+    float secondaryChainWeight{0.45F};
+    float foothillAmplitude{0.06F};
+    float plainElevationCompression{0.58F};
+    float hillCurvePower{1.25F};
+    float mountainCurvePower{1.35F};
+    float cliffCurveThreshold{0.72F};
+    float cliffCurveStrength{0.05F};
+};
+
+struct TerrainPostProcessDefinition {
+    std::uint32_t regionalSampleStride{4};
+    std::uint32_t plainBlurRadius{7};
+    float plainFlattenStrength{0.82F};
+    std::uint32_t hillBlurRadius{3};
+    float hillSmoothingStrength{0.48F};
+    std::uint32_t mountainErosionPasses{2};
+    float mountainErosionStrength{0.10F};
+    std::uint32_t coastalBlurRadius{4};
+    float coastalSmoothingStrength{0.64F};
+};
+
+struct TerrainHydrologyDefinition {
+    float gridCellSize{2.0F};
+    // Upstream catchment area in square world units. Area-based thresholds keep the generated
+    // network stable when hydrology resolution changes.
+    float riverCatchmentArea{832.0F};
+    float wetlandCatchmentArea{544.0F};
+    float riverCarveDepth{0.012F};
+    float riverHalfWidth{1.8F};
+    float riverMeanderStrength{0.75F};
+    float riverPathSampleSpacing{0.75F};
+    float minimumFirstOrderLength{8.0F};
+    std::uint32_t riverSmoothingIterations{2};
+    float meanderMaximumSlopeDegrees{8.0F};
+    float riverBankFalloff{1.25F};
+    float riverFloodplainWidthMultiplier{2.5F};
+    float riverFloodplainFlattenStrength{0.35F};
+    float riverBankHeight{0.003F};
+    float riverMaximumIncision{0.012F};
+    float confluenceWidthMultiplier{1.35F};
+    float estuaryLength{12.0F};
+    float estuaryWidthMultiplier{1.8F};
+    std::uint32_t waterEdgeSmoothingRadius{2};
+    float minimumRenderedWaterDepth{0.0025F};
+    float lakeMinimumDepth{0.008F};
+    float lakeMaximumDepth{0.045F};
+    float wetlandMaximumSlopeDegrees{7.0F};
 };
 
 struct TerrainBarrierDefinition {
@@ -59,16 +121,43 @@ struct TerrainGeneratorDefinition {
     TerrainGeneratorId id;
     std::uint32_t version{1};
     TerrainHeightDefinition height;
+    TerrainLandformDefinition landforms;
+    TerrainPostProcessDefinition postProcessing;
+    TerrainHydrologyDefinition hydrology;
     TerrainBarrierDefinition barriers;
     TerrainConnectivityDefinition connectivity;
     float waterLevel{0.18F};
     std::unordered_map<std::string, TerrainNoiseFieldDefinition> fields;
 };
 
+enum class TerrainLayoutSource { procedural, customMap };
+enum class TerrainLayoutShape { natural, plains, hills, centralHill, centralWater, islands };
+
+// A layout chooses the broad map topology without owning the individual generation stages.
+// Procedural layouts reference a generator preset. Authored layouts reference a map manifest;
+// both continue through the same water, biome, navigation, resource, and validation pipeline.
+struct TerrainLayoutDefinition {
+    TerrainLayoutId id;
+    std::string nameKey;
+    std::uint32_t version{1};
+    TerrainLayoutSource source{TerrainLayoutSource::procedural};
+    TerrainLayoutShape shape{TerrainLayoutShape::natural};
+    TerrainGeneratorId generator;
+    std::filesystem::path customMap;
+    bool hydrologyEnabled{true};
+    float featureStrength{0.20F};
+    float featureRadius{0.28F};
+    std::uint32_t islandCount{6};
+    std::vector<TerrainBiomeId> enabledBiomes;
+};
+
 struct TerrainBiomeDefinition {
     TerrainBiomeId id;
     std::int32_t priority{0};
     bool enabled{true};
+    // Classifier implementations are independently selectable. "range" is the current
+    // suitability classifier; "disabled" preserves a definition without running it.
+    std::string generator{"range"};
     float minimumHeight{0.0F};
     float maximumHeight{1.0F};
     float minimumMoisture{0.0F};
@@ -104,6 +193,12 @@ class TerrainGenerationDefinitions final {
         const std::filesystem::path& directory = "assets/gameplay/terrain");
 
     [[nodiscard]] const TerrainGeneratorDefinition& activeGenerator() const;
+    [[nodiscard]] const TerrainLayoutDefinition& activeLayout() const;
+    [[nodiscard]] const TerrainLayoutDefinition& layout(TerrainLayoutId id) const;
+    [[nodiscard]] const TerrainGeneratorDefinition& generator(TerrainGeneratorId id) const;
+    [[nodiscard]] const std::vector<TerrainLayoutDefinition>& layouts() const {
+        return layoutList_;
+    }
     [[nodiscard]] TerrainBiomeId fallbackBiome() const { return fallbackBiome_; }
     [[nodiscard]] const std::vector<TerrainBiomeDefinition>& biomes() const { return biomes_; }
     [[nodiscard]] const std::vector<TerrainSurfaceDefinition>& surfaces() const {
@@ -111,9 +206,12 @@ class TerrainGenerationDefinitions final {
     }
 
   private:
+    TerrainLayoutId activeLayoutId_;
     TerrainGeneratorId activeGeneratorId_;
     TerrainBiomeId fallbackBiome_;
     std::unordered_map<std::string, TerrainGeneratorDefinition> generators_;
+    std::unordered_map<std::string, TerrainLayoutDefinition> layouts_;
+    std::vector<TerrainLayoutDefinition> layoutList_;
     std::vector<TerrainBiomeDefinition> biomes_;
     std::vector<TerrainSurfaceDefinition> surfaces_;
 };
@@ -125,6 +223,12 @@ struct TerrainRegionalFields {
     float moisture{0.0F};
     float temperature{0.0F};
     float detail{0.0F};
+    float plains{0.0F};
+    float hills{0.0F};
+    float mountainBelt{0.0F};
+    float rockyOutcrops{0.0F};
+    float coastalShelf{0.0F};
+    float basin{0.0F};
 };
 
 class TerrainFieldGenerator final {
@@ -149,6 +253,12 @@ class TerrainFieldGenerator final {
     RuntimeField moisture_;
     RuntimeField temperature_;
     RuntimeField detail_;
+    RuntimeField plains_;
+    RuntimeField hills_;
+    RuntimeField mountainBelt_;
+    RuntimeField rockyOutcrops_;
+    RuntimeField coastalShelf_;
+    RuntimeField basin_;
     std::uint32_t warpXSeed_{0};
     std::uint32_t warpZSeed_{0};
 

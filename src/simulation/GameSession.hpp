@@ -34,6 +34,7 @@ class GameSession final {
                          std::uint32_t mapChunksPerSide = Terrain::chunksPerSide,
                          float startingResourcesScale = 1.0F,
                          float resourceAbundanceScale = 1.0F,
+                         TerrainLayoutId terrainLayout = TerrainLayoutId{"continental"},
                          WorldGenerationProgress* generationProgress = nullptr);
 
     GameSession(const GameSession&) = delete;
@@ -45,7 +46,8 @@ class GameSession final {
     bool submit(PlayerCommand command);
     void replaceWorld(std::vector<Entity> entities, std::uint32_t terrainSeed,
                       std::vector<TerrainFoundation> foundations = {},
-                      std::uint32_t mapChunksPerSide = Terrain::chunksPerSide);
+                      std::uint32_t mapChunksPerSide = Terrain::chunksPerSide,
+                      TerrainLayoutId terrainLayout = TerrainLayoutId{"continental"});
     void restorePlayerProgress(PlayerId player,
                                std::map<std::string, float> resources,
                                std::vector<std::uint8_t> discovered,
@@ -71,6 +73,7 @@ class GameSession final {
         return terrainSeed_;
     }
     [[nodiscard]] std::uint32_t mapChunksPerSide() const { return mapChunksPerSide_; }
+    [[nodiscard]] TerrainLayoutId terrainLayout() const { return terrainLayout_; }
     [[nodiscard]] const std::vector<glm::vec2>& startingAnchors() const {
         return startingAnchors_;
     }
@@ -100,6 +103,7 @@ class GameSession final {
     std::map<PlayerId, std::uint64_t> lastSequence_;
     std::uint64_t tick_{0};
     std::uint32_t terrainSeed_{0};
+    TerrainLayoutId terrainLayout_{"continental"};
     double accumulator_{0.0};
     Terrain terrain_;
     std::uint32_t mapChunksPerSide_{15};

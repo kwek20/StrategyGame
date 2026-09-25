@@ -88,7 +88,8 @@ void routeToInteraction(const DefinitionRegistry& definitions,
 } // namespace
 
 std::uint64_t GameSession::stateChecksum() const {
-    return authoritativeStateChecksum(world_, players_, terrainSeed_, tick_, mapChunksPerSide_);
+    return authoritativeStateChecksum(world_, players_, terrainSeed_, tick_, mapChunksPerSide_,
+                                      terrainLayout_.value);
 }
 
 void GameSession::beginRecharge(Entity& entity) {
@@ -172,6 +173,7 @@ GameSession::GameSession(const DefinitionRegistry& definitions,
                          std::uint32_t mapChunksPerSide,
                          float startingResourcesScale,
                          float resourceAbundanceScale,
+                         TerrainLayoutId terrainLayout,
                          WorldGenerationProgress* generationProgress)
     : players_(std::move(playerOneCountry),
                std::move(playerTwoCountry),
@@ -179,7 +181,8 @@ GameSession::GameSession(const DefinitionRegistry& definitions,
                std::move(playerTwoSpecialization))
     , gameplay_(definitions)
     , terrainSeed_(terrainSeed)
-    , terrain_(terrainSeed, generationProgress)
+    , terrainLayout_(std::move(terrainLayout))
+    , terrain_(terrainSeed, terrainLayout_, generationProgress)
     , mapChunksPerSide_(std::clamp(mapChunksPerSide, 10U,
                                   static_cast<std::uint32_t>(Terrain::chunksPerSide)))
     , navigation_(terrain_, gameplay_, mapChunksPerSide_, generationProgress)
@@ -195,7 +198,7 @@ GameSession::GameSession(const DefinitionRegistry& definitions,
     for (std::uint32_t attempt = 0; attempt < maximumAttempts; ++attempt) {
         terrainSeed_ = retryTerrainSeed(requestedSeed, attempt);
         if (attempt > 0) {
-            terrain_ = Terrain{terrainSeed_, generationProgress};
+            terrain_ = Terrain{terrainSeed_, terrainLayout_, generationProgress};
             navigation_.rebuildTerrain(terrain_, mapChunksPerSide_, generationProgress);
         }
         try {
@@ -1784,13 +1787,15 @@ void GameSession::updateExploration() {
 
 void GameSession::replaceWorld(std::vector<Entity> entities, std::uint32_t terrainSeed,
                                std::vector<TerrainFoundation> foundations,
-                               std::uint32_t mapChunksPerSide) {
+                               std::uint32_t mapChunksPerSide,
+                               TerrainLayoutId terrainLayout) {
     world_.replaceEntities(std::move(entities));
     world_.replaceFoundations(std::move(foundations));
     terrainSeed_ = terrainSeed;
+    terrainLayout_ = std::move(terrainLayout);
     mapChunksPerSide_ = std::clamp(mapChunksPerSide, 10U,
                                    static_cast<std::uint32_t>(Terrain::chunksPerSide));
-    terrain_ = Terrain{terrainSeed};
+    terrain_ = Terrain{terrainSeed, terrainLayout_};
     terrain_.rebuildFoundations(world_.foundations());
     resourceLayout_ = {};
     navigation_.rebuildTerrain(terrain_, mapChunksPerSide_);

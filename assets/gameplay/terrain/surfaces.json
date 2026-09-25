@@ -2,6 +2,8 @@
   "version": 1,
   "surfaces": [
     { "id": "water_bed", "color": [0.12, 0.24, 0.28], "materialWeights": [0.00, 0.30, 0.70, 0.00], "tags": ["submerged", "no-build"] },
+    { "id": "beach", "color": [0.62, 0.57, 0.38], "materialWeights": [0.04, 0.72, 0.04, 0.20], "tags": ["land", "beach", "buildable"] },
+    { "id": "rocky_coast", "color": [0.34, 0.35, 0.33], "materialWeights": [0.02, 0.20, 0.78, 0.00], "tags": ["land", "rocky", "rocky-coast"] },
     { "id": "dry_ground", "color": [0.52, 0.42, 0.24], "materialWeights": [0.00, 0.10, 0.00, 0.90], "tags": ["land", "dry", "buildable"] },
     { "id": "grass", "color": [0.30, 0.52, 0.22], "materialWeights": [0.86, 0.14, 0.00, 0.00], "tags": ["land", "vegetated", "buildable"] },
     { "id": "upland_grass", "color": [0.38, 0.48, 0.24], "materialWeights": [0.58, 0.24, 0.18, 0.00], "tags": ["land", "vegetated"] },

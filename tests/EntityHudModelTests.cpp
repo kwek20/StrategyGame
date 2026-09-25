@@ -9,7 +9,7 @@
 #include <algorithm>
 #include <iostream>
 
-int main() {
+int strategyTestMain() {
     const strategy::GameplayCatalogue definitions;
     strategy::World world;
     strategy::Entity& first = world.createEntity("Drone", "construction_drone", 1);

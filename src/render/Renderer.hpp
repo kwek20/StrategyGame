@@ -57,7 +57,8 @@ class Renderer final {
     void drawLoadingScreen(float progress, const std::string& status) const;
     void drawTerrain(const CameraView& camera,
                      const Player* player = nullptr,
-                     bool terrainDebug = false) const;
+                     bool terrainDebug = false,
+                     int waterDebugMode = 0) const;
     void drawWorld(const World& world,
                    const CameraView& camera,
                    const Player* player = nullptr,
@@ -96,6 +97,7 @@ class Renderer final {
                                 const CameraView& camera) const;
     void drawTerrainDebugHud(glm::vec3 worldPosition,
                              const ResourceLayout& resources) const;
+    void drawWaterDebugHud(glm::vec3 worldPosition, int mode) const;
     void drawEntityHud(const EntityHudModel& model, const UiDocument& layout) const;
     void
     drawStrategyHud(const World& world, EntityId selected, const Player* player,
@@ -132,7 +134,8 @@ class Renderer final {
     [[nodiscard]] int viewportWidth() const { return viewportWidth_; }
     [[nodiscard]] int viewportHeight() const { return viewportHeight_; }
     void regenerateTerrain(std::uint32_t seed,
-                           std::uint32_t chunksPerSide = Terrain::chunksPerSide);
+                           std::uint32_t chunksPerSide = Terrain::chunksPerSide,
+                           TerrainLayoutId layout = TerrainLayoutId{"continental"});
     // Copies CPU-generated terrain and schedules bounded render-thread uploads.
     void stageGeneratedTerrain(const Terrain& terrain, std::uint32_t seed,
                                std::uint32_t chunksPerSide,
@@ -249,7 +252,7 @@ class Renderer final {
                   const glm::vec3& tint = {1.0F, 1.0F, 1.0F}) const;
     void refreshModelShaderBindings();
     void uploadTerrainChunk(int chunkX, int chunkZ);
-    void drawWater(const CameraView& camera, const Player* player) const;
+    void drawWater(const CameraView& camera, const Player* player, int debugMode) const;
     void syncFoundationMeshes();
     void drawText(const std::string& text,
                   float x,

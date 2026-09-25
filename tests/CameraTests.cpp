@@ -12,7 +12,7 @@ bool nearlyEqual(float left, float right, float tolerance = 0.001F) {
 
 } // namespace
 
-int main() {
+int strategyTestMain() {
     strategy::RtsCamera camera;
     const glm::vec3 start = camera.focus();
 

@@ -1,5 +1,6 @@
 #include "terrain/Terrain.hpp"
 #include "terrain/TerrainGeneration.hpp"
+#include "terrain/TerrainLayoutGenerator.hpp"
 #include "world/MapArea.hpp"
 #include "world/GenerationProgress.hpp"
 
@@ -17,18 +18,34 @@ bool nearlyEqual(float left, float right, float epsilon = 0.001F) {
 
 } // namespace
 
-int main() {
+int strategyTestMain() {
     const strategy::TerrainGenerationDefinitions generation =
         strategy::TerrainGenerationDefinitions::load();
     const strategy::TerrainGeneratorDefinition& generator = generation.activeGenerator();
     const strategy::TerrainFieldGenerator regionalFields{0x5EED1234U, generator};
     const strategy::Terrain terrain;
+    const strategy::Terrain dryTerrain{0x5EED1234U, generator, false};
     strategy::WorldGenerationProgress terrainProgress;
     const strategy::Terrain sameSeed{0x5EED1234U, &terrainProgress};
     const strategy::Terrain differentSeed{12345U};
-    bool valid = generator.id.value == "continental_v1" && generator.version == 1 &&
-                 nearlyEqual(generator.waterLevel, 0.24F) &&
+    bool valid = generation.activeLayout().id.value == "continental" &&
+                 generator.id.value == "continental_v1" && generator.version == 2 &&
+                 nearlyEqual(generator.waterLevel, 0.22F) &&
                  generation.biomes().size() >= 5 && generation.surfaces().size() >= 5;
+    const float dryHalfExtent = dryTerrain.worldExtent() * 0.5F;
+    for (float z = -dryHalfExtent; z <= dryHalfExtent; z += 12.0F)
+        for (float x = -dryHalfExtent; x <= dryHalfExtent; x += 12.0F) {
+            const strategy::TerrainSample& sample = dryTerrain.sampleAt(x, z);
+            valid = valid && sample.waterKind == strategy::WaterKind::none &&
+                    sample.waterCoverage == 0.0F && !sample.submerged && !sample.river &&
+                    !sample.lake && !sample.wetland;
+        }
+    std::vector<float> layoutProbe(25, 0.4F);
+    strategy::TerrainLayoutDefinition centralHill =
+        generation.layout(strategy::TerrainLayoutId{"central_hill"});
+    strategy::TerrainLayoutGenerator::apply(layoutProbe, 5, 123U, centralHill,
+                                            generator.waterLevel);
+    valid = valid && layoutProbe[12] > 0.5F && nearlyEqual(layoutProbe.front(), 0.4F);
     const auto completedTerrainProgress = terrainProgress.snapshot();
     valid = valid && completedTerrainProgress.phase == strategy::WorldGenerationPhase::water &&
             nearlyEqual(completedTerrainProgress.phaseProgress, 1.0F);
@@ -50,13 +67,22 @@ int main() {
             nearlyEqual(origin.peaks, repeated.peaks) && validField(origin.continentalness) &&
             validField(origin.erosion) && validField(origin.peaks) &&
             validField(origin.moisture) && validField(origin.temperature) &&
-            validField(origin.detail);
+            validField(origin.detail) && validField(origin.plains) &&
+            validField(origin.hills) && validField(origin.mountainBelt) &&
+            validField(origin.rockyOutcrops) && validField(origin.coastalShelf) &&
+            validField(origin.basin);
     const strategy::MapArea smallMap{10};
     const strategy::MapArea mediumMap{15};
     const strategy::MapArea largeMap{20};
     valid = valid && nearlyEqual(smallMap.extent(), 240.0F) &&
             nearlyEqual(mediumMap.extent(), 360.0F) &&
             nearlyEqual(largeMap.extent(), 480.0F);
+    valid = valid && smallMap.firstTerrainChunk() == 5 &&
+            smallMap.terrainChunkEnd() == 15 &&
+            smallMap.intersectingTerrainChunksPerSide() == 10 &&
+            mediumMap.firstTerrainChunk() == 2 && mediumMap.terrainChunkEnd() == 18 &&
+            mediumMap.intersectingTerrainChunksPerSide() == 16 &&
+            largeMap.firstTerrainChunk() == 0 && largeMap.terrainChunkEnd() == 20;
     const glm::vec2 mapPoint{-72.0F, 54.0F};
     valid = valid && glm::length(
         mediumMap.worldFromNormalized(mediumMap.normalized(mapPoint)) - mapPoint) < 0.001F;
@@ -76,17 +102,32 @@ int main() {
             valid = valid && nearlyEqual(glm::length(terrain.normalAt(x, z)), 1.0F, 0.002F);
         }
     }
-    // The generator uses stable configured elevation curves. A seed is no longer stretched to
-    // force its observed minimum and maximum to zero and one.
-    valid = valid && generatedMinimum >= generator.height.minimumHeight &&
-            generatedMaximum <= generator.height.maximumHeight && generatedMinimum > 0.0F &&
-            generatedMaximum < 1.0F;
+    // The representation is bounded, but authored min/max clipping no longer compresses the
+    // natural range. The default seed must exercise lowlands and genuine mountain elevation.
+    valid = valid && generatedMinimum >= 0.0F && generatedMaximum <= 1.0F &&
+            generatedMinimum < generator.waterLevel && generatedMaximum > 0.72F &&
+            generatedMaximum - generatedMinimum > 0.55F;
 
     std::size_t buildableSamples = 0;
     std::size_t submergedSamples = 0;
     std::size_t shorelineSamples = 0;
     std::size_t mountainBarrierSamples = 0;
     std::size_t mountainPassSamples = 0;
+    std::size_t riverSamples = 0;
+    std::size_t lakeSamples = 0;
+    std::size_t wetlandSamples = 0;
+    std::size_t beachSamples = 0;
+    std::size_t rockyCoastSamples = 0;
+    std::size_t isolatedRiverSamples = 0;
+    std::size_t floodplainSamples = 0;
+    std::size_t invalidRiverFieldSamples = 0;
+    std::size_t riverBankSamples = 0;
+    std::size_t confluenceSamples = 0;
+    std::size_t estuarySamples = 0;
+    std::size_t sedimentSamples = 0;
+    bool foundElevatedLake = false;
+    std::size_t waterInvariantFailures = 0;
+    std::size_t waterSmoothingDifferences = 0;
     for (int z = 0; z < strategy::Terrain::semanticCellCount; ++z) {
         for (int x = 0; x < strategy::Terrain::semanticCellCount; ++x) {
             const float worldX = -halfExtent +
@@ -96,14 +137,30 @@ int main() {
                                  (static_cast<float>(z) + 0.5F) *
                                      strategy::Terrain::semanticCellSize;
             const strategy::TerrainSample& sample = terrain.sampleAt(worldX, worldZ);
+            const float generatedCoverage = terrain.generatedWaterCoverageAt(worldX, worldZ);
+            const float generatedSurface = terrain.generatedWaterSurfaceAt(worldX, worldZ);
+            valid = valid && validField(generatedCoverage) &&
+                    std::isfinite(generatedSurface);
+            if (!nearlyEqual(generatedCoverage, sample.waterCoverage, 0.0001F) ||
+                !nearlyEqual(generatedSurface, sample.waterSurfaceHeight, 0.0001F))
+                ++waterSmoothingDifferences;
+            const bool waterInvariant = validField(sample.waterCoverage) &&
+                nearlyEqual(sample.waterDepth,
+                            sample.waterCoverage > 0.0F
+                                ? std::max(0.0F, sample.waterSurfaceHeight - sample.baseHeight)
+                                : 0.0F) &&
+                sample.submerged ==
+                    (sample.waterCoverage > 0.01F && sample.waterDepth > 0.0F);
+            if (!waterInvariant) ++waterInvariantFailures;
             valid = valid && !sample.biome.empty() && !sample.surface.empty() &&
                     std::isfinite(sample.baseHeight) && std::isfinite(sample.slopeDegrees) &&
                     validField(sample.continentalness) && validField(sample.erosion) &&
                     validField(sample.peaks) && validField(sample.moisture) &&
-                    validField(sample.temperature) &&
-                    nearlyEqual(sample.waterDepth,
-                                std::max(0.0F, terrain.waterLevel() - sample.baseHeight)) &&
-                    sample.submerged == (sample.waterDepth > 0.0F) &&
+                    validField(sample.temperature) && validField(sample.plains) &&
+                    validField(sample.hills) && validField(sample.mountainBelt) &&
+                    validField(sample.rockyOutcrops) && validField(sample.coastalShelf) &&
+                    validField(sample.basin) &&
+                    waterInvariant &&
                     terrain.biomeAt(worldX, worldZ) == sample.biome &&
                     terrain.traversalAt(worldX, worldZ) == sample.traversal &&
                     terrain.isBuildableAt(worldX, worldZ) ==
@@ -133,6 +190,35 @@ int main() {
             }
             if ((sample.tags & strategy::terrainTagBit(strategy::TerrainTag::shoreline)) != 0)
                 ++shorelineSamples;
+            if (sample.river) {
+                ++riverSamples;
+                const bool validRiverField = sample.riverHalfWidth > 0.0F &&
+                    sample.riverDistance <= 0.01F && sample.streamOrder >= 1 &&
+                    glm::length(sample.riverFlowDirection) > 0.9F &&
+                    sample.waterSurfaceHeight > sample.baseHeight;
+                if (!validRiverField) ++invalidRiverFieldSamples;
+                valid = valid && validRiverField;
+            }
+            if (sample.floodplain) ++floodplainSamples;
+            if (sample.riverBank) {
+                ++riverBankSamples;
+                valid = valid && sample.materialWeights.y > sample.materialWeights.x &&
+                        (sample.tags & strategy::terrainTagBit(
+                             strategy::TerrainTag::riverBank)) != 0;
+            }
+            if (sample.confluence) ++confluenceSamples;
+            if (sample.estuary) ++estuarySamples;
+            if (sample.sediment) ++sedimentSamples;
+            if (sample.lake) {
+                ++lakeSamples;
+                foundElevatedLake = foundElevatedLake ||
+                                    sample.waterSurfaceHeight > terrain.waterLevel() + 0.05F;
+            }
+            if (sample.wetland) ++wetlandSamples;
+            if ((sample.tags & strategy::terrainTagBit(strategy::TerrainTag::beach)) != 0)
+                ++beachSamples;
+            if ((sample.tags & strategy::terrainTagBit(strategy::TerrainTag::rockyCoast)) != 0)
+                ++rockyCoastSamples;
             if ((sample.tags & strategy::terrainTagBit(strategy::TerrainTag::mountainBarrier)) != 0) {
                 ++mountainBarrierSamples;
                 valid = valid && !sample.submerged &&
@@ -152,7 +238,63 @@ int main() {
         }
     }
     valid = valid && buildableSamples > 0 && submergedSamples > 0 && shorelineSamples > 0 &&
-            mountainBarrierSamples > 0 && mountainPassSamples > 0;
+            mountainBarrierSamples > 0 && mountainPassSamples > 0 && riverSamples > 0 &&
+            lakeSamples > 0 && wetlandSamples > 0 && beachSamples > 0 &&
+            rockyCoastSamples > 0 && foundElevatedLake && floodplainSamples > 0 &&
+            riverBankSamples > 0 && confluenceSamples > 0 && estuarySamples > 0 &&
+            sedimentSamples > 0;
+    valid = valid && waterSmoothingDifferences > 0;
+    const bool validAfterSemantics = valid;
+    for (int z = 0; z < strategy::Terrain::semanticCellCount; ++z) {
+        for (int x = 0; x < strategy::Terrain::semanticCellCount; ++x) {
+            const float worldX = -halfExtent + (static_cast<float>(x) + 0.5F) *
+                                                   strategy::Terrain::semanticCellSize;
+            const float worldZ = -halfExtent + (static_cast<float>(z) + 0.5F) *
+                                                   strategy::Terrain::semanticCellSize;
+            if (!terrain.sampleAt(worldX, worldZ).river) continue;
+            bool connected = false;
+            for (int dz = -1; dz <= 1 && !connected; ++dz)
+                for (int dx = -1; dx <= 1; ++dx) {
+                    if ((dx == 0 && dz == 0) || x + dx < 0 || z + dz < 0 ||
+                        x + dx >= strategy::Terrain::semanticCellCount ||
+                        z + dz >= strategy::Terrain::semanticCellCount)
+                        continue;
+                    const float neighborX = worldX + dx * strategy::Terrain::semanticCellSize;
+                    const float neighborZ = worldZ + dz * strategy::Terrain::semanticCellSize;
+                    const auto& neighbor = terrain.sampleAt(neighborX, neighborZ);
+                    connected = neighbor.river || neighbor.lake ||
+                                (neighbor.submerged && !neighbor.river);
+                    if (connected) break;
+                }
+            if (!connected) ++isolatedRiverSamples;
+        }
+    }
+    valid = valid && isolatedRiverSamples == 0;
+
+    std::uint32_t maximumStreamOrder = 0;
+    std::uint32_t expectedPathId = 1;
+    std::size_t invalidRiverPathSegments = 0;
+    std::size_t oceanOutletPaths = 0;
+    for (const strategy::RiverPath& path : terrain.riverPaths()) {
+        valid = valid && path.id == expectedPathId++ && path.points.size() >= 2 &&
+                path.streamOrder >= 1;
+        maximumStreamOrder = std::max(maximumStreamOrder, path.streamOrder);
+        if (path.endsAtOcean) ++oceanOutletPaths;
+        for (std::size_t index = 1; index < path.points.size(); ++index) {
+            const auto& previous = path.points[index - 1];
+            const auto& current = path.points[index];
+            const bool validSegment =
+                current.surfaceHeight <= previous.surfaceHeight + 0.001F &&
+                current.streamOrder >= previous.streamOrder &&
+                glm::distance(previous.position, current.position) <=
+                    generator.hydrology.riverPathSampleSpacing * 1.15F;
+            if (!validSegment) ++invalidRiverPathSegments;
+            valid = valid && validSegment;
+        }
+    }
+    valid = valid && !terrain.riverPaths().empty() && maximumStreamOrder >= 2 &&
+            oceanOutletPaths > 0;
+    const bool validAfterRiverPaths = valid;
 
     bool checkedWaterPlacement = false;
     for (int z = 0; z < strategy::Terrain::semanticCellCount && !checkedWaterPlacement; ++z)
@@ -191,6 +333,7 @@ int main() {
             break;
         }
     valid = valid && checkedWaterPlacement;
+    const bool validAfterWaterPlacement = valid;
 
     for (const glm::vec2 point : {glm::vec2{0.0F, 0.0F},
                                   glm::vec2{-64.0F, 23.0F},
@@ -201,7 +344,15 @@ int main() {
                 firstSample.surface == repeatedSample.surface &&
                 firstSample.traversal == repeatedSample.traversal &&
                 firstSample.buildability == repeatedSample.buildability &&
-                nearlyEqual(firstSample.moisture, repeatedSample.moisture);
+                nearlyEqual(firstSample.moisture, repeatedSample.moisture) &&
+                nearlyEqual(firstSample.waterSurfaceHeight,
+                            repeatedSample.waterSurfaceHeight) &&
+                nearlyEqual(firstSample.waterCoverage, repeatedSample.waterCoverage) &&
+                firstSample.waterKind == repeatedSample.waterKind &&
+                nearlyEqual(firstSample.drainage, repeatedSample.drainage) &&
+                firstSample.river == repeatedSample.river &&
+                firstSample.lake == repeatedSample.lake &&
+                firstSample.wetland == repeatedSample.wetland;
     }
 
     for (int z : {0, 64, 256, 511, 512}) {
@@ -210,9 +361,12 @@ int main() {
             const float worldZ = static_cast<float>(z) * strategy::Terrain::spacing - halfExtent;
             valid =
                 valid &&
-                nearlyEqual(terrain.heightAt(worldX, worldZ), terrain.vertexHeight(x, z), 0.002F);
+                nearlyEqual(terrain.heightAt(worldX, worldZ), terrain.vertexHeight(x, z), 0.002F) &&
+                terrain.waterSurfaceAt(worldX, worldZ) + 0.002F >=
+                    terrain.heightAt(worldX, worldZ);
         }
     }
+    const bool validAfterDeterminism = valid;
 
     valid = valid && terrain.heightAt(-halfExtent - 1.0F, 0.0F) == 0.0F;
     valid = valid && terrain.heightAt(halfExtent + 1.0F, 0.0F) == 0.0F;
@@ -240,13 +394,54 @@ int main() {
     }
     valid = valid && maximumNeighborStep < 1.0F;
 
+    glm::vec2 dryPoint{0.0F};
+    bool foundDryPoint = false;
+    for (int z = 0; z < strategy::Terrain::semanticCellCount && !foundDryPoint; ++z)
+        for (int x = 0; x < strategy::Terrain::semanticCellCount; ++x) {
+            const float worldX = -halfExtent + (static_cast<float>(x) + 0.5F) *
+                                                   strategy::Terrain::semanticCellSize;
+            const float worldZ = -halfExtent + (static_cast<float>(z) + 0.5F) *
+                                                   strategy::Terrain::semanticCellSize;
+            if (terrain.waterCoverageAt(worldX, worldZ) <= 0.001F &&
+                terrain.waterCoverageAt(worldX - 7.0F, worldZ) <= 0.001F &&
+                terrain.waterCoverageAt(worldX + 7.0F, worldZ) <= 0.001F &&
+                terrain.waterCoverageAt(worldX, worldZ - 7.0F) <= 0.001F &&
+                terrain.waterCoverageAt(worldX, worldZ + 7.0F) <= 0.001F &&
+                terrain.isBuildableAt(worldX, worldZ)) {
+                dryPoint = {worldX, worldZ};
+                foundDryPoint = true;
+                break;
+            }
+        }
     strategy::Terrain flattened{0x5EED1234U};
-    const auto before = flattened.fitFootprint(12.0F, -7.0F, 5.0F, 90.0F);
-    const strategy::TerrainFoundation foundation{{12.0F, before.height, -7.0F}, 5.0F, 7.0F};
+    const auto before = flattened.fitFootprint(dryPoint.x, dryPoint.y, 5.0F, 90.0F);
+    const strategy::TerrainFoundation foundation{
+        {dryPoint.x, before.height, dryPoint.y}, 5.0F, 7.0F};
     flattened.applyFoundation(foundation);
-    const auto after = flattened.fitFootprint(12.0F, -7.0F, 3.0F, 1.0F);
-    valid = valid && after.valid && nearlyEqual(flattened.heightAt(12.0F, -7.0F), before.height);
-    valid = valid && nearlyEqual(flattened.heightAt(15.0F, -7.0F), before.height, 0.01F);
+    const auto after = flattened.fitFootprint(dryPoint.x, dryPoint.y, 3.0F, 1.0F);
+    valid = valid && foundDryPoint && after.valid &&
+            nearlyEqual(flattened.heightAt(dryPoint.x, dryPoint.y), before.height);
+    valid = valid && nearlyEqual(flattened.heightAt(dryPoint.x + 3.0F, dryPoint.y),
+                                 before.height, 0.01F);
+
+    // Foundation deformation must not manufacture water on dry land. Hydrology remains
+    // authoritative while the derived terrain foundation is added and removed.
+    strategy::Terrain foundationWaterTest{0x5EED1234U};
+    const float originalDryHeight = foundationWaterTest.heightAt(dryPoint.x, dryPoint.y);
+    const float originalDrySurface = foundationWaterTest.waterSurfaceAt(dryPoint.x, dryPoint.y);
+    const strategy::WaterKind originalDryKind =
+        foundationWaterTest.waterKindAt(dryPoint.x, dryPoint.y);
+    strategy::TerrainFoundation raisedDryFoundation{
+        {dryPoint.x, originalDryHeight + 1.0F, dryPoint.y}, 1.0F, 2.0F};
+    foundationWaterTest.applyFoundation(raisedDryFoundation);
+    valid = valid && foundDryPoint &&
+            foundationWaterTest.waterCoverageAt(dryPoint.x, dryPoint.y) <= 0.001F &&
+            foundationWaterTest.waterKindAt(dryPoint.x, dryPoint.y) == originalDryKind &&
+            nearlyEqual(foundationWaterTest.waterSurfaceAt(dryPoint.x, dryPoint.y),
+                        originalDrySurface);
+    foundationWaterTest.rebuildFoundations({});
+    valid = valid && nearlyEqual(foundationWaterTest.heightAt(dryPoint.x, dryPoint.y),
+                                 originalDryHeight);
 
     strategy::Terrain boundaryTerrain{0x5EED1234U};
     const float chunkBoundary = -halfExtent + strategy::Terrain::chunkCellCount *
@@ -271,7 +466,30 @@ int main() {
                   << " submerged=" << submergedSamples << " waterLevel="
                   << terrain.waterLevel() << " barriers=" << mountainBarrierSamples
                   << " passes=" << mountainPassSamples
-                  << " generatedMinimum=" << generatedMinimum << '\n';
+                  << " generatedMinimum=" << generatedMinimum
+                  << " generatedMaximum=" << generatedMaximum
+                  << " rivers=" << riverSamples << " lakes=" << lakeSamples
+                  << " wetlands=" << wetlandSamples << " beaches=" << beachSamples
+                  << " rockyCoasts=" << rockyCoastSamples
+                  << " isolatedRivers=" << isolatedRiverSamples
+                  << " elevatedLake=" << foundElevatedLake
+                  << " waterInvariantFailures=" << waterInvariantFailures
+                  << " floodplains=" << floodplainSamples
+                  << " invalidRiverFields=" << invalidRiverFieldSamples
+                  << " invalidPathSegments=" << invalidRiverPathSegments
+                  << " maxStreamOrder=" << maximumStreamOrder
+                  << " banks=" << riverBankSamples
+                  << " confluences=" << confluenceSamples
+                  << " estuaries=" << estuarySamples
+                  << " sediment=" << sedimentSamples
+                  << " oceanPaths=" << oceanOutletPaths << '\n';
+        std::cerr << "Checkpoints semantics=" << validAfterSemantics
+                  << " paths=" << validAfterRiverPaths
+                  << " placement=" << validAfterWaterPlacement
+                  << " deterministic=" << validAfterDeterminism
+                  << " maxNeighborStep=" << maximumNeighborStep
+                  << " foundDry=" << foundDryPoint
+                  << " foundationValid=" << after.valid << '\n';
         return 1;
     }
     std::cout << "Terrain validation passed\n";

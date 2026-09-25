@@ -33,6 +33,8 @@ GameConfig GameConfig::load(const std::filesystem::path& path) {
     GameConfig result;
     result.saveDirectory = configuration["saveDirectory"].GetString();
     result.saveFile = configuration["saveFile"].GetString();
+    if (configuration.HasMember("matchSetupFile") && configuration["matchSetupFile"].IsString())
+        result.matchSetupFile = configuration["matchSetupFile"].GetString();
     if (configuration.HasMember("video") && configuration["video"].IsObject()) {
         const auto& video = configuration["video"];
         if (video.HasMember("width") && video["width"].IsInt())
@@ -67,6 +69,8 @@ GameConfig GameConfig::load(const std::filesystem::path& path) {
     if (std::filesystem::path(result.saveFile).filename() != result.saveFile) {
         throw std::runtime_error("saveFile must be a filename, not a path");
     }
+    if (result.matchSetupFile.is_absolute())
+        throw std::runtime_error("matchSetupFile must be relative to the game directory");
     return result;
 }
 
@@ -84,6 +88,8 @@ void GameConfig::write(const std::filesystem::path& path) const {
     writer.String(saveDirectory.generic_string().c_str());
     writer.Key("saveFile");
     writer.String(saveFile.c_str());
+    writer.Key("matchSetupFile");
+    writer.String(matchSetupFile.generic_string().c_str());
     writer.Key("video");
     writer.StartObject();
     writer.Key("width");

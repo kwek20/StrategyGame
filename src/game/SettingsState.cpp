@@ -14,7 +14,7 @@
 namespace strategy {
 namespace {
 constexpr const char* bindingNames[]{
-    "forward", "backward", "left", "right", "debug", "terrain_debug", "pause"};
+    "forward", "backward", "left", "right", "debug", "terrain_debug", "water_debug", "pause"};
 }
 
 UiDocument SettingsState::uiDocument(int width, int height) const {
@@ -47,7 +47,7 @@ UiDocument SettingsState::uiDocument(int width, int height) const {
     static constexpr const char* actionKeys[]{
         "settings.action.forward", "settings.action.backward", "settings.action.left",
         "settings.action.right", "settings.action.debug", "settings.action.terrain_debug",
-        "settings.action.pause"};
+        "settings.action.water_debug", "settings.action.pause"};
     ui.label("settings.controls", {470, 100, 0, 0}, Text::get("settings.controls"), 2.0F,
              {0.35F, 0.72F, 0.92F});
     for (int row = 0; row < static_cast<int>(std::size(bindingNames)); ++row) {

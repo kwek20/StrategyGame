@@ -1,6 +1,7 @@
 #pragma once
 
 #include <SDL3/SDL_events.h>
+#include "persistence/MatchSetupProfile.hpp"
 #include <cstdint>
 #include <filesystem>
 #include <string>
@@ -21,14 +22,7 @@ struct StateContext {
     std::filesystem::path configPath;
 };
 
-struct MatchSetupOptions {
-    std::uint32_t terrainSeed{0x5EED1234U};
-    std::string playerOneCountry{"spain"};
-    std::string playerTwoCountry{"japan"};
-    std::uint32_t mapChunksPerSide{15};
-    float startingResourcesScale{1.0F};
-    float resourceAbundanceScale{1.0F};
-};
+using MatchSetupOptions = MatchSetupProfile;
 
 enum class StateRequest {
     none,
