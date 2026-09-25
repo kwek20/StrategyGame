@@ -22,8 +22,7 @@ void main() {
     float visualDepth = localWaterLevel - terrainHeight;
     if (waterCoverage <= 0.01 || visualDepth <= 0.01)
         discard;
-    if (useExploration &&
-        any(greaterThan(abs(worldPosition.xz), vec2(explorationExtent * 0.5))))
+    if (any(greaterThan(abs(worldPosition.xz), vec2(explorationExtent * 0.5))))
         discard;
 
     if (waterDebugMode > 0) {

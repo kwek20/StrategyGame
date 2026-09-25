@@ -26,6 +26,23 @@ rapidjson::Document loadManifest(const std::filesystem::path& path) {
     return document;
 }
 
+std::vector<TerrainBiomeId> dryBiomes(
+    const TerrainGenerationDefinitions& definitions,
+    std::span<const TerrainBiomeId> configured) {
+    std::vector<TerrainBiomeId> result;
+    if (configured.empty()) {
+        for (const TerrainBiomeDefinition& biome : definitions.biomes())
+            if (biome.enabled && biome.id.value != "deep_water" &&
+                biome.id.value != "shallow_water")
+                result.push_back(biome.id);
+    } else {
+        for (const TerrainBiomeId& biome : configured)
+            if (biome.value != "deep_water" && biome.value != "shallow_water")
+                result.push_back(biome);
+    }
+    return result;
+}
+
 } // namespace
 
 void TerrainGenerationPipeline::generate(
@@ -44,7 +61,10 @@ void TerrainGenerationPipeline::generate(
     else
         TerrainWaterGenerator::clear(terrain, progress);
     terrain.baseHeights_ = terrain.heights_;
-    terrain.generateSemantics(seed, generator, definitions, layout.enabledBiomes, progress);
+    const std::vector<TerrainBiomeId> enabledBiomes =
+        layout.hydrologyEnabled ? layout.enabledBiomes
+                                : dryBiomes(definitions, layout.enabledBiomes);
+    terrain.generateSemantics(seed, generator, definitions, enabledBiomes, progress);
 }
 
 void TerrainGenerationPipeline::generateProcedural(
@@ -57,8 +77,10 @@ void TerrainGenerationPipeline::generateProcedural(
     else
         TerrainWaterGenerator::clear(terrain, progress);
     terrain.baseHeights_ = terrain.heights_;
-    terrain.generateSemantics(seed, generator, definitions,
-                              definitions.activeLayout().enabledBiomes, progress);
+    const auto& configuredBiomes = definitions.activeLayout().enabledBiomes;
+    const std::vector<TerrainBiomeId> enabledBiomes =
+        waterEnabled ? configuredBiomes : dryBiomes(definitions, configuredBiomes);
+    terrain.generateSemantics(seed, generator, definitions, enabledBiomes, progress);
 }
 
 void TerrainGenerationPipeline::loadCustomHeightfield(

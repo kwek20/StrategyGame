@@ -142,8 +142,23 @@ Application::Application() {
 
     drawBootstrapLoading(window_);
     SDL_GL_SetSwapInterval(1);
-    renderer_ = std::make_unique<Renderer>(logger_.get());
-    definitions_ = std::make_unique<DefinitionRegistry>();
+    bool startupQuitRequested = false;
+    const auto pumpBootstrap = [this, &startupQuitRequested]() {
+        SDL_Event event{};
+        while (SDL_PollEvent(&event))
+            if (event.type == SDL_EVENT_QUIT) startupQuitRequested = true;
+        drawBootstrapLoading(window_);
+    };
+    auto initialDefinitions = std::async(
+        std::launch::async, [] { return std::make_unique<DefinitionRegistry>(); });
+    while (initialDefinitions.wait_for(std::chrono::milliseconds(0)) !=
+               std::future_status::ready) {
+        pumpBootstrap();
+        std::this_thread::sleep_for(std::chrono::milliseconds(8));
+    }
+    definitions_ = initialDefinitions.get();
+    renderer_ = std::make_unique<Renderer>(logger_.get(), pumpBootstrap);
+    if (startupQuitRequested) running_ = false;
     stateContext_ =
         std::make_unique<StateContext>(
             StateContext{*audio_, events_, *logger_, *definitions_, "gamedata/config.json"});

@@ -4,6 +4,8 @@ in vec3 vertexNormal;
 in vec3 worldPosition;
 in vec4 materialWeights;
 in float traversalClass;
+in float localWaterSurfaceHeight;
+in float waterCoverage;
 uniform vec3 cameraPosition;
 uniform vec2 fogRange;
 uniform sampler2D explorationMap;
@@ -17,7 +19,6 @@ uniform bool useExploration;
 uniform bool useFoundationTexture;
 uniform bool terrainDebug;
 uniform int waterDebugMode;
-uniform float waterLevel;
 out vec4 outColor;
 
 float terrainHash(vec2 point) {
@@ -45,9 +46,9 @@ void main() {
     // The renderer owns terrain for the maximum map size, while a match can use a
     // smaller centered area. Sampling outside that area clamps to the outer fog
     // texel and stretches a revealed edge cell into a long strip. Clip against the
-    // authoritative match extent before sampling the exploration texture.
-    if (useExploration &&
-        any(greaterThan(abs(worldPosition.xz), vec2(explorationExtent * 0.5)))) {
+    // authoritative match extent independently of fog/debug state. Debug modes may bypass
+    // exploration, but they must not expose the unused maximum-size terrain outside the match.
+    if (any(greaterThan(abs(worldPosition.xz), vec2(explorationExtent * 0.5)))) {
         discard;
     }
 
@@ -105,12 +106,13 @@ void main() {
     vec3 lit = surface * (0.46 + diffuse * 0.64);
     float fog = smoothstep(fogRange.x, fogRange.y, cameraDistance);
     vec3 atmospheric = mix(lit, vec3(0.32, 0.36, 0.38), fog * 0.72);
-    float waterDepth = max(waterLevel - worldPosition.y, 0.0);
-    if (waterDepth > 0.0) {
+    float waterDepth = max(localWaterSurfaceHeight - worldPosition.y, 0.0);
+    if (waterCoverage > 0.01 && waterDepth > 0.0) {
         float underwater = smoothstep(0.02, 2.8, waterDepth);
         vec3 underwaterTint = mix(vec3(0.12, 0.29, 0.31),
                                   vec3(0.025, 0.105, 0.16), underwater);
-        atmospheric = mix(atmospheric, underwaterTint, 0.40 + underwater * 0.35);
+        atmospheric = mix(atmospheric, underwaterTint,
+                          waterCoverage * (0.40 + underwater * 0.35));
     }
     float explored = useExploration
         ? texture(explorationMap, worldPosition.xz / explorationExtent + 0.5).r

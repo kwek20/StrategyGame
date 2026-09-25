@@ -1,6 +1,7 @@
 #include "world/Navigation.hpp"
 
 #include "terrain/Terrain.hpp"
+#include "gameplay/DefinitionRegistry.hpp"
 #include "world/Collision.hpp"
 #include "world/World.hpp"
 #include "world/GenerationProgress.hpp"
@@ -59,8 +60,16 @@ void Navigation::rebuildTerrain(const Terrain& terrain, std::uint32_t mapChunksP
             const glm::vec3 position = positionOf(x, z);
             const float height = terrain.heightAt(position.x, position.z);
             heights_[indexOf(x, z)] = height;
-            terrainMovementCosts_[indexOf(x, z)] =
-                terrain.sampleAt(position.x, position.z).movementCosts;
+            if (!map_.contains({position.x, position.z},
+                               definitions_.matchRules().terrainEdgeMargin)) {
+                // The active-map boundary is a universal barrier. Derive it from MapArea rather
+                // than the maximum terrain edge so centered 10x10 and 15x15 maps behave exactly
+                // like the physical edge of a 20x20 map.
+                terrainMovementCosts_[indexOf(x, z)].fill(0.0F);
+            } else {
+                terrainMovementCosts_[indexOf(x, z)] =
+                    terrain.sampleAt(position.x, position.z).movementCosts;
+            }
         }
     }
     obstacleShapes_.clear();

@@ -240,8 +240,8 @@ glm::mat4 groundedEntityTransform(const Terrain& terrain,
 
 } // namespace
 
-Renderer::Renderer(Logger* logger)
-    : font_(shaders_), logger_(logger) {
+Renderer::Renderer(Logger* logger, std::function<void()> keepResponsive)
+    : resources_("assets", keepResponsive), font_(shaders_, keepResponsive), logger_(logger) {
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_CULL_FACE);
     glEnable(GL_MULTISAMPLE);
@@ -258,6 +258,7 @@ Renderer::Renderer(Logger* logger)
     iconAtlas_ = IconAtlas::load("assets/icons_atlas.json");
     particleEffects_ = ParticleEffectCatalogue::load();
     particleSystem_ = std::make_unique<ParticleSystem>(particleEffects_);
+    if (keepResponsive) keepResponsive();
 
     program_ = createTerrainProgram(shaders_);
     waterProgram_ = createWaterProgram(shaders_);
@@ -275,6 +276,7 @@ Renderer::Renderer(Logger* logger)
     outline.depthWrite = false;
     outlineMaterial_ = materials_.create(std::move(outline));
     refreshModelShaderBindings();
+    if (keepResponsive) keepResponsive();
     glGenVertexArrays(1, &hudVao_);
     glGenBuffers(1, &hudVbo_);
     glGenTextures(1, &explorationTexture_);
@@ -283,48 +285,20 @@ Renderer::Renderer(Logger* logger)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+}
 
+void Renderer::ensureTerrainChunks() {
+    if (!terrainChunks_.empty()) return;
     constexpr int chunkSide = Terrain::chunkCellCount + 1;
     constexpr float halfExtent = static_cast<float>(Terrain::cellCount) * Terrain::spacing * 0.5F;
     terrainChunks_.reserve(Terrain::chunksPerSide * Terrain::chunksPerSide);
 
     for (int chunkZ = 0; chunkZ < Terrain::chunksPerSide; ++chunkZ) {
         for (int chunkX = 0; chunkX < Terrain::chunksPerSide; ++chunkX) {
-            std::vector<TerrainVertex> vertices;
             std::array<std::vector<std::uint32_t>, 3> lodIndices;
-            vertices.reserve(chunkSide * chunkSide);
             lodIndices[0].reserve(Terrain::chunkCellCount * Terrain::chunkCellCount * 6);
             const int startX = chunkX * Terrain::chunkCellCount;
             const int startZ = chunkZ * Terrain::chunkCellCount;
-
-            for (int localZ = 0; localZ < chunkSide; ++localZ) {
-                for (int localX = 0; localX < chunkSide; ++localX) {
-                    const int gridX = startX + localX;
-                    const int gridZ = startZ + localZ;
-                    const float worldX =
-                        static_cast<float>(gridX) * Terrain::spacing - halfExtent;
-                    const float worldZ =
-                        static_cast<float>(gridZ) * Terrain::spacing - halfExtent;
-                    vertices.push_back({{worldX,
-                                         terrain_.vertexHeight(gridX, gridZ),
-                                         worldZ},
-                                        terrain_.normalAt(gridX, gridZ),
-                                        terrain_.colorAt(worldX, worldZ),
-                                        terrain_.materialWeightsAt(worldX, worldZ),
-                                        terrain_.traversalAt(worldX, worldZ) ==
-                                                TerrainTraversalClass::impassable
-                                            ? 1.0F
-                                            : (terrain_.traversalAt(worldX, worldZ) ==
-                                                       TerrainTraversalClass::difficult
-                                                   ? 0.5F
-                                                   : 0.0F),
-                                        terrain_.waterSurfaceAt(worldX, worldZ),
-                                        terrain_.waterCoverageAt(worldX, worldZ),
-                                        terrain_.riverFlowAt(worldX, worldZ),
-                                        terrain_.generatedWaterSurfaceAt(worldX, worldZ),
-                                        terrain_.generatedWaterCoverageAt(worldX, worldZ)});
-                }
-            }
 
             constexpr std::array<int, 3> lodSteps{1, 2, 4};
             for (std::size_t level = 0; level < lodSteps.size(); ++level) {
@@ -364,9 +338,9 @@ Renderer::Renderer(Logger* logger)
             glBindVertexArray(chunk.vao);
             glBindBuffer(GL_ARRAY_BUFFER, chunk.vbo);
             glBufferData(GL_ARRAY_BUFFER,
-                         static_cast<GLsizeiptr>(vertices.size() * sizeof(TerrainVertex)),
-                         vertices.data(),
-                         GL_STATIC_DRAW);
+                         static_cast<GLsizeiptr>(chunkSide * chunkSide * sizeof(TerrainVertex)),
+                         nullptr,
+                         GL_DYNAMIC_DRAW);
             for (std::size_t level = 0; level < lodIndices.size(); ++level) {
                 glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, chunk.ebos[level]);
                 glBufferData(
@@ -692,7 +666,6 @@ void Renderer::drawTerrain(const CameraView& camera,
     glUniform1i(shaders_.uniform(program_, "useFoundationTexture"), 0);
     glUniform1i(shaders_.uniform(program_, "terrainDebug"), terrainDebug ? 1 : 0);
     glUniform1i(shaders_.uniform(program_, "waterDebugMode"), waterDebugMode);
-    glUniform1f(shaders_.uniform(program_, "waterLevel"), terrain_.waterLevel());
     const GLint location = shaders_.uniform(program_, "viewProjection");
     glUniformMatrix4fv(location, 1, GL_FALSE, glm::value_ptr(viewProjection));
     glUniform3fv(
@@ -1791,6 +1764,7 @@ void Renderer::regenerateTerrain(std::uint32_t seed, std::uint32_t chunksPerSide
     activeTerrainChunksPerSide_ = std::clamp(
         chunksPerSide, 10U, static_cast<std::uint32_t>(Terrain::chunksPerSide));
     terrain_ = Terrain(seed, std::move(layout));
+    ensureTerrainChunks();
     terrain_.rebuildFoundations(terrainFoundations_);
     constexpr int chunkSide = Terrain::chunkCellCount + 1;
     constexpr float halfExtent = static_cast<float>(Terrain::cellCount) * Terrain::spacing * 0.5F;
@@ -1849,6 +1823,7 @@ void Renderer::stageGeneratedTerrain(const Terrain& terrain, std::uint32_t seed,
     activeTerrainChunksPerSide_ = std::clamp(
         chunksPerSide, 10U, static_cast<std::uint32_t>(Terrain::chunksPerSide));
     terrain_ = terrain;
+    ensureTerrainChunks();
     terrainFoundations_ = foundations;
     terrain_.rebuildFoundations(terrainFoundations_);
     syncFoundationMeshes();

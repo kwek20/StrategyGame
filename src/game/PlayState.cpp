@@ -1238,8 +1238,10 @@ void PlayState::render(Renderer& renderer) const {
         };
         if (!previouslyExplored) invalidate("placement.unexplored");
         const MapArea placementMap{session_.mapChunksPerSide()};
-        if (std::abs(position.x) + placementBounds.x > placementMap.halfExtent() ||
-            std::abs(position.z) + placementBounds.y > placementMap.halfExtent())
+        const float playableExtent = placementMap.halfExtent() -
+                                     context_.definitions.matchRules().terrainEdgeMargin;
+        if (std::abs(position.x) + placementBounds.x > playableExtent ||
+            std::abs(position.z) + placementBounds.y > playableExtent)
             invalidate("placement.outside_map");
         // Hidden enemy construction is resolved authoritatively by PlaceBuildingCommand.
         // Do not leak it through a red preview in previously explored fog.

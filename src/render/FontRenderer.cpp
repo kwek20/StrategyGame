@@ -28,7 +28,8 @@ std::filesystem::path fontPath() {
     throw std::runtime_error("No UI font found; add assets/fonts/Inter-Bold.ttf");
 }
 } // namespace
-FontRenderer::FontRenderer(ShaderManager& shaders)
+FontRenderer::FontRenderer(ShaderManager& shaders,
+                           std::function<void()> keepResponsive)
     : shaders_(shaders) {
     FT_Library library = nullptr;
     FT_Face face = nullptr;
@@ -44,6 +45,7 @@ FontRenderer::FontRenderer(ShaderManager& shaders)
     std::vector<unsigned char> atlas(width * height, 0);
     int penX = 1, penY = 1, rowHeight = 0;
     for (unsigned c = 32; c < 128; ++c) {
+        if (keepResponsive && (c % 16U) == 0U) keepResponsive();
         if (FT_Load_Char(face, c, FT_LOAD_RENDER))
             continue;
         FT_GlyphSlot_Embolden(face->glyph);
@@ -76,6 +78,7 @@ FontRenderer::FontRenderer(ShaderManager& shaders)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    if (keepResponsive) keepResponsive();
     program_ = shaders_.loadFiles(
         "font", "assets/shaders/font.vert", "assets/shaders/font.frag");
     glGenVertexArrays(1, &vao_);

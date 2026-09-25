@@ -20,6 +20,7 @@
 #include <array>
 #include <chrono>
 #include <cstdint>
+#include <functional>
 #include <glm/vec3.hpp>
 #include <memory>
 #include <string>
@@ -43,7 +44,8 @@ struct ResourceLayout;
 
 class Renderer final {
   public:
-    explicit Renderer(Logger* logger = nullptr);
+    explicit Renderer(Logger* logger = nullptr,
+                      std::function<void()> keepResponsive = {});
     ~Renderer();
 
     Renderer(const Renderer&) = delete;
@@ -215,11 +217,11 @@ class Renderer final {
     std::uint32_t hudVao_{0};
     std::uint32_t hudVbo_{0};
     std::uint32_t explorationTexture_{0};
-    Terrain terrain_;
+    Terrain terrain_{Terrain::DeferredInitialization{}};
     std::uint32_t terrainSeed_{0x5EED1234U};
     std::uint32_t activeTerrainChunksPerSide_{Terrain::chunksPerSide};
     std::vector<TerrainFoundation> terrainFoundations_;
-    ResourceManager resources_{"assets"};
+    ResourceManager resources_;
     IconAtlas iconAtlas_;
     FontRenderer font_;
     std::vector<TerrainChunk> terrainChunks_;
@@ -248,6 +250,7 @@ class Renderer final {
     }
     [[nodiscard]] MapArea activeMapArea() const { return MapArea{activeTerrainChunksPerSide_}; }
     void bindTerrainTextures() const;
+    void ensureTerrainChunks();
     void drawIcon(const std::string& id, float left, float top, float right, float bottom,
                   const glm::vec3& tint = {1.0F, 1.0F, 1.0F}) const;
     void refreshModelShaderBindings();

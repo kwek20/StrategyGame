@@ -369,6 +369,12 @@ TerrainGenerationDefinitions TerrainGenerationDefinitions::load(
         !layouts.HasMember("layouts") || !layouts["layouts"].IsArray())
         throw std::runtime_error("Terrain layouts require activeLayout and a layouts array");
     result.activeLayoutId_ = TerrainLayoutId{layouts["activeLayout"].GetString()};
+    bool waterGenerationEnabled = true;
+    if (layouts.HasMember("waterGenerationEnabled")) {
+        if (!layouts["waterGenerationEnabled"].IsBool())
+            throw std::runtime_error("Terrain waterGenerationEnabled must be boolean");
+        waterGenerationEnabled = layouts["waterGenerationEnabled"].GetBool();
+    }
     for (const rapidjson::Value& value : layouts["layouts"].GetArray()) {
         if (!value.IsObject()) throw std::runtime_error("Terrain layout must be an object");
         TerrainLayoutDefinition layout;
@@ -414,6 +420,7 @@ TerrainGenerationDefinitions TerrainGenerationDefinitions::load(
                 throw std::runtime_error(context + " hydrologyEnabled must be boolean");
             layout.hydrologyEnabled = value["hydrologyEnabled"].GetBool();
         }
+        layout.hydrologyEnabled = layout.hydrologyEnabled && waterGenerationEnabled;
         if (value.HasMember("parameters")) {
             if (!value["parameters"].IsObject())
                 throw std::runtime_error(context + " parameters must be an object");

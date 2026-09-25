@@ -1,6 +1,7 @@
 {
   "version": 1,
   "activeLayout": "continental",
+  "waterGenerationEnabled": false,
   "layouts": [
     {
       "id": "continental",

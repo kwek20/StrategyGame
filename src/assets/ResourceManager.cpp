@@ -11,12 +11,17 @@
 
 namespace strategy {
 
-ResourceManager::ResourceManager(const std::filesystem::path& assetRoot)
+ResourceManager::ResourceManager(const std::filesystem::path& assetRoot,
+                                 std::function<void()> keepResponsive)
     : manifest_(AssetManifest::load(assetRoot / "asset_manifest.json")),
-      renderThread_(std::this_thread::get_id()) {
+      renderThread_(std::this_thread::get_id()),
+      keepResponsive_(std::move(keepResponsive)) {
     indexModels(assetRoot / "models");
+    if (keepResponsive_) keepResponsive_();
     indexTextures(assetRoot / "textures");
+    if (keepResponsive_) keepResponsive_();
     loadEntityDefinitions(assetRoot / "entities.json");
+    if (keepResponsive_) keepResponsive_();
     loadingMarker_ = std::make_unique<Model>(makeMarkerModelAsset(false));
     failedMarker_ = std::make_unique<Model>(makeMarkerModelAsset(true));
     loadingTexture_ = std::make_unique<Texture>(245, 196, 35);
@@ -96,7 +101,9 @@ void ResourceManager::indexModels(const std::filesystem::path& directory) {
         return;
     }
 
+    std::size_t visited = 0;
     for (const auto& entry : std::filesystem::recursive_directory_iterator(directory)) {
+        if (keepResponsive_ && (++visited % 32U) == 0U) keepResponsive_();
         if (!entry.is_regular_file()) {
             continue;
         }
@@ -118,7 +125,9 @@ void ResourceManager::indexTextures(const std::filesystem::path& directory) {
         ".pnm", ".ppm", ".pgm"};
     if (!std::filesystem::is_directory(directory))
         return;
+    std::size_t visited = 0;
     for (const auto& entry : std::filesystem::recursive_directory_iterator(directory)) {
+        if (keepResponsive_ && (++visited % 32U) == 0U) keepResponsive_();
         if (!entry.is_regular_file())
             continue;
         if (!extensions.contains(normalizedKey(entry.path().extension().string())))

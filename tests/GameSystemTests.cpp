@@ -351,7 +351,10 @@ int strategyTestMain() {
     valid = valid && !blockedSideRoute.empty();
 
     navigation.rebuildTerrain(navigationTerrain, 20);
-    const strategy::Terrain waterTerrain{0x5EED1234U};
+    const strategy::TerrainGenerationDefinitions terrainDefinitions =
+        strategy::TerrainGenerationDefinitions::load();
+    const strategy::Terrain waterTerrain{
+        0x5EED1234U, terrainDefinitions.activeGenerator(), true};
     strategy::Navigation waterNavigation{waterTerrain, gameplay, 20};
     const auto fourPlayerRegions = strategy::selectStartingRegions(
         waterTerrain, gameplay, 20, 4);

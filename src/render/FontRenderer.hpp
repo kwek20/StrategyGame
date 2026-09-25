@@ -3,6 +3,7 @@
 #include <array>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 #include <string>
@@ -15,7 +16,8 @@ struct TextDraw {
 };
 class FontRenderer final {
   public:
-    explicit FontRenderer(ShaderManager& shaders);
+    explicit FontRenderer(ShaderManager& shaders,
+                          std::function<void()> keepResponsive = {});
     ~FontRenderer();
     FontRenderer(const FontRenderer&) = delete;
     FontRenderer& operator=(const FontRenderer&) = delete;

@@ -23,12 +23,13 @@ int strategyTestMain() {
         strategy::TerrainGenerationDefinitions::load();
     const strategy::TerrainGeneratorDefinition& generator = generation.activeGenerator();
     const strategy::TerrainFieldGenerator regionalFields{0x5EED1234U, generator};
-    const strategy::Terrain terrain;
+    const strategy::Terrain terrain{0x5EED1234U, generator, true};
     const strategy::Terrain dryTerrain{0x5EED1234U, generator, false};
     strategy::WorldGenerationProgress terrainProgress;
-    const strategy::Terrain sameSeed{0x5EED1234U, &terrainProgress};
-    const strategy::Terrain differentSeed{12345U};
+    const strategy::Terrain sameSeed{0x5EED1234U, generator, true, &terrainProgress};
+    const strategy::Terrain differentSeed{12345U, generator, true};
     bool valid = generation.activeLayout().id.value == "continental" &&
+                 !generation.activeLayout().hydrologyEnabled &&
                  generator.id.value == "continental_v1" && generator.version == 2 &&
                  nearlyEqual(generator.waterLevel, 0.22F) &&
                  generation.biomes().size() >= 5 && generation.surfaces().size() >= 5;

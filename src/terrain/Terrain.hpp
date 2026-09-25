@@ -173,6 +173,9 @@ struct RiverPath {
 
 class Terrain final {
   public:
+    // Creates an empty renderer-side shell. It must be replaced by generated terrain
+    // before any sampling operation is used.
+    struct DeferredInitialization final {};
     static constexpr int chunkCellCount = 64;
     static constexpr int chunksPerSide = 20;
     static constexpr int cellCount = chunksPerSide * chunkCellCount;
@@ -185,6 +188,7 @@ class Terrain final {
 
     explicit Terrain(std::uint32_t seed = 0x5EED1234U,
                      WorldGenerationProgress* progress = nullptr);
+    explicit Terrain(DeferredInitialization) noexcept {}
     Terrain(std::uint32_t seed, const TerrainGeneratorDefinition& generator,
             WorldGenerationProgress* progress = nullptr);
     Terrain(std::uint32_t seed, const TerrainGeneratorDefinition& generator,

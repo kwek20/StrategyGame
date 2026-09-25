@@ -8,6 +8,7 @@
 
 #include <filesystem>
 #include <deque>
+#include <functional>
 #include <future>
 #include <memory>
 #include <string>
@@ -37,7 +38,8 @@ struct AssetPreloadSet {
 
 class ResourceManager final {
   public:
-    explicit ResourceManager(const std::filesystem::path& assetRoot);
+    explicit ResourceManager(const std::filesystem::path& assetRoot,
+                             std::function<void()> keepResponsive = {});
 
     [[nodiscard]] ModelHandle requestModel(const std::string& key) const;
     [[nodiscard]] ModelHandle requestModel(PresentationId key) const {
@@ -107,6 +109,7 @@ class ResourceManager final {
     std::unordered_map<std::string, EntityDefinition> entityDefinitions_;
     AssetManifest manifest_;
     std::thread::id renderThread_;
+    std::function<void()> keepResponsive_;
 
     static std::string normalizedKey(std::string key);
     void indexModels(const std::filesystem::path& directory);

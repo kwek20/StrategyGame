@@ -717,8 +717,10 @@ void GameSession::apply(const PlayerCommand& command) {
                     {payload.position.x, payload.position.z}, 0.0F);
                 const glm::vec2 bounds = axisAlignedHalfExtents(placementShape);
                 const MapArea map{mapChunksPerSide_};
-                if (std::abs(placementShape.center.x) + bounds.x > map.halfExtent() ||
-                    std::abs(placementShape.center.y) + bounds.y > map.halfExtent()) return;
+                const float playableExtent =
+                    map.halfExtent() - gameplay_.matchRules().terrainEdgeMargin;
+                if (std::abs(placementShape.center.x) + bounds.x > playableExtent ||
+                    std::abs(placementShape.center.y) + bounds.y > playableExtent) return;
                 if (overlapsObject(world_, gameplay_, placementShape)) return;
                 const TerrainPlacementResult placement = terrain_.evaluatePlacement(
                     payload.position.x, payload.position.z, shape,
@@ -1627,9 +1629,10 @@ void GameSession::simulateTick() {
         const float radius = flying ? 0.0F : collisionRadius(gameplay_, entity.archetype);
         const NavigationProfile movementProfile = navigationProfile(gameplay_, entity);
         const MapArea map{mapChunksPerSide_};
-        const auto validPosition = [this, &entity, radius, map, flying,
+        const float edgeMargin = gameplay_.matchRules().terrainEdgeMargin;
+        const auto validPosition = [this, &entity, radius, map, edgeMargin, flying,
                                     movementProfile](glm::vec2 candidate) {
-            return map.contains(candidate, radius) &&
+            return map.contains(candidate, radius + edgeMargin) &&
                    terrain_.movementCostAt(candidate.x, candidate.y,
                                            movementProfile.domains) > 0.0F &&
                    (flying || !overlapsObject(world_, gameplay_, candidate, radius, entity.id));

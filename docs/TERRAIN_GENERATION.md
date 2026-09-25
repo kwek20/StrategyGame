@@ -89,6 +89,12 @@ generation. Direct procedural callers can pass `waterEnabled = false`; both rout
 `TerrainWaterGenerator::clear` behavior, so rendering, semantics, diagnostics, and navigation see
 one consistent dry map rather than stale or partially initialized water data.
 
+The top-level `layouts.json` switch `"waterGenerationEnabled": false` currently disables the water
+stage for every layout while water work is paused. Per-layout `hydrologyEnabled` values are retained
+for later use, but cannot override the global off switch. Dry generation also excludes the deep-
+and shallow-water biome classifiers so low terrain remains ordinary land rather than invisible,
+water-domain-only terrain.
+
 Authored maps use a layout with `"source": "custom_map"` and a `map` path. The initial authored
 map contract is a JSON height grid:
 
