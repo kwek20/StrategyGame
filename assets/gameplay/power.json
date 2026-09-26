@@ -9,6 +9,7 @@
       "connectionRange": 24,
       "transferLimit": 50,
       "chargePerTick": 2,
+      "chargingSlots": 2,
       "storageChargePerTick": 2,
       "storageDischargePerTick": 2,
       "maximumConnections": 8
@@ -30,6 +31,7 @@
       "tags": ["consumer", "charger"],
       "consumption": 5,
       "chargePerTick": 2,
+      "chargingSlots": 1,
       "connectionRange": 24,
       "transferLimit": 10,
       "maximumConnections": 2

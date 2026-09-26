@@ -188,6 +188,9 @@ The current automatic return-to-charge trigger is zero battery. The configured r
 retained as data and debug information for later policy work, but it does not currently force an
 early return. A zero-charge drone cannot move manually; it seeks the nearest valid powered charger,
 recharges at that charger's definition-backed rate, and resumes a suspended order deterministically.
+Chargers have finite definition-backed slot counts. Destroyed, disconnected, unreachable, or full
+chargers cause deterministic reselection; if no valid slot exists, the drone enters a visible
+stranded state without discarding its suspended task and retries as infrastructure changes.
 
 ## Construction
 
@@ -213,6 +216,13 @@ as each drone work step runs. Resource gathering remains a separate cargo-and-de
 Power is infrastructure capacity expressed through a spatial network, not a stockpiled economic
 resource. Generators supply connected consumers through pylons or relay stations. Connections are
 visible and vulnerable.
+
+Power allocation is generator-rooted and directional. It travels outward from each generator and
+serves consumers first by connection-hop distance, then by world-space distance to that generator,
+with stable entity IDs used only as deterministic tie-breakers. Default grids are therefore
+first-come-first-served spatial networks. Consumer priority does not override this spatial order;
+the existing priority control is legacy behavior to remove or repurpose. The complete authoritative
+contract is defined in `POWER_GRID.md`.
 
 ### Building power state
 
@@ -256,7 +266,7 @@ The interface must include:
 - Placement-time connection and demand previews
 - Overload and disconnection warnings
 - Automatic reconnection when infrastructure is restored
-- Player-defined priority for critical consumers
+- Generator-outward first-come-first-served allocation that is visible and understandable
 
 The grid must use integer simulation ticks, deterministic connection ordering, and
 serializable authoritative state.

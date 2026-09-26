@@ -254,6 +254,14 @@ if(STRATEGY_BUILD_TESTS)
     add_test(NAME resource_delivery_routing COMMAND resource_delivery_tests)
     set_tests_properties(resource_delivery_routing PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
+    add_executable(drone_reliability_tests tests/DroneReliabilityTests.cpp)
+    strategy_target(drone_reliability_tests)
+    target_link_libraries(drone_reliability_tests
+        PRIVATE strategy_gameplay strategy_simulation strategy_world
+    )
+    add_test(NAME drone_reliability COMMAND drone_reliability_tests)
+    set_tests_properties(drone_reliability PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
     add_executable(spatial_shape_tests tests/SpatialShapeTests.cpp)
     strategy_target(spatial_shape_tests)
     target_link_libraries(spatial_shape_tests PRIVATE strategy_world)
@@ -333,6 +341,7 @@ if(STRATEGY_BUILD_TESTS)
         game_system_tests
         camera_tests
         resource_delivery_tests
+        drone_reliability_tests
         spatial_shape_tests
         vegetation_tests
         resource_field_generation_tests

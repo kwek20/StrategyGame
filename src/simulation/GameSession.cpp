@@ -106,6 +106,7 @@ void GameSession::beginRecharge(Entity& entity) {
     }
     entity.battery.returningToCharge = true;
     entity.battery.chargerTarget = 0;
+    entity.battery.recoveryReason = BatteryRecoveryReason::none;
     entity.unitControl.order = UnitOrderKind::returningToCharge;
     entity.unitControl.orderTarget = 0;
     entity.unitControl.hasStrategicDestination = false;
@@ -120,6 +121,7 @@ void GameSession::beginRecharge(Entity& entity) {
 void GameSession::finishRecharge(Entity& entity) {
     entity.battery.returningToCharge = false;
     entity.battery.chargerTarget = 0;
+    entity.battery.recoveryReason = BatteryRecoveryReason::none;
     if (entity.battery.hasSuspendedOrder) {
         entity.unitControl.order = entity.battery.suspendedOrder;
         entity.unitControl.orderTarget = entity.battery.suspendedTarget;
@@ -161,6 +163,7 @@ void GameSession::stopUnit(Entity& entity) {
         entity.battery.suspendedTarget = 0;
         entity.battery.suspendedHasDestination = false;
         entity.battery.chargerTarget = 0;
+        entity.battery.recoveryReason = BatteryRecoveryReason::none;
     }
 }
 
@@ -206,7 +209,8 @@ GameSession::GameSession(const DefinitionRegistry& definitions,
                 generationProgress->report(WorldGenerationPhase::starts,
                     static_cast<float>(attempt) / std::max(1U, maximumAttempts));
             startingRegions = selectStartingRegions(
-                terrain_, gameplay_, mapChunksPerSide_, players_.players().size());
+                terrain_, gameplay_, mapChunksPerSide_, players_.players().size(),
+                terrainSeed_);
             break;
         } catch (const std::runtime_error&) {
             if (attempt + 1 == maximumAttempts)
@@ -858,6 +862,7 @@ void GameSession::simulateTick() {
     };
     std::vector<CompletedCharacter> completed;
     std::vector<EntityId> destroyed;
+    bool foundationInfluenceChanged = false;
     struct PreviousPowerState {
         EntityId entity{0};
         PowerOperationalState state{PowerOperationalState::offline};
@@ -1139,22 +1144,62 @@ void GameSession::simulateTick() {
         }
         if (entity.flight && entity.battery && entity.battery.returningToCharge) {
             const Entity* chargerEntity = world_.findEntity(entity.battery.chargerTarget);
-            const auto validCharger = [&](const Entity* candidate) {
+            const auto chargerDevice = [&](const Entity* candidate)
+                -> const PowerDeviceDefinition* {
                 if (!candidate || candidate->authority.owner != entity.authority.owner ||
-                    !isOperational(*candidate)) return false;
+                    !isOperational(*candidate)) return nullptr;
                 const EntityArchetype* type = gameplay_.archetype(candidate->archetype);
-                if (!type || !type->powerDevice) return false;
+                if (!type || !type->powerDevice) return nullptr;
                 const PowerDeviceDefinition* device = gameplay_.powerDevice(*type->powerDevice);
-                return device && device->tags.contains("charger") &&
-                       device->chargePerTick > 0.0F && candidate->power &&
+                return device && device->tags.contains("charger") ? device : nullptr;
+            };
+            const auto poweredCharger = [&](const Entity* candidate) {
+                const PowerDeviceDefinition* device = chargerDevice(candidate);
+                return device && device->chargePerTick > 0.0F && candidate->power &&
                        candidate->power.enabled &&
                        candidate->power.state != PowerOperationalState::offline;
             };
-            if (!validCharger(chargerEntity)) {
+            const auto chargerHasSlot = [&](const Entity& candidate,
+                                            const PowerDeviceDefinition& device) {
+                std::uint32_t reserved = 0;
+                for (const Entity& other : world_.entities())
+                    if (other.id != entity.id && other.battery &&
+                        other.battery.returningToCharge &&
+                        other.battery.chargerTarget == candidate.id)
+                        ++reserved;
+                return reserved < device.chargingSlots;
+            };
+            const auto reachableCharger = [&](const Entity& candidate) {
+                const float range = interactionRange(gameplay_, entity, "charge");
+                const MapArea map{mapChunksPerSide_};
+                if (!map.contains({candidate.transform.position.x,
+                                   candidate.transform.position.z},
+                                  gameplay_.matchRules().terrainEdgeMargin))
+                    return false;
+                if (boundaryClearance(gameplay_, entity, candidate) <= range) return true;
+                return !navigation_.findPath(
+                    world_, entity.transform.position,
+                    NavigationGoalRegion{spatialShape(gameplay_, candidate), range,
+                                         {entity.transform.position.x,
+                                          entity.transform.position.z},
+                                         candidate.id, entity.id},
+                    collisionRadius(gameplay_, entity.archetype), entity.id,
+                    navigationProfile(gameplay_, entity)).empty();
+            };
+            const PowerDeviceDefinition* currentDevice = chargerDevice(chargerEntity);
+            if (!poweredCharger(chargerEntity) || !currentDevice ||
+                !chargerHasSlot(*chargerEntity, *currentDevice)) {
                 chargerEntity = nullptr;
                 float nearestDistance = std::numeric_limits<float>::max();
+                bool foundPowered = false;
+                bool foundAvailable = false;
                 for (const Entity& candidate : world_.entities()) {
-                    if (!validCharger(&candidate)) continue;
+                    if (!poweredCharger(&candidate)) continue;
+                    foundPowered = true;
+                    const PowerDeviceDefinition* device = chargerDevice(&candidate);
+                    if (!device || !chargerHasSlot(candidate, *device)) continue;
+                    foundAvailable = true;
+                    if (!reachableCharger(candidate)) continue;
                     const float distance = boundaryClearance(gameplay_, entity, candidate);
                     if (distance < nearestDistance ||
                         (distance == nearestDistance && chargerEntity && candidate.id < chargerEntity->id)) {
@@ -1163,12 +1208,18 @@ void GameSession::simulateTick() {
                     }
                 }
                 entity.battery.chargerTarget = chargerEntity ? chargerEntity->id : 0;
+                if (!chargerEntity)
+                    entity.battery.recoveryReason =
+                        !foundPowered ? BatteryRecoveryReason::noCharger
+                        : !foundAvailable ? BatteryRecoveryReason::chargersOccupied
+                                          : BatteryRecoveryReason::noReachableCharger;
             }
             if (!chargerEntity) {
                 entity.unitControl.order = UnitOrderKind::stranded;
                 entity.unitControl.orderTarget = 0;
                 entity.unitControl.hasStrategicDestination = false;
             } else {
+                entity.battery.recoveryReason = BatteryRecoveryReason::none;
                 const EntityArchetype* chargerType = gameplay_.archetype(chargerEntity->archetype);
                 const PowerDeviceDefinition* charger =
                     gameplay_.powerDevice(*chargerType->powerDevice);
@@ -1284,7 +1335,7 @@ void GameSession::simulateTick() {
                             if (foundation != world_.foundations().end() &&
                                 foundation->influence != progress) {
                                 foundation->influence = progress;
-                                terrain_.rebuildFoundations(world_.foundations());
+                                foundationInfluenceChanged = true;
                             }
                             if (target->construction.powerProgress >= target->construction.powerRequired) {
                                 target->construction.state = BuildingLifecycleState::operational;
@@ -1656,6 +1707,10 @@ void GameSession::simulateTick() {
             entity.transform.position.y = entity.flight.altitude;
         }
     }
+    // Multiple drones and projects may update foundations in one simulation tick. Rebuild the
+    // affected terrain regions once after all authoritative work contributions are applied.
+    if (foundationInfluenceChanged)
+        terrain_.rebuildFoundations(world_.foundations());
     std::sort(destroyed.begin(), destroyed.end());
     destroyed.erase(std::unique(destroyed.begin(), destroyed.end()), destroyed.end());
     for (EntityId id : destroyed) {

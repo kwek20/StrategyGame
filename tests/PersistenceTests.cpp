@@ -126,6 +126,7 @@ int strategyTestMain() {
     drone.battery.suspendedDestination = entity.transform.position;
     drone.battery.suspendedHasDestination = true;
     drone.battery.chargerTarget = 77;
+    drone.battery.recoveryReason = strategy::BatteryRecoveryReason::chargersOccupied;
     drone.gatherer.emplace();
     drone.gatherer.carriedResource = "scrap";
     drone.gatherer.carriedAmount = 8.0F;
@@ -205,7 +206,9 @@ int strategyTestMain() {
             loadedDrone->battery.hasSuspendedOrder &&
             loadedDrone->battery.suspendedOrder == strategy::UnitOrderKind::construct &&
             loadedDrone->battery.suspendedTarget == originalId &&
-            loadedDrone->battery.chargerTarget == 77 && loadedDrone->gatherer &&
+            loadedDrone->battery.chargerTarget == 77 &&
+            loadedDrone->battery.recoveryReason ==
+                strategy::BatteryRecoveryReason::chargersOccupied && loadedDrone->gatherer &&
             loadedDrone->gatherer.carriedResource == "scrap" &&
             loadedDrone->gatherer.carriedAmount == 8.0F &&
             loadedDrone->gatherer.sourceTarget == 91 &&

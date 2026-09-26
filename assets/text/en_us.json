@@ -218,6 +218,8 @@
   "entity_hud.power_label": "POWER",
   "entity_hud.cargo": "CARGO",
   "entity_hud.no_charger": "NO POWERED CHARGER AVAILABLE",
+  "entity_hud.no_reachable_charger": "NO REACHABLE POWERED CHARGER",
+  "entity_hud.chargers_occupied": "ALL POWERED CHARGERS OCCUPIED",
   "entity_hud.speed": "SPEED",
   "entity_hud.vision": "VISION",
   "entity_hud.gather": "GATHER"
@@ -246,6 +248,7 @@
   ,"entity_hud.task_gathering": "GATHERING"
   ,"entity_hud.task_delivering": "DELIVERING"
   ,"entity_hud.task_charging": "CHARGING"
+  ,"entity_hud.task_stranded": "STRANDED"
   ,"entity_hud.conversion_route": "CONVERSION"
   ,"entity_hud.processor_state": "STATUS"
   ,"processor.state.idle": "POWERED / IDLE"

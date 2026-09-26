@@ -1,6 +1,7 @@
 #include "gameplay/DefinitionRegistry.hpp"
 #include "terrain/Terrain.hpp"
 #include "world/StartingPlacement.hpp"
+#include "world/MapArea.hpp"
 #include "world/World.hpp"
 #include "world/WorldGeneration.hpp"
 
@@ -36,10 +37,12 @@ bool sameLayout(const strategy::ResourceLayout& left,
 
 std::vector<glm::vec2> anchors(const strategy::Terrain& terrain,
                                const strategy::DefinitionRegistry& definitions,
-                               std::uint32_t mapChunksPerSide = 10) {
+                               std::uint32_t mapChunksPerSide = 10,
+                               std::uint32_t selectionSeed = 0x5EED1234U) {
     std::vector<glm::vec2> result;
     for (const strategy::StartingRegion& region :
-         strategy::selectStartingRegions(terrain, definitions, mapChunksPerSide, 2))
+         strategy::selectStartingRegions(terrain, definitions, mapChunksPerSide, 2,
+                                         selectionSeed))
         result.push_back(region.anchor);
     return result;
 }
@@ -47,14 +50,19 @@ std::vector<glm::vec2> anchors(const strategy::Terrain& terrain,
 
 int strategyTestMain() {
     const strategy::DefinitionRegistry definitions;
-    const std::vector<std::uint32_t> seeds{0x13572468U, 0x24681357U, 0x51A7F00DU};
+    const std::vector<std::uint32_t> seeds{123U, 0x13572468U, 0x24681357U, 0x51A7F00DU};
     bool valid = true;
     std::set<std::string> observedVariants;
     std::set<std::string> signatures;
 
     for (const std::uint32_t seed : seeds) {
         const strategy::Terrain terrain{seed};
-        const std::vector<glm::vec2> starts = anchors(terrain, definitions);
+        const std::vector<glm::vec2> starts = anchors(terrain, definitions, 10, seed);
+        const strategy::MapArea startMap{10};
+        valid = valid && starts.size() == 2 &&
+                glm::distance(starts[0], starts[1]) + 0.001F >=
+                    startMap.extent() *
+                        definitions.matchRules().minimumOpponentSeparationNormalized;
         strategy::World firstWorld;
         strategy::World secondWorld;
         const strategy::ResourceLayout first = strategy::populateResources(

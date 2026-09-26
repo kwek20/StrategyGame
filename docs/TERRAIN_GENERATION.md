@@ -380,9 +380,13 @@ amphibious units, aircraft, and drones.
 
 The fixed opposite-edge formula has been replaced by deterministic candidate-region selection.
 Every candidate is centered in an interior chunk; the outermost chunk ring is never eligible.
-For two players, the globally farthest valid pair is selected. For larger future matches, each
-additional player maximizes its distance to its nearest already-selected opponent. Distance is the
-primary comparison; terrain and economic quality only break equal-distance choices.
+Opponent separation scales with playable map size: starts must be separated by at least the
+configured fraction of the map's side length (currently one half). For two players, the generator
+maximizes separation among valid pairs after applying that minimum, with terrain quality breaking
+distance ties. The seed resolves otherwise equivalent choices and which player receives which side,
+so player one is not tied to a fixed corner. For larger future matches, each
+additional player maximizes its distance to its nearest already-selected opponent; team-aware
+minimum separation rules will be added when matches support more than two players.
 
 A valid starting region requires:
 

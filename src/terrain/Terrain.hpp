@@ -171,6 +171,13 @@ struct RiverPath {
     std::vector<RiverPathPoint> points;
 };
 
+struct FoundationUpdateDiagnostics {
+    std::uint64_t rebuildCount{0};
+    std::uint64_t lastResetVertices{0};
+    double lastMilliseconds{0.0};
+    double peakMilliseconds{0.0};
+};
+
 class Terrain final {
   public:
     // Creates an empty renderer-side shell. It must be replaced by generated terrain
@@ -240,6 +247,9 @@ class Terrain final {
                                                          glm::vec2 worldPosition);
     void applyFoundation(const TerrainFoundation& foundation);
     void rebuildFoundations(const std::vector<TerrainFoundation>& foundations);
+    [[nodiscard]] const FoundationUpdateDiagnostics& foundationDiagnostics() const {
+        return foundationDiagnostics_;
+    }
     [[nodiscard]] const std::vector<std::pair<int, int>>& dirtyChunks() const { return dirtyChunks_; }
     void clearDirtyChunks() { dirtyChunks_.clear(); }
 
@@ -273,6 +283,9 @@ class Terrain final {
     std::uint32_t maximumGenerationAttempts_{8};
     std::vector<std::pair<int, int>> dirtyChunks_;
     std::vector<TerrainFoundation> appliedFoundations_;
+    FoundationUpdateDiagnostics foundationDiagnostics_;
+
+    void applyFoundationPixels(const TerrainFoundation& foundation);
 
     void generateHeightfield(std::uint32_t seed,
                              const TerrainGeneratorDefinition& generator,

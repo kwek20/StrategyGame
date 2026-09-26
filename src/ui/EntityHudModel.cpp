@@ -30,8 +30,14 @@ void presentBattery(const Entity& entity, const DefinitionRegistry&, EntityHudMo
         model.bars.push_back(
             {Text::get("entity_hud.power_label"), entity.battery.charge,
              entity.battery.capacity, HudBarKind::power});
-        if (entity.unitControl && entity.unitControl.order == UnitOrderKind::stranded)
-            model.footer = Text::get("entity_hud.no_charger");
+        if (entity.unitControl && entity.unitControl.order == UnitOrderKind::stranded) {
+            const char* reason = "entity_hud.no_charger";
+            if (entity.battery.recoveryReason == BatteryRecoveryReason::noReachableCharger)
+                reason = "entity_hud.no_reachable_charger";
+            else if (entity.battery.recoveryReason == BatteryRecoveryReason::chargersOccupied)
+                reason = "entity_hud.chargers_occupied";
+            model.footer = Text::get(reason);
+        }
     }
 }
 
@@ -56,6 +62,8 @@ void presentGatherer(const Entity& entity, const DefinitionRegistry& definitions
         else if (entity.unitControl.order == UnitOrderKind::returningToCharge ||
                  entity.unitControl.order == UnitOrderKind::charging)
             stage = "entity_hud.task_charging";
+        else if (entity.unitControl.order == UnitOrderKind::stranded)
+            stage = "entity_hud.task_stranded";
     }
     model.stats.push_back({Text::get("entity_hud.loop_stage"), Text::get(stage)});
 }

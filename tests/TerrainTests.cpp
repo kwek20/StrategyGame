@@ -443,6 +443,13 @@ int strategyTestMain() {
     foundationWaterTest.rebuildFoundations({});
     valid = valid && nearlyEqual(foundationWaterTest.heightAt(dryPoint.x, dryPoint.y),
                                  originalDryHeight);
+    const auto& foundationProfile = foundationWaterTest.foundationDiagnostics();
+    valid = valid && foundationProfile.rebuildCount == 1 &&
+            foundationProfile.lastResetVertices > 0 &&
+            foundationProfile.lastResetVertices <
+                static_cast<std::uint64_t>(strategy::Terrain::vertexCount) *
+                    strategy::Terrain::vertexCount / 20U &&
+            foundationProfile.lastMilliseconds >= 0.0;
 
     strategy::Terrain boundaryTerrain{0x5EED1234U};
     const float chunkBoundary = -halfExtent + strategy::Terrain::chunkCellCount *

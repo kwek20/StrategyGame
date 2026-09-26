@@ -789,6 +789,11 @@ void DefinitionRegistry::loadPowerDevices(const std::filesystem::path& path) {
                 throw std::runtime_error("Power device maximumConnections must be unsigned");
             definition.maximumConnections = item->value["maximumConnections"].GetUint();
         }
+        if (item->value.HasMember("chargingSlots")) {
+            if (!item->value["chargingSlots"].IsUint())
+                throw std::runtime_error("Power device chargingSlots must be unsigned");
+            definition.chargingSlots = item->value["chargingSlots"].GetUint();
+        }
         if (item->value.HasMember("priority")) {
             if (!item->value["priority"].IsInt())
                 throw std::runtime_error("Power device priority must be an integer");
@@ -803,6 +808,10 @@ void DefinitionRegistry::loadPowerDevices(const std::filesystem::path& path) {
         if (definition.connectionRange > 0.0F && definition.maximumConnections == 0)
             throw std::runtime_error("Power device '" + definition.id +
                                      "' requires maximumConnections when connectable");
+        if (definition.tags.contains("charger") &&
+            (definition.chargePerTick <= 0.0F || definition.chargingSlots == 0))
+            throw std::runtime_error("Charger power device '" + definition.id +
+                                     "' requires chargePerTick and chargingSlots");
         if (!powerDevices_.emplace(definition.id, std::move(definition)).second)
             throw std::runtime_error("Duplicate power device definition id '" +
                                      std::string(item->name.GetString()) + "'");
@@ -1280,15 +1289,13 @@ void DefinitionRegistry::loadRules(const std::filesystem::path& path) {
     if (!data.HasMember("startingPlacement") || !data["startingPlacement"].IsObject())
         throw std::runtime_error("Match rules require startingPlacement object");
     const auto& placement = data["startingPlacement"];
-    if (!placement.HasMember("edgeInsetChunks") || !placement["edgeInsetChunks"].IsNumber() ||
-        placement["edgeInsetChunks"].GetFloat() < 0.0F ||
-        !placement.HasMember("lateralNormalized") ||
-        !placement["lateralNormalized"].IsNumber() ||
-        placement["lateralNormalized"].GetFloat() < 0.0F ||
-        placement["lateralNormalized"].GetFloat() > 1.0F)
+    if (!placement.HasMember("minimumOpponentSeparationNormalized") ||
+        !placement["minimumOpponentSeparationNormalized"].IsNumber() ||
+        placement["minimumOpponentSeparationNormalized"].GetFloat() <= 0.0F ||
+        placement["minimumOpponentSeparationNormalized"].GetFloat() > 1.0F)
         throw std::runtime_error("Match rules have invalid startingPlacement");
-    matchRules_.startingEdgeInsetChunks = placement["edgeInsetChunks"].GetFloat();
-    matchRules_.startingLateralNormalized = placement["lateralNormalized"].GetFloat();
+    matchRules_.minimumOpponentSeparationNormalized =
+        placement["minimumOpponentSeparationNormalized"].GetFloat();
     if (!data.HasMember("startingResources") || !data["startingResources"].IsObject())
         throw std::runtime_error("Match rules require startingResources object");
     for (auto item = data["startingResources"].MemberBegin();

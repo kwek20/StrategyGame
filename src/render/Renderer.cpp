@@ -1426,6 +1426,16 @@ void Renderer::drawDetailedDebugHud(const CameraView& camera,
                << metric.peakMilliseconds;
         lines.push_back(timing.str());
     }
+    const FoundationUpdateDiagnostics& foundationProfile = terrain_.foundationDiagnostics();
+    {
+        std::ostringstream timing;
+        timing << "  terrain.foundations: " << std::fixed << std::setprecision(2)
+               << foundationProfile.lastMilliseconds << " / peak "
+               << foundationProfile.peakMilliseconds << " ms, reset vertices "
+               << foundationProfile.lastResetVertices << ", rebuilds "
+               << foundationProfile.rebuildCount;
+        lines.push_back(timing.str());
+    }
     if (entity) {
         const char* kinds[] = {"decoration", "unit", "building", "resource"};
         lines.push_back("ENTITY (saved component state)");
@@ -1477,6 +1487,9 @@ void Renderer::drawDetailedDebugHud(const CameraView& camera,
                             std::string(entity->battery.returningToCharge ? "true" : "false"));
             lines.push_back("  chargerTarget [saved]: " +
                             std::to_string(entity->battery.chargerTarget));
+            lines.push_back("  recoveryReason [saved]: " +
+                            std::to_string(static_cast<unsigned>(
+                                entity->battery.recoveryReason)));
             lines.push_back("  suspendedOrder [saved]: " +
                             std::to_string(static_cast<unsigned>(entity->battery.suspendedOrder)));
             lines.push_back("  suspendedTarget [saved]: " +

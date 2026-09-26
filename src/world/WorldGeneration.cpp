@@ -666,7 +666,8 @@ ResourceLayout populateResources(World& world,
     std::vector<glm::vec2> startingAnchors = providedStartingAnchors;
     if (startingAnchors.empty())
         for (const StartingRegion& region :
-             selectStartingRegions(terrain, definitions, mapChunksPerSide, 2))
+             selectStartingRegions(terrain, definitions, mapChunksPerSide, 2,
+                                   terrainSeed))
             startingAnchors.push_back(region.anchor);
     const std::uint32_t validatedMapSize = std::clamp(
         mapChunksPerSide, 10U, static_cast<std::uint32_t>(Terrain::chunksPerSide));

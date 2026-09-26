@@ -204,6 +204,8 @@ void SaveGame::write(const std::filesystem::path& path,
             writer.Key("suspendedHasDestination");
             writer.Bool(entity.battery.suspendedHasDestination);
             writer.Key("chargerTarget"); writer.Uint64(entity.battery.chargerTarget);
+            writer.Key("recoveryReason");
+            writer.Uint(static_cast<unsigned>(entity.battery.recoveryReason));
             writer.EndObject();
         }
         if (entity.combat) {
@@ -530,7 +532,8 @@ SaveData SaveGame::read(const std::filesystem::path& path) {
                     !item.HasMember("suspendedTarget") || !item["suspendedTarget"].IsUint64() ||
                     !item.HasMember("suspendedHasDestination") ||
                     !item["suspendedHasDestination"].IsBool() ||
-                    !item.HasMember("chargerTarget") || !item["chargerTarget"].IsUint64())
+                    !item.HasMember("chargerTarget") || !item["chargerTarget"].IsUint64() ||
+                    !item.HasMember("recoveryReason") || !item["recoveryReason"].IsUint())
                     throw std::runtime_error("Invalid battery component");
                 entity.battery.emplace();
                 entity.battery.charge = item["charge"].GetFloat();
@@ -543,10 +546,14 @@ SaveData SaveGame::read(const std::filesystem::path& path) {
                 entity.battery.suspendedHasDestination =
                     item["suspendedHasDestination"].GetBool();
                 entity.battery.chargerTarget = item["chargerTarget"].GetUint64();
+                entity.battery.recoveryReason = static_cast<BatteryRecoveryReason>(
+                    item["recoveryReason"].GetUint());
                 if (entity.battery.charge < 0.0F ||
                     entity.battery.charge > entity.battery.capacity ||
                     item["suspendedOrder"].GetUint() >
-                        static_cast<unsigned>(UnitOrderKind::stranded))
+                        static_cast<unsigned>(UnitOrderKind::stranded) ||
+                    item["recoveryReason"].GetUint() >
+                        static_cast<unsigned>(BatteryRecoveryReason::chargersOccupied))
                     throw std::runtime_error("Invalid battery state");
             }
             if (components.HasMember("combat")) {

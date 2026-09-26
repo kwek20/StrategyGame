@@ -7,8 +7,7 @@
     "authority": 0
   },
   "startingPlacement": {
-    "edgeInsetChunks": 1.5,
-    "lateralNormalized": 0.5
+    "minimumOpponentSeparationNormalized": 0.5
   },
   "playerOneStart": [
     { "archetype": "command_hub", "nameKey": "entity.player_one_base", "position": [0, 0, 0] },

@@ -23,7 +23,8 @@ struct StartingRegion {
 
 inline std::vector<StartingRegion> selectStartingRegions(
     const Terrain& terrain, const DefinitionRegistry& definitions,
-    std::uint32_t mapChunksPerSide, std::size_t playerCount) {
+    std::uint32_t mapChunksPerSide, std::size_t playerCount,
+    std::uint32_t selectionSeed = 0x5EED1234U) {
     if (playerCount == 0) return {};
     const MatchRulesDefinition& rules = definitions.matchRules();
     const MapArea map{mapChunksPerSide};
@@ -186,27 +187,59 @@ inline std::vector<StartingRegion> selectStartingRegions(
         return {*choice};
     }
 
-    std::vector<StartingRegion> selected;
-    // Separation is lexicographically primary: terrain quality only breaks equal-distance ties.
-    float bestDistance = -1.0F, bestQuality = -1.0F;
-    std::pair<std::size_t, std::size_t> bestPair{0, 1};
+    struct EligiblePair {
+        std::size_t left{0}, right{0};
+        float distanceSquared{0.0F};
+        float quality{0.0F};
+        std::uint32_t tieBreaker{0};
+    };
+    const float minimumSeparation =
+        map.extent() * rules.minimumOpponentSeparationNormalized;
+    const float minimumSeparationSquared = minimumSeparation * minimumSeparation;
+    std::vector<EligiblePair> eligiblePairs;
+    const auto pairHash = [selectionSeed](const StartingRegion& left,
+                                          const StartingRegion& right) {
+        std::uint32_t value = selectionSeed ^ 0xA341316CU;
+        for (const int coordinate : {left.chunk.x, left.chunk.y,
+                                     right.chunk.x, right.chunk.y}) {
+            value ^= static_cast<std::uint32_t>(coordinate) + 0x9E3779B9U +
+                     (value << 6U) + (value >> 2U);
+            value ^= value >> 16U;
+            value *= 0x7FEB352DU;
+        }
+        return value ^ (value >> 15U);
+    };
     for (std::size_t left = 0; left < candidates.size(); ++left)
         for (std::size_t right = left + 1; right < candidates.size(); ++right) {
             if (candidates[left].landComponent != candidates[right].landComponent) continue;
             const glm::vec2 delta = candidates[left].anchor - candidates[right].anchor;
-            const float distance = glm::dot(delta, delta);
+            const float distanceSquared = glm::dot(delta, delta);
+            if (distanceSquared < minimumSeparationSquared) continue;
             const float quality = candidates[left].terrainQuality + candidates[right].terrainQuality;
-            if (distance > bestDistance || (distance == bestDistance && quality > bestQuality)) {
-                bestDistance = distance;
-                bestQuality = quality;
-                bestPair = {left, right};
-            }
+            eligiblePairs.push_back({left, right, distanceSquared, quality,
+                                     pairHash(candidates[left], candidates[right])});
         }
-    if (bestDistance < 0.0F)
+    if (eligiblePairs.empty())
         throw std::runtime_error(
-            "Terrain has no mutually reachable pair of valid starting regions");
-    selected.push_back(candidates[bestPair.first]);
-    selected.push_back(candidates[bestPair.second]);
+            "Terrain has no reachable starting pair with the required map-relative separation");
+
+    // Maximize neutral territory after enforcing the map-relative minimum. Terrain quality
+    // breaks distance ties; the seed only resolves otherwise equivalent choices and player-side
+    // assignment, avoiding a fixed player-one corner without weakening opening resource space.
+    const EligiblePair* chosenPair = nullptr;
+    for (const EligiblePair& pair : eligiblePairs) {
+        if (!chosenPair || pair.distanceSquared > chosenPair->distanceSquared ||
+            (pair.distanceSquared == chosenPair->distanceSquared &&
+             (pair.quality > chosenPair->quality ||
+              (pair.quality == chosenPair->quality &&
+               pair.tieBreaker < chosenPair->tieBreaker))))
+            chosenPair = &pair;
+    }
+
+    std::vector<StartingRegion> selected;
+    const bool reversePlayers = (chosenPair->tieBreaker & 1U) != 0U;
+    selected.push_back(candidates[reversePlayers ? chosenPair->right : chosenPair->left]);
+    selected.push_back(candidates[reversePlayers ? chosenPair->left : chosenPair->right]);
     while (selected.size() < playerCount) {
         const StartingRegion* choice = nullptr;
         float choiceDistance = -1.0F;

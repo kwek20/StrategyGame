@@ -38,8 +38,8 @@ compatibility artwork, not the intended economy.
 | Milestone | Status | Remaining emphasis |
 | --- | --- | --- |
 | 0 — prototype stabilization | Active | Navigation performance, congestion, large-map profiling, visual diagnostics |
-| 2 — construction drone | Feature-complete foundation | Edge-case validation, stranded/recovery UX, long-running task-loop tests |
-| 3 — construction | Feature-complete foundation | Placement polish, incremental terrain-foundation performance, broader recipe validation |
+| 2 — construction drone | Reliability pass complete | Further balance and extended soak testing only |
+| 3 — construction | Reliability pass complete | Placement polish and broader recipe/content validation |
 | 4 — deterministic power grid | Feature-complete foundation | Storage/failure stress tests, allocation tuning, overlay clarity, large-grid profiling |
 | 5 — physical processing economy | Playable foundation | Opening-loop balance, fair resource placement, logistics feedback, pacing validation |
 | 6 and later | Planned | Combat slice, information warfare, factions, strategic resources, networking, polish |
@@ -130,16 +130,19 @@ non-water work in order before starting Milestone 6:
    - Add local avoidance without making unit iteration order authoritative.
    - Expose destination, waypoint, path length, retry state, and stuck time in F3 diagnostics.
    - Verify that multiple drones can approach interaction edges from every valid side.
-4. **Drone recovery validation**
+4. **Drone recovery validation — complete**
    - Test destroyed, disconnected, occupied, inaccessible, and absent chargers.
    - Make the stranded state and recovery route visible to the player.
    - Preserve interrupted work through charging and resume it deterministically.
-   - Add long-running gather/deliver/recharge and save/load task-loop tests.
-5. **Construction hardening**
+   - Focused tests cover charger destruction, disconnection, reachability, finite slots, automatic
+     recovery, suspended construction resumption, persistence, and checksum state. The HUD exposes
+     distinct absent/unpowered, unreachable, and occupied recovery reasons.
+5. **Construction hardening — reliability pass complete**
    - Test simultaneous projects, multiple drones, cancellation, destruction, save/load, and
      insufficient Alloy or battery power.
    - Validate every construction recipe against preview and authoritative placement rules.
-   - Profile progressive terrain-foundation updates and remove placement/construction spikes.
+   - Progressive changes from multiple projects are batched into one rebuild per tick. Rebuilds
+     reset only affected old/new foundation regions; F3 reports timing and reset-vertex counts.
 6. **Power-grid stress testing**
    - Test relay destruction/rebuilding, deterministic grid splitting/merging, storage cycles,
      priority shortage allocation, transfer limits, and maximum-connection failures.
@@ -200,7 +203,7 @@ Maintain a reliable baseline while the modern drone economy and infrastructure s
 
 ## Milestone 2: starting construction drone
 
-**Status: feature-complete foundation; validation remains.**
+**Status: reliability pass complete; further balance and soak testing are ongoing.**
 
 ### Goal
 
@@ -230,11 +233,12 @@ directly controlled, non-gathering ground worker.
 - Identical command streams produce identical battery, cargo, construction-power, movement, and
   resource results.
 - Drone state survives save/load at every point in its work cycle.
-- A drone enters an explicit stranded state when no powered headquarters charger is available.
+- A drone enters an explicit stranded state with a visible reason when no powered, reachable,
+  unoccupied charger is available, and automatically recovers when one becomes valid.
 
 ## Milestone 3: construction gameplay
 
-**Status: feature-complete foundation; polish and performance validation remain.**
+**Status: reliability pass complete; placement polish and content validation remain.**
 
 ### Goal
 
@@ -261,6 +265,8 @@ Allow the drone to establish a functional base through clear, deterministic cons
 - Placement preview and simulation validation agree.
 - Construction remains deterministic with multiple drones and simultaneous projects.
 - Cancellation, destruction, save/load, and insufficient-resource cases are tested.
+- Progressive foundation changes are batched per tick, touch only affected terrain regions, and
+  expose timing/vertex diagnostics in F3.
 
 ## Milestone 4: deterministic power grid
 
@@ -274,6 +280,8 @@ Make connected energy infrastructure the main spatial constraint on expansion.
 
 - Add generators, consumers, relays, connections, storage, transfer limits, and priorities.
 - Build deterministic network discovery and allocation.
+- Implement the generator-rooted, one-way allocation contract in `POWER_GRID.md`: graph hops,
+  generator distance, then stable-ID tie-breaking. Remove priority from allocation.
 - Recalculate only affected network regions after topology changes.
 - Define fully powered, underpowered, battery-powered, and offline behavior.
 - Add graceful degradation for factories, sensors, chargers, and defenses.
@@ -284,12 +292,13 @@ Make connected energy infrastructure the main spatial constraint on expansion.
 The current implementation includes serializable connect/disconnect/priority/enable commands,
 stable topology discovery, connection and transfer limits, generation, command-hub storage,
 consumer allocation, grid IDs, checksums, persistence, interaction buttons, world tinting, and a
-clickable HUD power overview.
+clickable HUD power overview. Its existing priority/entity-ID allocation still needs to be replaced
+with the approved generator-rooted hop/distance policy documented in `POWER_GRID.md`.
 
 ### Exit criteria
 
 - Destroying or rebuilding a relay deterministically divides or reconnects networks.
-- Priority allocation is stable and understandable.
+- Generator-outward first-come-first-served allocation is stable and understandable.
 - Batteries bridge temporary shortages without creating or losing energy.
 - Power state survives save/load and participates in world checksums.
 - Large representative grids update within the simulation performance budget.
@@ -551,9 +560,10 @@ These tracks continue throughout all milestones rather than waiting for a final 
 The immediate order of work is:
 
 1. Stabilize milestone 0 navigation, shared-destination behavior, and large-map performance.
-2. Finish focused and long-running validation for drone battery, charging, cargo commitment,
-   full-processor fallback, interrupted work, persistence, and checksums.
-3. Profile progressive terrain-foundation rebuilds and validate placement across every footprint.
+2. Continue extended soak testing for drone cargo and charger recovery loops; focused charger,
+   suspended-work, persistence, and simultaneous-construction coverage is complete.
+3. Validate placement across every footprint; progressive foundation profiling and its
+   affected-region optimization are complete.
 4. Stress deterministic grids under relay destruction, storage use, shortages, reconnection, and
    many consumers; improve overlay explanations where tests expose ambiguity.
 5. Playtest and balance the complete Scrap → Alloy → powered construction opening, then Oil,

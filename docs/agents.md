@@ -92,7 +92,8 @@ quality tests. Vegetation expansion and tuning remain deferred as well.
 - Main menu uses `Play` to open match setup.
 - Match setup exposes seed, country choices, map size, starting-resource scale, and resource
   abundance. Current named map sizes are 10x10, 15x15, and 20x20 chunks.
-- Players spawn on opposite sides with definition-backed edge inset/lateral placement.
+- Player starts are selected deterministically from valid interior regions. Opponents remain at
+  least half a map side apart, while the match seed varies the chosen high-quality pair.
 - Terrain is seeded and chunked, with LOD and blended materials.
 - Resources and presentation-only vegetation use named deterministic streams.
 - Decorative grass, flowers, weeds, reeds, and stones are configured in
@@ -122,8 +123,10 @@ The active order is now:
 
 1. Resource-field/node-variant generation realignment.
 2. Navigation congestion, arrival slots, local avoidance, and F3 path/stuck diagnostics.
-3. Drone charger-loss/stranded recovery, deterministic task resumption, and long-running loop tests.
-4. Construction concurrency, failure/save-load coverage, and terrain-foundation profiling.
+3. ~~Drone charger-loss/stranded recovery and deterministic task resumption.~~ Focused reliability
+   coverage is complete; extended soak testing can continue with normal regression work.
+4. ~~Construction concurrency and terrain-foundation profiling.~~ Reliability pass complete;
+   broader recipe/content validation remains.
 5. Power topology/storage/priority/limit stress tests and large-grid profiling.
 6. Repeatable 10–15 minute opening-economy validation and balance measurements.
 7. 10x10, 15x15, and 20x20 generation/simulation/memory/render profiling.
@@ -147,8 +150,10 @@ Then proceed to Milestone 6, the first combat slice.
 - Movement drains battery; construction and repair drain battery according to their current rules.
 - Automatic charging return currently triggers at exactly zero power, not at reserve threshold.
   Zero-power drones cannot accept manual movement until recharged.
-- Chargers are power-device definitions with different `chargePerTick` values. A drone finds a valid
-  powered charger, recharges, and deterministically resumes a suspended task.
+- Chargers are power-device definitions with different `chargePerTick` and `chargingSlots` values.
+  A drone finds a powered, reachable charger with a free slot, recharges, and deterministically
+  resumes a suspended task. Destroyed, disconnected, unreachable, full, and absent chargers have
+  explicit recovery behavior and visible stranded reasons; stranded drones rescan automatically.
 - The configured reserve threshold is currently informational/future policy data.
 
 ### Cargo, delivery, and processing
@@ -192,6 +197,9 @@ Then proceed to Milestone 6, the first combat slice.
 - Current slope policy allows up to 10 degrees from building definitions. Slab/foundation visual
   work was deliberately deferred/reverted and should be revisited later; do not assume visible
   concrete bases are final.
+- Multiple construction contributions are resolved before one terrain-foundation rebuild per tick.
+  Rebuilds restore only affected old/new regions rather than copying the complete heightfield. F3
+  reports last/peak rebuild time, reset vertices, and rebuild count.
 
 ### Power grid
 
@@ -201,6 +209,10 @@ Then proceed to Milestone 6, the first combat slice.
 - Simulation deterministically builds connected components, assigns grid IDs, routes constrained
   supply/storage, allocates consumers by priority and entity ID, and emits shortage/recovery/shutdown
   and command-failure events.
+- `docs/POWER_GRID.md` is the authoritative target for the hardening pass. Allocation must flow
+  outward from generators. Consumers are ordered by graph hops, world-space distance to the
+  generator, then stable entity IDs. Priority must not override that order. The current
+  priority/entity-ID solver and priority control have not yet been migrated to this rule.
 - Power state is `powered`, `underpowered`, or `offline` (`notApplicable` exists for non-devices).
   Storage participation is not a separate operational-state enum.
 - The top HUD shows power as supply/demand. Clicking it opens the power overlay. Grid connections,

@@ -491,3 +491,8 @@ command-hub storage, transfer limits, maximum connections, priorities, enable/di
 connected components, and powered/underpowered/offline allocation. Processor delivery currently
 uses an all-or-nothing rule: only a fully powered processor accepts new cargo. Broader graceful
 degradation remains system-specific future work.
+
+The authoritative distribution policy is defined in `POWER_GRID.md`. Power flows outward from each
+generator and consumers are served first by graph-hop distance, then physical distance to that
+generator, with stable IDs resolving exact ties. The existing consumer-priority allocation is
+legacy behavior and must not override that spatial order.

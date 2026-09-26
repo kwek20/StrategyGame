@@ -5,6 +5,7 @@
 #include "world/GenerationProgress.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <array>
 #include <cmath>
 #include <glm/common.hpp>
@@ -1555,7 +1556,7 @@ float Terrain::signedDistanceToFootprint(const TerrainFoundation& foundation,
     return outsideDistance + insideDistance;
 }
 
-void Terrain::applyFoundation(const TerrainFoundation& foundation) {
+void Terrain::applyFoundationPixels(const TerrainFoundation& foundation) {
     const float halfExtent = worldExtent() * 0.5F;
     // Restrict deformation to the foundation's bounded region. The previous full-map
     // pass touched ~263k vertices for every placement, causing a visible hitch.
@@ -1601,15 +1602,55 @@ void Terrain::applyFoundation(const TerrainFoundation& foundation) {
     }
 }
 
+void Terrain::applyFoundation(const TerrainFoundation& foundation) {
+    applyFoundationPixels(foundation);
+    const auto existing = std::find_if(
+        appliedFoundations_.begin(), appliedFoundations_.end(),
+        [&](const TerrainFoundation& value) {
+            return value.sourceEntity == foundation.sourceEntity;
+        });
+    if (existing == appliedFoundations_.end())
+        appliedFoundations_.push_back(foundation);
+    else
+        *existing = foundation;
+}
+
 void Terrain::rebuildFoundations(const std::vector<TerrainFoundation>& foundations) {
-    // Mark the previous regions too, so removing or shrinking a foundation restores their VBOs.
-    for (const TerrainFoundation& foundation : appliedFoundations_)
-        applyFoundation(foundation);
-    if (baseHeights_.size() == heights_.size())
-        heights_ = baseHeights_;
+    const auto started = std::chrono::steady_clock::now();
+    std::uint64_t resetVertices = 0;
+    const float halfExtent = worldExtent() * 0.5F;
+    const auto resetRegion = [&](const TerrainFoundation& foundation) {
+        const float radius = foundation.outerRadius + foundation.edgeFalloff;
+        const int minX = std::max(0, static_cast<int>(
+            (foundation.center.x - radius + halfExtent) / spacing) - 1);
+        const int maxX = std::min(vertexCount - 1, static_cast<int>(
+            (foundation.center.x + radius + halfExtent) / spacing) + 1);
+        const int minZ = std::max(0, static_cast<int>(
+            (foundation.center.z - radius + halfExtent) / spacing) - 1);
+        const int maxZ = std::min(vertexCount - 1, static_cast<int>(
+            (foundation.center.z + radius + halfExtent) / spacing) + 1);
+        if (baseHeights_.size() != heights_.size()) return;
+        for (int z = minZ; z <= maxZ; ++z)
+            for (int x = minX; x <= maxX; ++x) {
+                const std::size_t index = static_cast<std::size_t>(z * vertexCount + x);
+                heights_[index] = baseHeights_[index];
+                ++resetVertices;
+            }
+    };
+    // Reset every old and new influence region before reapplying. This preserves overlap
+    // correctness without copying the full heightfield on every construction work step.
+    for (const TerrainFoundation& foundation : appliedFoundations_) resetRegion(foundation);
+    for (const TerrainFoundation& foundation : foundations) resetRegion(foundation);
     for (const TerrainFoundation& foundation : foundations)
-        applyFoundation(foundation);
+        applyFoundationPixels(foundation);
     appliedFoundations_ = foundations;
+    const double elapsed = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - started).count();
+    ++foundationDiagnostics_.rebuildCount;
+    foundationDiagnostics_.lastResetVertices = resetVertices;
+    foundationDiagnostics_.lastMilliseconds = elapsed;
+    foundationDiagnostics_.peakMilliseconds =
+        std::max(foundationDiagnostics_.peakMilliseconds, elapsed);
 }
 
 } // namespace strategy

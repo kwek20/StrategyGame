@@ -91,6 +91,12 @@ struct FlightComponent {
     float minimumAltitude{2.0F};
     float maximumAltitude{24.0F};
 };
+enum class BatteryRecoveryReason : std::uint8_t {
+    none,
+    noCharger,
+    noReachableCharger,
+    chargersOccupied
+};
 struct BatteryComponent {
     float charge{0.0F};
     float capacity{0.0F};
@@ -103,6 +109,7 @@ struct BatteryComponent {
     glm::vec3 suspendedDestination{0.0F};
     bool suspendedHasDestination{false};
     EntityId chargerTarget{0};
+    BatteryRecoveryReason recoveryReason{BatteryRecoveryReason::none};
 };
 enum class BuildingLifecycleState : std::uint8_t {
     planned,

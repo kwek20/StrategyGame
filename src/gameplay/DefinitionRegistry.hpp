@@ -123,6 +123,7 @@ struct PowerDeviceDefinition {
     float connectionRange{0.0F}, transferLimit{0.0F}, chargePerTick{0.0F};
     float storageChargePerTick{0.0F}, storageDischargePerTick{0.0F};
     std::uint32_t maximumConnections{0};
+    std::uint32_t chargingSlots{0};
     std::int32_t priority{100};
 };
 
@@ -248,7 +249,7 @@ struct MatchRulesDefinition {
     std::string trainingUpgradeProduct;
     std::uint32_t unitLimit{100};
     std::map<std::string, float> startingResources;
-    float startingEdgeInsetChunks{1.5F}, startingLateralNormalized{0.5F};
+    float minimumOpponentSeparationNormalized{0.5F};
     float terrainEdgeMargin{0.0F}, minimumResourceHeight{0.0F}, maximumResourceHeight{1.0F};
     float maximumResourceSlope{0.0F}, baseExclusionRadius{0.0F};
     float foliageDensityMultiplier{1.0F};
