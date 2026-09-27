@@ -94,6 +94,10 @@ int strategyTestMain() {
     strategy::Entity& replacement = create(
         session, definitions, "Replacement hub", "command_hub", {0.0F, 0.0F, 0.0F});
     const strategy::EntityId replacementId = replacement.id;
+
+    for (const strategy::EntityId id : {firstId, secondId, thirdId})
+        session.world().findEntity(id)->battery.charge =
+            session.world().findEntity(id)->battery.capacity;
     for (const strategy::EntityId id : {firstId, secondId, thirdId})
         valid = session.submit({1, sequence++, strategy::StopUnitCommand{id}}) && valid;
     session.advanceTicks();
@@ -127,6 +131,18 @@ int strategyTestMain() {
     secondBuilder->battery.charge = secondBuilder->battery.capacity;
     valid = session.submit(
         {1, sequence++, strategy::ConstructCommand{secondId, projectBId}}) && valid;
+    secondBuilder = session.world().findEntity(secondId);
+    secondBuilder->gatherer.sourceTarget = 999;
+    secondBuilder->gatherer.deliveryTarget = replacementId;
+    secondBuilder->gatherer.repeatGathering = true;
+    valid = session.submit(
+        {1, sequence++, strategy::ConstructCommand{secondId, projectBId}}) && valid;
+    session.advanceTicks();
+    secondBuilder = session.world().findEntity(secondId);
+    check(secondBuilder && !secondBuilder->gatherer.repeatGathering &&
+              secondBuilder->gatherer.sourceTarget == 0 &&
+              secondBuilder->gatherer.deliveryTarget == 0,
+          "construction clears gather loop");
     const float beforeA = session.world().findEntity(projectAId)->construction.powerProgress;
     session.advanceTicks(5);
     check(session.world().findEntity(projectAId)->construction.powerProgress > beforeA &&
@@ -137,6 +153,22 @@ int strategyTestMain() {
     valid = session.submit(
         {1, sequence++, strategy::ConnectPowerCommand{replacementId, padId}}) && valid;
     session.advanceTicks();
+
+    // Exhaustion is self-triggering even without a movement/construction command.
+    strategy::GameSession idleRecovery{definitions, 0x1D1ECAFEU};
+    idleRecovery.replaceWorld({}, 0x1D1ECAFEU);
+    strategy::Entity& idleHub = create(
+        idleRecovery, definitions, "Idle recovery hub", "command_hub", {0.0F, 0.0F, 0.0F});
+    const strategy::EntityId idleHubId = idleHub.id;
+    strategy::Entity& idleEmpty = create(
+        idleRecovery, definitions, "Idle empty drone", "construction_drone", {8.0F, 6.0F, 0.0F});
+    const strategy::EntityId idleEmptyId = idleEmpty.id;
+    idleEmpty.battery.charge = 0.0F;
+    idleRecovery.advanceTicks();
+    const strategy::Entity* recoveringIdle = idleRecovery.world().findEntity(idleEmptyId);
+    check(recoveringIdle && recoveringIdle->battery.returningToCharge &&
+              recoveringIdle->battery.chargerTarget == idleHubId,
+          "idle exhaustion starts charger return");
 
     if (!valid) std::cerr << "Drone and construction reliability validation failed\n";
     return valid ? 0 : 1;

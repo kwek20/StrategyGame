@@ -147,19 +147,23 @@ struct ProcessorComponent {
     ProcessorOperationalState state{ProcessorOperationalState::idle};
 };
 enum class PowerOperationalState : std::uint8_t { notApplicable, powered, underpowered, offline };
+enum class PowerPriority : std::uint8_t { low, medium, high };
 struct PowerComponent {
     float generation{0.0F};
     float demand{0.0F};
     float supplied{0.0F};
     float stored{0.0F};
     float storageCapacity{0.0F};
+    float transitEnergy{0.0F};
+    float transitCapacity{0.0F};
     float connectionRange{0.0F};
     float transferLimit{0.0F};
     std::uint32_t maximumConnections{0};
     std::uint64_t gridId{0};
     std::vector<EntityId> connections;
-    std::int32_t priority{100};
+    PowerPriority priority{PowerPriority::medium};
     bool enabled{true};
+    bool dischargeEnabled{true};
     PowerOperationalState state{PowerOperationalState::offline};
 };
 struct UpgradeComponent {
@@ -173,6 +177,20 @@ struct EntityTransientState {
     float navigationRetrySeconds{0.0F};
     EntityId navigationGoalEntity{0};
     float navigationInteractionRange{0.0F};
+    // Rebuilt power diagnostics. These are presentation caches, not authoritative state.
+    EntityId powerParent{0};
+    EntityId powerRoot{0};
+    EntityId powerPrimaryRoot{0};
+    PowerPriority powerBranchPriority{PowerPriority::medium};
+    bool powerFallbackActive{false};
+    float powerBufferStartLastTick{0.0F};
+    float powerGeneratedLastTick{0.0F};
+    float powerDischargedLastTick{0.0F};
+    float powerConsumedLastTick{0.0F};
+    float powerChargedLastTick{0.0F};
+    float powerCurtailedLastTick{0.0F};
+    float powerSentLastTick{0.0F};
+    float powerReceivedLastTick{0.0F};
 };
 
 enum class ProductionKind : std::uint8_t { trainCharacter, upgradeBuilding, improveTraining, processResource };

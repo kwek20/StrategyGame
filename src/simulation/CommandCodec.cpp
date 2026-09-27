@@ -60,8 +60,10 @@ std::vector<std::byte> CommandCodec::encode(const PlayerCommand& command) {
         else if constexpr (std::is_same_v<T, SetDeliveryOutputCommand>) writeString(result, payload.output);
         else if constexpr (std::is_same_v<T, ConnectPowerCommand> ||
                            std::is_same_v<T, DisconnectPowerCommand>) write(result, payload.target);
-        else if constexpr (std::is_same_v<T, SetPowerPriorityCommand>) write(result, payload.priority);
-        else if constexpr (std::is_same_v<T, SetPowerEnabledCommand>)
+        else if constexpr (std::is_same_v<T, SetPowerPriorityCommand>)
+            result.push_back(static_cast<std::byte>(payload.priority));
+        else if constexpr (std::is_same_v<T, SetPowerEnabledCommand> ||
+                           std::is_same_v<T, SetPowerDischargeEnabledCommand>)
             result.push_back(payload.enabled ? std::byte{1} : std::byte{0});
         else if constexpr (std::is_same_v<T, AttackEntityCommand>) write(result, payload.target);
         else if constexpr (std::is_same_v<T, StartRecipeCommand>) writeString(result, payload.recipeId.value);
@@ -137,8 +139,12 @@ std::optional<PlayerCommand> CommandCodec::decode(std::span<const std::byte> inp
     case 18: { std::string output; if(!readString(input,output)) return std::nullopt; result.payload=SetDeliveryOutputCommand{entity,std::move(output)}; break; }
     case 19: { EntityId target{}; if(!read(input,target)) return std::nullopt; result.payload=ConnectPowerCommand{entity,target}; break; }
     case 20: { EntityId target{}; if(!read(input,target)) return std::nullopt; result.payload=DisconnectPowerCommand{entity,target}; break; }
-    case 21: { std::int32_t priority{}; if(!read(input,priority)) return std::nullopt; result.payload=SetPowerPriorityCommand{entity,priority}; break; }
+    case 21: { if(input.empty()) return std::nullopt;
+        const unsigned priority=std::to_integer<unsigned>(input.front()); input=input.subspan(1);
+        if(priority>static_cast<unsigned>(PowerPriority::high)) return std::nullopt;
+        result.payload=SetPowerPriorityCommand{entity,static_cast<PowerPriority>(priority)}; break; }
     case 22: { if(input.empty()) return std::nullopt; const bool enabled=input.front()!=std::byte{0}; input=input.subspan(1); result.payload=SetPowerEnabledCommand{entity,enabled}; break; }
+    case 23: { if(input.empty()) return std::nullopt; const bool enabled=input.front()!=std::byte{0}; input=input.subspan(1); result.payload=SetPowerDischargeEnabledCommand{entity,enabled}; break; }
     default: return std::nullopt;
     }
     return input.empty() ? std::optional<PlayerCommand>{std::move(result)} : std::nullopt;

@@ -15,7 +15,15 @@ enum class PowerEventKind {
     commandRejected
 };
 enum class PowerFailureReason : std::uint8_t {
-    none, invalidTarget, enemyTarget, notOperational, connectionLimit, outOfRange, notConnected
+    none,
+    invalidTarget,
+    enemyTarget,
+    notOperational,
+    disabled,
+    alreadyConnected,
+    connectionLimit,
+    outOfRange,
+    notConnected
 };
 
 struct PowerEvent {

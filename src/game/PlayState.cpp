@@ -38,6 +38,15 @@ std::vector<EntityId> actionTargets(EntityId selectedEntity,
     return selectedUnits.empty() ? std::vector<EntityId>{selectedEntity} : selectedUnits;
 }
 
+const char* powerPriorityName(PowerPriority priority) {
+    switch (priority) {
+    case PowerPriority::low: return "LOW";
+    case PowerPriority::medium: return "MEDIUM";
+    case PowerPriority::high: return "HIGH";
+    }
+    return "MEDIUM";
+}
+
 bool canAffordForAll(const Player* player,
                      const RecipeDefinition* recipe,
                      std::size_t targetCount) {
@@ -282,7 +291,7 @@ EntityHudModel PlayState::buildEntityActionHudModel(const Entity& selected,
         priority.id = "power.priority";
         priority.name = Text::get("power.action.priority");
         priority.description = Text::format("power.action.priority.description",
-                                            {std::to_string(selected.power.priority)});
+                                            {powerPriorityName(selected.power.priority)});
         priority.icon = "action_power_priority";
         priority.cost = Text::get("entity_hud.free");
         priority.enabled = true;
@@ -297,6 +306,20 @@ EntityHudModel PlayState::buildEntityActionHudModel(const Entity& selected,
         toggle.cost = Text::get("entity_hud.free");
         toggle.enabled = true;
         hud.actions.push_back(std::move(toggle));
+
+        if (selected.power.generation > 0.0F && selected.power.storageCapacity > 0.0F) {
+            HudActionModel discharge;
+            discharge.id = "power.discharge";
+            discharge.name = selected.power.dischargeEnabled
+                                 ? Text::get("power.action.discharge.disable")
+                                 : Text::get("power.action.discharge.enable");
+            discharge.description = Text::get("power.action.discharge.description");
+            discharge.icon = selected.power.dischargeEnabled ? "status_powered"
+                                                              : "status_unpowered";
+            discharge.cost = Text::get("entity_hud.free");
+            discharge.enabled = true;
+            hud.actions.push_back(std::move(discharge));
+        }
     }
     appendSyntheticRoutes(hud, session_.world(), context_.definitions, localPlayer_, targets);
     return hud;
@@ -345,13 +368,19 @@ void PlayState::handleEvent(const SDL_Event& event) {
     if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
         event.key.key == bound("terrain_debug", SDLK_F4)) {
         terrainDebug_ = !terrainDebug_;
-        if (terrainDebug_) waterDebugMode_ = 0;
+        if (terrainDebug_) { waterDebugMode_ = 0; powerDebug_ = false; }
         return;
     }
     if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
         event.key.key == bound("water_debug", SDLK_F6)) {
         waterDebugMode_ = (waterDebugMode_ + 1) % 4;
-        if (waterDebugMode_ != 0) terrainDebug_ = false;
+        if (waterDebugMode_ != 0) { terrainDebug_ = false; powerDebug_ = false; }
+        return;
+    }
+    if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
+        event.key.key == bound("power_debug", SDLK_F7)) {
+        powerDebug_ = !powerDebug_;
+        if (powerDebug_) { terrainDebug_ = false; waterDebugMode_ = 0; }
         return;
     }
     if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat && event.key.key == SDLK_F5) {
@@ -648,9 +677,14 @@ void PlayState::handleEvent(const SDL_Event& event) {
                     return;
                 }
                 if (*actionId == "power.priority") {
-                    const int nextPriority = selectedHall->power && selectedHall->power.priority >= 100
-                                                 ? 10
-                                                 : selectedHall->power->priority + 10;
+                    const PowerPriority current = selectedHall->power
+                                                      ? selectedHall->power->priority
+                                                      : PowerPriority::medium;
+                    const PowerPriority nextPriority = current == PowerPriority::low
+                                                           ? PowerPriority::medium
+                                                           : current == PowerPriority::medium
+                                                                 ? PowerPriority::high
+                                                                 : PowerPriority::low;
                     for (EntityId id : targets)
                         session_.submit({localPlayer_, nextCommandSequence_++,
                                          SetPowerPriorityCommand{id, nextPriority}});
@@ -661,6 +695,14 @@ void PlayState::handleEvent(const SDL_Event& event) {
                     for (EntityId id : targets)
                         session_.submit({localPlayer_, nextCommandSequence_++,
                                          SetPowerEnabledCommand{id, enabled}});
+                    return;
+                }
+                if (*actionId == "power.discharge") {
+                    const bool enabled = selectedHall->power &&
+                                         !selectedHall->power->dischargeEnabled;
+                    for (EntityId id : targets)
+                        session_.submit({localPlayer_, nextCommandSequence_++,
+                                         SetPowerDischargeEnabledCommand{id, enabled}});
                     return;
                 }
                 if (actionId->starts_with("delivery-output:")) {
@@ -1062,6 +1104,14 @@ void PlayState::update(float deltaSeconds) {
             switch (event.reason) {
             case PowerFailureReason::outOfRange: message = Text::get("power.alert.out_of_range"); break;
             case PowerFailureReason::connectionLimit: message = Text::get("power.alert.connection_limit"); break;
+            case PowerFailureReason::disabled: message = Text::get("power.alert.disabled"); break;
+            case PowerFailureReason::alreadyConnected:
+                message = Text::get("power.alert.already_connected");
+                break;
+            case PowerFailureReason::enemyTarget: message = Text::get("power.alert.enemy_target"); break;
+            case PowerFailureReason::notOperational:
+                message = Text::get("power.alert.not_operational");
+                break;
             case PowerFailureReason::notConnected:
                 powerLinkMode_ = PowerLinkMode::disconnect;
                 message = Text::get("power.alert.not_connected");
@@ -1195,7 +1245,8 @@ void PlayState::render(Renderer& renderer) const {
     particlePresenter_.sync(renderer, session_.world(), visibilityPlayer,
                             session_.mapChunksPerSide());
     renderer.drawVegetation(session_.vegetation(), view, visibilityPlayer);
-    renderer.drawWorld(session_.world(), view, visibilityPlayer, powerOverlayVisible_);
+    renderer.drawWorld(session_.world(), view, visibilityPlayer,
+                       powerOverlayVisible_ || powerDebug_);
     renderer.drawParticles(view);
     if (constructionPlacementMode_ && constructionCursorScreen_) {
         const RecipeDefinition* selectedRecipe =
@@ -1269,6 +1320,8 @@ void PlayState::render(Renderer& renderer) const {
         ghost.construction.state = BuildingLifecycleState::planned;
         ghost.construction.placementValid = constructionPreviewValid_;
         renderer.drawWorld(preview, view, nullptr);
+        if (ghost.power)
+            renderer.drawPowerPlacementConnection(session_.world(), view, localPlayer_, ghost);
     }
     if (viewMode_ == ViewMode::strategy)
         renderer.drawOrderMarkers(session_.world(), selectedEntity_, selectedUnits_, view);
@@ -1279,8 +1332,10 @@ void PlayState::render(Renderer& renderer) const {
         renderer.drawEntityOutline(session_.world(), selectedEntity_, view, visibilityPlayer);
     if (hoveredEntity_ != 0 && viewMode_ == ViewMode::strategy)
         renderer.drawEntityOutline(session_.world(), hoveredEntity_, view, visibilityPlayer);
-    if (powerOverlayVisible_)
-        renderer.drawPowerConnections(session_.world(), view, localPlayer_);
+    if (powerDebug_)
+        renderer.drawPowerRanges(session_.world(), view, localPlayer_);
+    if (powerOverlayVisible_ || powerDebug_)
+        renderer.drawPowerConnections(session_.world(), view, localPlayer_, powerDebug_);
     if (terrainDebug_)
         renderer.drawResourceFieldDebug(session_.resourceLayout(), view);
     if (draggingSelection_ && viewMode_ == ViewMode::strategy)
@@ -1401,6 +1456,10 @@ void PlayState::render(Renderer& renderer) const {
     if (waterDebugMode_ != 0) {
         const glm::vec3 cursor = renderer.screenToTerrain(pointerScreen_.x, pointerScreen_.y, view);
         renderer.drawWaterDebugHud(cursor, waterDebugMode_);
+    }
+    if (powerDebug_) {
+        const glm::vec3 cursor = renderer.screenToTerrain(pointerScreen_.x, pointerScreen_.y, view);
+        renderer.drawPowerDebugHud(session_.world(), localPlayer_, cursor);
     }
     if (paused_) {
         UiDocument document = pauseUi(renderer.viewportWidth(), renderer.viewportHeight());

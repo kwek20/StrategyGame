@@ -82,12 +82,15 @@ int strategyTestMain() {
     entity.power.supplied = 3.0F;
     entity.power.stored = 15.0F;
     entity.power.storageCapacity = 50.0F;
+    entity.power.transitEnergy = 7.0F;
+    entity.power.transitCapacity = 25.0F;
     entity.power.connectionRange = 24.0F;
     entity.power.transferLimit = 10.0F;
     entity.power.maximumConnections = 4;
     entity.power.gridId = entity.id;
     entity.power.enabled = false;
-    entity.power.priority = 40;
+    entity.power.dischargeEnabled = false;
+    entity.power.priority = strategy::PowerPriority::high;
     entity.power.state = strategy::PowerOperationalState::underpowered;
     entity.transform.position = {1.0F, 2.0F, 3.0F};
     entity.transform.rotationDegrees = {4.0F, 5.0F, 6.0F};
@@ -195,7 +198,10 @@ int strategyTestMain() {
             loaded.entities[0].power.maximumConnections == 4 &&
             loaded.entities[0].power.gridId == originalId &&
             !loaded.entities[0].power.enabled &&
-            loaded.entities[0].power.priority == 40 &&
+            !loaded.entities[0].power.dischargeEnabled &&
+            loaded.entities[0].power.priority == strategy::PowerPriority::high &&
+            loaded.entities[0].power.transitEnergy == 7.0F &&
+            loaded.entities[0].power.transitCapacity == 25.0F &&
             loaded.entities[0].power.state == strategy::PowerOperationalState::underpowered;
     const auto loadedDrone = std::find_if(loaded.entities.begin(), loaded.entities.end(),
         [droneId](const strategy::Entity& candidate) { return candidate.id == droneId; });

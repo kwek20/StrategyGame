@@ -33,6 +33,24 @@ glm::vec3 readVector(const rapidjson::Value& object, const char* name) {
     return {object[name][0].GetFloat(), object[name][1].GetFloat(), object[name][2].GetFloat()};
 }
 
+const char* powerPriorityName(PowerPriority priority) {
+    switch (priority) {
+    case PowerPriority::low: return "low";
+    case PowerPriority::medium: return "medium";
+    case PowerPriority::high: return "high";
+    }
+    return "medium";
+}
+
+PowerPriority readPowerPriority(const rapidjson::Value& value) {
+    if (!value.IsString()) throw std::runtime_error("Invalid saved power priority");
+    const std::string priority = value.GetString();
+    if (priority == "low") return PowerPriority::low;
+    if (priority == "medium") return PowerPriority::medium;
+    if (priority == "high") return PowerPriority::high;
+    throw std::runtime_error("Invalid saved power priority");
+}
+
 } // namespace
 
 void SaveGame::write(const std::filesystem::path& path,
@@ -248,6 +266,8 @@ void SaveGame::write(const std::filesystem::path& path,
             writer.Key("supplied"); writer.Double(entity.power.supplied);
             writer.Key("stored"); writer.Double(entity.power.stored);
             writer.Key("storageCapacity"); writer.Double(entity.power.storageCapacity);
+            writer.Key("transitEnergy"); writer.Double(entity.power.transitEnergy);
+            writer.Key("transitCapacity"); writer.Double(entity.power.transitCapacity);
             writer.Key("connectionRange"); writer.Double(entity.power.connectionRange);
             writer.Key("transferLimit"); writer.Double(entity.power.transferLimit);
             writer.Key("maximumConnections"); writer.Uint(entity.power.maximumConnections);
@@ -255,8 +275,9 @@ void SaveGame::write(const std::filesystem::path& path,
             writer.Key("connections"); writer.StartArray();
             for (EntityId connection : entity.power.connections) writer.Uint64(connection);
             writer.EndArray();
-            writer.Key("priority"); writer.Int(entity.power.priority);
+            writer.Key("priority"); writer.String(powerPriorityName(entity.power.priority));
             writer.Key("enabled"); writer.Bool(entity.power.enabled);
+            writer.Key("dischargeEnabled"); writer.Bool(entity.power.dischargeEnabled);
             writer.Key("state"); writer.Uint(static_cast<unsigned>(entity.power.state));
             writer.EndObject();
         }
@@ -604,13 +625,16 @@ SaveData SaveGame::read(const std::filesystem::path& path) {
                     !item["supplied"].IsNumber() || !item.HasMember("stored") ||
                     !item["stored"].IsNumber() || !item.HasMember("storageCapacity") ||
                     !item["storageCapacity"].IsNumber() || !item.HasMember("connectionRange") ||
+                    !item.HasMember("transitEnergy") || !item["transitEnergy"].IsNumber() ||
+                    !item.HasMember("transitCapacity") || !item["transitCapacity"].IsNumber() ||
                     !item["connectionRange"].IsNumber() || !item.HasMember("transferLimit") ||
                     !item["transferLimit"].IsNumber() || !item.HasMember("maximumConnections") ||
                     !item["maximumConnections"].IsUint() || !item.HasMember("gridId") ||
                     !item["gridId"].IsUint64() || !item.HasMember("connections") ||
                     !item["connections"].IsArray() || !item.HasMember("priority") ||
-                    !item["priority"].IsInt() || !item.HasMember("enabled") ||
-                    !item["enabled"].IsBool() || !item.HasMember("state") ||
+                    !item["priority"].IsString() || !item.HasMember("enabled") ||
+                    !item["enabled"].IsBool() || !item.HasMember("dischargeEnabled") ||
+                    !item["dischargeEnabled"].IsBool() || !item.HasMember("state") ||
                     !item["state"].IsUint() ||
                     item["state"].GetUint() > static_cast<unsigned>(PowerOperationalState::offline))
                     throw std::runtime_error("Invalid power component");
@@ -620,6 +644,8 @@ SaveData SaveGame::read(const std::filesystem::path& path) {
                 entity.power.supplied = item["supplied"].GetFloat();
                 entity.power.stored = item["stored"].GetFloat();
                 entity.power.storageCapacity = item["storageCapacity"].GetFloat();
+                entity.power.transitEnergy = item["transitEnergy"].GetFloat();
+                entity.power.transitCapacity = item["transitCapacity"].GetFloat();
                 entity.power.connectionRange = item["connectionRange"].GetFloat();
                 entity.power.transferLimit = item["transferLimit"].GetFloat();
                 entity.power.maximumConnections = item["maximumConnections"].GetUint();
@@ -632,14 +658,18 @@ SaveData SaveGame::read(const std::filesystem::path& path) {
                 if (std::adjacent_find(entity.power.connections.begin(), entity.power.connections.end()) !=
                     entity.power.connections.end())
                     throw std::runtime_error("Duplicate power connection");
-                entity.power.priority = item["priority"].GetInt();
+                entity.power.priority = readPowerPriority(item["priority"]);
                 entity.power.enabled = item["enabled"].GetBool();
+                entity.power.dischargeEnabled = item["dischargeEnabled"].GetBool();
                 entity.power.state = static_cast<PowerOperationalState>(item["state"].GetUint());
                 if (entity.power.generation < 0.0F || entity.power.demand < 0.0F ||
                     entity.power.supplied < 0.0F || entity.power.supplied > entity.power.demand ||
                     entity.power.stored < 0.0F ||
                     entity.power.stored > entity.power.storageCapacity ||
                     entity.power.storageCapacity < 0.0F || entity.power.connectionRange < 0.0F ||
+                    entity.power.transitEnergy < 0.0F ||
+                    entity.power.transitEnergy > entity.power.transitCapacity ||
+                    entity.power.transitCapacity <= 0.0F ||
                     entity.power.transferLimit < 0.0F ||
                     entity.power.connections.size() > entity.power.maximumConnections)
                     throw std::runtime_error("Invalid saved power allocation");

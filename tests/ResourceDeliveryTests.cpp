@@ -78,6 +78,55 @@ int strategyTestMain() {
             activeFallbackHub->processor.bufferedInputs.contains("scrap") &&
             std::abs(activeFallbackHub->processor.bufferedInputs.at("scrap") - 10.0F) < 0.001F;
 
+    strategy::GameSession fieldRetarget{definitions, 103U};
+    fieldRetarget.replaceWorld({}, 103U);
+    strategy::Entity& fieldDrone = create(
+        fieldRetarget, definitions, "Field drone", "construction_drone");
+    const strategy::EntityId fieldDroneId = fieldDrone.id;
+    strategy::Entity& firstNode = create(
+        fieldRetarget, definitions, "First scrap", "scrap_node_small");
+    const strategy::EntityId firstNodeId = firstNode.id;
+    strategy::Entity& secondNode = create(
+        fieldRetarget, definitions, "Second scrap", "scrap_node_medium");
+    const strategy::EntityId secondNodeId = secondNode.id;
+    fieldRetarget.world().findEntity(fieldDroneId)->transform.position = {0, 6, 0};
+    fieldRetarget.world().findEntity(firstNodeId)->transform.position = {0, 0, 0};
+    fieldRetarget.world().findEntity(secondNodeId)->transform.position = {4, 0, 0};
+    fieldRetarget.world().findEntity(firstNodeId)->resource.remaining = 0.01F;
+    fieldRetarget.world().findEntity(secondNodeId)->resource.remaining = 50.0F;
+    valid = fieldRetarget.submit(
+                {1, 1, strategy::GatherResourceCommand{fieldDroneId, firstNodeId, 0}}) && valid;
+    fieldRetarget.advanceTicks();
+    const strategy::Entity* retargeted = fieldRetarget.world().findEntity(fieldDroneId);
+    valid = valid && retargeted->unitControl.order == strategy::UnitOrderKind::gather &&
+            retargeted->unitControl.orderTarget == secondNodeId &&
+            retargeted->gatherer.sourceTarget == secondNodeId;
+
+    strategy::GameSession stableDelivery{definitions, 104U};
+    stableDelivery.replaceWorld({}, 104U);
+    strategy::Entity& deliveryHub = create(
+        stableDelivery, definitions, "Delivery hub", "command_hub");
+    const strategy::EntityId deliveryHubId = deliveryHub.id;
+    strategy::Entity& deliveryDrone = create(
+        stableDelivery, definitions, "Delivery drone", "construction_drone");
+    const strategy::EntityId deliveryDroneId = deliveryDrone.id;
+    stableDelivery.world().findEntity(deliveryHubId)->transform.position = {30, 0, 0};
+    strategy::Entity* transporting = stableDelivery.world().findEntity(deliveryDroneId);
+    transporting->transform.position = {0, 6, 0};
+    transporting->gatherer.carriedResource = "scrap";
+    transporting->gatherer.carriedAmount = 10.0F;
+    transporting->unitControl.order = strategy::UnitOrderKind::returnResources;
+    stableDelivery.advanceTicks();
+    transporting = stableDelivery.world().findEntity(deliveryDroneId);
+    const glm::vec3 committedDestination = transporting->unitControl.strategicDestination;
+    const strategy::EntityId committedTarget = transporting->gatherer.deliveryTarget;
+    stableDelivery.advanceTicks(10);
+    transporting = stableDelivery.world().findEntity(deliveryDroneId);
+    valid = valid && committedTarget == deliveryHubId &&
+            transporting->gatherer.deliveryTarget == committedTarget &&
+            glm::distance(transporting->unitControl.strategicDestination,
+                          committedDestination) < 0.001F;
+
     if (!valid) std::cerr << "Resource delivery routing test failed\n";
     return valid ? 0 : 1;
 }

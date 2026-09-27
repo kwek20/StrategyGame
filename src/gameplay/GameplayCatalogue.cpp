@@ -779,6 +779,7 @@ void DefinitionRegistry::loadPowerDevices(const std::filesystem::path& path) {
         definition.production = optional("production");
         definition.consumption = optional("consumption");
         definition.storage = optional("storage");
+        definition.transitCapacity = optional("transitCapacity");
         definition.connectionRange = optional("connectionRange");
         definition.transferLimit = optional("transferLimit");
         definition.chargePerTick = optional("chargePerTick");
@@ -795,12 +796,17 @@ void DefinitionRegistry::loadPowerDevices(const std::filesystem::path& path) {
             definition.chargingSlots = item->value["chargingSlots"].GetUint();
         }
         if (item->value.HasMember("priority")) {
-            if (!item->value["priority"].IsInt())
-                throw std::runtime_error("Power device priority must be an integer");
-            definition.priority = item->value["priority"].GetInt();
+            if (!item->value["priority"].IsString())
+                throw std::runtime_error("Power device priority must be low, medium, or high");
+            const std::string priority = item->value["priority"].GetString();
+            if (priority == "low") definition.priority = PowerPriority::low;
+            else if (priority == "medium") definition.priority = PowerPriority::medium;
+            else if (priority == "high") definition.priority = PowerPriority::high;
+            else throw std::runtime_error("Power device priority must be low, medium, or high");
         }
         if (definition.production < 0.0F || definition.consumption < 0.0F ||
-            definition.storage < 0.0F || definition.connectionRange < 0.0F ||
+            definition.storage < 0.0F || definition.transitCapacity <= 0.0F ||
+            definition.connectionRange < 0.0F ||
             definition.transferLimit < 0.0F || definition.chargePerTick < 0.0F ||
             definition.storageChargePerTick < 0.0F ||
             definition.storageDischargePerTick < 0.0F)
@@ -1801,6 +1807,7 @@ void DefinitionRegistry::initializeEntity(Entity& entity) const {
             entity.power.demand = device->consumption;
             entity.power.priority = device->priority;
             entity.power.storageCapacity = device->storage;
+            entity.power.transitCapacity = device->transitCapacity;
             entity.power.connectionRange = device->connectionRange;
             entity.power.transferLimit = device->transferLimit;
             entity.power.maximumConnections = device->maximumConnections;

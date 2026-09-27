@@ -143,10 +143,20 @@ non-water work in order before starting Milestone 6:
    - Validate every construction recipe against preview and authoritative placement rules.
    - Progressive changes from multiple projects are batched into one rebuild per tick. Rebuilds
      reset only affected old/new foundation regions; F3 reports timing and reset-vertex counts.
-6. **Power-grid stress testing**
+6. **Power-grid stress testing — automated hardening pass complete**
    - Test relay destruction/rebuilding, deterministic grid splitting/merging, storage cycles,
      priority shortage allocation, transfer limits, and maximum-connection failures.
    - Profile large grids and improve disconnected, overloaded, and underpowered overlay feedback.
+   - F7 power diagnostics now expose directional latest-tick flow, priority, grid/root/parent,
+     transit buffers, storage, supply, demand, connection ranges, and broken or underpowered links.
+     F7 renders translucent green range discs for every device, including relay poles. Power-device
+     placement instead draws a single green proposed link to the nearest available endpoint and
+     stays uncluttered when no valid endpoint exists.
+   - The automated large-grid probe runs two identical 257-device grids for 600 ticks, compares
+     their complete power fingerprints every tick, checks per-device conservation, exercises a
+     busy branch split/reconnect, and records elapsed time behind a deliberately broad regression
+     budget. Focused tests also cover storage cycles, transfer and connection limits, downstream
+     priority propagation, and multi-generator fallback.
 7. **Opening-economy validation**
    - Measure time to first processor, generator, second drone, and factory.
    - Validate Scrap depletion, expansion pressure, dedicated-processor versus hub efficiency, and
@@ -280,8 +290,8 @@ Make connected energy infrastructure the main spatial constraint on expansion.
 
 - Add generators, consumers, relays, connections, storage, transfer limits, and priorities.
 - Build deterministic network discovery and allocation.
-- Implement the generator-rooted, one-way allocation contract in `POWER_GRID.md`: graph hops,
-  generator distance, then stable-ID tie-breaking. Remove priority from allocation.
+  - Implement the generator-rooted, one-way allocation contract in `POWER_GRID.md`: finite transit
+    buffers, one connection per tick, low/medium/high priority, then distance/stable-ID tie-breaking.
 - Recalculate only affected network regions after topology changes.
 - Define fully powered, underpowered, battery-powered, and offline behavior.
 - Add graceful degradation for factories, sensors, chargers, and defenses.
@@ -292,8 +302,21 @@ Make connected energy infrastructure the main spatial constraint on expansion.
 The current implementation includes serializable connect/disconnect/priority/enable commands,
 stable topology discovery, connection and transfer limits, generation, command-hub storage,
 consumer allocation, grid IDs, checksums, persistence, interaction buttons, world tinting, and a
-clickable HUD power overview. Its existing priority/entity-ID allocation still needs to be replaced
-with the approved generator-rooted hop/distance policy documented in `POWER_GRID.md`.
+  clickable HUD power overview. Allocation now advances through finite per-device buffers by one
+  connection per tick and orders constrained branches by priority, distance, and stable ID. The solver is
+now extracted from `GameSession`; explicit sorted topology snapshots are revisioned and rebuilt
+through per-player dirty invalidation instead of full topology-signature scans. Connection
+validation is centralized, every invalid command has an explicit reason, and entity destruction
+  immediately removes reciprocal links.
+Storage-capable generators can charge and discharge during the same tick. Their definition-backed
+storage discharge can be toggled independently from the device itself; disabling discharge leaves
+generation and charging active.
+Storage-only devices become source roots only when discharge is enabled and usable. Per-device
+last-tick accounting records generation, discharge, consumption, transfer, charge, curtailment,
+and buffer deltas, with focused conservation coverage.
+Priority now propagates from downstream consumers through relay branches. Multi-generator grids
+perform a deterministic capacity-aware fallback pass so a deficient nearest generator cannot claim
+consumers while another connected generator territory has surplus.
 
 ### Exit criteria
 

@@ -1,10 +1,10 @@
 #pragma once
 
 #include "world/Entity.hpp"
-#include "world/PowerGrid.hpp"
 #include "terrain/Terrain.hpp"
 
 #include <string>
+#include <map>
 #include <unordered_map>
 #include <vector>
 #include <utility>
@@ -30,20 +30,23 @@ class World final {
     [[nodiscard]] std::size_t size() const {
         return entities_.size();
     }
+    [[nodiscard]] std::uint64_t entityRevision(PlayerId player) const {
+        const auto found = entityRevisions_.find(player);
+        return found == entityRevisions_.end() ? 0 : found->second;
+    }
+    [[nodiscard]] std::uint64_t replacementRevision() const { return replacementRevision_; }
     void replaceFoundations(std::vector<TerrainFoundation> foundations) {
         foundations_ = std::move(foundations);
     }
     [[nodiscard]] std::vector<TerrainFoundation>& foundations() { return foundations_; }
     [[nodiscard]] const std::vector<TerrainFoundation>& foundations() const { return foundations_; }
-    [[nodiscard]] PowerGridTopology& powerGrid() { return powerGrid_; }
-    [[nodiscard]] const PowerGridTopology& powerGrid() const { return powerGrid_; }
-
   private:
     std::vector<Entity> entities_;
     EntityId nextId_{1};
     std::vector<TerrainFoundation> foundations_;
-    PowerGridTopology powerGrid_;
     std::unordered_map<EntityId, std::size_t> entityIndices_;
+    std::map<PlayerId, std::uint64_t> entityRevisions_;
+    std::uint64_t replacementRevision_{0};
 };
 
 } // namespace strategy

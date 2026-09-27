@@ -4,6 +4,7 @@
 #include "players/PlayerRegistry.hpp"
 #include "simulation/Command.hpp"
 #include "simulation/PowerEvent.hpp"
+#include "simulation/PowerGridSystem.hpp"
 #include "simulation/ResourceEvent.hpp"
 #include "terrain/Terrain.hpp"
 #include "world/Navigation.hpp"
@@ -112,14 +113,14 @@ class GameSession final {
     std::vector<glm::vec2> startingAnchors_;
     std::vector<ResourceEvent> resourceEvents_;
     std::vector<PowerEvent> powerEvents_;
-    std::map<PlayerId, std::uint64_t> powerTopologySignatures_;
-    std::map<PlayerId, std::vector<std::vector<EntityId>>> cachedPowerComponents_;
+    PowerGridSystem powerGridSystem_;
 
     void simulateTick();
     void apply(const PlayerCommand& command);
     void beginRecharge(Entity& entity);
     void finishRecharge(Entity& entity);
     void stopUnit(Entity& entity);
+    [[nodiscard]] Entity* nextResourceNode(const Entity& depletedNode);
     void updateExploration();
     [[nodiscard]] float stat(const Entity& entity, GameplayStat stat) const;
     void initializeEntity(Entity& entity);

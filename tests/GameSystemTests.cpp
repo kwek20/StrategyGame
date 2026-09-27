@@ -628,14 +628,19 @@ int strategyTestMain() {
     const auto decodedDisconnect = strategy::CommandCodec::decode(strategy::CommandCodec::encode(
         {1, 62, strategy::DisconnectPowerCommand{7, 90}}));
     const auto decodedPriority = strategy::CommandCodec::decode(strategy::CommandCodec::encode(
-        {1, 63, strategy::SetPowerPriorityCommand{7, 25}}));
+        {1, 63, strategy::SetPowerPriorityCommand{7, strategy::PowerPriority::high}}));
     const auto decodedEnabled = strategy::CommandCodec::decode(strategy::CommandCodec::encode(
         {1, 64, strategy::SetPowerEnabledCommand{7, false}}));
+    const auto decodedDischarge = strategy::CommandCodec::decode(strategy::CommandCodec::encode(
+        {1, 65, strategy::SetPowerDischargeEnabledCommand{7, false}}));
     valid = valid && decodedConnect && decodedDisconnect && decodedPriority && decodedEnabled &&
+            decodedDischarge &&
             std::get<strategy::ConnectPowerCommand>(decodedConnect->payload).target == 90 &&
             std::get<strategy::DisconnectPowerCommand>(decodedDisconnect->payload).target == 90 &&
-            std::get<strategy::SetPowerPriorityCommand>(decodedPriority->payload).priority == 25 &&
-            !std::get<strategy::SetPowerEnabledCommand>(decodedEnabled->payload).enabled;
+            std::get<strategy::SetPowerPriorityCommand>(decodedPriority->payload).priority ==
+                strategy::PowerPriority::high &&
+            !std::get<strategy::SetPowerEnabledCommand>(decodedEnabled->payload).enabled &&
+            !std::get<strategy::SetPowerDischargeEnabledCommand>(decodedDischarge->payload).enabled;
     std::size_t resourceCount = 0;
     float minimumGeneratedCapacity = std::numeric_limits<float>::max();
     float maximumGeneratedCapacity = 0.0F;
@@ -1288,6 +1293,7 @@ int strategyTestMain() {
         created.power.generation = generation;
         created.power.demand = demand;
         created.power.transferLimit = transfer;
+        created.power.transitCapacity = 100.0F;
         created.power.connectionRange = 200.0F;
         created.power.maximumConnections = 8;
         return created.id;
@@ -1310,6 +1316,43 @@ int strategyTestMain() {
     if (!storageBudgetValid) std::cerr << "Power storage discharge-budget validation failed\n";
     valid = valid && storageBudgetValid;
 
+    strategy::GameSession generatorStorageSession{gameplay, 904U};
+    generatorStorageSession.replaceWorld({}, 904U);
+    const auto storageGeneratorId =
+        makePowerEntity(generatorStorageSession, "Storage generator", 1, 0, 100);
+    const auto storageLoadId = makePowerEntity(generatorStorageSession, "Storage load", 0, 3, 100);
+    auto* storageGenerator = generatorStorageSession.world().findEntity(storageGeneratorId);
+    storageGenerator->archetype = strategy::EntityArchetypeId{"command_hub"};
+    storageGenerator->power.stored = 10.0F;
+    storageGenerator->power.storageCapacity = 10.0F;
+    storageGenerator->power.connections = {storageLoadId};
+    generatorStorageSession.world().findEntity(storageLoadId)->power.connections =
+        {storageGeneratorId};
+    generatorStorageSession.advanceTicks();
+    const bool simultaneousChargeDischargeValid =
+        std::abs(storageGenerator->power.stored - 8.0F) < 0.001F &&
+        std::abs(storageGenerator->transient.powerGeneratedLastTick - 1.0F) < 0.001F &&
+        std::abs(storageGenerator->transient.powerDischargedLastTick - 2.0F) < 0.001F &&
+        std::abs(storageGenerator->transient.powerSentLastTick - 3.0F) < 0.001F &&
+        std::abs(generatorStorageSession.world().findEntity(storageLoadId)->power.supplied - 3.0F) <
+            0.001F;
+    if (!simultaneousChargeDischargeValid)
+        std::cerr << "Generator did not combine generation and storage discharge\n";
+    valid = valid && simultaneousChargeDischargeValid;
+    valid = generatorStorageSession.submit(
+                {1, 1, strategy::SetPowerDischargeEnabledCommand{storageGeneratorId, false}}) &&
+            valid;
+    generatorStorageSession.advanceTicks();
+    const bool disabledDischargeValid = !storageGenerator->power.dischargeEnabled &&
+        std::abs(storageGenerator->power.stored - 8.0F) < 0.001F &&
+        std::abs(storageGenerator->transient.powerDischargedLastTick) < 0.001F &&
+        std::abs(storageGenerator->transient.powerGeneratedLastTick - 1.0F) < 0.001F &&
+        std::abs(generatorStorageSession.world().findEntity(storageLoadId)->power.supplied - 1.0F) <
+            0.001F;
+    if (!disabledDischargeValid)
+        std::cerr << "Disabled generator discharge still used stored power\n";
+    valid = valid && disabledDischargeValid;
+
     strategy::GameSession relayBudgetSession{gameplay, 902U};
     relayBudgetSession.replaceWorld({}, 902U);
     const auto sourceId = makePowerEntity(relayBudgetSession, "Source", 10, 0, 100);
@@ -1318,7 +1361,7 @@ int strategyTestMain() {
     relayBudgetSession.world().findEntity(sourceId)->power.connections = {relayId};
     relayBudgetSession.world().findEntity(relayId)->power.connections = {sourceId, relayConsumerId};
     relayBudgetSession.world().findEntity(relayConsumerId)->power.connections = {relayId};
-    relayBudgetSession.advanceTicks();
+    relayBudgetSession.advanceTicks(2);
     const bool relayBudgetValid =
         std::abs(relayBudgetSession.world().findEntity(relayConsumerId)->power.supplied - 3.0F) < 0.001F;
     if (!relayBudgetValid) std::cerr << "Power relay throughput validation failed\n";

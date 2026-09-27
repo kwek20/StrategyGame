@@ -86,7 +86,18 @@ class Renderer final {
                          const UiDocument& layout) const;
     void drawPowerConnections(const World& world,
                               const CameraView& camera,
-                              PlayerId owner) const;
+                              PlayerId owner,
+                              bool diagnostics = false) const;
+    void drawPowerRanges(const World& world,
+                         const CameraView& camera,
+                         PlayerId owner) const;
+    void drawPowerPlacementConnection(const World& world,
+                                      const CameraView& camera,
+                                      PlayerId owner,
+                                      const Entity& placementPreview) const;
+    void drawPowerDebugHud(const World& world,
+                           PlayerId owner,
+                           glm::vec3 worldPosition) const;
     void drawDebugHud(const RtsCamera& camera, std::size_t entityCount) const;
     void drawDetailedDebugHud(const CameraView& camera,
                               const Entity* entity,
@@ -209,6 +220,7 @@ class Renderer final {
     ShaderHandle modelProgram_;
     ShaderHandle outlineProgram_;
     ShaderHandle hudProgram_;
+    ShaderHandle powerOverlayProgram_;
     ModelShaderBindings modelBindings_;
     ModelShaderBindings outlineBindings_;
     MaterialHandle worldMaterial_;

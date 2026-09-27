@@ -48,6 +48,13 @@ reroute the drone. A full target releases the commitment; the drone then selects
 powered destination and falls back to the Command Hub. Destroyed, incompatible, or inaccessible
 targets are treated as lost destinations and trigger normal replacement behavior.
 
+The committed destination and its approach point remain stable while cargo is in transit; movement
+does not continuously recalculate a new nearest edge. After depleting one node, a drone with spare
+cargo capacity deterministically selects the nearest remaining node in the same generated resource
+field before delivering. Giving a move, construction, repair, attack, or stop order explicitly
+leaves the gather loop and clears its source/delivery route; construction completion therefore
+cannot unexpectedly resume an older gathering loop.
+
 Cargo unloads only while the destination is fully powered and has capacity. Once unloaded,
 conversion happens **instantly** if its conversion route's power requirement is satisfied.
 Buffered cargo remains local through a later shortage and converts after sufficient power returns.

@@ -186,7 +186,8 @@ cannot gather and cannot be trained.
 
 The current automatic return-to-charge trigger is zero battery. The configured reserve value is
 retained as data and debug information for later policy work, but it does not currently force an
-early return. A zero-charge drone cannot move manually; it seeks the nearest valid powered charger,
+early return. Exhaustion triggers recovery even when the drone was idle or its previous action did
+not explicitly request charging. A zero-charge drone cannot move manually; it seeks the nearest valid powered charger,
 recharges at that charger's definition-backed rate, and resumes a suspended order deterministically.
 Chargers have finite definition-backed slot counts. Destroyed, disconnected, unreachable, or full
 chargers cause deterministic reselection; if no valid slot exists, the drone enters a visible
@@ -220,7 +221,8 @@ visible and vulnerable.
 Power allocation is generator-rooted and directional. It travels outward from each generator and
 serves consumers first by connection-hop distance, then by world-space distance to that generator,
 with stable entity IDs used only as deterministic tie-breakers. Default grids are therefore
-first-come-first-served spatial networks. Consumer priority does not override this spatial order;
+buffered one-hop-per-tick networks. Low, medium, and high consumer priorities order constrained
+downstream branches; distance from the supplying generator and stable IDs break ties;
 the existing priority control is legacy behavior to remove or repurpose. The complete authoritative
 contract is defined in `POWER_GRID.md`.
 
@@ -242,7 +244,9 @@ Implemented power states are:
 
 Storage is authoritative grid state, but "operating from stored energy" is not exposed as a
 separate operational-state enum. Stored energy is allocated through the same deterministic supply
-path before a consumer is classified.
+path before a consumer is classified. Storage-capable generators may charge and discharge during
+the same tick. Their entity menu provides an independent discharge toggle; turning discharge off
+preserves generation and charging while preventing stored energy from entering the grid.
 
 The intended long-term behavior is graceful degradation where useful:
 

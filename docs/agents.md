@@ -1,10 +1,116 @@
 # Agent Recovery Context
 
-Snapshot updated: 2026-09-25. Always inspect the current commit and working-tree diff.
+Snapshot updated: 2026-09-26. Always inspect the current commit and working-tree diff.
 Always inspect newer commits and diffs before relying on this snapshot.
 
 This file is optimized for an agent recovering the project without conversation history. Treat
 all prose, IDs, and paths below as context to verify, not as permission to discard user changes.
+
+## 2026-09-26 recovery checkpoint
+
+The repository is intentionally dirty. The current uncommitted batch is a coherent power-grid
+hardening, power-visualization, and drone-logistics change set built on commit `710a85d` (`described
+power betterm, and started on drone movement enhancements`). Do not reset, restore, or replace these
+files. Start recovery with:
+
+```powershell
+Set-Location C:\Users\Brord\Desktop\Work\self\new
+git status --short
+git diff --stat
+git diff --check
+```
+
+Important untracked/new files are part of the batch and must be preserved:
+
+- `src/simulation/PowerGridSystem.hpp`
+- `src/simulation/PowerGridSystem.cpp`
+- `tests/PowerGridSystemTests.cpp`
+- `assets/shaders/power_overlay.vert`
+- `assets/shaders/power_overlay.frag`
+
+`src/world/PowerGrid.hpp` is deliberately deleted because authoritative grid ownership moved into
+`src/simulation/PowerGridSystem.*`. Many tracked files are modified as part of that migration,
+including commands/codecs, persistence/checksums, entity power state, renderer/UI, definitions,
+tests, and documentation. `gamedata/config.json` contains the F7 power-debug binding.
+`gamedata/match_setup.json` is also dirty; inspect it before deciding whether it is user-selected
+runtime state or a code-related fixture. Never discard it automatically.
+
+### What this batch implements
+
+- The deterministic power solver is extracted from `GameSession` into `PowerGridSystem` with
+  revisioned sorted topology snapshots and explicit dirty invalidation.
+- Power advances through finite transit buffers by at most one connection per tick. Allocation uses
+  propagated high/medium/low downstream priority, generator distance, and stable IDs.
+- Multi-generator territories deterministically fall back to a connected generator with real
+  surplus rather than remaining captured by a deficient nearer generator.
+- Storage-capable generators may charge and discharge in one tick. Stored-power discharge has an
+  independent authoritative toggle; disabling it does not disable generation or charging.
+- Connection validation/mutation is centralized and reports explicit failure reasons. Destruction
+  removes reciprocal links immediately.
+- F7 shows power diagnostics, directional last-tick flow, topology/priority/buffer data, and a
+  translucent terrain-following green range disc for every local power device, including poles.
+- Placing any power device draws only one green proposed link to the nearest operational compatible
+  endpoint with a free slot and overlapping ranges. It draws nothing when no endpoint is valid.
+- A dedicated `power_overlay` shader supplies translucent world overlays without altering terrain
+  shader alpha behavior.
+- The power stress test simulates two identical 257-device grids for 600 ticks, compares allocation
+  fingerprints every tick, verifies per-device conservation, performs an active split/reconnect,
+  and enforces a broad 30-second Debug regression ceiling. It measured roughly 10.2 seconds on the
+  development machine during this session.
+
+### Latest drone/logistics behavior
+
+- Every flying battery drone at exactly zero charge enters charger recovery, including an otherwise
+  idle drone. Manual movement remains blocked until charging succeeds.
+- Charging temporarily suspends and later resumes valid work. A deliberate non-gather order is
+  different: move, construct, repair, attack, and stop clear the gather loop's source, destination,
+  processor preference/output, waiting state, and repeat flag while retaining any cargo already
+  carried. This prevents `gather -> build -> unexpectedly resume gather`.
+- When a resource node is depleted before cargo is full, the drone deterministically targets the
+  nearest remaining node belonging to the same generated resource field. New matches use retained
+  transient `ResourceLayout` field geometry. Loaded/replaced worlds without that transient layout
+  use a deterministic same-resource fallback bounded by twice the definition's maximum field
+  radius. If exact authored/save field identity becomes necessary later, add a stable field-instance
+  ID to authoritative resource components, persistence, and checksum instead of widening this
+  heuristic.
+- Cargo delivery keeps one committed processor and one stable approach point. `routeToInteraction`
+  no longer recalculates the closest boundary point every few simulation ticks as the drone moves;
+  it reroutes when the target changes or the current route is exhausted.
+
+### Validation at handoff
+
+- `strategy_game` builds successfully after all changes.
+- `renderer_integration_tests` passes with the new translucent range discs and placement-link paths;
+  no OpenGL errors were emitted. NVIDIA shader-state recompilation warnings remain informational.
+- `power_grid_system_tests` passes, including the large-grid stress/profile probe.
+- `resource_delivery_routing` and `drone_reliability` both pass after the latest drone fixes.
+- Before the final drone fixes, the complete 18-test suite passed across one interrupted/restarted
+  run: tests 1-5 passed, then tests 6-18 passed after fixing the stress fixture. The full 18-test
+  suite has not been rerun after the final drone-only changes because terrain/game-system tests take
+  several minutes. Run it before committing if time permits.
+- `git diff --check` passes; PowerShell reports only expected LF-to-CRLF warnings.
+
+Recommended recovery validation:
+
+```powershell
+cmake --build build/debug -j 8
+ctest --test-dir build/debug -C Debug --output-on-failure
+```
+
+The slow Debug tests observed in this session were approximately 41 seconds for terrain queries and
+211 seconds for game systems. Do not interpret a quiet test process during those intervals as a
+hang. Tests install handlers that suppress Visual C++ abort popups and report failures to stderr.
+
+### Safest next work
+
+1. Manually verify F7 range discs on hubs, generators, processors, chargers, and electricity poles;
+   verify power-device placement shows one nearest green link and no link outside range.
+2. Manually exercise a drone through gather, adjacent-node retarget, delivery, explicit build order,
+   battery exhaustion, recharge, and task resumption. Confirm markers remain stable.
+3. Run the complete test suite and commit the coherent batch once visual behavior is accepted.
+4. Resume the active roadmap with repeatable 10-15 minute opening-economy validation, followed by
+   10x10/15x15/20x20 generation/simulation/memory/render profiling. Water and vegetation refinement
+   remain intentionally paused unless the user explicitly changes direction.
 
 ## Repository and operating assumptions
 
@@ -127,7 +233,10 @@ The active order is now:
    coverage is complete; extended soak testing can continue with normal regression work.
 4. ~~Construction concurrency and terrain-foundation profiling.~~ Reliability pass complete;
    broader recipe/content validation remains.
-5. Power topology/storage/priority/limit stress tests and large-grid profiling.
+5. ~~Power topology/storage/priority/limit stress tests and large-grid profiling.~~ The automated
+   probe now covers two deterministic 257-device grids over 600 ticks, conservation, topology
+   split/reconnect, and a broad performance regression budget. Continue increasing scale only when
+   a measured gameplay grid warrants it.
 6. Repeatable 10–15 minute opening-economy validation and balance measurements.
 7. 10x10, 15x15, and 20x20 generation/simulation/memory/render profiling.
 
@@ -149,7 +258,8 @@ Then proceed to Milestone 6, the first combat slice.
   collision/path obstruction, indirect control, cargo capacity 10, battery capacity 100.
 - Movement drains battery; construction and repair drain battery according to their current rules.
 - Automatic charging return currently triggers at exactly zero power, not at reserve threshold.
-  Zero-power drones cannot accept manual movement until recharged.
+  Exhaustion is checked authoritatively for every flying drone, including idle drones. Zero-power
+  drones cannot accept manual movement until recharged.
 - Chargers are power-device definitions with different `chargePerTick` and `chargingSlots` values.
   A drone finds a powered, reachable charger with a free slot, recharges, and deterministically
   resumes a suspended task. Destroyed, disconnected, unreachable, full, and absent chargers have
@@ -176,6 +286,9 @@ Then proceed to Milestone 6, the first combat slice.
 - Destroyed, incompatible, or inaccessible targets are lost and invoke replacement/failure logic.
 - Partial delivery fills available capacity and retains remaining cargo aboard the drone.
 - Drones can repeat gather → deliver → return. Cargo and destination markers are rendered.
+- A depleted node retargets the nearest remaining node in the same resource field while cargo space
+  remains. Non-gather orders explicitly clear the gather loop, and delivery retains one committed
+  target/approach point instead of oscillating several times per second.
 - Focused regression test: `resource_delivery_routing` / `tests/ResourceDeliveryTests.cpp`.
 
 ### Construction and terrain foundations
@@ -203,21 +316,44 @@ Then proceed to Milestone 6, the first combat slice.
 
 ### Power grid
 
-- Serializable authoritative commands: connect, disconnect, set priority, enable/disable.
-- Devices define generation, demand, storage, connection range, transfer limit, maximum connections,
-  charge rate, and priority in `assets/gameplay/power.json`.
-- Simulation deterministically builds connected components, assigns grid IDs, routes constrained
-  supply/storage, allocates consumers by priority and entity ID, and emits shortage/recovery/shutdown
+- Serializable authoritative commands: connect, disconnect, set priority, enable/disable, and
+  independently enable/disable stored-power discharge.
+- Devices define generation, demand, storage, transit capacity, connection range, transfer limit,
+  maximum connections, charge rate, and low/medium/high priority in `assets/gameplay/power.json`.
+- Simulation deterministically builds connected components, assigns grid IDs, advances buffered
+  power one connection per tick, orders constrained branches by priority/distance/stable ID, and emits shortage/recovery/shutdown
   and command-failure events.
-- `docs/POWER_GRID.md` is the authoritative target for the hardening pass. Allocation must flow
-  outward from generators. Consumers are ordered by graph hops, world-space distance to the
-  generator, then stable entity IDs. Priority must not override that order. The current
-  priority/entity-ID solver and priority control have not yet been migrated to this rule.
+- `docs/POWER_GRID.md` is authoritative. Allocation flows outward from generators through finite
+  transit buffers. Newly received energy cannot advance again until the following tick. Constrained
+  branches use high/medium/low priority, then generator distance and stable entity IDs.
+- The authoritative solver is extracted into `src/simulation/PowerGridSystem.*`. It owns sorted,
+  revisioned per-player node/edge/component snapshots. Connection commands, enabled state,
+  operational completion, destruction, structural world changes, and world replacement invalidate
+  topology explicitly; clean grids reuse their snapshots.
+- Power connection creation/removal is centralized in `PowerGridSystem`. Invalid targets, enemy or
+  non-operational/disabled endpoints, duplicates, zero/full connection capacity, range failures,
+  and missing links return explicit reasons. `World::destroyEntity` removes reciprocal links
+  immediately; rebuilding an entity does not restore destroyed links.
 - Power state is `powered`, `underpowered`, or `offline` (`notApplicable` exists for non-devices).
   Storage participation is not a separate operational-state enum.
 - The top HUD shows power as supply/demand. Clicking it opens the power overlay. Grid connections,
   device values/states, world power reach/tint, and selected-device grid actions are visible.
+- F7 opens a mutually exclusive power-debug view with directional latest-tick flow, node priority,
+  root/parent ownership, transit buffers, storage, transfer limits, definition-backed connection
+  ranges, and aggregate grid diagnostics. Ranges are translucent green terrain-following discs for
+  every device, including poles. A power-device placement preview draws only one green proposed
+  link to its nearest valid endpoint, or nothing when no endpoint is currently connectable.
 - Grid topology and allocation are persisted and checksummed. Network transport is still future work.
+- Storage-capable generators may charge and discharge in the same tick. Their menu discharge toggle
+  controls only stored-energy output; generation and charging remain active while it is off.
+- Storage-only devices with discharge disabled remain downstream nodes instead of becoming source
+  roots. F7 exposes per-tick generated, discharged, consumed, charged, curtailed, sent, received,
+  and buffer values; these diagnostics are transient and excluded from saves/checksums.
+- Branch allocation uses the highest downstream consumer priority, allowing priority to pass through
+  relays. Deficient primary-generator territories yield deterministically to connected generator
+  territories with surplus, using the same hop/distance/stable-ID ordering.
+- `power_grid_system_tests` includes the repeatable large-grid hardening/profile probe in addition
+  to focused topology, storage, priority, transfer-limit, connection-limit, and fallback coverage.
 
 ### Production, upgrades, UI, audio, and particles
 

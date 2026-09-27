@@ -14,6 +14,7 @@ Entity& World::createEntity(std::string name, std::string archetypeId, PlayerId 
     entity.authority.owner = owner;
     entities_.push_back(std::move(entity));
     entityIndices_[entities_.back().id] = entities_.size() - 1;
+    ++entityRevisions_[owner];
     return entities_.back();
 }
 
@@ -23,10 +24,19 @@ bool World::destroyEntity(EntityId id) {
     if (iterator == entities_.end()) {
         return false;
     }
+    const PlayerId owner = iterator->authority.owner;
+    if (iterator->power) {
+        const EntityId removedId = iterator->id;
+        for (EntityId connectedId : iterator->power.connections)
+            if (Entity* connected = findEntity(connectedId); connected && connected->power)
+                std::erase(connected->power.connections, removedId);
+        iterator->power.connections.clear();
+    }
     entities_.erase(iterator);
     entityIndices_.clear();
     for (std::size_t index = 0; index < entities_.size(); ++index)
         entityIndices_[entities_[index].id] = index;
+    ++entityRevisions_[owner];
     return true;
 }
 
@@ -44,6 +54,8 @@ void World::replaceEntities(std::vector<Entity> entities) {
     entities_ = std::move(entities);
     nextId_ = 1;
     entityIndices_.clear();
+    entityRevisions_.clear();
+    ++replacementRevision_;
     for (std::size_t index = 0; index < entities_.size(); ++index) {
         const Entity& entity = entities_[index];
         entityIndices_[entity.id] = index;

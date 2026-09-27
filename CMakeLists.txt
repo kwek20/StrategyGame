@@ -116,6 +116,7 @@ target_link_libraries(strategy_ui_model
 add_library(strategy_simulation STATIC
     src/simulation/GameSession.cpp
     src/simulation/CommandCodec.cpp
+    src/simulation/PowerGridSystem.cpp
     src/simulation/StateChecksum.cpp
 )
 strategy_target(strategy_simulation)
@@ -262,6 +263,14 @@ if(STRATEGY_BUILD_TESTS)
     add_test(NAME drone_reliability COMMAND drone_reliability_tests)
     set_tests_properties(drone_reliability PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
+    add_executable(power_grid_system_tests tests/PowerGridSystemTests.cpp)
+    strategy_target(power_grid_system_tests)
+    target_link_libraries(power_grid_system_tests
+        PRIVATE strategy_gameplay strategy_simulation strategy_world
+    )
+    add_test(NAME power_grid_topology COMMAND power_grid_system_tests)
+    set_tests_properties(power_grid_topology PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
     add_executable(spatial_shape_tests tests/SpatialShapeTests.cpp)
     strategy_target(spatial_shape_tests)
     target_link_libraries(spatial_shape_tests PRIVATE strategy_world)
@@ -342,6 +351,7 @@ if(STRATEGY_BUILD_TESTS)
         camera_tests
         resource_delivery_tests
         drone_reliability_tests
+        power_grid_system_tests
         spatial_shape_tests
         vegetation_tests
         resource_field_generation_tests

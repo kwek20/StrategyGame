@@ -119,12 +119,12 @@ struct WeaponDefinition {
 struct PowerDeviceDefinition {
     std::string id;
     std::unordered_set<std::string> tags;
-    float production{0.0F}, consumption{0.0F}, storage{0.0F};
+    float production{0.0F}, consumption{0.0F}, storage{0.0F}, transitCapacity{0.0F};
     float connectionRange{0.0F}, transferLimit{0.0F}, chargePerTick{0.0F};
     float storageChargePerTick{0.0F}, storageDischargePerTick{0.0F};
     std::uint32_t maximumConnections{0};
     std::uint32_t chargingSlots{0};
-    std::int32_t priority{100};
+    PowerPriority priority{PowerPriority::medium};
 };
 
 enum class RecipeProductKind { unit, building, resource };

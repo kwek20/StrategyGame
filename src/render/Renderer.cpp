@@ -120,6 +120,11 @@ ShaderHandle createHudProgram(ShaderManager& shaders) {
         "hud", "assets/shaders/hud.vert", "assets/shaders/hud.frag");
 }
 
+ShaderHandle createPowerOverlayProgram(ShaderManager& shaders) {
+    return shaders.loadFiles("power_overlay", "assets/shaders/power_overlay.vert",
+                             "assets/shaders/power_overlay.frag");
+}
+
 void appendHudRectangle(std::vector<glm::vec2>& vertices,
                         float left,
                         float top,
@@ -265,6 +270,7 @@ Renderer::Renderer(Logger* logger, std::function<void()> keepResponsive)
     modelProgram_ = createModelProgram(shaders_);
     outlineProgram_ = createOutlineProgram(shaders_);
     hudProgram_ = createHudProgram(shaders_);
+    powerOverlayProgram_ = createPowerOverlayProgram(shaders_);
     particleRenderer_ = std::make_unique<ParticleRenderer>(shaders_, resources_);
     worldMaterial_ = materials_.create({"world", modelProgram_});
     RenderMaterial remembered{"remembered", modelProgram_};
@@ -1585,7 +1591,8 @@ void Renderer::drawResourceHud(const Player& player,
     std::size_t connectionCount = 0;
     struct DeviceLine { std::string name; float production; float demand; float supplied;
                         std::string status; float waitingCargo; std::uint64_t grid;
-                        std::size_t connections; };
+                        std::size_t connections; float transit; float transitCapacity;
+                        PowerPriority priority; };
     std::vector<DeviceLine> devices;
     for (const Entity& entity : world.entities()) {
         if (entity.authority.owner != player.id) continue;
@@ -1624,7 +1631,10 @@ void Renderer::drawResourceHud(const Player& player,
                            active && entity.power ? entity.power.supplied : 0.0F,
                            std::move(status), waitingCargo,
                            entity.power ? entity.power.gridId : 0,
-                           entity.power ? entity.power.connections.size() : 0});
+                           entity.power ? entity.power.connections.size() : 0,
+                           entity.power ? entity.power.transitEnergy : 0.0F,
+                           entity.power ? entity.power.transitCapacity : 0.0F,
+                           entity.power ? entity.power.priority : PowerPriority::medium});
     }
     const auto powerText = [](float used, float capacity) {
         float scale = 1.0F;
@@ -1689,8 +1699,14 @@ void Renderer::drawResourceHud(const Player& player,
         const std::string waiting = device.waitingCargo > 0.0F
             ? "  " + std::to_string(static_cast<int>(device.waitingCargo)) + " RAW WAITING"
             : std::string{};
+        const char* priority = device.priority == PowerPriority::high
+                                   ? "HIGH"
+                                   : device.priority == PowerPriority::low ? "LOW" : "MEDIUM";
         drawText(device.name + "  " + value + "  " + device.status + "  G" +
-                     std::to_string(device.grid) + " L" + std::to_string(device.connections) + waiting,
+                     std::to_string(device.grid) + " L" + std::to_string(device.connections) +
+                     "  B" + std::to_string(static_cast<int>(device.transit)) + "/" +
+                     std::to_string(static_cast<int>(device.transitCapacity)) + "  " + priority +
+                     waiting,
                  textLeft, y, 1.1F,
                  device.production > 0.0F ? glm::vec3{0.35F, 0.92F, 0.45F}
                                           : glm::vec3{0.95F, 0.72F, 0.28F});
@@ -1702,11 +1718,157 @@ void Renderer::drawResourceHud(const Player& player,
                  textLeft, powerPanel->bounds.bottom - 18.0F, 1.0F, {0.72F, 0.78F, 0.82F});
 }
 
+void Renderer::drawPowerRanges(const World& world,
+                               const CameraView& camera,
+                               PlayerId owner) const {
+    renderGraph_.enter(RenderPassKind::overlay);
+    constexpr int segments = 96;
+    constexpr int radialSteps = 8;
+    std::vector<TerrainVertex> fill;
+    std::vector<TerrainVertex> outline;
+    const glm::vec3 color{0.16F, 0.92F, 0.32F};
+    const auto appendDisc = [&](glm::vec3 center, float radius) {
+        if (radius <= 0.0F) return;
+        fill.reserve(fill.size() + segments * radialSteps * 6);
+        outline.reserve(outline.size() + segments * 2);
+        for (int ring = 0; ring < radialSteps; ++ring) {
+            const float innerRadius = radius * static_cast<float>(ring) / radialSteps;
+            const float outerRadius = radius * static_cast<float>(ring + 1) / radialSteps;
+            for (int index = 0; index < segments; ++index) {
+                const float first = glm::two_pi<float>() * static_cast<float>(index) / segments;
+                const float second = glm::two_pi<float>() * static_cast<float>(index + 1) / segments;
+                const auto vertex = [&](float distance, float angle) {
+                    const float x = center.x + std::cos(angle) * distance;
+                    const float z = center.z + std::sin(angle) * distance;
+                    return TerrainVertex{{x, terrain_.heightAt(x, z) + 0.22F, z},
+                                         {0, 1, 0}, color};
+                };
+                const TerrainVertex innerFirst = vertex(innerRadius, first);
+                const TerrainVertex outerFirst = vertex(outerRadius, first);
+                const TerrainVertex outerSecond = vertex(outerRadius, second);
+                const TerrainVertex innerSecond = vertex(innerRadius, second);
+                fill.insert(fill.end(), {innerFirst, outerFirst, outerSecond,
+                                         innerFirst, outerSecond, innerSecond});
+            }
+        }
+        for (int index = 0; index < segments; ++index) {
+            const float first = glm::two_pi<float>() * static_cast<float>(index) / segments;
+            const float second = glm::two_pi<float>() * static_cast<float>(index + 1) / segments;
+            for (float angle : {first, second}) {
+                const float x = center.x + std::cos(angle) * radius;
+                const float z = center.z + std::sin(angle) * radius;
+                outline.push_back({{x, terrain_.heightAt(x, z) + 0.28F, z},
+                                   {0, 1, 0}, color});
+            }
+        }
+    };
+    for (const Entity& entity : world.entities()) {
+        if (entity.authority.owner != owner || !entity.power ||
+            entity.power.connectionRange <= 0.0F)
+            continue;
+        appendDisc(entity.transform.position, entity.power.connectionRange);
+    }
+    if (fill.empty()) return;
+    shaders_.use(powerOverlayProgram_);
+    const glm::mat4 viewProjection = camera.viewProjection();
+    glUniformMatrix4fv(shaders_.uniform(powerOverlayProgram_, "viewProjection"), 1, GL_FALSE,
+                       glm::value_ptr(viewProjection));
+    glBindVertexArray(hudVao_);
+    glBindBuffer(GL_ARRAY_BUFFER, hudVbo_);
+    glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(fill.size() * sizeof(TerrainVertex)),
+                 fill.data(), GL_DYNAMIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(TerrainVertex),
+                          reinterpret_cast<void*>(offsetof(TerrainVertex, position)));
+    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(TerrainVertex),
+                          reinterpret_cast<void*>(offsetof(TerrainVertex, color)));
+    glDepthMask(GL_FALSE);
+    glUniform1f(shaders_.uniform(powerOverlayProgram_, "overlayAlpha"), 0.14F);
+    glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(fill.size()));
+    glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(outline.size() * sizeof(TerrainVertex)),
+                 outline.data(), GL_DYNAMIC_DRAW);
+    glUniform1f(shaders_.uniform(powerOverlayProgram_, "overlayAlpha"), 0.72F);
+    glLineWidth(2.0F);
+    glDrawArrays(GL_LINES, 0, static_cast<GLsizei>(outline.size()));
+    glLineWidth(1.0F);
+    glDepthMask(GL_TRUE);
+    glDisableVertexAttribArray(2);
+    glBindVertexArray(0);
+}
+
+void Renderer::drawPowerPlacementConnection(const World& world,
+                                            const CameraView& camera,
+                                            PlayerId owner,
+                                            const Entity& placementPreview) const {
+    if (!placementPreview.power || placementPreview.power.connectionRange <= 0.0F ||
+        placementPreview.power.maximumConnections == 0)
+        return;
+    const Entity* nearest = nullptr;
+    float nearestDistanceSquared = std::numeric_limits<float>::max();
+    for (const Entity& entity : world.entities()) {
+        if (entity.authority.owner != owner || !entity.power || !entity.power.enabled ||
+            !isOperational(entity) || entity.power.connectionRange <= 0.0F ||
+            entity.power.maximumConnections == 0 ||
+            entity.power.connections.size() >= entity.power.maximumConnections)
+            continue;
+        const float dx = entity.transform.position.x - placementPreview.transform.position.x;
+        const float dz = entity.transform.position.z - placementPreview.transform.position.z;
+        const float distanceSquared = dx * dx + dz * dz;
+        const float range = std::min(entity.power.connectionRange,
+                                     placementPreview.power.connectionRange);
+        if (distanceSquared <= range * range && distanceSquared < nearestDistanceSquared) {
+            nearest = &entity;
+            nearestDistanceSquared = distanceSquared;
+        }
+    }
+    if (!nearest) return;
+
+    renderGraph_.enter(RenderPassKind::overlay);
+    constexpr int samples = 32;
+    std::vector<TerrainVertex> line;
+    line.reserve((samples - 1) * 2);
+    const glm::vec3 color{0.16F, 1.0F, 0.36F};
+    for (int index = 0; index < samples - 1; ++index) {
+        for (int endpoint : {index, index + 1}) {
+            const float amount = static_cast<float>(endpoint) / static_cast<float>(samples - 1);
+            const glm::vec3 position = glm::mix(placementPreview.transform.position,
+                                                nearest->transform.position, amount);
+            line.push_back({{position.x, terrain_.heightAt(position.x, position.z) + 0.42F,
+                             position.z}, {0, 1, 0}, color});
+        }
+    }
+    shaders_.use(powerOverlayProgram_);
+    const glm::mat4 viewProjection = camera.viewProjection();
+    glUniformMatrix4fv(shaders_.uniform(powerOverlayProgram_, "viewProjection"), 1, GL_FALSE,
+                       glm::value_ptr(viewProjection));
+    glUniform1f(shaders_.uniform(powerOverlayProgram_, "overlayAlpha"), 0.92F);
+    glBindVertexArray(hudVao_);
+    glBindBuffer(GL_ARRAY_BUFFER, hudVbo_);
+    glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(line.size() * sizeof(TerrainVertex)),
+                 line.data(), GL_DYNAMIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(TerrainVertex),
+                          reinterpret_cast<void*>(offsetof(TerrainVertex, position)));
+    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(TerrainVertex),
+                          reinterpret_cast<void*>(offsetof(TerrainVertex, color)));
+    glDepthMask(GL_FALSE);
+    glLineWidth(3.0F);
+    glDrawArrays(GL_LINES, 0, static_cast<GLsizei>(line.size()));
+    glLineWidth(1.0F);
+    glDepthMask(GL_TRUE);
+    glDisableVertexAttribArray(2);
+    glBindVertexArray(0);
+}
+
 void Renderer::drawPowerConnections(const World& world,
                                     const CameraView& camera,
-                                    PlayerId owner) const {
+                                    PlayerId owner,
+                                    bool diagnostics) const {
     renderGraph_.enter(RenderPassKind::overlay);
-    std::vector<glm::vec2> powered, underpowered, failed;
+    std::vector<glm::vec2> powered, flowing, underpowered, failed;
+    std::vector<glm::vec2> highNodes, mediumNodes, lowNodes;
     const auto screen = [this, &camera](const Entity& entity) -> std::optional<glm::vec2> {
         const float ground = terrain_.heightAt(entity.transform.position.x, entity.transform.position.z);
         const glm::vec4 clip = camera.viewProjection() *
@@ -1736,16 +1898,56 @@ void Renderer::drawPowerConnections(const World& world,
                                    source.power.gridId != 0 &&
                                    source.power.gridId == target->power.gridId;
             if (connected) {
-                vertices = source.power.state == PowerOperationalState::underpowered ||
+                const Entity* downstream = target->transient.powerParent == source.id
+                                               ? target
+                                               : source.transient.powerParent == target->id
+                                                     ? &source
+                                                     : nullptr;
+                if (diagnostics && downstream &&
+                    downstream->transient.powerReceivedLastTick > 0.0F)
+                    vertices = &flowing;
+                else
+                    vertices = source.power.state == PowerOperationalState::underpowered ||
                                    target->power.state == PowerOperationalState::underpowered
                                ? &underpowered
                                : &powered;
             }
             appendHudLine(*vertices, clippedStart, clippedEnd, 3.0F,
                           viewportWidth_, viewportHeight_);
+            if (diagnostics && vertices == &flowing) {
+                glm::vec2 from = target->transient.powerParent == source.id ? clippedStart : clippedEnd;
+                glm::vec2 to = target->transient.powerParent == source.id ? clippedEnd : clippedStart;
+                if (glm::length(to - from) < 0.001F) continue;
+                const glm::vec2 direction = glm::normalize(to - from);
+                const glm::vec2 perpendicular{-direction.y, direction.x};
+                const glm::vec2 tip = from + (to - from) * 0.68F;
+                appendHudLine(flowing, tip, tip - direction * 10.0F + perpendicular * 6.0F,
+                              2.5F, viewportWidth_, viewportHeight_);
+                appendHudLine(flowing, tip, tip - direction * 10.0F - perpendicular * 6.0F,
+                              2.5F, viewportWidth_, viewportHeight_);
+            }
         }
     }
-    if (powered.empty() && underpowered.empty() && failed.empty()) return;
+    if (diagnostics) {
+        for (const Entity& entity : world.entities()) {
+            if (entity.authority.owner != owner || !entity.power) continue;
+            const auto center = screen(entity);
+            if (!center) continue;
+            std::vector<glm::vec2>* marker = entity.transient.powerBranchPriority == PowerPriority::high
+                                                  ? &highNodes
+                                                  : entity.transient.powerBranchPriority == PowerPriority::low
+                                                        ? &lowNodes
+                                                        : &mediumNodes;
+            appendHudLine(*marker, *center + glm::vec2{-7.0F, 0.0F},
+                          *center + glm::vec2{7.0F, 0.0F}, 3.0F,
+                          viewportWidth_, viewportHeight_);
+            appendHudLine(*marker, *center + glm::vec2{0.0F, -7.0F},
+                          *center + glm::vec2{0.0F, 7.0F}, 3.0F,
+                          viewportWidth_, viewportHeight_);
+        }
+    }
+    if (powered.empty() && flowing.empty() && underpowered.empty() && failed.empty() &&
+        highNodes.empty() && mediumNodes.empty() && lowNodes.empty()) return;
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
     shaders_.use(hudProgram_);
@@ -1761,11 +1963,118 @@ void Renderer::drawPowerConnections(const World& world,
         glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(vertices.size()));
     };
     draw(powered, {0.18F, 0.90F, 0.32F});
+    draw(flowing, {0.20F, 0.82F, 1.0F});
     draw(underpowered, {0.96F, 0.62F, 0.12F});
     draw(failed, {0.95F, 0.28F, 0.18F});
+    draw(highNodes, {1.0F, 0.25F, 0.78F});
+    draw(mediumNodes, {0.92F, 0.92F, 0.25F});
+    draw(lowNodes, {0.62F, 0.62F, 0.68F});
     glBindVertexArray(0);
     glEnable(GL_CULL_FACE);
     glEnable(GL_DEPTH_TEST);
+}
+
+void Renderer::drawPowerDebugHud(const World& world,
+                                 PlayerId owner,
+                                 glm::vec3 worldPosition) const {
+    renderGraph_.enter(RenderPassKind::userInterface);
+    const Entity* nearest = nullptr;
+    float nearestDistance = std::numeric_limits<float>::max();
+    float generation = 0.0F, demand = 0.0F, supplied = 0.0F;
+    float buffered = 0.0F, bufferCapacity = 0.0F, stored = 0.0F, storageCapacity = 0.0F;
+    float generatedTick = 0.0F, dischargedTick = 0.0F, consumedTick = 0.0F;
+    float chargedTick = 0.0F, curtailedTick = 0.0F, sentTick = 0.0F, receivedTick = 0.0F;
+    std::size_t devices = 0, powered = 0, underpowered = 0, offline = 0;
+    std::vector<std::uint64_t> grids;
+    for (const Entity& entity : world.entities()) {
+        if (entity.authority.owner != owner || !entity.power) continue;
+        ++devices;
+        generation += entity.power.generation;
+        demand += entity.power.demand;
+        supplied += entity.power.supplied;
+        buffered += entity.power.transitEnergy;
+        bufferCapacity += entity.power.transitCapacity;
+        stored += entity.power.stored;
+        storageCapacity += entity.power.storageCapacity;
+        generatedTick += entity.transient.powerGeneratedLastTick;
+        dischargedTick += entity.transient.powerDischargedLastTick;
+        consumedTick += entity.transient.powerConsumedLastTick;
+        chargedTick += entity.transient.powerChargedLastTick;
+        curtailedTick += entity.transient.powerCurtailedLastTick;
+        sentTick += entity.transient.powerSentLastTick;
+        receivedTick += entity.transient.powerReceivedLastTick;
+        if (entity.power.gridId != 0) grids.push_back(entity.power.gridId);
+        if (entity.power.state == PowerOperationalState::powered) ++powered;
+        else if (entity.power.state == PowerOperationalState::underpowered) ++underpowered;
+        else ++offline;
+        const float dx = entity.transform.position.x - worldPosition.x;
+        const float dz = entity.transform.position.z - worldPosition.z;
+        const float distance = dx * dx + dz * dz;
+        if (distance < nearestDistance) { nearestDistance = distance; nearest = &entity; }
+    }
+    std::sort(grids.begin(), grids.end());
+    grids.erase(std::unique(grids.begin(), grids.end()), grids.end());
+    const auto number = [](float value) {
+        std::ostringstream output;
+        output << std::fixed << std::setprecision(1) << value;
+        return output.str();
+    };
+    const auto priority = [](PowerPriority value) {
+        return value == PowerPriority::high ? "HIGH" : value == PowerPriority::low ? "LOW" : "MEDIUM";
+    };
+    constexpr float width = 510.0F;
+    constexpr float height = 320.0F;
+    const float left = std::max(8.0F, (static_cast<float>(viewportWidth_) - width) * 0.5F);
+    const float top = 52.0F;
+    UiDocument ui;
+    ui.modal("power_debug.panel", {left, top, left + width, top + height},
+             {0.018F, 0.030F, 0.040F});
+    std::vector<std::string> lines{
+        "POWER DEBUG  F7 TO CLOSE",
+        "DEVICES " + std::to_string(devices) + "  GRIDS " + std::to_string(grids.size()) +
+            "  POWERED " + std::to_string(powered) + "  LOW " +
+            std::to_string(underpowered) + "  OFFLINE " + std::to_string(offline),
+        "GENERATION " + number(generation) + "  DEMAND " + number(demand) +
+            "  SUPPLIED " + number(supplied),
+        "TRANSIT " + number(buffered) + "/" + number(bufferCapacity) +
+            "  STORAGE " + number(stored) + "/" + number(storageCapacity),
+        "LAST TICK  GENERATED " + number(generatedTick) + "  DISCHARGED " +
+            number(dischargedTick) + "  CONSUMED " + number(consumedTick),
+        "LAST TICK  CHARGED " + number(chargedTick) + "  CURTAILED " +
+            number(curtailedTick) + "  SENT/RECEIVED " + number(sentTick) + "/" +
+            number(receivedTick),
+        "LEGEND  CYAN FLOW  GREEN READY  ORANGE UNDERPOWERED  RED BROKEN",
+        "PRIORITY MARKERS  MAGENTA HIGH  YELLOW MEDIUM  GREY LOW"};
+    if (nearest) {
+        lines.push_back("CURSOR DEVICE " + nearest->name + "  ID " + std::to_string(nearest->id) +
+                        "  GRID " + std::to_string(nearest->power.gridId) + "  ROOT " +
+                        std::to_string(nearest->transient.powerRoot) + "  PRIMARY " +
+                        std::to_string(nearest->transient.powerPrimaryRoot));
+        lines.push_back("PRIORITY " + std::string{priority(nearest->power.priority)} +
+                        "  BRANCH " + priority(nearest->transient.powerBranchPriority) +
+                        (nearest->transient.powerFallbackActive ? "  FALLBACK ACTIVE" : "") +
+                        "  BUFFER " + number(nearest->power.transitEnergy) + "/" +
+                        number(nearest->power.transitCapacity) + "  OUT LIMIT " +
+                        number(nearest->power.transferLimit));
+        lines.push_back("LAST TICK  SENT " + number(nearest->transient.powerSentLastTick) +
+                        "  RECEIVED " + number(nearest->transient.powerReceivedLastTick) +
+                        "  PARENT " + std::to_string(nearest->transient.powerParent));
+        lines.push_back("ENERGY  START " + number(nearest->transient.powerBufferStartLastTick) +
+                        "  GEN " + number(nearest->transient.powerGeneratedLastTick) +
+                        "  DIS " + number(nearest->transient.powerDischargedLastTick) +
+                        "  USE " + number(nearest->transient.powerConsumedLastTick));
+        lines.push_back("ENERGY  CHARGE " + number(nearest->transient.powerChargedLastTick) +
+                        "  CURTAIL " + number(nearest->transient.powerCurtailedLastTick) +
+                        "  END " + number(nearest->power.transitEnergy));
+    }
+    for (std::size_t index = 0; index < lines.size(); ++index)
+        ui.label("power_debug.line." + std::to_string(index),
+                 {left + 14.0F, top + 12.0F + static_cast<float>(index) * 27.0F,
+                  left + width - 14.0F, top + 38.0F + static_cast<float>(index) * 27.0F},
+                 lines[index], index == 0 ? 1.2F : 0.98F,
+                 index == 0 ? glm::vec3{0.22F, 0.86F, 1.0F}
+                            : glm::vec3{0.90F, 0.95F, 0.98F});
+    uiRenderer_->draw(ui, viewportWidth_, viewportHeight_);
 }
 
 

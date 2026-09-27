@@ -72,18 +72,30 @@ void routeToInteraction(const DefinitionRegistry& definitions,
     const SpatialShape approachBoundary =
         expanded(spatialShape(definitions, target), actorRadius + std::max(0.0F, range * 0.5F));
     const glm::vec2 destination = closestBoundaryPoint(approachBoundary, actorPosition);
-    const glm::vec2 previous{actor.unitControl.strategicDestination.x,
-                             actor.unitControl.strategicDestination.z};
+    const bool targetChanged = actor.transient.navigationGoalEntity != target.id ||
+        std::abs(actor.transient.navigationInteractionRange - range) > 0.001F;
     actor.transient.navigationGoalEntity = target.id;
     actor.transient.navigationInteractionRange = range;
-    if (!actor.unitControl.hasStrategicDestination ||
-        glm::dot(destination - previous, destination - previous) > 0.25F) {
+    // Static interaction targets must retain one stable approach point. Recomputing the nearest
+    // boundary point as the actor moves makes the destination marker wander and repeatedly throws
+    // away a valid path. A moving target is rerouted after its current path is exhausted.
+    if (targetChanged || !actor.unitControl.hasStrategicDestination) {
         actor.unitControl.strategicDestination = {destination.x, target.transform.position.y,
                                                   destination.y};
         actor.unitControl.hasStrategicDestination = true;
         actor.transient.navigationPath.clear();
         actor.transient.navigationWaypoint = 0;
     }
+}
+
+void clearGatherLoop(Entity& entity) {
+    if (!entity.gatherer) return;
+    entity.gatherer.sourceTarget = 0;
+    entity.gatherer.deliveryTarget = 0;
+    entity.gatherer.preferredProcessor = 0;
+    entity.gatherer.preferredOutput.clear();
+    entity.gatherer.repeatGathering = false;
+    entity.gatherer.waitingForProcessor = false;
 }
 } // namespace
 
@@ -149,13 +161,7 @@ void GameSession::stopUnit(Entity& entity) {
     entity.transient.navigationWaypoint = 0;
     entity.transient.navigationGoalEntity = 0;
     entity.transient.navigationInteractionRange = 0.0F;
-    if (entity.gatherer) {
-        entity.gatherer.sourceTarget = 0;
-        entity.gatherer.deliveryTarget = 0;
-        entity.gatherer.preferredOutput.clear();
-        entity.gatherer.repeatGathering = false;
-        entity.gatherer.waitingForProcessor = false;
-    }
+    clearGatherLoop(entity);
     if (entity.battery) {
         entity.battery.returningToCharge = false;
         entity.battery.hasSuspendedOrder = false;
@@ -165,6 +171,56 @@ void GameSession::stopUnit(Entity& entity) {
         entity.battery.chargerTarget = 0;
         entity.battery.recoveryReason = BatteryRecoveryReason::none;
     }
+}
+
+Entity* GameSession::nextResourceNode(const Entity& depletedNode) {
+    if (!depletedNode.resource) return nullptr;
+    const ResourceFieldDefinition* fieldDefinition = gameplay_.resourceFieldForNode(
+        ResourceArchetypeId{depletedNode.archetype.value});
+    const glm::vec2 depletedPosition{depletedNode.transform.position.x,
+                                     depletedNode.transform.position.z};
+    std::vector<const GeneratedResourceField*> containingFields;
+    if (fieldDefinition) {
+        for (const GeneratedResourceField& field : resourceLayout_.fields) {
+            if (field.definition.value != fieldDefinition->id) continue;
+            const glm::vec2 delta = depletedPosition - field.center;
+            if (glm::dot(delta, delta) <= field.radius * field.radius + 0.01F)
+                containingFields.push_back(&field);
+        }
+    }
+    const float fallbackRadius = fieldDefinition
+        ? fieldDefinition->generation.maximumFieldRadius * 2.0F
+        : 0.0F;
+    Entity* nearest = nullptr;
+    float nearestDistanceSquared = std::numeric_limits<float>::max();
+    for (Entity& candidate : world_.entities()) {
+        if (candidate.id == depletedNode.id || !candidate.resource ||
+            candidate.resource.remaining <= 0.0F ||
+            candidate.resource.type != depletedNode.resource.type)
+            continue;
+        const glm::vec2 position{candidate.transform.position.x, candidate.transform.position.z};
+        bool sameField = false;
+        for (const GeneratedResourceField* field : containingFields) {
+            const glm::vec2 fromCenter = position - field->center;
+            if (glm::dot(fromCenter, fromCenter) <= field->radius * field->radius + 0.01F) {
+                sameField = true;
+                break;
+            }
+        }
+        const glm::vec2 delta = position - depletedPosition;
+        const float distanceSquared = glm::dot(delta, delta);
+        if (containingFields.empty())
+            sameField = fallbackRadius > 0.0F &&
+                        distanceSquared <= fallbackRadius * fallbackRadius;
+        if (!sameField) continue;
+        if (!nearest || distanceSquared < nearestDistanceSquared - 0.001F ||
+            (std::abs(distanceSquared - nearestDistanceSquared) <= 0.001F &&
+             candidate.id < nearest->id)) {
+            nearest = &candidate;
+            nearestDistanceSquared = distanceSquared;
+        }
+    }
+    return nearest;
 }
 
 GameSession::GameSession(const DefinitionRegistry& definitions,
@@ -463,6 +519,7 @@ void GameSession::apply(const PlayerCommand& command) {
                         beginRecharge(*entity);
                     return;
                 }
+                clearGatherLoop(*entity);
                 entity->unitControl.order = UnitOrderKind::move;
                 entity->unitControl.orderTarget = 0;
                 entity->unitControl.strategicDestination = payload.destination;
@@ -594,80 +651,43 @@ void GameSession::apply(const PlayerCommand& command) {
                 entity->gatherer.preferredProcessor = 0;
                 entity->gatherer.deliveryTarget = 0;
             } else if constexpr (std::is_same_v<Type, ConnectPowerCommand>) {
-                Entity* target = world_.findEntity(payload.target);
-                const auto reject = [&](PowerFailureReason reason) {
+                const PowerFailureReason failure = powerGridSystem_.connect(
+                    world_, command.player, entity->id, payload.target);
+                if (failure != PowerFailureReason::none) {
                     powerEvents_.push_back({PowerEventKind::commandRejected, tick_, command.player,
-                                            entity->id, payload.target, 0, reason});
-                };
-                if (!entity->power || !target || !target->power || target->id == entity->id) {
-                    reject(PowerFailureReason::invalidTarget);
+                                            entity->id, payload.target, 0, failure});
                     return;
                 }
-                if (target->authority.owner != command.player) {
-                    reject(PowerFailureReason::enemyTarget);
-                    return;
-                }
-                if (!isOperational(*entity) || !isOperational(*target)) {
-                    reject(PowerFailureReason::notOperational);
-                    return;
-                }
-                if (entity->power.maximumConnections == 0 || target->power.maximumConnections == 0)
-                    return;
-                auto& sourceConnections = entity->power.connections;
-                auto& targetConnections = target->power.connections;
-                std::sort(sourceConnections.begin(), sourceConnections.end());
-                std::sort(targetConnections.begin(), targetConnections.end());
-                if (std::binary_search(sourceConnections.begin(), sourceConnections.end(), target->id) ||
-                    sourceConnections.size() >= entity->power.maximumConnections ||
-                    targetConnections.size() >= target->power.maximumConnections)
-                {
-                    reject(PowerFailureReason::connectionLimit);
-                    return;
-                }
-                const glm::vec2 sourcePosition{entity->transform.position.x, entity->transform.position.z};
-                const glm::vec2 targetPosition{target->transform.position.x, target->transform.position.z};
-                const float maximumRange = std::min(entity->power.connectionRange,
-                                                    target->power.connectionRange);
-                if (maximumRange <= 0.0F || glm::distance(sourcePosition, targetPosition) > maximumRange)
-                {
-                    reject(PowerFailureReason::outOfRange);
-                    return;
-                }
-                sourceConnections.insert(std::lower_bound(sourceConnections.begin(), sourceConnections.end(),
-                                                          target->id), target->id);
-                targetConnections.insert(std::lower_bound(targetConnections.begin(), targetConnections.end(),
-                                                          entity->id), entity->id);
                 powerEvents_.push_back({PowerEventKind::connectionCreated, tick_, command.player,
-                                        entity->id, target->id, 0});
+                                        entity->id, payload.target, 0});
             } else if constexpr (std::is_same_v<Type, DisconnectPowerCommand>) {
-                Entity* target = world_.findEntity(payload.target);
-                if (!entity->power || !target || !target->power ||
-                    target->authority.owner != command.player)
-                    return;
-                if (std::find(entity->power.connections.begin(), entity->power.connections.end(),
-                              target->id) == entity->power.connections.end() ||
-                    std::find(target->power.connections.begin(), target->power.connections.end(),
-                              entity->id) == target->power.connections.end()) {
+                const PowerFailureReason failure = powerGridSystem_.disconnect(
+                    world_, command.player, entity->id, payload.target);
+                if (failure != PowerFailureReason::none) {
                     powerEvents_.push_back({PowerEventKind::commandRejected, tick_, command.player,
-                                            entity->id, payload.target, 0,
-                                            PowerFailureReason::notConnected});
+                                            entity->id, payload.target, 0, failure});
                     return;
                 }
-                std::erase(entity->power.connections, target->id);
-                std::erase(target->power.connections, entity->id);
                 powerEvents_.push_back({PowerEventKind::connectionRemoved, tick_, command.player,
-                                        entity->id, target->id, 0});
+                                        entity->id, payload.target, 0});
             } else if constexpr (std::is_same_v<Type, SetPowerPriorityCommand>) {
                 if (entity->power)
-                    entity->power.priority = std::clamp(payload.priority, 0, 1000);
+                    entity->power.priority = payload.priority;
             } else if constexpr (std::is_same_v<Type, SetPowerEnabledCommand>) {
-                if (entity->power)
+                if (entity->power && entity->power.enabled != payload.enabled) {
                     entity->power.enabled = payload.enabled;
+                    powerGridSystem_.markDirty(command.player);
+                }
+            } else if constexpr (std::is_same_v<Type, SetPowerDischargeEnabledCommand>) {
+                if (entity->power && entity->power.generation > 0.0F &&
+                    entity->power.storageCapacity > 0.0F)
+                    entity->power.dischargeEnabled = payload.enabled;
             } else if constexpr (std::is_same_v<Type, AttackEntityCommand>) {
                 Entity* target = world_.findEntity(payload.target);
                 if (entity->unitControl && entity->combat &&
                     entity->unitControl.directlyControllable && target && target->health &&
                     target->authority.owner != 0 && target->authority.owner != command.player) {
+                    clearGatherLoop(*entity);
                     entity->unitControl.order = UnitOrderKind::attack;
                     entity->unitControl.orderTarget = target->id;
                     entity->transient.navigationPath.clear();
@@ -760,6 +780,7 @@ void GameSession::apply(const PlayerCommand& command) {
                     if (!builder || builder->authority.owner != command.player ||
                         !builder->flight || !builder->battery || !builder->unitControl)
                         continue;
+                    clearGatherLoop(*builder);
                     builder->unitControl.order = UnitOrderKind::construct;
                     builder->unitControl.orderTarget = building.id;
                     builder->unitControl.strategicDestination = building.transform.position;
@@ -777,6 +798,7 @@ void GameSession::apply(const PlayerCommand& command) {
                 }
                 if (entity->flight && entity->battery && building && building->construction &&
                     !isOperational(*building) && !entity->battery.returningToCharge) {
+                    clearGatherLoop(*entity);
                     entity->unitControl.order = UnitOrderKind::construct;
                     entity->unitControl.orderTarget = building->id;
                     entity->unitControl.strategicDestination = building->transform.position;
@@ -803,6 +825,8 @@ void GameSession::apply(const PlayerCommand& command) {
                     return foundation.sourceEntity == cancelled;
                 });
                 terrain_.rebuildFoundations(world_.foundations());
+                if (entity->power)
+                    powerGridSystem_.markDirty(entity->authority.owner);
                 world_.destroyEntity(cancelled);
             } else if constexpr (std::is_same_v<Type, RepairCommand>) {
                 Entity* target = world_.findEntity(payload.target);
@@ -811,7 +835,7 @@ void GameSession::apply(const PlayerCommand& command) {
                     return;
                 }
                 if (entity->flight && target && target->health && entity->battery &&
-                    !entity->battery.returningToCharge) { entity->unitControl.order=UnitOrderKind::repair; entity->unitControl.orderTarget=target->id; entity->unitControl.strategicDestination=target->transform.position; entity->unitControl.hasStrategicDestination=true; }
+                    !entity->battery.returningToCharge) { clearGatherLoop(*entity); entity->unitControl.order=UnitOrderKind::repair; entity->unitControl.orderTarget=target->id; entity->unitControl.strategicDestination=target->transform.position; entity->unitControl.hasStrategicDestination=true; }
             } else if constexpr (std::is_same_v<Type, StartUpgradeCommand>) {
                 if (!canStartUpgrade(command.player, entity->id, payload.upgradeId))
                     return;
@@ -863,229 +887,7 @@ void GameSession::simulateTick() {
     std::vector<CompletedCharacter> completed;
     std::vector<EntityId> destroyed;
     bool foundationInfluenceChanged = false;
-    struct PreviousPowerState {
-        EntityId entity{0};
-        PowerOperationalState state{PowerOperationalState::offline};
-        std::uint64_t gridId{0};
-    };
-    std::vector<PreviousPowerState> previousPowerStates;
-    for (Entity& entity : world_.entities()) {
-        if (!entity.power) continue;
-        previousPowerStates.push_back({entity.id, entity.power.state, entity.power.gridId});
-        auto& connections = entity.power.connections;
-        std::sort(connections.begin(), connections.end());
-        connections.erase(std::unique(connections.begin(), connections.end()), connections.end());
-        std::erase_if(connections, [&](EntityId connectedId) {
-            const Entity* connected = world_.findEntity(connectedId);
-            if (connectedId == entity.id || !connected || !connected->power ||
-                connected->authority.owner != entity.authority.owner)
-                return true;
-            auto reverse = connected->power.connections;
-            std::sort(reverse.begin(), reverse.end());
-            return !std::binary_search(reverse.begin(), reverse.end(), entity.id);
-        });
-        entity.power.supplied = 0.0F;
-        entity.power.gridId = 0;
-        entity.power.state = PowerOperationalState::offline;
-    }
-    for (Player& player : players_.players()) {
-        std::vector<Entity*> devices;
-        std::uint64_t topologySignature = 1469598103934665603ULL;
-        const auto mixTopology = [&](std::uint64_t value) {
-            topologySignature ^= value;
-            topologySignature *= 1099511628211ULL;
-        };
-        for (Entity& candidate : world_.entities()) {
-            if (candidate.authority.owner == player.id && candidate.power) {
-                mixTopology(candidate.id);
-                mixTopology(candidate.power.enabled);
-                mixTopology(isOperational(candidate));
-                for (EntityId adjacent : candidate.power.connections) mixTopology(adjacent);
-            }
-            if (candidate.authority.owner == player.id && candidate.power &&
-                candidate.power.enabled && isOperational(candidate))
-                devices.push_back(&candidate);
-        }
-        std::sort(devices.begin(), devices.end(), [](const Entity* left, const Entity* right) {
-            return left->id < right->id;
-        });
-        if (!powerTopologySignatures_.contains(player.id) ||
-            powerTopologySignatures_[player.id] != topologySignature) {
-            powerTopologySignatures_[player.id] = topologySignature;
-            auto& cached = cachedPowerComponents_[player.id];
-            cached.clear();
-            std::vector<EntityId> visited;
-            for (Entity* root : devices) {
-                if (std::binary_search(visited.begin(), visited.end(), root->id)) continue;
-                std::vector<EntityId> component;
-                std::vector<EntityId> pending{root->id};
-                while (!pending.empty()) {
-                    const EntityId currentId = pending.front();
-                    pending.erase(pending.begin());
-                    if (std::binary_search(visited.begin(), visited.end(), currentId)) continue;
-                    Entity* current = world_.findEntity(currentId);
-                    if (!current || !current->power || !current->power.enabled ||
-                        !isOperational(*current) || current->authority.owner != player.id)
-                        continue;
-                    visited.insert(std::lower_bound(visited.begin(), visited.end(), currentId), currentId);
-                    component.push_back(currentId);
-                    for (EntityId adjacent : current->power.connections)
-                        if (!std::binary_search(visited.begin(), visited.end(), adjacent) &&
-                            !std::binary_search(pending.begin(), pending.end(), adjacent))
-                            pending.insert(std::upper_bound(pending.begin(), pending.end(), adjacent), adjacent);
-                }
-                if (!component.empty()) cached.push_back(std::move(component));
-            }
-        }
-        for (const auto& cachedComponent : cachedPowerComponents_[player.id]) {
-            std::vector<Entity*> component;
-            component.reserve(cachedComponent.size());
-            for (EntityId id : cachedComponent)
-                if (Entity* entity = world_.findEntity(id)) component.push_back(entity);
-            if (component.empty()) continue;
-            const std::uint64_t gridId = component.front()->id;
-            std::vector<Entity*> consumers;
-            std::vector<Entity*> storage;
-            std::map<EntityId, float> generationRemaining;
-            std::map<EntityId, float> storageDischargeRemaining;
-            std::map<EntityId, float> throughputRemaining;
-            std::map<std::pair<EntityId, EntityId>, float> edgeRemaining;
-            for (Entity* device : component) {
-                device->power.gridId = gridId;
-                generationRemaining[device->id] = device->power.generation;
-                throughputRemaining[device->id] = device->power.transferLimit > 0.0F
-                    ? device->power.transferLimit : std::numeric_limits<float>::max();
-                if (device->power.demand > 0.0F) consumers.push_back(device);
-                if (device->power.storageCapacity > 0.0F) {
-                    storage.push_back(device);
-                    const EntityArchetype* type = gameplay_.archetype(device->archetype);
-                    const PowerDeviceDefinition* definition =
-                        type && type->powerDevice ? gameplay_.powerDevice(*type->powerDevice) : nullptr;
-                    storageDischargeRemaining[device->id] =
-                        definition ? definition->storageDischargePerTick : 0.0F;
-                }
-                if (device->power.demand <= 0.0F)
-                    device->power.state = PowerOperationalState::powered;
-                for (EntityId adjacent : device->power.connections) {
-                    if (adjacent <= device->id) continue;
-                    const Entity* target = world_.findEntity(adjacent);
-                    if (!target || !target->power || !target->power.enabled ||
-                        target->authority.owner != player.id || !isOperational(*target)) continue;
-                    const float sourceLimit = device->power.transferLimit > 0.0F
-                                                  ? device->power.transferLimit
-                                                  : std::numeric_limits<float>::max();
-                    const float targetLimit = target->power.transferLimit > 0.0F
-                                                  ? target->power.transferLimit
-                                                  : std::numeric_limits<float>::max();
-                    edgeRemaining[{device->id, adjacent}] = std::min(sourceLimit, targetLimit);
-                }
-            }
-            std::sort(consumers.begin(), consumers.end(), [](const Entity* left, const Entity* right) {
-                return left->power.priority != right->power.priority
-                           ? left->power.priority < right->power.priority
-                           : left->id < right->id;
-            });
-            const auto route = [&](EntityId source, EntityId target) {
-                std::map<EntityId, EntityId> parent;
-                std::vector<EntityId> frontier{source};
-                parent[source] = 0;
-                for (std::size_t cursor = 0; cursor < frontier.size(); ++cursor) {
-                    const EntityId currentId = frontier[cursor];
-                    if (currentId == target) break;
-                    const Entity* current = world_.findEntity(currentId);
-                    if (!current || !current->power) continue;
-                    for (EntityId adjacent : current->power.connections) {
-                        const auto edge = std::minmax(currentId, adjacent);
-                        const auto capacity = edgeRemaining.find(edge);
-                        if (capacity == edgeRemaining.end() || capacity->second <= 0.0F ||
-                            parent.contains(adjacent) || !throughputRemaining.contains(adjacent) ||
-                            (adjacent != target && throughputRemaining.at(adjacent) <= 0.0F))
-                            continue;
-                        parent[adjacent] = currentId;
-                        frontier.push_back(adjacent);
-                    }
-                }
-                std::vector<EntityId> path;
-                if (!parent.contains(target)) return path;
-                for (EntityId current = target; current != source; current = parent.at(current))
-                    path.push_back(current);
-                path.push_back(source);
-                std::reverse(path.begin(), path.end());
-                return path;
-            };
-            const auto deliver = [&](EntityId target, float requested, bool allowStorage) {
-                float delivered = 0.0F;
-                for (Entity* source : component) {
-                    if (delivered >= requested) break;
-                    float sourceAvailable = generationRemaining[source->id];
-                    if (allowStorage)
-                        sourceAvailable += std::min(source->power.stored,
-                                                    storageDischargeRemaining[source->id]);
-                    while (sourceAvailable > 0.0F && delivered < requested) {
-                        const auto path = route(source->id, target);
-                        if (path.empty()) break;
-                        float amount = std::min(sourceAvailable, requested - delivered);
-                        amount = std::min(amount, throughputRemaining[source->id]);
-                        amount = std::min(amount, throughputRemaining[target]);
-                        for (std::size_t index = 1; index < path.size(); ++index)
-                            amount = std::min(amount, edgeRemaining[std::minmax(path[index - 1], path[index])]);
-                        for (std::size_t index = 1; index + 1 < path.size(); ++index)
-                            amount = std::min(amount, throughputRemaining[path[index]]);
-                        if (amount <= 0.0F) break;
-                        const float generated = std::min(amount, generationRemaining[source->id]);
-                        generationRemaining[source->id] -= generated;
-                        const float discharged = amount - generated;
-                        source->power.stored -= discharged;
-                        storageDischargeRemaining[source->id] -= discharged;
-                        sourceAvailable -= amount;
-                        delivered += amount;
-                        for (std::size_t index = 1; index < path.size(); ++index)
-                            edgeRemaining[std::minmax(path[index - 1], path[index])] -= amount;
-                        throughputRemaining[source->id] -= amount;
-                        if (target != source->id) throughputRemaining[target] -= amount;
-                        for (std::size_t index = 1; index + 1 < path.size(); ++index)
-                            throughputRemaining[path[index]] -= amount;
-                    }
-                }
-                return delivered;
-            };
-            for (Entity* consumer : consumers) {
-                const float intakeLimit = consumer->power.transferLimit > 0.0F
-                                              ? consumer->power.transferLimit
-                                              : consumer->power.demand;
-                const float requested = std::min(consumer->power.demand, intakeLimit);
-                consumer->power.supplied = deliver(consumer->id, requested, true);
-                consumer->power.state = consumer->power.supplied >= consumer->power.demand
-                                            ? PowerOperationalState::powered
-                                            : consumer->power.supplied > 0.0F
-                                                  ? PowerOperationalState::underpowered
-                                                  : PowerOperationalState::offline;
-            }
-            for (Entity* battery : storage) {
-                const EntityArchetype* type = gameplay_.archetype(battery->archetype);
-                const PowerDeviceDefinition* definition =
-                    type && type->powerDevice ? gameplay_.powerDevice(*type->powerDevice) : nullptr;
-                const float rate = definition ? definition->storageChargePerTick : 0.0F;
-                const float request = std::min(rate,
-                    battery->power.storageCapacity - battery->power.stored);
-                const float charged = deliver(battery->id, std::max(0.0F, request), false);
-                battery->power.stored += charged;
-            }
-        }
-    }
-    for (const PreviousPowerState& previous : previousPowerStates) {
-        const Entity* entity = world_.findEntity(previous.entity);
-        if (!entity || !entity->power || entity->power.demand <= 0.0F || tick_ == 0)
-            continue;
-        if (previous.state == entity->power.state) continue;
-        PowerEventKind event = PowerEventKind::shortage;
-        if (entity->power.state == PowerOperationalState::powered)
-            event = PowerEventKind::recovered;
-        else if (entity->power.state == PowerOperationalState::offline)
-            event = PowerEventKind::shutdown;
-        powerEvents_.push_back({event, tick_, entity->authority.owner, entity->id, 0,
-                                entity->power.gridId});
-    }
+    powerGridSystem_.simulate(world_, players_, gameplay_, tick_, powerEvents_);
     for (Entity& entity : world_.entities()) {
         if (entity.resource && isOperational(entity)) {
             const EntityArchetype* type = gameplay_.archetype(entity.archetype);
@@ -1142,6 +944,12 @@ void GameSession::simulateTick() {
             else
                 entity.processor.state = ProcessorOperationalState::powered;
         }
+        // Battery exhaustion is an authoritative recovery trigger even while the drone is idle.
+        // Commands and movement also call beginRecharge immediately, but this guard closes every
+        // remaining path that can consume the last unit of charge.
+        if (entity.flight && entity.battery && entity.battery.charge <= 0.0F &&
+            !entity.battery.returningToCharge)
+            beginRecharge(entity);
         if (entity.flight && entity.battery && entity.battery.returningToCharge) {
             const Entity* chargerEntity = world_.findEntity(entity.battery.chargerTarget);
             const auto chargerDevice = [&](const Entity* candidate)
@@ -1339,6 +1147,8 @@ void GameSession::simulateTick() {
                             }
                             if (target->construction.powerProgress >= target->construction.powerRequired) {
                                 target->construction.state = BuildingLifecycleState::operational;
+                                if (target->power)
+                                    powerGridSystem_.markDirty(target->authority.owner);
                                 if (target->health) target->health.current = target->health.maximum;
                                 entity.unitControl.order=UnitOrderKind::idle; entity.unitControl.orderTarget=0; entity.unitControl.hasStrategicDestination=false;
                             }
@@ -1370,11 +1180,26 @@ void GameSession::simulateTick() {
                                                entity.authority.owner, entity.id,
                                                node ? node->id : entity.gatherer.sourceTarget,
                                                entity.gatherer.carriedResource, 0.0F});
-                    if (!node || !node->resource)
+                    Entity* nextNode = node && node->resource && entity.gatherer &&
+                                               entity.gatherer.carriedAmount <
+                                                   stat(entity, GameplayStat::carryCapacity)
+                                           ? nextResourceNode(*node)
+                                           : nullptr;
+                    if (nextNode) {
+                        entity.gatherer.sourceTarget = nextNode->id;
+                        entity.unitControl.order = UnitOrderKind::gather;
+                        entity.unitControl.orderTarget = nextNode->id;
+                        entity.unitControl.hasStrategicDestination = false;
+                        entity.transient.navigationPath.clear();
+                        entity.transient.navigationWaypoint = 0;
+                        entity.transient.navigationGoalEntity = 0;
+                    } else if (!node || !node->resource) {
                         entity.gatherer.sourceTarget = 0;
-                    entity.unitControl.order = entity.gatherer.carriedAmount > 0
-                                                   ? UnitOrderKind::returnResources
-                                                   : UnitOrderKind::idle;
+                    }
+                    if (!nextNode)
+                        entity.unitControl.order = entity.gatherer.carriedAmount > 0
+                                                       ? UnitOrderKind::returnResources
+                                                       : UnitOrderKind::idle;
                 } else if (entity.gatherer.carriedAmount >= stat(entity, GameplayStat::carryCapacity))
                     entity.unitControl.order = UnitOrderKind::returnResources;
                 else {
@@ -1399,7 +1224,20 @@ void GameSession::simulateTick() {
                                                            entity.authority.owner, entity.id, node->id,
                                                            entity.gatherer.carriedResource,
                                                            entity.gatherer.carriedAmount});
-                            entity.unitControl.order = UnitOrderKind::returnResources;
+                            Entity* nextNode = node->resource.remaining <= 0.0F &&
+                                                       entity.gatherer.carriedAmount < capacity
+                                                   ? nextResourceNode(*node)
+                                                   : nullptr;
+                            if (nextNode) {
+                                entity.gatherer.sourceTarget = nextNode->id;
+                                entity.unitControl.orderTarget = nextNode->id;
+                                entity.unitControl.hasStrategicDestination = false;
+                                entity.transient.navigationPath.clear();
+                                entity.transient.navigationWaypoint = 0;
+                                entity.transient.navigationGoalEntity = 0;
+                            } else {
+                                entity.unitControl.order = UnitOrderKind::returnResources;
+                            }
                         }
                     } else
                         routeToInteraction(gameplay_, entity, *node, reach);
@@ -1714,8 +1552,16 @@ void GameSession::simulateTick() {
     std::sort(destroyed.begin(), destroyed.end());
     destroyed.erase(std::unique(destroyed.begin(), destroyed.end()), destroyed.end());
     for (EntityId id : destroyed) {
-        if (Entity* entity = world_.findEntity(id); entity && entity->construction)
-            entity->construction.state = BuildingLifecycleState::destroyed;
+        if (Entity* entity = world_.findEntity(id); entity) {
+            if (entity->construction)
+                entity->construction.state = BuildingLifecycleState::destroyed;
+            if (entity->power) {
+                powerGridSystem_.markDirty(entity->authority.owner);
+                for (EntityId connected : entity->power.connections)
+                    powerEvents_.push_back({PowerEventKind::connectionRemoved, tick_,
+                                            entity->authority.owner, id, connected, 0});
+            }
+        }
         for (Entity& worker : world_.entities())
             if (worker.unitControl && worker.unitControl.orderTarget == id) {
                 worker.unitControl.order = UnitOrderKind::idle;
@@ -1860,8 +1706,7 @@ void GameSession::replaceWorld(std::vector<Entity> entities, std::uint32_t terra
     vegetation_ = generateVegetation(world_, terrain_, gameplay_, terrainSeed_, mapChunksPerSide_);
     commands_.clear();
     lastSequence_.clear();
-    powerTopologySignatures_.clear();
-    cachedPowerComponents_.clear();
+    powerGridSystem_.reset();
     powerEvents_.clear();
     updateExploration();
 }

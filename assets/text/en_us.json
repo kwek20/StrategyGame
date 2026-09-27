@@ -82,6 +82,7 @@
   "settings.action.debug": "TOGGLE DIAGNOSTICS",
   "settings.action.terrain_debug": "TOGGLE TERRAIN DEBUG",
   "settings.action.water_debug": "TOGGLE WATER DEBUG",
+  "settings.action.power_debug": "TOGGLE POWER DEBUG",
   "settings.action.pause": "PAUSE / BACK",
   "menu.team_a_country": "TEAM A COUNTRY",
   "menu.team_b_country": "TEAM B COUNTRY",
@@ -265,10 +266,13 @@
   ,"power.action.disconnect": "DISCONNECT POWER"
   ,"power.action.disconnect.description": "SELECT A CONNECTED POWER DEVICE"
   ,"power.action.priority": "POWER PRIORITY"
-  ,"power.action.priority.description": "CURRENT PRIORITY: {0}. LOWER VALUES RECEIVE POWER FIRST"
+  ,"power.action.priority.description": "CURRENT PRIORITY: {0}. HIGHER PRIORITY RECEIVES CONSTRAINED POWER FIRST"
   ,"power.action.enable": "ENABLE POWER DEVICE"
   ,"power.action.disable": "DISABLE POWER DEVICE"
   ,"power.action.toggle.description": "ENABLE OR DISABLE THIS DEVICE; DISABLING MAY SPLIT THE GRID"
+  ,"power.action.discharge.enable": "ENABLE DISCHARGE"
+  ,"power.action.discharge.disable": "DISABLE DISCHARGE"
+  ,"power.action.discharge.description": "ALLOW STORED POWER TO DISCHARGE; CHARGING REMAINS ACTIVE"
   ,"power.alert.connected": "POWER CONNECTION CREATED"
   ,"power.alert.disconnected": "POWER CONNECTION REMOVED"
   ,"power.alert.shortage": "POWER GRID UNDER SUPPLIED"
@@ -276,6 +280,10 @@
   ,"power.alert.shutdown": "POWER DEVICE SHUT DOWN"
   ,"power.alert.out_of_range": "POWER TARGET IS OUT OF RANGE"
   ,"power.alert.connection_limit": "POWER CONNECTION LIMIT REACHED"
+  ,"power.alert.disabled": "POWER DEVICE IS DISABLED"
+  ,"power.alert.already_connected": "DEVICES ARE ALREADY CONNECTED"
+  ,"power.alert.enemy_target": "CANNOT CONNECT TO AN ENEMY POWER DEVICE"
+  ,"power.alert.not_operational": "POWER DEVICE IS NOT OPERATIONAL"
   ,"power.alert.not_connected": "DEVICES ARE NOT CONNECTED"
   ,"power.alert.invalid_target": "INVALID POWER CONNECTION TARGET"
   ,"entity.grass_dry": "DRY GRASS"

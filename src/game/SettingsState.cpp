@@ -14,7 +14,8 @@
 namespace strategy {
 namespace {
 constexpr const char* bindingNames[]{
-    "forward", "backward", "left", "right", "debug", "terrain_debug", "water_debug", "pause"};
+    "forward", "backward", "left", "right", "debug", "terrain_debug", "water_debug",
+    "power_debug", "pause"};
 }
 
 UiDocument SettingsState::uiDocument(int width, int height) const {
@@ -23,7 +24,7 @@ UiDocument SettingsState::uiDocument(int width, int height) const {
         return std::to_string(static_cast<int>(std::round(value * 100.0F))) + "%";
     };
     const std::string enabled = Text::get("settings.on"), disabled = Text::get("settings.off");
-    ui.modal("settings.panel", {30, 30, 880, 620}, {0.035F, 0.055F, 0.075F});
+    ui.modal("settings.panel", {30, 20, 880, 700}, {0.035F, 0.055F, 0.075F});
     ui.label("settings.title", {60, 52, 0, 0}, Text::get("settings.title"), 3.0F);
     ui.label("settings.video", {60, 100, 0, 0}, Text::get("settings.video"), 2.0F,
              {0.35F, 0.72F, 0.92F});
@@ -47,7 +48,7 @@ UiDocument SettingsState::uiDocument(int width, int height) const {
     static constexpr const char* actionKeys[]{
         "settings.action.forward", "settings.action.backward", "settings.action.left",
         "settings.action.right", "settings.action.debug", "settings.action.terrain_debug",
-        "settings.action.water_debug", "settings.action.pause"};
+        "settings.action.water_debug", "settings.action.power_debug", "settings.action.pause"};
     ui.label("settings.controls", {470, 100, 0, 0}, Text::get("settings.controls"), 2.0F,
              {0.35F, 0.72F, 0.92F});
     for (int row = 0; row < static_cast<int>(std::size(bindingNames)); ++row) {
@@ -59,8 +60,8 @@ UiDocument SettingsState::uiDocument(int width, int height) const {
                   {470.0F, 130.0F + row * 45.0F, 850.0F, 168.0F + row * 45.0F},
                   Text::get(actionKeys[row]) + "     " + value);
     }
-    ui.button("settings.apply", {470, 500, 850, 538}, Text::get("settings.apply"));
-    ui.button("settings.cancel", {470, 545, 850, 583}, Text::get("settings.cancel"));
+    ui.button("settings.apply", {470, 555, 850, 593}, Text::get("settings.apply"));
+    ui.button("settings.cancel", {470, 600, 850, 638}, Text::get("settings.cancel"));
     ui.scaleFromReference(width, height, config_.uiScale);
     return ui;
 }
