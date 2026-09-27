@@ -50,13 +50,22 @@ targets are treated as lost destinations and trigger normal replacement behavior
 
 The committed destination and its approach point remain stable while cargo is in transit; movement
 does not continuously recalculate a new nearest edge. After depleting one node, a drone with spare
-cargo capacity deterministically selects the nearest remaining node in the same generated resource
-field before delivering. Giving a move, construction, repair, attack, or stop order explicitly
+cargo capacity deterministically selects the nearest remaining node of the same raw resource type,
+even across field boundaries, before delivering. The search uses horizontal distance from the
+depleted node and is bounded by twice its resource-field definition's maximum field radius; stable
+entity IDs resolve equal-distance ties. If the depleted archetype has no field definition or no
+eligible nearby node remains, normal delivery/idle behavior continues. Generated field geometry
+does not affect this decision, so the same entity state and definitions select the same target
+before and after loading. Giving a move, construction, repair, attack, or stop order explicitly
 leaves the gather loop and clears its source/delivery route; construction completion therefore
 cannot unexpectedly resume an older gathering loop.
 
 Cargo unloads only while the destination is fully powered and has capacity. Once unloaded,
-conversion happens **instantly** if its conversion route's power requirement is satisfied.
+conversion happens in a dedicated phase after all unit updates/deliveries and destruction cleanup,
+using that tick's power allocation. Eligible cargo converts **on its delivery tick**, regardless
+of whether the processor or drone was created first. There is no processing-duration timer.
+The surviving processor must be operational and its conversion route's power requirement satisfied.
+The resulting stockpile is available to commands processed on the next simulation tick.
 Buffered cargo remains local through a later shortage and converts after sufficient power returns.
 
 Processors expose their local input inventory, expected output ratios, supplied power, and current
@@ -499,7 +508,10 @@ connected components, and powered/underpowered/offline allocation. Processor del
 uses an all-or-nothing rule: only a fully powered processor accepts new cargo. Broader graceful
 degradation remains system-specific future work.
 
-The authoritative distribution policy is defined in `POWER_GRID.md`. Power flows outward from each
-generator and consumers are served first by graph-hop distance, then physical distance to that
-generator, with stable IDs resolving exact ties. The existing consumer-priority allocation is
-legacy behavior and must not override that spatial order.
+The authoritative distribution policy is defined in `POWER_GRID.md`. The whole grid is evaluated
+each tick without transit buffers. High, medium, then low consumer priority determines shortage
+allocation; upstream consumption must be supplied before forwarding to a downstream consumer.
+Equal-priority requesting branches share output equally, redistributing unused shares.
+Consumption and forwarding can be switched independently. Generators never accept incoming power.
+Storage charges only after all enabled consumer demand in the component is fully supplied.
+Route selection uses hop count, distance, and stable IDs; it does not replace priority ordering.

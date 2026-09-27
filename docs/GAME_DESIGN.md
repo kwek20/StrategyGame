@@ -175,6 +175,15 @@ cannot gather and cannot be trained.
 - Recharge at a command hub or charging facility
 - Operate through explicit and automatic RTS task orders
 
+Repair capability and balance come from the unit definition's `repair` object in
+`assets/gameplay/units.json`. The construction drone restores `healthPerTick: 2` HP and spends
+`batteryPerTick: 1` per simulation tick (30 Hz). Both values must be finite and positive, and
+one step must fit in the unit's full battery. Units without a repair definition cannot repair.
+Healing is capped at maximum health; a final partial repair still costs one full configured
+step, while an already fully repaired target costs nothing. If the next step is unaffordable,
+the drone suspends repair and recharges using the existing recovery flow. Alloy costs remain
+future economy work.
+
 ### Constraints
 
 - Limited battery capacity
@@ -184,7 +193,9 @@ cannot gather and cannot be trained.
 - Dependence on charging infrastructure
 - Reduced effectiveness when operating far from the grid
 
-The current automatic return-to-charge trigger is zero battery. The configured reserve value is
+Automatic return-to-charge triggers at zero battery, or when a drone at its construction/repair
+target cannot afford the next work step. A positive remainder is preserved while that task is
+suspended for charging, and the task resumes after recharge. The configured reserve value is
 retained as data and debug information for later policy work, but it does not currently force an
 early return. Exhaustion triggers recovery even when the drone was idle or its previous action did
 not explicitly request charging. A zero-charge drone cannot move manually; it seeks the nearest valid powered charger,
@@ -218,13 +229,14 @@ Power is infrastructure capacity expressed through a spatial network, not a stoc
 resource. Generators supply connected consumers through pylons or relay stations. Connections are
 visible and vulnerable.
 
-Power allocation is generator-rooted and directional. It travels outward from each generator and
-serves consumers first by connection-hop distance, then by world-space distance to that generator,
-with stable entity IDs used only as deterministic tie-breakers. Default grids are therefore
-buffered one-hop-per-tick networks. Low, medium, and high consumer priorities order constrained
-downstream branches; distance from the supplying generator and stable IDs break ties;
-the existing priority control is legacy behavior to remove or repurpose. The complete authoritative
-contract is defined in `POWER_GRID.md`.
+Power is calculated across the whole connected grid every tick, with no transit buffers or
+per-hop delay. Consumers are served high, medium, then low priority. Within a priority tier,
+requesting outgoing connections share output equally, redistributing unused shares. Upstream
+buildings consume before forwarding, even when a downstream building has higher priority;
+consumption and output can be disabled independently. Generators accept no incoming power.
+Storage charges only after every enabled consumer demand in the grid is fully supplied.
+All limits are finite; zero output capacity means no forwarding.
+The complete authoritative contract is defined in `POWER_GRID.md`.
 
 ### Building power state
 
@@ -244,9 +256,10 @@ Implemented power states are:
 
 Storage is authoritative grid state, but "operating from stored energy" is not exposed as a
 separate operational-state enum. Stored energy is allocated through the same deterministic supply
-path before a consumer is classified. Storage-capable generators may charge and discharge during
-the same tick. Their entity menu provides an independent discharge toggle; turning discharge off
-preserves generation and charging while preventing stored energy from entering the grid.
+path before a consumer is classified. Storage charges only after all enabled consumer demand
+in its connected grid is fully supplied. A store that discharged cannot charge that same tick.
+The entity menu provides independent consumption, output, and discharge toggles. Disabling
+discharge preserves generation and charging while preventing stored energy from supplying demand.
 
 The intended long-term behavior is graceful degradation where useful:
 

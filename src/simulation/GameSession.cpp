@@ -179,18 +179,12 @@ Entity* GameSession::nextResourceNode(const Entity& depletedNode) {
         ResourceArchetypeId{depletedNode.archetype.value});
     const glm::vec2 depletedPosition{depletedNode.transform.position.x,
                                      depletedNode.transform.position.z};
-    std::vector<const GeneratedResourceField*> containingFields;
-    if (fieldDefinition) {
-        for (const GeneratedResourceField& field : resourceLayout_.fields) {
-            if (field.definition.value != fieldDefinition->id) continue;
-            const glm::vec2 delta = depletedPosition - field.center;
-            if (glm::dot(delta, delta) <= field.radius * field.radius + 0.01F)
-                containingFields.push_back(&field);
-        }
-    }
-    const float fallbackRadius = fieldDefinition
+    // Retarget locally across field boundaries. Generation geometry is diagnostic-only and
+    // unavailable after loading, so it must not influence authoritative gathering decisions.
+    const float searchRadius = fieldDefinition
         ? fieldDefinition->generation.maximumFieldRadius * 2.0F
         : 0.0F;
+    if (searchRadius <= 0.0F) return nullptr;
     Entity* nearest = nullptr;
     float nearestDistanceSquared = std::numeric_limits<float>::max();
     for (Entity& candidate : world_.entities()) {
@@ -199,20 +193,9 @@ Entity* GameSession::nextResourceNode(const Entity& depletedNode) {
             candidate.resource.type != depletedNode.resource.type)
             continue;
         const glm::vec2 position{candidate.transform.position.x, candidate.transform.position.z};
-        bool sameField = false;
-        for (const GeneratedResourceField* field : containingFields) {
-            const glm::vec2 fromCenter = position - field->center;
-            if (glm::dot(fromCenter, fromCenter) <= field->radius * field->radius + 0.01F) {
-                sameField = true;
-                break;
-            }
-        }
         const glm::vec2 delta = position - depletedPosition;
         const float distanceSquared = glm::dot(delta, delta);
-        if (containingFields.empty())
-            sameField = fallbackRadius > 0.0F &&
-                        distanceSquared <= fallbackRadius * fallbackRadius;
-        if (!sameField) continue;
+        if (distanceSquared > searchRadius * searchRadius) continue;
         if (!nearest || distanceSquared < nearestDistanceSquared - 0.001F ||
             (std::abs(distanceSquared - nearestDistanceSquared) <= 0.001F &&
              candidate.id < nearest->id)) {
@@ -679,9 +662,12 @@ void GameSession::apply(const PlayerCommand& command) {
                     powerGridSystem_.markDirty(command.player);
                 }
             } else if constexpr (std::is_same_v<Type, SetPowerDischargeEnabledCommand>) {
-                if (entity->power && entity->power.generation > 0.0F &&
-                    entity->power.storageCapacity > 0.0F)
+                if (entity->power && entity->power.storageCapacity > 0.0F)
                     entity->power.dischargeEnabled = payload.enabled;
+            } else if constexpr (std::is_same_v<Type, SetPowerConsumptionEnabledCommand>) {
+                if (entity->power) entity->power.consumptionEnabled = payload.enabled;
+            } else if constexpr (std::is_same_v<Type, SetPowerOutputEnabledCommand>) {
+                if (entity->power) entity->power.outputEnabled = payload.enabled;
             } else if constexpr (std::is_same_v<Type, AttackEntityCommand>) {
                 Entity* target = world_.findEntity(payload.target);
                 if (entity->unitControl && entity->combat &&
@@ -829,6 +815,8 @@ void GameSession::apply(const PlayerCommand& command) {
                     powerGridSystem_.markDirty(entity->authority.owner);
                 world_.destroyEntity(cancelled);
             } else if constexpr (std::is_same_v<Type, RepairCommand>) {
+                const auto* repairType = gameplay_.archetype(entity->archetype);
+                if (!repairType || !repairType->repair) return;
                 Entity* target = world_.findEntity(payload.target);
                 if (entity->battery && entity->battery.charge <= 0.0F) {
                     beginRecharge(*entity);
@@ -896,53 +884,6 @@ void GameSession::simulateTick() {
                 entity.resource.remaining = std::min(
                     type->resourceCapacity,
                     entity.resource.remaining + type->rawProductionPerTick);
-        }
-        if (entity.processor && isOperational(entity)) {
-            Player* player = players_.find(entity.authority.owner);
-            if (entity.processor.activityTicksRemaining > 0)
-                --entity.processor.activityTicksRemaining;
-            bool blocked = false;
-            bool converted = false;
-            if (player)
-                for (auto input = entity.processor.bufferedInputs.begin();
-                     input != entity.processor.bufferedInputs.end();) {
-                    const ResourceConversionDefinition* conversion = gameplay_.conversionFor(
-                        BuildingArchetypeId{entity.archetype.value}, ResourceId{input->first});
-                    if (!conversion || !entity.power ||
-                        entity.power.supplied < conversion->requiredPower) {
-                        blocked = blocked || (conversion && entity.power &&
-                                              entity.power.supplied < conversion->requiredPower);
-                        if (blocked && !entity.processor.waitingForPower)
-                            resourceEvents_.push_back({ResourceEventKind::waitingForPower, tick_,
-                                                       entity.authority.owner, entity.id, entity.id,
-                                                       input->first, input->second});
-                        ++input;
-                        continue;
-                    }
-                    player->resources[conversion->output.value] +=
-                        input->second * conversion->outputPerInput;
-                    resourceEvents_.push_back({ResourceEventKind::conversionCompleted, tick_,
-                                               entity.authority.owner, entity.id, entity.id,
-                                               conversion->output.value,
-                                               input->second * conversion->outputPerInput});
-                    converted = true;
-                    entity.processor.lastConversionTick = tick_;
-                    entity.processor.activityTicksRemaining = 30;
-                    input = entity.processor.bufferedInputs.erase(input);
-                }
-            entity.processor.waitingForPower = blocked;
-            if (converted || entity.processor.activityTicksRemaining > 0)
-                entity.processor.state = ProcessorOperationalState::processing;
-            else if (blocked)
-                entity.processor.state = ProcessorOperationalState::blocked;
-            else if (!entity.power || entity.power.state == PowerOperationalState::offline)
-                entity.processor.state = ProcessorOperationalState::offline;
-            else if (entity.power.state == PowerOperationalState::underpowered)
-                entity.processor.state = ProcessorOperationalState::underpowered;
-            else if (entity.processor.bufferedInputs.empty())
-                entity.processor.state = ProcessorOperationalState::idle;
-            else
-                entity.processor.state = ProcessorOperationalState::powered;
         }
         // Battery exhaustion is an authoritative recovery trigger even while the drone is idle.
         // Commands and movement also call beginRecharge immediately, but this guard closes every
@@ -1055,7 +996,9 @@ void GameSession::simulateTick() {
         if (entity.production && isOperational(entity) && !entity.production.queue.empty()) {
             ProductionOrder& order = entity.production.queue.front();
             std::uint32_t progress = 1000;
-            if (entity.power && entity.power.demand > 0.0F)
+            if (entity.power && (!entity.power.enabled || !entity.power.consumptionEnabled))
+                progress = 0;
+            else if (entity.power && entity.power.demand > 0.0F)
                 progress = static_cast<std::uint32_t>(std::clamp(
                     std::lround(entity.power.supplied / entity.power.demand * 1000.0F),
                     0L, 1000L));
@@ -1155,15 +1098,24 @@ void GameSession::simulateTick() {
                             if (entity.battery.charge <= 0.0F &&
                                 entity.unitControl.order == UnitOrderKind::construct)
                                 beginRecharge(entity);
-                        } else if (entity.battery.charge <= 0.0F) {
+                        } else if (recipe && entity.battery.charge < recipe->dronePowerPerStep) {
                             beginRecharge(entity);
                         }
-                    } else if (entity.unitControl.order == UnitOrderKind::repair && target->health && target->health.current < target->health.maximum && entity.battery.charge >= 1.0F) {
-                        entity.battery.charge -= 1.0F; target->health.current = std::min(target->health.maximum,target->health.current+2.0F);
-                        if (target->construction && target->health.current >= target->health.maximum)
-                            target->construction.state = BuildingLifecycleState::operational;
-                        if (entity.battery.charge <= 0.0F)
+                    } else if (entity.unitControl.order == UnitOrderKind::repair && target->health && target->health.current < target->health.maximum) {
+                        const auto* repairType = gameplay_.archetype(entity.archetype);
+                        if (!repairType || !repairType->repair) {
+                            stopUnit(entity);
+                        } else if (entity.battery.charge < repairType->repair->batteryPerTick) {
                             beginRecharge(entity);
+                        } else {
+                            entity.battery.charge -= repairType->repair->batteryPerTick;
+                            target->health.current = std::min(target->health.maximum,
+                                target->health.current + repairType->repair->healthPerTick);
+                            if (target->construction && target->health.current >= target->health.maximum)
+                                target->construction.state = BuildingLifecycleState::operational;
+                            if (entity.battery.charge <= 0.0F)
+                                beginRecharge(entity);
+                        }
                     }
                 } else routeToInteraction(gameplay_, entity, *target, range);
             } else {
@@ -1570,6 +1522,61 @@ void GameSession::simulateTick() {
             }
         world_.destroyEntity(id);
     }
+    // Deliveries from every unit are complete. Convert using this tick's power result,
+    // so creation/iteration order cannot delay newly delivered cargo by a tick.
+    for (Entity& entity : world_.entities()) {
+        if (entity.processor && isOperational(entity)) {
+            Player* player = players_.find(entity.authority.owner);
+            if (entity.processor.activityTicksRemaining > 0)
+                --entity.processor.activityTicksRemaining;
+            bool blocked = false;
+            bool converted = false;
+            if (player)
+                for (auto input = entity.processor.bufferedInputs.begin();
+                     input != entity.processor.bufferedInputs.end();) {
+                    const ResourceConversionDefinition* conversion = gameplay_.conversionFor(
+                        BuildingArchetypeId{entity.archetype.value}, ResourceId{input->first});
+                    if (!conversion || !entity.power || !entity.power.enabled ||
+                        !entity.power.consumptionEnabled ||
+                        entity.power.supplied < conversion->requiredPower) {
+                        blocked = blocked || (conversion && entity.power &&
+                                              (!entity.power.enabled || !entity.power.consumptionEnabled ||
+                                               entity.power.supplied < conversion->requiredPower));
+                        if (blocked && !entity.processor.waitingForPower)
+                            resourceEvents_.push_back({ResourceEventKind::waitingForPower, tick_,
+                                                       entity.authority.owner, entity.id, entity.id,
+                                                       input->first, input->second});
+                        ++input;
+                        continue;
+                    }
+                    player->resources[conversion->output.value] +=
+                        input->second * conversion->outputPerInput;
+                    resourceEvents_.push_back({ResourceEventKind::conversionCompleted, tick_,
+                                               entity.authority.owner, entity.id, entity.id,
+                                               conversion->output.value,
+                                               input->second * conversion->outputPerInput});
+                    converted = true;
+                    entity.processor.lastConversionTick = tick_;
+                    entity.processor.activityTicksRemaining = 30;
+                    input = entity.processor.bufferedInputs.erase(input);
+                }
+            entity.processor.waitingForPower = blocked;
+            if (entity.power && (!entity.power.enabled || !entity.power.consumptionEnabled))
+                entity.processor.state = ProcessorOperationalState::offline;
+            else if (converted || entity.processor.activityTicksRemaining > 0)
+                entity.processor.state = ProcessorOperationalState::processing;
+            else if (blocked)
+                entity.processor.state = ProcessorOperationalState::blocked;
+            else if (!entity.power || entity.power.state == PowerOperationalState::offline)
+                entity.processor.state = ProcessorOperationalState::offline;
+            else if (entity.power.state == PowerOperationalState::underpowered)
+                entity.processor.state = ProcessorOperationalState::underpowered;
+            else if (entity.processor.bufferedInputs.empty())
+                entity.processor.state = ProcessorOperationalState::idle;
+            else
+                entity.processor.state = ProcessorOperationalState::powered;
+        }
+    }
     for (const CompletedCharacter& character : completed) {
         const EntityArchetype* producer = gameplay_.archetype(character.producerId);
         if (!producer)
@@ -1612,6 +1619,8 @@ void GameSession::updateExploration() {
             if (entity.authority.owner != player.id || !entity.vision || !isOperational(entity))
                 continue;
             float powerFactor = 1.0F;
+            if (entity.power && (!entity.power.enabled || !entity.power.consumptionEnabled))
+                continue;
             if (entity.power && entity.power.demand > 0.0F) {
                 if (!entity.power.enabled || entity.power.state == PowerOperationalState::offline)
                     continue;

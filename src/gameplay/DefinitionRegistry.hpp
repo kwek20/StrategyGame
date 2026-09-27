@@ -119,7 +119,7 @@ struct WeaponDefinition {
 struct PowerDeviceDefinition {
     std::string id;
     std::unordered_set<std::string> tags;
-    float production{0.0F}, consumption{0.0F}, storage{0.0F}, transitCapacity{0.0F};
+    float production{0.0F}, consumption{0.0F}, storage{0.0F};
     float connectionRange{0.0F}, transferLimit{0.0F}, chargePerTick{0.0F};
     float storageChargePerTick{0.0F}, storageDischargePerTick{0.0F};
     std::uint32_t maximumConnections{0};
@@ -159,6 +159,11 @@ struct MovementDefinition {
 
 struct BatteryDefinition {
     float capacity{0.0F}, movementDrainPerSecond{0.0F}, reserveThreshold{0.0F};
+};
+
+struct RepairDefinition {
+    float healthPerTick{0.0F};
+    float batteryPerTick{0.0F};
 };
 
 struct ResourceFieldGenerationDefinition {
@@ -202,6 +207,7 @@ struct EntityArchetype {
     float processorCapacity{0.0F}; // zero means unlimited
     MovementDefinition movement;
     std::optional<BatteryDefinition> battery;
+    std::optional<RepairDefinition> repair;
     std::optional<TerrainFootprint> footprint;
     TerrainPlacementProfile placement;
     std::optional<PowerDeviceId> powerDevice;

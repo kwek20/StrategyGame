@@ -16,14 +16,15 @@ void writeFixture(const std::filesystem::path& path, const std::string& contents
 bool rejects(const std::filesystem::path& units,
              const std::filesystem::path& recipes,
              const std::filesystem::path& countries,
-             const std::string& expected) {
+             const std::string& expected,
+             const std::filesystem::path& power = "assets/gameplay/power.json") {
     try {
         const strategy::DefinitionRegistry registry{units,
                                                     "assets/gameplay/buildings.json",
                                                     "assets/gameplay/resource_nodes.json",
                                                     "assets/gameplay/resources.json",
                                                     "assets/gameplay/weapons.json",
-                                                    "assets/gameplay/power.json",
+                                                    power,
                                                     recipes,
                                                     countries,
                                                     "assets/gameplay/specializations.json"};
@@ -65,6 +66,34 @@ int strategyTestMain() {
                              invalidCountries,
                              "references unknown specialization 'missing'");
 
+    const auto infinitePower = directory / "infinite-power.json";
+    writeFixture(infinitePower, R"({"version":1,"devices":{"invalid":{"production":1e100}}})");
+    valid = valid && rejects("assets/gameplay/units.json", "assets/gameplay/recipes.json",
+                             "assets/gameplay/countries.json", "requires finite values", infinitePower);
+    std::ifstream unitsInput("assets/gameplay/units.json");
+    const std::string unitsText((std::istreambuf_iterator<char>(unitsInput)), {});
+    const auto repairBegin = unitsText.find("\"repair\": {");
+    const auto repairEnd = unitsText.find('}', repairBegin);
+    for (const std::string repair : {
+             R"("repair":{"healthPerTick":0,"batteryPerTick":1})",
+             R"("repair":{"healthPerTick":2,"batteryPerTick":-1})",
+             R"("repair":{"healthPerTick":2,"batteryPerTick":101})",
+             R"("repair":{"healthPerTick":1e100,"batteryPerTick":1})",
+             R"("repair":{"healthPerTick":2,"batteryPerTick":1e100})",
+             R"("repair":false)"}) {
+        auto invalidRepair = unitsText;
+        invalidRepair.replace(repairBegin, repairEnd - repairBegin + 1, repair);
+        writeFixture(invalidUnits, invalidRepair);
+        valid = rejects(invalidUnits, "assets/gameplay/recipes.json", "assets/gameplay/countries.json",
+                        "invalid repair values") && valid;
+    }
+    auto noBattery = unitsText;
+    const auto batteryBegin = noBattery.find("\"battery\": {");
+    const auto batteryEnd = noBattery.find('}', batteryBegin);
+    noBattery.erase(batteryBegin, batteryEnd - batteryBegin + 2);
+    writeFixture(invalidUnits, noBattery);
+    valid = rejects(invalidUnits, "assets/gameplay/recipes.json", "assets/gameplay/countries.json",
+                    "invalid repair values") && valid;
     std::filesystem::remove_all(directory);
     if (!valid) {
         std::cerr << "Definition registry validation failed\n";

@@ -42,6 +42,8 @@ struct DisconnectPowerCommand { EntityId entity{0}; EntityId target{0}; };
 struct SetPowerPriorityCommand { EntityId entity{0}; PowerPriority priority{PowerPriority::medium}; };
 struct SetPowerEnabledCommand { EntityId entity{0}; bool enabled{true}; };
 struct SetPowerDischargeEnabledCommand { EntityId entity{0}; bool enabled{true}; };
+struct SetPowerConsumptionEnabledCommand { EntityId entity{0}; bool enabled{true}; };
+struct SetPowerOutputEnabledCommand { EntityId entity{0}; bool enabled{true}; };
 struct AttackEntityCommand {
     EntityId entity{0};
     EntityId target{0};
@@ -94,7 +96,9 @@ using CommandPayload = std::variant<PossessUnitCommand,
                                     DisconnectPowerCommand,
                                     SetPowerPriorityCommand,
                                     SetPowerEnabledCommand,
-                                    SetPowerDischargeEnabledCommand>;
+                                    SetPowerDischargeEnabledCommand,
+                                    SetPowerConsumptionEnabledCommand,
+                                    SetPowerOutputEnabledCommand>;
 // Keep new commands appended so their serialized variant indices remain stable.
 
 struct PlayerCommand {

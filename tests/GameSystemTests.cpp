@@ -633,8 +633,14 @@ int strategyTestMain() {
         {1, 64, strategy::SetPowerEnabledCommand{7, false}}));
     const auto decodedDischarge = strategy::CommandCodec::decode(strategy::CommandCodec::encode(
         {1, 65, strategy::SetPowerDischargeEnabledCommand{7, false}}));
+    const auto decodedConsumption = strategy::CommandCodec::decode(strategy::CommandCodec::encode(
+        {1, 66, strategy::SetPowerConsumptionEnabledCommand{7, false}}));
+    const auto decodedPowerOutput = strategy::CommandCodec::decode(strategy::CommandCodec::encode(
+        {1, 67, strategy::SetPowerOutputEnabledCommand{7, false}}));
     valid = valid && decodedConnect && decodedDisconnect && decodedPriority && decodedEnabled &&
-            decodedDischarge &&
+            decodedDischarge && decodedConsumption && decodedPowerOutput &&
+            !std::get<strategy::SetPowerConsumptionEnabledCommand>(decodedConsumption->payload).enabled &&
+            !std::get<strategy::SetPowerOutputEnabledCommand>(decodedPowerOutput->payload).enabled &&
             std::get<strategy::ConnectPowerCommand>(decodedConnect->payload).target == 90 &&
             std::get<strategy::DisconnectPowerCommand>(decodedDisconnect->payload).target == 90 &&
             std::get<strategy::SetPowerPriorityCommand>(decodedPriority->payload).priority ==
@@ -793,6 +799,14 @@ int strategyTestMain() {
         recipeSession.world().createEntity("Command Hub", "command_hub", 1);
     gameplay.initializeEntity(commandHubEntity);
     commandHubEntity.transform.position = {0.0F, 0.0F, 0.0F};
+    const auto enabledPowerChecksum = recipeSession.stateChecksum();
+    commandHubEntity.power.consumptionEnabled = false;
+    valid = valid && recipeSession.stateChecksum() != enabledPowerChecksum;
+    commandHubEntity.power.consumptionEnabled = true;
+    commandHubEntity.power.outputEnabled = false;
+    valid = valid && recipeSession.stateChecksum() != enabledPowerChecksum;
+    commandHubEntity.power.outputEnabled = true;
+    valid = valid && recipeSession.stateChecksum() == enabledPowerChecksum;
     recipeSession.players().find(1)->resources["alloy"] = 75.0F;
     valid = recipeSession.submit(
                          {1,
@@ -800,6 +814,23 @@ int strategyTestMain() {
                           strategy::StartRecipeCommand{
                               commandHubEntity.id,
                               "command_hub.train_construction_drone"}}) && valid;
+    valid = recipeSession.submit({1, 2, strategy::SetPowerConsumptionEnabledCommand{commandHubEntity.id, false}}) && valid;
+    recipeSession.advanceTicks();
+    const auto pausedRemaining = commandHubEntity.production.queue.front().remainingTicks;
+    valid = recipeSession.submit({1, 3, strategy::SetPowerOutputEnabledCommand{commandHubEntity.id, false}}) && valid;
+    recipeSession.advanceTicks();
+    if (commandHubEntity.production.queue.front().remainingTicks != pausedRemaining ||
+        commandHubEntity.power.consumptionEnabled || commandHubEntity.power.outputEnabled) {
+        std::cerr << "Independent power controls did not pause local production\n";
+        valid = false;
+    }
+    valid = recipeSession.submit({1, 4, strategy::SetPowerConsumptionEnabledCommand{commandHubEntity.id, true}}) && valid;
+    recipeSession.advanceTicks();
+    if (commandHubEntity.production.queue.front().remainingTicks >= pausedRemaining ||
+        commandHubEntity.power.outputEnabled) {
+        std::cerr << "Local production did not resume with output still disabled\n";
+        valid = false;
+    }
     recipeSession.advanceTicks(300);
     std::size_t constructedDrones = 0;
     for (const strategy::Entity& entity : recipeSession.world().entities())
@@ -812,7 +843,7 @@ int strategyTestMain() {
         recipeSession.world().createEntity("Outpost", "outpost", 1);
     gameplay.initializeEntity(researcher);
     valid = recipeSession.submit(
-                {1, 2, strategy::StartUpgradeCommand{researcher.id, "production.efficient_training"}}) && valid;
+                {1, 5, strategy::StartUpgradeCommand{researcher.id, "production.efficient_training"}}) && valid;
     recipeSession.advanceTicks(300);
     valid = valid && researcher.upgrades &&
             researcher.upgrades.levels["production.efficient_training"] == 1;
@@ -826,7 +857,7 @@ int strategyTestMain() {
     const float materialsBeforeRefund =
         recipeSession.players().find(1)->resources["alloy"];
     valid = recipeSession.submit(
-                {1, 3, strategy::CancelProductionCommand{researcher.id, 0}}) && valid;
+                {1, 6, strategy::CancelProductionCommand{researcher.id, 0}}) && valid;
     recipeSession.advanceTicks();
     valid = valid && researcher.production.queue.empty() &&
             recipeSession.players().find(1)->resources["alloy"] ==
@@ -842,7 +873,7 @@ int strategyTestMain() {
     const float materialsBeforeUnitRefund =
         recipeSession.players().find(1)->resources["alloy"];
     valid = recipeSession.submit(
-                {1, 4, strategy::CancelProductionCommand{researcher.id, 0}}) && valid;
+                {1, 7, strategy::CancelProductionCommand{researcher.id, 0}}) && valid;
     recipeSession.advanceTicks();
     valid = valid && researcher.production.queue.empty() &&
             recipeSession.players().find(1)->resources["alloy"] ==
@@ -946,7 +977,7 @@ int strategyTestMain() {
                 strategy::RecipeId{"command_hub.train_construction_drone"});
     recipeSession.players().find(1)->resources["alloy"] = 0.0F;
     valid = recipeSession.submit(
-                {1, 5, strategy::CancelConstructionCommand{unfinishedId}}) && valid;
+                {1, 8, strategy::CancelConstructionCommand{unfinishedId}}) && valid;
     recipeSession.advanceTicks();
     valid = valid && recipeSession.world().findEntity(unfinishedId) == nullptr &&
             std::abs(recipeSession.players().find(1)->resources["alloy"] - 150.0F) < 0.001F;
@@ -1001,7 +1032,8 @@ int strategyTestMain() {
     conversionSession.advanceTicks();
     const strategy::Entity* activeAlloyProcessor = conversionSession.world().findEntity(alloyProcessorId);
     valid = valid && activeAlloyProcessor && activeAlloyProcessor->processor &&
-            std::abs(activeAlloyProcessor->processor.bufferedInputs.at("scrap") - 10.0F) < 0.001F &&
+            activeAlloyProcessor->processor.bufferedInputs.empty() &&
+            std::abs(conversionSession.players().find(1)->resources.at("alloy") - 10.0F) < 0.001F &&
             !conversionSession.players().find(1)->resources.contains("scrap");
     conversionSession.advanceTicks();
     activeAlloyProcessor = conversionSession.world().findEntity(alloyProcessorId);
@@ -1169,10 +1201,10 @@ int strategyTestMain() {
     powerAllocationSession.advanceTicks();
     const strategy::Entity* allocatedFirst = powerAllocationSession.world().findEntity(firstProcessorId);
     const strategy::Entity* allocatedSecond = powerAllocationSession.world().findEntity(secondProcessorId);
-    const bool allocationValid = allocatedFirst->power.state == strategy::PowerOperationalState::powered &&
-            allocatedFirst->power.supplied == 8.0F &&
+    const bool allocationValid = allocatedFirst->power.state == strategy::PowerOperationalState::underpowered &&
+            allocatedFirst->power.supplied == 5.0F &&
             allocatedSecond->power.state == strategy::PowerOperationalState::underpowered &&
-            allocatedSecond->power.supplied == 2.0F &&
+            allocatedSecond->power.supplied == 5.0F &&
             allocatedFirst->power.gridId == allocationHubId &&
             allocatedSecond->power.gridId == allocationHubId;
     if (!allocationValid)
@@ -1222,13 +1254,14 @@ int strategyTestMain() {
         strategy::UnitOrderKind::returnResources;
     valid = capacitySession.submit(
                 {1, 1, strategy::ConnectPowerCommand{capacityHubId, cappedProcessorId}}) && valid;
+    const float alloyBeforePartialDelivery = capacitySession.players().find(1)->resources["alloy"];
     capacitySession.advanceTicks();
     const auto& cappedInputs = capacitySession.world().findEntity(cappedProcessorId)
                                    ->processor.bufferedInputs;
     valid = valid && cappedInputs.contains("blocked_input") &&
             std::abs(cappedInputs.at("blocked_input") - 399.0F) < 0.001F &&
-            cappedInputs.contains("scrap") &&
-            std::abs(cappedInputs.at("scrap") - 1.0F) < 0.001F &&
+            !cappedInputs.contains("scrap") &&
+            std::abs(capacitySession.players().find(1)->resources.at("alloy") - alloyBeforePartialDelivery - 1.0F) < 0.001F &&
             std::abs(capacitySession.world().findEntity(capacityDroneId)
                                   ->gatherer.carriedAmount - 9.0F) < 0.001F;
     valid = capacitySession.submit(
@@ -1293,7 +1326,6 @@ int strategyTestMain() {
         created.power.generation = generation;
         created.power.demand = demand;
         created.power.transferLimit = transfer;
-        created.power.transitCapacity = 100.0F;
         created.power.connectionRange = 200.0F;
         created.power.maximumConnections = 8;
         return created.id;

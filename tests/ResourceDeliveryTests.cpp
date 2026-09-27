@@ -70,13 +70,14 @@ int strategyTestMain() {
     activeFallbackDrone->gatherer.preferredProcessor = fullProcessorId;
     activeFallbackDrone->gatherer.deliveryTarget = fullProcessorId;
     activeFallbackDrone->unitControl.order = strategy::UnitOrderKind::returnResources;
+    const float fallbackAlloyBefore = fullTarget.players().find(1)->resources["alloy"];
     fullTarget.advanceTicks();
     activeFallbackDrone = fullTarget.world().findEntity(fallbackDroneId);
     const strategy::Entity* activeFallbackHub = fullTarget.world().findEntity(fallbackHubId);
     valid = valid && activeFallbackDrone->gatherer.carriedAmount == 0.0F &&
             activeFallbackDrone->gatherer.preferredProcessor == 0 &&
-            activeFallbackHub->processor.bufferedInputs.contains("scrap") &&
-            std::abs(activeFallbackHub->processor.bufferedInputs.at("scrap") - 10.0F) < 0.001F;
+            activeFallbackHub->processor.bufferedInputs.empty() &&
+            std::abs(fullTarget.players().find(1)->resources.at("alloy") - fallbackAlloyBefore - 5.0F) < 0.001F;
 
     strategy::GameSession fieldRetarget{definitions, 103U};
     fieldRetarget.replaceWorld({}, 103U);
@@ -102,6 +103,70 @@ int strategyTestMain() {
             retargeted->unitControl.orderTarget == secondNodeId &&
             retargeted->gatherer.sourceTarget == secondNodeId;
 
+    // A nearer same-resource node in another field wins, even when generation diagnostics
+    // are present. Clearing those diagnostics through the load/replacement boundary must
+    // leave the choice unchanged. A same-distance candidate also checks the stable-ID tie.
+    const strategy::EntityId crossFieldId = create(
+        fieldRetarget, definitions, "Other field scrap", "scrap_node_small").id;
+    const strategy::EntityId tiedId = create(
+        fieldRetarget, definitions, "Equidistant scrap", "scrap_node_small").id;
+    const strategy::EntityId oilId = create(
+        fieldRetarget, definitions, "Closer oil", "oil_node_small").id;
+    const strategy::EntityId distantId = create(
+        fieldRetarget, definitions, "Distant scrap", "scrap_node_small").id;
+    auto* retargetDrone = fieldRetarget.world().findEntity(fieldDroneId);
+    retargetDrone->transform.position = {9, 6, 0};
+    retargetDrone->gatherer.carriedAmount = 0.0F;
+    retargetDrone->gatherer.carriedResource.clear();
+    retargetDrone->gatherer.sourceTarget = firstNodeId;
+    retargetDrone->unitControl.order = strategy::UnitOrderKind::gather;
+    retargetDrone->unitControl.orderTarget = firstNodeId;
+    retargetDrone->unitControl.hasStrategicDestination = false;
+    fieldRetarget.world().findEntity(firstNodeId)->transform.position = {9, 0, 0};
+    fieldRetarget.world().findEntity(firstNodeId)->resource.remaining = 0.0F;
+    fieldRetarget.world().findEntity(secondNodeId)->transform.position = {0, 0, 0};
+    fieldRetarget.world().findEntity(crossFieldId)->transform.position = {15, 0, 0};
+    fieldRetarget.world().findEntity(tiedId)->transform.position = {9, 0, 6};
+    fieldRetarget.world().findEntity(oilId)->transform.position = {10, 0, 0};
+    const auto* scrapField = definitions.resourceFieldForNode(
+        strategy::ResourceArchetypeId{"scrap_node_small"});
+    if (!scrapField) {
+        std::cerr << "Missing scrap field definition for retarget regression\n";
+        return 1;
+    }
+    fieldRetarget.world().findEntity(distantId)->transform.position = {
+        9 + 2 * scrapField->generation.maximumFieldRadius + 1, 0, 0};
+    const auto retargetSnapshot = fieldRetarget.world().entities();
+    // Test-only fixture: production exposes this layout as read-only diagnostics.
+    auto& diagnosticLayout = const_cast<strategy::ResourceLayout&>(fieldRetarget.resourceLayout());
+    diagnosticLayout.fields = {{strategy::ResourceFieldId{"scrap_field"}, {0, 0}, 10, 2}};
+    fieldRetarget.advanceTicks();
+    const auto withGeometry = fieldRetarget.world().findEntity(fieldDroneId)->gatherer.sourceTarget;
+    fieldRetarget.replaceWorld(retargetSnapshot, 103U);
+    fieldRetarget.advanceTicks();
+    retargeted = fieldRetarget.world().findEntity(fieldDroneId);
+    const bool stableRetarget = withGeometry == crossFieldId &&
+        retargeted->gatherer.sourceTarget == crossFieldId &&
+        retargeted->unitControl.orderTarget == crossFieldId &&
+        retargeted->unitControl.order == strategy::UnitOrderKind::gather;
+    if (!stableRetarget)
+        std::cerr << "Cross-field retarget changed at the world-replacement boundary\n";
+    valid = stableRetarget && valid;
+
+    // Exhaust the nearby Scrap candidates: neither closer Oil nor out-of-range Scrap wins.
+    for (const auto id : {secondNodeId, crossFieldId, tiedId})
+        fieldRetarget.world().findEntity(id)->resource.remaining = 0.0F;
+    retargetDrone = fieldRetarget.world().findEntity(fieldDroneId);
+    retargetDrone->unitControl.order = strategy::UnitOrderKind::gather;
+    retargetDrone->unitControl.orderTarget = firstNodeId;
+    retargetDrone->gatherer.sourceTarget = firstNodeId;
+    fieldRetarget.advanceTicks();
+    const bool boundedRetarget = fieldRetarget.world().findEntity(fieldDroneId)->unitControl.order ==
+                                strategy::UnitOrderKind::idle;
+    if (!boundedRetarget)
+        std::cerr << "Depletion retarget crossed its resource-type or distance boundary\n";
+    valid = boundedRetarget && valid;
+
     strategy::GameSession stableDelivery{definitions, 104U};
     stableDelivery.replaceWorld({}, 104U);
     strategy::Entity& deliveryHub = create(
@@ -126,6 +191,43 @@ int strategyTestMain() {
             transporting->gatherer.deliveryTarget == committedTarget &&
             glm::distance(transporting->unitControl.strategicDestination,
                           committedDestination) < 0.001F;
+
+    // New deliveries convert on their delivery tick regardless of entity creation order.
+    for (const bool droneFirst : {false, true}) {
+        strategy::GameSession timing{definitions, 919U};
+        timing.replaceWorld({}, 919U);
+        const auto source = create(timing, definitions, "Source", "command_hub").id;
+        strategy::EntityId receiver = 0, carrier = 0;
+        if (droneFirst) carrier = create(timing, definitions, "Carrier", "construction_drone").id;
+        receiver = create(timing, definitions, "Receiver", "alloy_processor").id;
+        if (!droneFirst) carrier = create(timing, definitions, "Carrier", "construction_drone").id;
+        timing.players().find(1)->resources["alloy"] = 0;
+        auto* cargoDrone = timing.world().findEntity(carrier);
+        cargoDrone->transform.position = {0, 6, 0};
+        cargoDrone->gatherer.carriedResource = "scrap";
+        cargoDrone->gatherer.carriedAmount = 10;
+        cargoDrone->gatherer.deliveryTarget = receiver;
+        cargoDrone->gatherer.preferredProcessor = receiver;
+        cargoDrone->unitControl.order = strategy::UnitOrderKind::returnResources;
+        valid = timing.submit({1, 1, strategy::ConnectPowerCommand{source, receiver}}) && valid;
+        timing.advanceTicks();
+        const auto* receiving = timing.world().findEntity(receiver);
+        if (cargoDrone->gatherer.carriedAmount != 0 || !receiving->processor.bufferedInputs.empty() ||
+            timing.players().find(1)->resources.at("alloy") != 10 || receiving->processor.lastConversionTick != 0) {
+            std::cerr << "Delivery-tick conversion failed (droneFirst=" << droneFirst << ")\n";
+            valid = false;
+        }
+        // Previously buffered cargo still waits through a shortage, then converts on recovery.
+        timing.world().findEntity(receiver)->processor.bufferedInputs["scrap"] = 3;
+        valid = timing.submit({1, 2, strategy::SetPowerOutputEnabledCommand{source, false}}) && valid;
+        timing.advanceTicks();
+        valid = valid && timing.world().findEntity(receiver)->processor.bufferedInputs.at("scrap") == 3 &&
+                timing.players().find(1)->resources.at("alloy") == 10;
+        valid = timing.submit({1, 3, strategy::SetPowerOutputEnabledCommand{source, true}}) && valid;
+        timing.advanceTicks();
+        valid = valid && timing.world().findEntity(receiver)->processor.bufferedInputs.empty() &&
+                timing.players().find(1)->resources.at("alloy") == 13;
+    }
 
     if (!valid) std::cerr << "Resource delivery routing test failed\n";
     return valid ? 0 : 1;

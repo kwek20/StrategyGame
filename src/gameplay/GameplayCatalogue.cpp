@@ -1,6 +1,7 @@
 #include "gameplay/GameplayCatalogue.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <fstream>
 #include <rapidjson/document.h>
 #include <rapidjson/istreamwrapper.h>
@@ -477,6 +478,20 @@ void DefinitionRegistry::loadArchetypes(const std::filesystem::path& path,
                 throw std::runtime_error("Definition '" + archetype.id +
                                          "' has invalid battery values");
         }
+        if (item->value.HasMember("repair")) {
+            const auto& repair = item->value["repair"];
+            if (!repair.IsObject())
+                throw std::runtime_error("Definition '" + archetype.id + "' has invalid repair values");
+            archetype.repair = RepairDefinition{
+                requiredNumber(repair, "healthPerTick", "Repair '" + archetype.id + "'"),
+                requiredNumber(repair, "batteryPerTick", "Repair '" + archetype.id + "'")};
+            if (!std::isfinite(archetype.repair->healthPerTick) ||
+                !std::isfinite(archetype.repair->batteryPerTick) ||
+                archetype.repair->healthPerTick <= 0.0F || archetype.repair->batteryPerTick <= 0.0F ||
+                !archetype.battery || !std::isfinite(archetype.battery->capacity) ||
+                archetype.repair->batteryPerTick > archetype.battery->capacity)
+                throw std::runtime_error("Definition '" + archetype.id + "' has invalid repair values");
+        }
         if (item->value.HasMember("powerDevice") && item->value["powerDevice"].IsString())
             archetype.powerDevice.emplace(item->value["powerDevice"].GetString());
         if (item->value.HasMember("stats") && item->value["stats"].IsObject())
@@ -779,7 +794,6 @@ void DefinitionRegistry::loadPowerDevices(const std::filesystem::path& path) {
         definition.production = optional("production");
         definition.consumption = optional("consumption");
         definition.storage = optional("storage");
-        definition.transitCapacity = optional("transitCapacity");
         definition.connectionRange = optional("connectionRange");
         definition.transferLimit = optional("transferLimit");
         definition.chargePerTick = optional("chargePerTick");
@@ -804,8 +818,13 @@ void DefinitionRegistry::loadPowerDevices(const std::filesystem::path& path) {
             else if (priority == "high") definition.priority = PowerPriority::high;
             else throw std::runtime_error("Power device priority must be low, medium, or high");
         }
+        for (const float value : {definition.production, definition.consumption, definition.storage,
+                                 definition.connectionRange, definition.transferLimit, definition.chargePerTick,
+                                 definition.storageChargePerTick, definition.storageDischargePerTick})
+            if (!std::isfinite(value))
+                throw std::runtime_error("Power device '" + definition.id + "' requires finite values");
         if (definition.production < 0.0F || definition.consumption < 0.0F ||
-            definition.storage < 0.0F || definition.transitCapacity <= 0.0F ||
+            definition.storage < 0.0F ||
             definition.connectionRange < 0.0F ||
             definition.transferLimit < 0.0F || definition.chargePerTick < 0.0F ||
             definition.storageChargePerTick < 0.0F ||
@@ -1807,7 +1826,6 @@ void DefinitionRegistry::initializeEntity(Entity& entity) const {
             entity.power.demand = device->consumption;
             entity.power.priority = device->priority;
             entity.power.storageCapacity = device->storage;
-            entity.power.transitCapacity = device->transitCapacity;
             entity.power.connectionRange = device->connectionRange;
             entity.power.transferLimit = device->transferLimit;
             entity.power.maximumConnections = device->maximumConnections;

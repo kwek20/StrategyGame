@@ -154,8 +154,6 @@ struct PowerComponent {
     float supplied{0.0F};
     float stored{0.0F};
     float storageCapacity{0.0F};
-    float transitEnergy{0.0F};
-    float transitCapacity{0.0F};
     float connectionRange{0.0F};
     float transferLimit{0.0F};
     std::uint32_t maximumConnections{0};
@@ -164,6 +162,8 @@ struct PowerComponent {
     PowerPriority priority{PowerPriority::medium};
     bool enabled{true};
     bool dischargeEnabled{true};
+    bool consumptionEnabled{true};
+    bool outputEnabled{true};
     PowerOperationalState state{PowerOperationalState::offline};
 };
 struct UpgradeComponent {
@@ -183,7 +183,7 @@ struct EntityTransientState {
     EntityId powerPrimaryRoot{0};
     PowerPriority powerBranchPriority{PowerPriority::medium};
     bool powerFallbackActive{false};
-    float powerBufferStartLastTick{0.0F};
+    std::vector<std::pair<EntityId, float>> powerIncomingLastTick;
     float powerGeneratedLastTick{0.0F};
     float powerDischargedLastTick{0.0F};
     float powerConsumedLastTick{0.0F};

@@ -1,245 +1,160 @@
 # Power grid
 
-This document defines the authoritative power-distribution rules. Rendering, interface code, and
-audio may present these results but must not alter them.
+This is the authoritative power-distribution contract. Rendering and UI present the simulation
+result; they never calculate or mutate allocation.
 
-## Design goals
+## Whole-grid calculation each tick
 
-- Power originates at generator entities and flows outward through explicit connections.
-- Distribution rewards compact grids: devices closer to generation receive power first.
-- A shortage degrades the outer part of a network before the inner part.
-- Results are deterministic and independent of container iteration order, frame rate, rendering,
-  and the order in which equivalent connections were created.
-- The same commands and starting state must produce the same allocation and checksum on every
-  peer.
+The simulation evaluates each connected grid on every simulation tick (30 Hz). Power can cross
+multiple connections in that tick. There are no transit buffers and no per-hop propagation delay.
+Only explicit storage retains energy between ticks. Unused generation is curtailed.
 
-## Authoritative units and timing
+Generation, demand, transfer limits, and storage charge/discharge rates are per-tick values.
+Storage capacity limits retained energy. Values must be finite and nonnegative; zero means zero,
+never unlimited. The implementation currently uses floating-point values and deterministic
+ordering; fixed-point arithmetic remains future determinism hardening.
 
-- Generation, demand, transfer, charging, discharging, and storage are simulation values evaluated
-  on integer simulation ticks.
-- Power is network capacity, not a player stockpile currency.
-- Definitions may use friendly display units, but the hardened simulation will convert them to a
-  fixed integer power unit at the definition boundary.
-- Presentation may display W, kW, MW, or GW without changing authoritative values.
+## Connections and limits
 
-## Connections and flow direction
+Physical connections are symmetric, explicit, and owner-specific. Allocation chooses directed,
+acyclic routes from sources over those connections.
 
-Connections describe physical links and are stored symmetrically so either endpoint can discover
-the link. Power allocation over those links is directional.
+- Generators never accept incoming power, including when exhausted or when output is disabled.
+  Producer/generator definitions remain source-only even when their current generation is zero.
+- A device's transferLimit caps its total outgoing power across all connections and allocation
+  passes in that tick. It does not cap its own intake or local use.
+- A zero transferLimit prevents forwarding.
+- Intermediate buildings may consume power and forward the remainder.
+- Connections require operational, enabled endpoints of the same owner, overlapping connection
+  ranges, and free slots. Invalid commands return explicit failure reasons.
+- Disabling a device removes it from active topology but retains physical links. Destruction
+  immediately removes reciprocal links; rebuilding does not recreate them.
 
-For every allocation tick, each enabled and operational generator is a flow root. The simulation
-walks outward from that generator through connected relays and devices. A particular allocation
-may move power only away from its generator root; it may not reverse direction, circulate through
-a loop, or use a consumer as a new source.
+## Priorities and splitting output
 
-Storage that is discharging acts as a source for that tick and follows the same outward-flow rules.
-A storage-capable generator may charge and discharge during the same tick. Discharge is controlled
-by an authoritative per-device toggle exposed in the generator menu; disabling discharge does not
-disable generation, charging, connections, or the rest of the device.
+Allocate consumer demand in this order: **high, medium, low**. Priority changes allocation only
+when available generation, storage discharge, or transfer capacity cannot meet all demand.
 
-A storage-only device becomes a source root only while it has stored energy, discharge is enabled,
-and its definition permits a positive discharge rate. Otherwise it remains an ordinary downstream
-node: it can receive and forward generated power and may continue charging. Stored energy by itself
-does not make a discharge-disabled device a root.
+Within a priority pass, each sender splits available outgoing power equally among its requesting
+downstream connections. A branch that needs less than its share returns the unused share for
+redistribution among the remaining requesting branches. Satisfied or non-requesting connections
+take no share. This applies to generators and forwarding buildings.
 
-## Buffered one-hop flow
+Upstream consumption must be satisfied before forwarding to a downstream consumer, even when
+the downstream consumer has higher priority. A high-priority request therefore also requests the
+power needed by its upstream consumers.
 
-Every power device has a finite transit buffer. Generation and storage discharge enter the local
-buffer. During one simulation tick, buffered power can cross at most one connection. Power received
-in the current tick may satisfy that receiving device immediately, but it cannot be forwarded until
-the next tick. A node's `transferLimit` is its total outgoing capacity per tick; it does not restrict
-how much that node may receive.
+Example: generator produces 6, upstream low-priority building needs 4, downstream high-priority
+building needs 5. The upstream building receives 4 and the downstream building receives 2 in the
+same tick. Disable the upstream building's consumption and the downstream building receives 5.
+A separate medium-priority branch receives power only after the reachable high-priority request
+and its upstream prerequisites have been served.
 
-For example, with a full generator `G`, `G.transferLimit = 2`, `N1.transferLimit = 1`, and the chain
-`G - N1 - N2`:
+For two equal-priority branches requiring 5 each, a generator producing 6 supplies 3 to each.
+If one branch needs only 1, it receives 1 and the other receives 5.
 
-```text
-tick 1: G full, N1 buffer 2, N2 buffer 0
-tick 2: G full, N1 buffer 3, N2 buffer 1
-```
+## Independent controls
 
-This propagation delay is authoritative, saved, and checksummed. It makes distance through the
-actual connection graph meaningful instead of powering an entire connected component instantly.
+All controls are authoritative, serializable commands and are included in save state/checksums.
 
-When an output cannot serve every downstream branch, its authoritative ordering key is:
+- **Device enabled:** participates in the active network.
+- **Consumption enabled:** allows local powered work and demand. Turning it off pauses powered
+  work but preserves intake, forwarding, generation, and eligible storage charging.
+- **Output enabled:** allows forwarding to other devices. Turning it off preserves incoming
+  power and local use/charging. It does not disable local generation or storage use.
+- **Discharge enabled:** permits use of stored energy. Turning it off preserves generation,
+  charging, intake, and forwarding.
+- **Priority:** low, medium, or high.
 
-1. Priority: high, then medium, then low.
-2. Shortest horizontal world-space distance to the supplying generator.
-3. Lowest stable entity ID when both values are equal.
+Generators retain their no-intake rule regardless of these controls.
 
-World-space distance is compared using deterministic squared distance; a square root is not
-required. Entity ID is only the final tie-breaker and must not replace the distance comparison.
+## Generation and storage
 
-A downstream node receives as much as the sender's buffered energy, remaining output capacity, and
-the receiver's remaining buffer/demand permit. This is intentional priority-based first-come-first-
-served behavior rather than equal or proportional sharing.
+Each tick:
 
-Connection creation order, adjacency insertion order, hash-map order, rendering order, and frame
-timing must never affect this ordering.
+1. Rebuild dirty topology and reset supplied-power and flow diagnostics.
+2. Establish finite generation, discharge, demand, and output budgets for every device.
+3. Serve high-priority demand, then medium, then low, including upstream prerequisites.
+   Within each priority tier use generation first, then eligible stored energy.
+4. Only when every enabled consumer demand in that connected component is satisfied, route
+   remaining generation into storage subject to available routes, output capacity, charge rate,
+   and storage capacity.
+5. Curtail unused generation, classify device states, and emit state-change events.
 
-## Multiple generators
+A consumer blocked behind an output-disabled device or a transfer bottleneck still prevents
+storage charging in its connected component. A disconnected component is evaluated separately.
+Consumption-disabled demand does not block charging.
 
-All enabled, operational generators participate in the deterministic multi-source forest. A node
-may be reachable from more than one generator. Its supplying root is selected by:
+Discharge is limited to actual consumer need, stored energy, and the definition's discharge rate.
+Stored energy is never discharged merely to charge another store. A store that discharged this
+tick cannot recharge in the same tick. A generator with integrated storage charges from its own
+surplus only, because generators do not receive power. A storage-only device can receive and charge
+from the grid; it becomes a source during discharge passes when usable discharge remains.
 
-1. Consumer hop count from the candidate generator.
-2. Consumer world-space distance from the candidate generator.
-3. Stable generator entity ID.
-4. Stable consumer entity ID.
+## Routes, multiple sources, and determinism
 
-The selected generator's power propagates into that territory one connection per tick. Before flow,
-the solver compares each territory's available buffered/generated/discharge power with its demand.
-If a primary territory is deficient while another connected generator territory has real surplus,
-the deficient root yields and the forest is rebuilt from the viable fallback roots. The yielded
-generator remains a power-producing node; it simply no longer prevents surplus power from reaching
-its consumers. Fallback uses the same hop, distance, and stable-ID ordering and is recalculated
-deterministically without using connection creation time.
+The solver constructs an outward forest using currently available sources and residual output
+capacity. Choose a source by shortest connection-hop count, then squared horizontal
+target-to-source distance, then stable source ID. For equal-hop paths from that same source,
+choose the lowest sum of squared horizontal segment lengths, then compare the complete
+root-to-device entity-ID sequence lexicographically.
 
-## Relays, loops, and paths
+After a source or forwarding capacity is exhausted, rebuild routes so another reachable source
+can supply remaining demand in the same tick. A consumer may therefore receive from several
+sources. Generators never become intermediate receiving nodes to enable fallback.
 
-- Relays forward power but do not create it.
-- A traversal never visits the same node twice for one generator wave.
-- When multiple equal-hop paths exist, choose the path with the lowest total squared segment
-  length, then compare the ordered sequence of stable entity IDs.
-- Loops provide alternate routes and resilience but never permit circular flow.
-- Destroying, disabling, or disconnecting a relay invalidates affected topology before the next
-  allocation.
+Each allocation path is acyclic. Physical loops provide alternate routes. Different passes may
+use different directions over a link; diagnostics display net flow. Sources, receivers, and
+outgoing transfers retain shared per-tick budgets across all passes, so rerouting cannot create
+energy or reset a transfer limit.
 
-## Consumer priority
+Topology snapshots are sorted, revisioned, and reused while clean. Connection changes,
+enable/disable, construction completion, destruction, entity creation, and world replacement
+invalidate affected snapshots. Allocation still runs each tick on the whole grid.
 
-Every power device has one of three priorities: low, medium, or high. Priority controls which
-downstream branch receives a constrained sender's output first. It does not bypass connections,
-remove propagation delay, increase transfer limits, or pull power backward toward a generator.
+## Operational states and accounting
 
-A branch's effective priority is the highest priority of any device downstream in that branch.
-This value propagates toward the root before allocation, so a high-priority factory behind a
-low-priority relay still makes that relay branch high priority. A relay's own local demand is
-satisfied locally before its remaining buffer is forwarded.
+- **Powered:** enabled consumption meets positive demand; for zero-demand devices, a source was
+  reachable through usable output paths at the start of allocation.
+- **Underpowered:** positive demand receives some but not all required power.
+- **Offline:** no supply, no reachable source for a passive device, consumption disabled, or
+  device disabled/non-operational. A consumption-disabled device may still forward energy.
+- **Not applicable:** no power component.
 
-## Generation and storage order
+Gameplay systems use these authoritative values. Processors require full power to accept cargo
+and convert it; other systems retain their own documented degradation policies.
 
-Each tick uses this sequence:
-
-1. Validate or rebuild dirty topology.
-2. Reset transient flow and supplied-power values.
-3. Add current generation and eligible storage discharge to local transit buffers.
-4. Consume local demand, then send remaining buffered power one connection outward.
-5. Classify consumers as powered, underpowered, or offline.
-6. Route unused generator output into eligible storage.
-7. Emit state-change and failure events.
-
-Every participating device records rebuildable last-tick diagnostics for starting buffer,
-accepted generation, storage discharge, consumption, outward and inward transfer, storage charge,
-curtailment, and ending buffer. Generation that cannot enter the transit buffer is recorded as
-curtailed rather than silently disappearing.
-
-Storage rules:
-
-- Consumers are supplied before storage is charged.
-- Generation is used before stored energy is discharged.
-- Storage-capable generators may charge and discharge in the same tick while discharge is enabled.
-- Disabling discharge prevents stored energy from entering the transit buffer but leaves charging
-  enabled.
-- Charge rate, discharge rate, storage capacity, and network transfer capacity are all enforced.
-- Stored power is clamped to its valid range and power must never be created by rounding.
-
-## Operational states
-
-- **Powered:** supplied power meets demand.
-- **Underpowered:** supplied power is greater than zero but below demand.
-- **Offline:** no power is supplied, the device is disabled, or it has no valid route to a source.
-- **Not applicable:** the entity is not a power device.
-
-Individual gameplay systems decide how an underpowered ratio affects processing, charging,
-sensors, production, or weapons. Those policies must use the authoritative supplied and demanded
-values; they may not calculate a separate grid result.
-
-## Connection validity
-
-A power connection is valid only when both endpoints:
-
-- Exist and have power components.
-- Have the same owner.
-- Are operational and permitted to connect.
-- Are within connection range.
-- Have available connection slots.
-
-Invalid commands produce an explicit rejection reason. Destruction removes reciprocal links
-immediately. Connections are not silently recreated after rebuilding unless a later design adds an
-explicit automatic-reconnection rule.
-
-Connection validation and mutation are owned by `PowerGridSystem`, not by `GameSession`. Zero
-connection slots, disabled endpoints, duplicate links, enemy ownership, non-operational endpoints,
-range failures, and missing links all return distinct authoritative outcomes. `World` destruction
-removes reciprocal links at the mutation boundary, while gameplay destruction also emits one
-connection-removed event per severed link. Disabling a device preserves its physical links but
-removes it from active topology until it is enabled again; destroying and rebuilding an entity does
-not recreate its old links.
-
-## Deterministic invariants
-
-The simulation must maintain:
+Per-device invariants (within numeric tolerance):
 
 ```text
-0 <= supplied <= demand
+0 <= supplied <= enabled local demand
 0 <= stored <= storage capacity
-device flow <= device transfer capacity
-0 <= transit buffer <= transit capacity
-consumer use + storage increase <= generation + storage decrease
+0 <= sent <= enabled output transferLimit
+accepted generation + discharged storage + received = consumed + charged storage + sent
+requested generation = accepted generation + curtailed generation
 ```
 
-The stronger per-device conservation identity is:
+Transit buffers/capacities are absent from definitions, entity state, saves, and checksums.
+Save format remains 1 under the project's in-place schema policy. Old saves missing the new
+consumptionEnabled/outputEnabled fields are rejected; no migration is provided.
+Root/parent, branch priority, and per-edge flow counters are transient diagnostics, excluded from
+saves/checksums and rebuilt on simulation ticks.
 
-```text
-starting buffer + requested generation + discharged storage + received transfer
-= consumed + charged storage + sent transfer + ending buffer + curtailed generation
-```
+## Presentation and validation
 
-Reordering connections, changing rendering state, or saving and loading the same authoritative
-state must not change allocation results.
+The power menu exposes priority, device enable, consumption, output, and storage-discharge controls.
+The HUD power overview and F7 diagnostics show supply/demand, storage, output limits, and USE/OUT
+switch states. F7 shows generation, discharge, consumption, storage charge, curtailment, transfer
+totals, and directional net flow. No power-buffer values are displayed.
+Root/parent identify the most recently used allocation route; primary root records the initial
+route, and fallback indicates use of another source.
 
-## Implementation note
+F7 is mutually exclusive with F4 terrain and F6 water diagnostics. Definition-backed green
+terrain-following range discs include relay poles. Placement shows one proposed link to the
+nearest valid endpoint; it does not automatically connect anything.
 
-The authoritative solver is isolated in `PowerGridSystem`. It owns sorted per-player topology
-snapshots containing nodes, edges, connected components, stable grid IDs, and monotonic revisions.
-Connect, disconnect, enable/disable, construction completion, destruction, entity creation, and
-world replacement explicitly invalidate affected snapshots; clean grids reuse their snapshot
-without scanning or hashing the complete world topology.
-
-The allocator uses generator-rooted outward forests, finite device transit buffers, one-hop-per-tick
-delivery, and low/medium/high branch priority. Equal-priority branches use generator distance and
-stable entity ID as deterministic tie-breakers.
-
-## Diagnostics
-
-F7 toggles the dedicated power-debug view. It is mutually exclusive with the F4 terrain and F6
-water diagnostics. The view shows local-player grid connections and device state without changing
-simulation results:
-
-- Slightly filled translucent green world-space discs show every local device's definition-backed
-  connection range, including relay poles. Their terrain-following outlines keep overlapping reach
-  legible without hiding the world.
-- Cyan directional links carried power during the latest simulation tick.
-- Green links are connected and ready, orange links are underpowered, and red links are broken.
-- Node crosses show effective downstream branch priority in magenta, yellow, and grey.
-- The panel reports aggregate generation, demand, supply, transit buffers, storage, and grid count.
-- The panel reports latest-tick generation, discharge, consumption, charge, curtailment, and
-  sent/received totals.
-- Cursor inspection reports the nearest device's grid root, parent, priority, buffer, output limit,
-  and previous-tick sent/received amounts. It shows both configured and effective branch priority,
-  plus primary and active roots when generator fallback occurs.
-
-The root, parent, and flow counters are rebuildable presentation diagnostics. They are deliberately
-excluded from saves and authoritative state checksums.
-
-The power-grid test target also acts as a repeatable headless stress profile. It simulates two
-identical 257-device, 32-branch grids for 600 ticks, compares stable allocation fingerprints after
-every tick, checks per-device conservation, and splits then reconnects an active branch. The printed
-elapsed time is diagnostic; only a deliberately broad 30-second regression ceiling is enforced so
-ordinary machine and CI variance cannot masquerade as a gameplay failure.
-
-Placing any building with a power device does not display the full debug range layer. Instead, the
-preview draws one green terrain-following line to the nearest enabled, operational local endpoint
-that has a free connection slot and overlaps both devices' connection ranges. No line is drawn when
-there is no valid endpoint. This is placement guidance only and does not silently create a
-connection or change authoritative placement validity.
+Focused tests cover immediate multi-hop delivery, transfer limits including zero, equal sharing,
+upstream consumption, independent switches, priority, storage ordering/rates/capacity, source-only
+generators, isolated relays, fallback, conservation, and deterministic routing.
+The stress test compares two 257-device grids over 600 ticks, including split/reconnect mutations,
+with per-tick fingerprints and conservation checks and a broad 30-second Debug regression ceiling.

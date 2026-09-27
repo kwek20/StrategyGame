@@ -148,7 +148,7 @@ non-water work in order before starting Milestone 6:
      priority shortage allocation, transfer limits, and maximum-connection failures.
    - Profile large grids and improve disconnected, overloaded, and underpowered overlay feedback.
    - F7 power diagnostics now expose directional latest-tick flow, priority, grid/root/parent,
-     transit buffers, storage, supply, demand, connection ranges, and broken or underpowered links.
+     consumption/output controls, storage, supply, demand, connection ranges, and broken or underpowered links.
      F7 renders translucent green range discs for every device, including relay poles. Power-device
      placement instead draws a single green proposed link to the nearest available endpoint and
      stays uncluttered when no valid endpoint exists.
@@ -225,8 +225,9 @@ directly controlled, non-gathering ground worker.
 - Add a flight-capable navigation mode with altitude and valid operating bounds.
 - Add authoritative battery, cargo/gathering, construction, and repair components.
 - Add serializable commands for gather, construct, repair, recharge, and generic stop.
-- Implement automatic return to an available charger. The current policy triggers at zero charge;
-  the stored reserve threshold is reserved for a later configurable policy.
+- Implement automatic return to an available charger. The current policy triggers at zero charge
+  or when a construction/repair step at the target is unaffordable. Suspend and resume that work
+  through charging; the stored reserve threshold is reserved for a later configurable policy.
 - Handle unreachable, destroyed, occupied, or disconnected charging destinations.
 - Preserve interrupted work while charging and resume it deterministically afterward.
 - Keep construction drones indirect-control only and provide a drone-specific HUD.
@@ -290,8 +291,9 @@ Make connected energy infrastructure the main spatial constraint on expansion.
 
 - Add generators, consumers, relays, connections, storage, transfer limits, and priorities.
 - Build deterministic network discovery and allocation.
-  - Implement the generator-rooted, one-way allocation contract in `POWER_GRID.md`: finite transit
-    buffers, one connection per tick, low/medium/high priority, then distance/stable-ID tie-breaking.
+  - Implement the whole-grid-per-tick contract in `POWER_GRID.md`: no transit buffers,
+    high/medium/low consumer priority, equal branch sharing, upstream use before forwarding,
+    independent consumption/output controls, and storage charging only after consumer demand.
 - Recalculate only affected network regions after topology changes.
 - Define fully powered, underpowered, battery-powered, and offline behavior.
 - Add graceful degradation for factories, sensors, chargers, and defenses.
@@ -302,21 +304,19 @@ Make connected energy infrastructure the main spatial constraint on expansion.
 The current implementation includes serializable connect/disconnect/priority/enable commands,
 stable topology discovery, connection and transfer limits, generation, command-hub storage,
 consumer allocation, grid IDs, checksums, persistence, interaction buttons, world tinting, and a
-  clickable HUD power overview. Allocation now advances through finite per-device buffers by one
-  connection per tick and orders constrained branches by priority, distance, and stable ID. The solver is
-now extracted from `GameSession`; explicit sorted topology snapshots are revisioned and rebuilt
+clickable HUD power overview. Allocation evaluates the entire grid each tick without buffers,
+serves high/medium/low priorities with upstream consumption first, and splits output equally
+between requesting branches within a priority tier. The solver is extracted from `GameSession`; explicit sorted topology snapshots are revisioned and rebuilt
 through per-player dirty invalidation instead of full topology-signature scans. Connection
 validation is centralized, every invalid command has an explicit reason, and entity destruction
   immediately removes reciprocal links.
-Storage-capable generators can charge and discharge during the same tick. Their definition-backed
-storage discharge can be toggled independently from the device itself; disabling discharge leaves
-generation and charging active.
-Storage-only devices become source roots only when discharge is enabled and usable. Per-device
-last-tick accounting records generation, discharge, consumption, transfer, charge, curtailment,
-and buffer deltas, with focused conservation coverage.
-Priority now propagates from downstream consumers through relay branches. Multi-generator grids
-perform a deterministic capacity-aware fallback pass so a deficient nearest generator cannot claim
-consumers while another connected generator territory has surplus.
+Storage charges from remaining generation only after every enabled consumer demand in the
+component is met. A store that discharged cannot recharge that tick. Generator devices never
+accept incoming power. Independent consumption, output, and discharge commands are saved and
+checksummed. Zero transfer capacity means no forwarding.
+Per-device last-tick accounting records accepted generation, discharge, consumption, transfer,
+charge, and curtailment, with focused conservation coverage. Multi-source fallback can supply
+remaining demand in the same tick without resetting output limits.
 
 ### Exit criteria
 

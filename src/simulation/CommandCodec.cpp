@@ -63,7 +63,9 @@ std::vector<std::byte> CommandCodec::encode(const PlayerCommand& command) {
         else if constexpr (std::is_same_v<T, SetPowerPriorityCommand>)
             result.push_back(static_cast<std::byte>(payload.priority));
         else if constexpr (std::is_same_v<T, SetPowerEnabledCommand> ||
-                           std::is_same_v<T, SetPowerDischargeEnabledCommand>)
+                           std::is_same_v<T, SetPowerDischargeEnabledCommand> ||
+                           std::is_same_v<T, SetPowerConsumptionEnabledCommand> ||
+                           std::is_same_v<T, SetPowerOutputEnabledCommand>)
             result.push_back(payload.enabled ? std::byte{1} : std::byte{0});
         else if constexpr (std::is_same_v<T, AttackEntityCommand>) write(result, payload.target);
         else if constexpr (std::is_same_v<T, StartRecipeCommand>) writeString(result, payload.recipeId.value);
@@ -145,6 +147,8 @@ std::optional<PlayerCommand> CommandCodec::decode(std::span<const std::byte> inp
         result.payload=SetPowerPriorityCommand{entity,static_cast<PowerPriority>(priority)}; break; }
     case 22: { if(input.empty()) return std::nullopt; const bool enabled=input.front()!=std::byte{0}; input=input.subspan(1); result.payload=SetPowerEnabledCommand{entity,enabled}; break; }
     case 23: { if(input.empty()) return std::nullopt; const bool enabled=input.front()!=std::byte{0}; input=input.subspan(1); result.payload=SetPowerDischargeEnabledCommand{entity,enabled}; break; }
+    case 24: { if(input.empty()) return std::nullopt; const bool enabled=input.front()!=std::byte{0}; input=input.subspan(1); result.payload=SetPowerConsumptionEnabledCommand{entity,enabled}; break; }
+    case 25: { if(input.empty()) return std::nullopt; const bool enabled=input.front()!=std::byte{0}; input=input.subspan(1); result.payload=SetPowerOutputEnabledCommand{entity,enabled}; break; }
     default: return std::nullopt;
     }
     return input.empty() ? std::optional<PlayerCommand>{std::move(result)} : std::nullopt;

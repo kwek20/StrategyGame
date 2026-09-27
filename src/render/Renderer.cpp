@@ -1591,7 +1591,7 @@ void Renderer::drawResourceHud(const Player& player,
     std::size_t connectionCount = 0;
     struct DeviceLine { std::string name; float production; float demand; float supplied;
                         std::string status; float waitingCargo; std::uint64_t grid;
-                        std::size_t connections; float transit; float transitCapacity;
+                        std::size_t connections; bool consumptionEnabled; bool outputEnabled;
                         PowerPriority priority; };
     std::vector<DeviceLine> devices;
     for (const Entity& entity : world.entities()) {
@@ -1603,7 +1603,7 @@ void Renderer::drawResourceHud(const Player& player,
         const bool active = isOperational(entity);
         const bool enabled = active && entity.power && entity.power.enabled;
         const float produced = enabled ? entity.power.generation : 0.0F;
-        const float consumed = enabled ? entity.power.demand : 0.0F;
+        const float consumed = enabled && entity.power.consumptionEnabled ? entity.power.demand : 0.0F;
         generation += produced;
         demand += consumed;
         suppliedTotal += enabled ? entity.power.supplied : 0.0F;
@@ -1632,8 +1632,8 @@ void Renderer::drawResourceHud(const Player& player,
                            std::move(status), waitingCargo,
                            entity.power ? entity.power.gridId : 0,
                            entity.power ? entity.power.connections.size() : 0,
-                           entity.power ? entity.power.transitEnergy : 0.0F,
-                           entity.power ? entity.power.transitCapacity : 0.0F,
+                           entity.power && entity.power.consumptionEnabled,
+                           entity.power && entity.power.outputEnabled,
                            entity.power ? entity.power.priority : PowerPriority::medium});
     }
     const auto powerText = [](float used, float capacity) {
@@ -1704,8 +1704,8 @@ void Renderer::drawResourceHud(const Player& player,
                                    : device.priority == PowerPriority::low ? "LOW" : "MEDIUM";
         drawText(device.name + "  " + value + "  " + device.status + "  G" +
                      std::to_string(device.grid) + " L" + std::to_string(device.connections) +
-                     "  B" + std::to_string(static_cast<int>(device.transit)) + "/" +
-                     std::to_string(static_cast<int>(device.transitCapacity)) + "  " + priority +
+                     (device.consumptionEnabled ? "  USE ON" : "  USE OFF") +
+                     (device.outputEnabled ? "  OUT ON  " : "  OUT OFF  ") + priority +
                      waiting,
                  textLeft, y, 1.1F,
                  device.production > 0.0F ? glm::vec3{0.35F, 0.92F, 0.45F}
@@ -1894,17 +1894,18 @@ void Renderer::drawPowerConnections(const World& world,
                                 static_cast<float>(viewportWidth_),
                                 static_cast<float>(viewportHeight_))) continue;
             std::vector<glm::vec2>* vertices = &failed;
+            const auto receivedFrom = [](const Entity& receiver, EntityId sender) {
+                float amount = 0.0F;
+                for (const auto& [id, flow] : receiver.transient.powerIncomingLastTick)
+                    if (id == sender) amount += flow;
+                return amount;
+            };
+            const float netForward = receivedFrom(*target, source.id) - receivedFrom(source, target->id);
             const bool connected = source.power.enabled && target->power.enabled &&
                                    source.power.gridId != 0 &&
                                    source.power.gridId == target->power.gridId;
             if (connected) {
-                const Entity* downstream = target->transient.powerParent == source.id
-                                               ? target
-                                               : source.transient.powerParent == target->id
-                                                     ? &source
-                                                     : nullptr;
-                if (diagnostics && downstream &&
-                    downstream->transient.powerReceivedLastTick > 0.0F)
+                if (diagnostics && std::abs(netForward) > 0.000001F)
                     vertices = &flowing;
                 else
                     vertices = source.power.state == PowerOperationalState::underpowered ||
@@ -1915,8 +1916,8 @@ void Renderer::drawPowerConnections(const World& world,
             appendHudLine(*vertices, clippedStart, clippedEnd, 3.0F,
                           viewportWidth_, viewportHeight_);
             if (diagnostics && vertices == &flowing) {
-                glm::vec2 from = target->transient.powerParent == source.id ? clippedStart : clippedEnd;
-                glm::vec2 to = target->transient.powerParent == source.id ? clippedEnd : clippedStart;
+                glm::vec2 from = netForward > 0.0F ? clippedStart : clippedEnd;
+                glm::vec2 to = netForward > 0.0F ? clippedEnd : clippedStart;
                 if (glm::length(to - from) < 0.001F) continue;
                 const glm::vec2 direction = glm::normalize(to - from);
                 const glm::vec2 perpendicular{-direction.y, direction.x};
@@ -1981,7 +1982,7 @@ void Renderer::drawPowerDebugHud(const World& world,
     const Entity* nearest = nullptr;
     float nearestDistance = std::numeric_limits<float>::max();
     float generation = 0.0F, demand = 0.0F, supplied = 0.0F;
-    float buffered = 0.0F, bufferCapacity = 0.0F, stored = 0.0F, storageCapacity = 0.0F;
+    float stored = 0.0F, storageCapacity = 0.0F;
     float generatedTick = 0.0F, dischargedTick = 0.0F, consumedTick = 0.0F;
     float chargedTick = 0.0F, curtailedTick = 0.0F, sentTick = 0.0F, receivedTick = 0.0F;
     std::size_t devices = 0, powered = 0, underpowered = 0, offline = 0;
@@ -1989,11 +1990,10 @@ void Renderer::drawPowerDebugHud(const World& world,
     for (const Entity& entity : world.entities()) {
         if (entity.authority.owner != owner || !entity.power) continue;
         ++devices;
-        generation += entity.power.generation;
-        demand += entity.power.demand;
+        generation += entity.power.enabled && isOperational(entity) ? entity.power.generation : 0.0F;
+        demand += entity.power.enabled && entity.power.consumptionEnabled && isOperational(entity)
+                      ? entity.power.demand : 0.0F;
         supplied += entity.power.supplied;
-        buffered += entity.power.transitEnergy;
-        bufferCapacity += entity.power.transitCapacity;
         stored += entity.power.stored;
         storageCapacity += entity.power.storageCapacity;
         generatedTick += entity.transient.powerGeneratedLastTick;
@@ -2036,8 +2036,7 @@ void Renderer::drawPowerDebugHud(const World& world,
             std::to_string(underpowered) + "  OFFLINE " + std::to_string(offline),
         "GENERATION " + number(generation) + "  DEMAND " + number(demand) +
             "  SUPPLIED " + number(supplied),
-        "TRANSIT " + number(buffered) + "/" + number(bufferCapacity) +
-            "  STORAGE " + number(stored) + "/" + number(storageCapacity),
+        "STORAGE " + number(stored) + "/" + number(storageCapacity),
         "LAST TICK  GENERATED " + number(generatedTick) + "  DISCHARGED " +
             number(dischargedTick) + "  CONSUMED " + number(consumedTick),
         "LAST TICK  CHARGED " + number(chargedTick) + "  CURTAILED " +
@@ -2053,19 +2052,18 @@ void Renderer::drawPowerDebugHud(const World& world,
         lines.push_back("PRIORITY " + std::string{priority(nearest->power.priority)} +
                         "  BRANCH " + priority(nearest->transient.powerBranchPriority) +
                         (nearest->transient.powerFallbackActive ? "  FALLBACK ACTIVE" : "") +
-                        "  BUFFER " + number(nearest->power.transitEnergy) + "/" +
-                        number(nearest->power.transitCapacity) + "  OUT LIMIT " +
+                        "  OUT LIMIT " +
                         number(nearest->power.transferLimit));
         lines.push_back("LAST TICK  SENT " + number(nearest->transient.powerSentLastTick) +
                         "  RECEIVED " + number(nearest->transient.powerReceivedLastTick) +
                         "  PARENT " + std::to_string(nearest->transient.powerParent));
-        lines.push_back("ENERGY  START " + number(nearest->transient.powerBufferStartLastTick) +
-                        "  GEN " + number(nearest->transient.powerGeneratedLastTick) +
+        lines.push_back("ENERGY  GEN " + number(nearest->transient.powerGeneratedLastTick) +
                         "  DIS " + number(nearest->transient.powerDischargedLastTick) +
                         "  USE " + number(nearest->transient.powerConsumedLastTick));
         lines.push_back("ENERGY  CHARGE " + number(nearest->transient.powerChargedLastTick) +
                         "  CURTAIL " + number(nearest->transient.powerCurtailedLastTick) +
-                        "  END " + number(nearest->power.transitEnergy));
+                        (nearest->power.consumptionEnabled ? "  USE ON" : "  USE OFF") +
+                        (nearest->power.outputEnabled ? "  OUT ON" : "  OUT OFF"));
     }
     for (std::size_t index = 0; index < lines.size(); ++index)
         ui.label("power_debug.line." + std::to_string(index),

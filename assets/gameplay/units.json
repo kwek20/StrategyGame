@@ -33,6 +33,7 @@
       "movement": { "type": "flying", "domains": ["air"], "ignoreEntityObstacles": true, "speed": 8 },
       "vision": { "range": 14 },
       "cargo": { "capacity": 10 },
+      "repair": { "healthPerTick": 2, "batteryPerTick": 1 },
       "battery": {
         "capacity": 100,
         "movementDrainPerSecond": 0.5,

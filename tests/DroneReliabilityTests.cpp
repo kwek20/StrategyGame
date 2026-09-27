@@ -3,6 +3,8 @@
 #include "simulation/GameSession.hpp"
 
 #include <cmath>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <vector>
 
@@ -169,6 +171,111 @@ int strategyTestMain() {
     check(recoveringIdle && recoveringIdle->battery.returningToCharge &&
               recoveringIdle->battery.chargerTarget == idleHubId,
           "idle exhaustion starts charger return");
+
+    // A positive remainder below the next work-step cost must suspend the task, including
+    // when no powered charger is available, then resume it once charging succeeds.
+    idleRecovery.world().destroyEntity(idleEmptyId);
+    std::uint64_t recoverySequence = 1;
+    for (const auto order : {strategy::UnitOrderKind::construct, strategy::UnitOrderKind::repair}) {
+        const auto workerId = create(idleRecovery, definitions, "Fractional worker",
+                                     "construction_drone", {0, 6, 0}).id;
+        const auto targetId = create(idleRecovery, definitions, "Fractional work target",
+                                     "basic_generator", {0, 0, 0}).id;
+        auto* target = idleRecovery.world().findEntity(targetId);
+        if (order == strategy::UnitOrderKind::construct) {
+            target->construction.emplace();
+            target->construction.recipeId = "construct.basic_generator";
+            target->construction.powerRequired = 1000.0F;
+        } else {
+            target->health.current = target->health.maximum - 10.0F;
+        }
+        const float initialProgress = order == strategy::UnitOrderKind::construct
+                                          ? target->construction.powerProgress : target->health.current;
+        idleRecovery.world().findEntity(workerId)->battery.charge = 0.5F;
+        if (order == strategy::UnitOrderKind::construct)
+            check(idleRecovery.submit({1, recoverySequence++, strategy::ConstructCommand{workerId, targetId}}),
+                  "submit fractional construction");
+        else
+            check(idleRecovery.submit({1, recoverySequence++, strategy::RepairCommand{workerId, targetId}}),
+                  "submit fractional repair");
+        idleRecovery.advanceTicks();
+        const auto* worker = idleRecovery.world().findEntity(workerId);
+        target = idleRecovery.world().findEntity(targetId);
+        const float stalledProgress = order == strategy::UnitOrderKind::construct
+                                          ? target->construction.powerProgress : target->health.current;
+        check(worker->battery.returningToCharge && worker->battery.hasSuspendedOrder &&
+                  worker->battery.suspendedOrder == order && worker->battery.suspendedTarget == targetId &&
+                  worker->battery.charge == 0.5F && stalledProgress == initialProgress,
+              order == strategy::UnitOrderKind::construct ? "fractional construction suspends"
+                                                         : "fractional repair suspends");
+        check(idleRecovery.submit({1, recoverySequence++, strategy::SetPowerEnabledCommand{idleHubId, false}}),
+              "disable fractional worker charger");
+        idleRecovery.advanceTicks();
+        worker = idleRecovery.world().findEntity(workerId);
+        check(worker->unitControl.order == strategy::UnitOrderKind::stranded &&
+                  worker->battery.suspendedOrder == order && worker->battery.suspendedTarget == targetId,
+              "fractional work survives unavailable charger");
+        check(idleRecovery.submit({1, recoverySequence++, strategy::SetPowerEnabledCommand{idleHubId, true}}),
+              "restore fractional worker charger");
+        idleRecovery.advanceTicks(60);
+        worker = idleRecovery.world().findEntity(workerId);
+        target = idleRecovery.world().findEntity(targetId);
+        const float resumedProgress = order == strategy::UnitOrderKind::construct
+                                          ? target->construction.powerProgress : target->health.current;
+        check(!worker->battery.returningToCharge && !worker->battery.hasSuspendedOrder &&
+                  worker->unitControl.order == order && worker->unitControl.orderTarget == targetId &&
+                  resumedProgress > initialProgress,
+              order == strategy::UnitOrderKind::construct ? "fractional construction resumes"
+                                                         : "fractional repair resumes");
+        idleRecovery.world().destroyEntity(workerId);
+        idleRecovery.world().destroyEntity(targetId);
+    }
+
+    // Exercise data-driven rates without changing the production catalogue.
+    std::ifstream unitsFile("assets/gameplay/units.json");
+    std::string customUnits((std::istreambuf_iterator<char>(unitsFile)), {});
+    const auto repairBegin = customUnits.find("\"repair\": {");
+    const auto repairEnd = customUnits.find('}', repairBegin);
+    customUnits.replace(repairBegin, repairEnd - repairBegin + 1,
+                        R"("repair": {"healthPerTick":7,"batteryPerTick":2.5})");
+    const auto fixture = std::filesystem::temp_directory_path() / "strategy_custom_repair_units.json";
+    { std::ofstream output(fixture); output << customUnits; }
+    const strategy::DefinitionRegistry customDefinitions{fixture};
+    std::filesystem::remove(fixture);
+    strategy::GameSession customRepair{customDefinitions, 123U};
+    customRepair.replaceWorld({}, 123U);
+    const auto repairerId = create(customRepair, customDefinitions, "Repairer", "construction_drone", {0,6,0}).id;
+    const auto damagedId = create(customRepair, customDefinitions, "Damaged", "basic_generator", {0,0,0}).id;
+    auto* repairer = customRepair.world().findEntity(repairerId);
+    auto* damaged = customRepair.world().findEntity(damagedId);
+    damaged->health.current = damaged->health.maximum - 10;
+    repairer->battery.charge = 10;
+    check(customRepair.submit({1, 1, strategy::RepairCommand{repairerId, damagedId}}), "custom repair command");
+    customRepair.advanceTicks();
+    check(damaged->health.current == damaged->health.maximum - 3 && repairer->battery.charge == 7.5F,
+          "custom repair healing and battery cost");
+    customRepair.advanceTicks();
+    check(damaged->health.current == damaged->health.maximum && repairer->battery.charge == 5,
+          "final partial repair caps healing and charges full step");
+    customRepair.advanceTicks();
+    check(repairer->battery.charge == 5, "full target costs no battery");
+    damaged->health.current -= 10;
+    repairer->battery.charge = 2;
+    customRepair.advanceTicks();
+    check(repairer->battery.returningToCharge && repairer->battery.suspendedOrder == strategy::UnitOrderKind::repair &&
+          damaged->health.current == damaged->health.maximum - 10 && repairer->battery.charge == 2,
+          "custom unaffordable repair suspends without spending");
+    // A flying battery-powered entity without a repair definition cannot start or retain repair.
+    repairer->archetype = strategy::EntityArchetypeId{"worker"};
+    repairer->battery.returningToCharge = false;
+    repairer->unitControl.order = strategy::UnitOrderKind::idle;
+    check(customRepair.submit({1, 2, strategy::RepairCommand{repairerId, damagedId}}), "non-repair unit command queued");
+    customRepair.advanceTicks();
+    check(repairer->unitControl.order == strategy::UnitOrderKind::idle, "definition required for repair command");
+    repairer->unitControl.order = strategy::UnitOrderKind::repair;
+    repairer->unitControl.orderTarget = damagedId;
+    customRepair.advanceTicks();
+    check(repairer->unitControl.order == strategy::UnitOrderKind::idle, "definition required for restored repair order");
 
     if (!valid) std::cerr << "Drone and construction reliability validation failed\n";
     return valid ? 0 : 1;

@@ -73,7 +73,7 @@ UiDocument EntityHudLayout::actions(const EntityHudModel& model, int width, int 
                                     float uiScale) {
     UiDocument document;
     const UiLayout canvas(width, height, uiScale);
-    const std::size_t actionCount = std::min<std::size_t>(model.actions.size(), 9);
+    const std::size_t actionCount = model.actions.size();
     const UiRect panel = canvas.rect(UiAnchor::bottomLeft, 0, 0, 800, 300, 560, 260);
     const float inset = canvas.value(10);
     const float actionWidth = canvas.value(250);
@@ -90,7 +90,10 @@ UiDocument EntityHudLayout::actions(const EntityHudModel& model, int width, int 
     const float actionGap = canvas.value(8);
     const float actionCellWidth =
         (actionPanel.right - actionPanel.left - canvas.value(16) - actionGap * 2.0F) / 3.0F;
-    const float actionCellHeight = canvas.value(56);
+    const std::size_t actionRows = std::max<std::size_t>(1, (actionCount + actionColumns - 1) / actionColumns);
+    const float actionCellHeight = std::min(canvas.value(56),
+        (actionPanel.bottom - actionPanel.top - canvas.value(56) -
+         actionGap * static_cast<float>(actionRows - 1)) / static_cast<float>(actionRows));
     for (std::size_t i = 0; i < actionCount; ++i) {
         const std::size_t column = i % actionColumns;
         const std::size_t row = i / actionColumns;

@@ -11,7 +11,8 @@ Implementation order and milestone criteria are tracked in [the roadmap](docs/RO
 
 - Seeded, chunked terrain with distance-based level of detail
 - Height-, slope-, and noise-blended tiled terrain materials with distance detail fading
-- Deterministically generated wood, stone, and gold resources
+- Deterministically generated Scrap, Oil, and Uranium resource fields
+- Synthetic raw material produced by powered Synthetic Mines
 - Two players with independent countries, resources, and fog of war
 - Unit selection, movement, gathering, combat, and direct control
 - Buildings with health, vision, production queues, and upgrades
@@ -90,7 +91,7 @@ and text while checking for driver errors.
 - Right mouse drag: pan and rotate
 - Mouse wheel: zoom
 - Left click: select an entity
-- Left drag: box-select units and buildings
+- Left drag: box-select your own units (buildings are excluded)
 - Shift-click a selected type: remove that type from the selection
 - Double-click a controllable unit: enter third-person control
 - Right click: issue a movement or contextual order

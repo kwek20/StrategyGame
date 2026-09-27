@@ -198,9 +198,9 @@ void PowerGridSystem::simulate(World& world,
         entity.transient.powerParent = 0;
         entity.transient.powerRoot = 0;
         entity.transient.powerPrimaryRoot = 0;
-        entity.transient.powerBranchPriority = PowerPriority::medium;
+        entity.transient.powerBranchPriority = entity.power.priority;
         entity.transient.powerFallbackActive = false;
-        entity.transient.powerBufferStartLastTick = 0.0F;
+        entity.transient.powerIncomingLastTick.clear();
         entity.transient.powerGeneratedLastTick = 0.0F;
         entity.transient.powerDischargedLastTick = 0.0F;
         entity.transient.powerConsumedLastTick = 0.0F;
@@ -221,287 +221,238 @@ void PowerGridSystem::simulate(World& world,
         const PowerGridSnapshot& topology = snapshots_.at(player.id);
 
         for (const PowerGridComponent& topologyComponent : topology.components) {
-            std::vector<Entity*> component;
-            component.reserve(topologyComponent.nodes.size());
-            for (EntityId id : topologyComponent.nodes)
-                if (Entity* entity = world.findEntity(id)) component.push_back(entity);
-            if (component.empty()) continue;
-            const std::uint64_t gridId = topologyComponent.gridId;
-            std::map<EntityId, Entity*> devices;
-            std::map<EntityId, EntityId> parent;
-            std::map<EntityId, EntityId> root;
-            std::map<EntityId, std::uint32_t> depth;
-            std::map<EntityId, PowerPriority> branchPriority;
-            std::map<EntityId, float> incoming;
-            for (Entity* device : component) {
-                device->power.gridId = gridId;
-                devices[device->id] = device;
-                device->power.transitEnergy = std::clamp(
-                    device->power.transitEnergy, 0.0F, device->power.transitCapacity);
-                device->transient.powerBufferStartLastTick = device->power.transitEnergy;
+            // Only explicit storage survives a tick. These arrays are allocation budgets,
+            // never transit energy, and are discarded after this component is evaluated.
+            constexpr double epsilon = 0.000001;
+            const std::size_t count = topologyComponent.nodes.size();
+            const std::size_t none = count;
+            std::vector<Entity*> devices;
+            std::map<EntityId, std::size_t> index;
+            for (EntityId id : topologyComponent.nodes) {
+                index[id] = devices.size();
+                devices.push_back(world.findEntity(id));
+            }
+            std::vector<std::vector<std::size_t>> adjacent(count);
+            std::vector<double> generated(count), discharge(count), outputLeft(count), demandLeft(count), chargeLeft(count);
+            std::vector<bool> generator(count), reachable(count, false);
+            for (std::size_t i = 0; i < count; ++i) {
+                Entity& device = *devices[i];
+                device.power.gridId = topologyComponent.gridId;
+                const auto* type = definitions.archetype(device.archetype);
+                const auto* definition = type && type->powerDevice
+                    ? definitions.powerDevice(*type->powerDevice) : nullptr;
+                generator[i] = device.power.generation > 0.0F ||
+                    (definition && (definition->tags.contains("producer") ||
+                                    definition->tags.contains("generator")));
+                generated[i] = std::max(0.0F, device.power.generation);
+                demandLeft[i] = device.power.consumptionEnabled ? std::max(0.0F, device.power.demand) : 0.0;
+                outputLeft[i] = device.power.outputEnabled ? std::max(0.0F, device.power.transferLimit) : 0.0;
+                device.power.stored = std::clamp(device.power.stored, 0.0F, device.power.storageCapacity);
+                discharge[i] = definition && device.power.dischargeEnabled
+                    ? std::min(device.power.stored, definition->storageDischargePerTick) : 0.0;
+                chargeLeft[i] = definition
+                    ? std::min(definition->storageChargePerTick, device.power.storageCapacity - device.power.stored) : 0.0;
+                for (EntityId id : device.power.connections)
+                    if (const auto found = index.find(id); found != index.end())
+                        adjacent[i].push_back(found->second);
+                std::sort(adjacent[i].begin(), adjacent[i].end());
+                adjacent[i].erase(std::unique(adjacent[i].begin(), adjacent[i].end()), adjacent[i].end());
             }
 
-            const auto powerDefinition = [&](const Entity& device) {
-                const EntityArchetype* type = definitions.archetype(device.archetype);
-                return type && type->powerDevice ? definitions.powerDevice(*type->powerDevice)
-                                                 : nullptr;
+            struct Forest {
+                std::vector<std::size_t> parent, root, depth, order;
+                std::vector<std::vector<std::size_t>> children;
             };
-            const auto canDischarge = [&](const Entity& device) {
-                const PowerDeviceDefinition* definition = powerDefinition(device);
-                return device.power.dischargeEnabled && device.power.storageCapacity > 0.0F &&
-                       device.power.stored > 0.0F && definition &&
-                       definition->storageDischargePerTick > 0.0F;
-            };
-
-            // Establish a deterministic outward forest. Generated power and eligible discharging
-            // storage are roots; traversal prevents power from circulating back toward a source.
-            std::set<EntityId> roots;
-            for (const auto& [id, device] : devices)
-                if (device->power.generation > 0.0F || canDischarge(*device)) {
-                    parent[id] = 0;
-                    root[id] = id;
-                    depth[id] = 0;
-                    roots.insert(id);
-                }
-            const auto buildForest = [&]() {
-                parent.clear();
-                root.clear();
-                depth.clear();
-                for (EntityId id : roots) {
-                    parent[id] = 0;
-                    root[id] = id;
-                    depth[id] = 0;
-                }
-                // Relax until stable. Hop count wins first. Equal-hop candidates use direct
-                // horizontal distance to their generator, then stable root and parent IDs.
+            const auto forestFor = [&](const std::vector<double>& budget) {
+                Forest forest{std::vector<std::size_t>(count, none), std::vector<std::size_t>(count, none),
+                              std::vector<std::size_t>(count, none), {}, std::vector<std::vector<std::size_t>>(count)};
+                std::vector<double> cost(count, 0.0);
+                std::vector<std::vector<EntityId>> paths(count);
+                for (std::size_t i = 0; i < count; ++i)
+                    if (budget[i] > epsilon) {
+                        forest.root[i] = i;
+                        forest.depth[i] = 0;
+                        paths[i] = {devices[i]->id};
+                    }
                 bool changed = true;
                 while (changed) {
                     changed = false;
-                    for (const PowerGridNode& current : topology.nodes) {
-                        if (!devices.contains(current.entity) || !depth.contains(current.entity))
-                            continue;
-                        for (EntityId adjacent : current.connections) {
-                            if (!devices.contains(adjacent) || roots.contains(adjacent)) continue;
-                            const std::uint32_t candidateDepth = depth[current.entity] + 1;
-                            const EntityId candidateRoot = root[current.entity];
-                            const Entity* candidateGenerator = devices.at(candidateRoot);
-                            const Entity* candidateDevice = devices.at(adjacent);
-                            const float candidateX = candidateDevice->transform.position.x -
-                                                     candidateGenerator->transform.position.x;
-                            const float candidateZ = candidateDevice->transform.position.z -
-                                                     candidateGenerator->transform.position.z;
-                            const float candidateDistance = candidateX * candidateX + candidateZ * candidateZ;
-                            bool better = !depth.contains(adjacent) || candidateDepth < depth[adjacent];
-                            if (!better && depth.contains(adjacent) && candidateDepth == depth[adjacent]) {
-                                const Entity* existingGenerator = devices.at(root[adjacent]);
-                                const float existingX = candidateDevice->transform.position.x -
-                                                        existingGenerator->transform.position.x;
-                                const float existingZ = candidateDevice->transform.position.z -
-                                                        existingGenerator->transform.position.z;
-                                const float existingDistance = existingX * existingX + existingZ * existingZ;
-                                better = candidateDistance < existingDistance ||
-                                         (candidateDistance == existingDistance &&
-                                          (candidateRoot < root[adjacent] ||
-                                           (candidateRoot == root[adjacent] &&
-                                            current.entity < parent[adjacent])));
+                    for (std::size_t from = 0; from < count; ++from) {
+                        if (forest.root[from] == none || outputLeft[from] <= epsilon) continue;
+                        for (std::size_t to : adjacent[from]) {
+                            // Generators never accept incoming power, even after exhausting output.
+                            if (generator[to] || budget[to] > epsilon) continue;
+                            const auto depth = forest.depth[from] + 1;
+                            if (forest.root[to] != none && depth > forest.depth[to]) continue;
+                            const auto root = forest.root[from];
+                            const auto squared = [&](std::size_t left, std::size_t right) {
+                                const double x = static_cast<double>(devices[left]->transform.position.x) -
+                                                 devices[right]->transform.position.x;
+                                const double z = static_cast<double>(devices[left]->transform.position.z) -
+                                                 devices[right]->transform.position.z;
+                                return x * x + z * z;
+                            };
+                            const double candidateCost = cost[from] + squared(from, to);
+                            auto path = paths[from];
+                            path.push_back(devices[to]->id);
+                            bool better = forest.root[to] == none || depth < forest.depth[to];
+                            if (!better && depth == forest.depth[to]) {
+                                const double distance = squared(to, root);
+                                const double previousDistance = squared(to, forest.root[to]);
+                                better = distance < previousDistance ||
+                                    (distance == previousDistance &&
+                                     (devices[root]->id < devices[forest.root[to]]->id ||
+                                      (root == forest.root[to] &&
+                                       (candidateCost < cost[to] || (candidateCost == cost[to] && path < paths[to])))));
                             }
                             if (!better) continue;
-                            parent[adjacent] = current.entity;
-                            root[adjacent] = candidateRoot;
-                            depth[adjacent] = candidateDepth;
+                            forest.parent[to] = from;
+                            forest.root[to] = root;
+                            forest.depth[to] = depth;
+                            cost[to] = candidateCost;
+                            paths[to] = std::move(path);
                             changed = true;
                         }
                     }
                 }
-            };
-            buildForest();
-            const std::map<EntityId, EntityId> primaryRoot = root;
-
-            // A closer but deficient generator must not permanently strand consumers while a
-            // connected fallback territory has genuine surplus. Reassign deficient territories
-            // once, retaining stable hop/distance/ID ordering in the rebuilt forest.
-            if (roots.size() > 1) {
-                std::map<EntityId, float> availableByRoot;
-                std::map<EntityId, float> demandByRoot;
-                for (const auto& [id, device] : devices) {
-                    if (!root.contains(id)) continue;
-                    float available = device->power.transitEnergy;
-                    float space = std::max(0.0F, device->power.transitCapacity - available);
-                    const float generated = std::min(device->power.generation, space);
-                    available += generated;
-                    space -= generated;
-                    if (canDischarge(*device)) {
-                        const PowerDeviceDefinition* definition = powerDefinition(*device);
-                        available += std::min(
-                            {definition->storageDischargePerTick, device->power.stored, space});
-                    }
-                    availableByRoot[root[id]] += available;
-                    demandByRoot[root[id]] += device->power.demand;
+                for (std::size_t i = 0; i < count; ++i) {
+                    if (forest.root[i] == none) continue;
+                    forest.order.push_back(i);
+                    if (forest.parent[i] != none)
+                        forest.children[forest.parent[i]].push_back(i);
                 }
-                const bool hasSurplus = std::any_of(
-                    roots.begin(), roots.end(), [&](EntityId id) {
-                        return availableByRoot[id] > demandByRoot[id];
-                    });
-                if (hasSurplus) {
-                    std::vector<EntityId> deficient;
-                    for (EntityId id : roots)
-                        if (availableByRoot[id] < demandByRoot[id]) deficient.push_back(id);
-                    if (!deficient.empty() && deficient.size() < roots.size()) {
-                        for (EntityId id : deficient) roots.erase(id);
-                        buildForest();
-                    }
-                }
-            }
-
-            // Propagate the strongest downstream consumer priority toward each root. A relay's
-            // branch therefore represents the consumers behind it instead of hiding their needs.
-            for (const auto& [id, device] : devices) branchPriority[id] = device->power.priority;
-            std::vector<EntityId> priorityOrder = topologyComponent.nodes;
-            std::sort(priorityOrder.begin(), priorityOrder.end(), [&](EntityId left, EntityId right) {
-                const std::uint32_t leftDepth = depth.contains(left) ? depth[left] : 0;
-                const std::uint32_t rightDepth = depth.contains(right) ? depth[right] : 0;
-                return leftDepth != rightDepth ? leftDepth > rightDepth : left > right;
-            });
-            for (EntityId id : priorityOrder) {
-                if (!parent.contains(id) || parent[id] == 0) continue;
-                EntityId parentId = parent[id];
-                if (static_cast<unsigned>(branchPriority[id]) >
-                    static_cast<unsigned>(branchPriority[parentId]))
-                    branchPriority[parentId] = branchPriority[id];
-            }
-
-            // Production and storage discharge enter their local node before this tick's send.
-            for (auto& [id, device] : devices) {
-                if (root.contains(id)) device->transient.powerRoot = root[id];
-                if (primaryRoot.contains(id))
-                    device->transient.powerPrimaryRoot = primaryRoot.at(id);
-                device->transient.powerFallbackActive =
-                    root.contains(id) && primaryRoot.contains(id) && root[id] != primaryRoot.at(id);
-                if (parent.contains(id)) device->transient.powerParent = parent[id];
-                if (branchPriority.contains(id))
-                    device->transient.powerBranchPriority = branchPriority[id];
-            }
-            for (auto& [id, device] : devices) {
-                const float generationSpace = std::max(
-                    0.0F, device->power.transitCapacity - device->power.transitEnergy);
-                const float generated = std::min(device->power.generation, generationSpace);
-                device->power.transitEnergy += generated;
-                device->transient.powerGeneratedLastTick = generated;
-                device->transient.powerCurtailedLastTick = device->power.generation - generated;
-                if (canDischarge(*device)) {
-                    const PowerDeviceDefinition* definition = powerDefinition(*device);
-                    const float rate = definition->storageDischargePerTick;
-                    const float discharged = std::min(
-                        {rate, device->power.stored,
-                         device->power.transitCapacity - device->power.transitEnergy});
-                    device->power.stored -= discharged;
-                    device->power.transitEnergy += discharged;
-                    device->transient.powerDischargedLastTick = discharged;
-                }
-                const float consumed = std::min(device->power.demand,
-                                                device->power.transitEnergy);
-                device->power.transitEnergy -= consumed;
-                device->power.supplied = consumed;
-                device->transient.powerConsumedLastTick += consumed;
-            }
-
-            std::vector<EntityId> senders = topologyComponent.nodes;
-            std::sort(senders.begin(), senders.end(), [&](EntityId left, EntityId right) {
-                const auto leftDepth = depth.contains(left) ? depth.at(left)
-                                                            : std::numeric_limits<std::uint32_t>::max();
-                const auto rightDepth = depth.contains(right) ? depth.at(right)
-                                                              : std::numeric_limits<std::uint32_t>::max();
-                return leftDepth != rightDepth ? leftDepth < rightDepth : left < right;
-            });
-            for (EntityId sourceId : senders) {
-                Entity* source = devices.at(sourceId);
-                if (!depth.contains(sourceId) || source->power.transitEnergy <= 0.0F) continue;
-                float outputRemaining = source->power.transferLimit > 0.0F
-                                            ? source->power.transferLimit
-                                            : source->power.transitEnergy;
-                std::vector<EntityId> children;
-                for (const auto& [candidate, candidateParent] : parent)
-                    if (candidateParent == sourceId) children.push_back(candidate);
-                std::sort(children.begin(), children.end(), [&](EntityId left, EntityId right) {
-                    const PowerPriority leftPriority = branchPriority.at(left);
-                    const PowerPriority rightPriority = branchPriority.at(right);
-                    if (leftPriority != rightPriority)
-                        return static_cast<unsigned>(leftPriority) >
-                               static_cast<unsigned>(rightPriority);
-                    const Entity* generator = devices.at(root.at(sourceId));
-                    const glm::vec2 generatorPosition{generator->transform.position.x,
-                                                      generator->transform.position.z};
-                    const Entity* leftDevice = devices.at(left);
-                    const Entity* rightDevice = devices.at(right);
-                    const glm::vec2 leftOffset{
-                        leftDevice->transform.position.x - generatorPosition.x,
-                        leftDevice->transform.position.z - generatorPosition.y};
-                    const glm::vec2 rightOffset{
-                        rightDevice->transform.position.x - generatorPosition.x,
-                        rightDevice->transform.position.z - generatorPosition.y};
-                    const float leftDistance = glm::dot(leftOffset, leftOffset);
-                    const float rightDistance = glm::dot(rightOffset, rightOffset);
-                    return leftDistance != rightDistance ? leftDistance < rightDistance
-                                                         : left < right;
+                std::sort(forest.order.begin(), forest.order.end(), [&](auto left, auto right) {
+                    return forest.depth[left] != forest.depth[right] ? forest.depth[left] < forest.depth[right]
+                                                                     : devices[left]->id < devices[right]->id;
                 });
-                for (EntityId targetId : children) {
-                    if (outputRemaining <= 0.0F || source->power.transitEnergy <= 0.0F) break;
-                    Entity* target = devices.at(targetId);
-                    const auto edge = std::find_if(
-                        topology.edges.begin(), topology.edges.end(), [&](const PowerGridEdge& item) {
-                            const auto endpoints = std::minmax(sourceId, targetId);
-                            return item.first == endpoints.first && item.second == endpoints.second;
-                        });
-                    if (edge == topology.edges.end()) continue;
-                    const bool forwardsFurther = std::any_of(
-                        parent.begin(), parent.end(),
-                        [&](const auto& entry) { return entry.second == targetId; });
-                    const float desiredLevel = forwardsFurther || target->power.demand <= 0.0F
-                                                   ? target->power.transitCapacity
-                                                   : target->power.demand;
-                    const float targetSpace = std::max(
-                        0.0F, desiredLevel - target->power.transitEnergy - incoming[targetId]);
-                    const float amount = std::min(
-                        {source->power.transitEnergy, outputRemaining, targetSpace});
-                    if (amount <= 0.0F) continue;
-                    source->power.transitEnergy -= amount;
-                    outputRemaining -= amount;
-                    incoming[targetId] += amount;
-                    source->transient.powerSentLastTick += amount;
-                    target->transient.powerReceivedLastTick += amount;
+                return forest;
+            };
+
+            // Establish source reachability before budgets are spent, including passive relays.
+            std::vector<double> available(count);
+            for (std::size_t i = 0; i < count; ++i) available[i] = generated[i] + discharge[i];
+            const Forest initial = forestFor(available);
+            for (auto i : initial.order) {
+                reachable[i] = true;
+                devices[i]->transient.powerPrimaryRoot = devices[initial.root[i]]->id;
+                devices[i]->transient.powerRoot = devices[initial.root[i]]->id;
+                if (initial.parent[i] != none)
+                    devices[i]->transient.powerParent = devices[initial.parent[i]]->id;
+            }
+
+            const auto allocate = [&](std::vector<double>& budget, int priority, bool charging, bool storedSource) {
+                // Rebuild after exhausting a source or output bottleneck so another reachable
+                // generator can supply the remainder without receiving power through a generator.
+                while (true) {
+                    const Forest forest = forestFor(budget);
+                    std::vector<double> need(count, 0.0), localNeed(count, 0.0), incoming(count, 0.0);
+                    for (auto it = forest.order.rbegin(); it != forest.order.rend(); ++it) {
+                        const auto i = *it;
+                        double childrenNeed = 0.0;
+                        for (auto child : forest.children[i]) childrenNeed += need[child];
+                        localNeed[i] = charging ? chargeLeft[i]
+                            : (static_cast<int>(devices[i]->power.priority) >= priority || childrenNeed > epsilon)
+                                  ? demandLeft[i] : 0.0;
+                        // An upstream consumer must be supplied before any power passes through it.
+                        need[i] = localNeed[i] + std::min(outputLeft[i], childrenNeed);
+                    }
+                    double allocated = 0.0;
+                    for (auto i : forest.order) {
+                        Entity& device = *devices[i];
+                        if (forest.root[i] == i) {
+                            incoming[i] = std::min(budget[i], need[i]);
+                            budget[i] -= incoming[i];
+                            allocated += incoming[i];
+                            if (storedSource) {
+                                device.power.stored = std::max(0.0F, device.power.stored - static_cast<float>(incoming[i]));
+                                device.transient.powerDischargedLastTick += static_cast<float>(incoming[i]);
+                            } else {
+                                device.transient.powerGeneratedLastTick += static_cast<float>(incoming[i]);
+                            }
+                        }
+                        const double local = std::min(incoming[i], localNeed[i]);
+                        if (charging) {
+                            chargeLeft[i] -= local;
+                            device.power.stored += static_cast<float>(local);
+                            device.transient.powerChargedLastTick += static_cast<float>(local);
+                        } else {
+                            demandLeft[i] -= local;
+                            device.power.supplied += static_cast<float>(local);
+                            device.transient.powerConsumedLastTick += static_cast<float>(local);
+                        }
+                        if (incoming[i] > epsilon) {
+                            const auto rootId = devices[forest.root[i]]->id;
+                            device.transient.powerRoot = rootId;
+                            device.transient.powerParent = forest.parent[i] == none ? 0 : devices[forest.parent[i]]->id;
+                            device.transient.powerFallbackActive |= rootId != device.transient.powerPrimaryRoot;
+                            if (!charging)
+                                device.transient.powerBranchPriority = static_cast<PowerPriority>(std::max(
+                                    priority, static_cast<int>(device.transient.powerBranchPriority)));
+                        }
+                        double remaining = std::min(outputLeft[i], incoming[i] - local);
+                        // Equal shares among requesting connections in this priority tier.
+                        // Reassign unused shares rather than wasting output on satisfied branches.
+                        std::vector<double> sent(forest.children[i].size(), 0.0);
+                        while (remaining > epsilon) {
+                            std::size_t requesting = 0;
+                            for (std::size_t c = 0; c < sent.size(); ++c)
+                                if (need[forest.children[i][c]] - sent[c] > epsilon) ++requesting;
+                            if (requesting == 0) break;
+                            const double share = remaining / static_cast<double>(requesting);
+                            double moved = 0.0;
+                            for (std::size_t c = 0; c < sent.size(); ++c) {
+                                const double amount = std::min(share, std::max(0.0, need[forest.children[i][c]] - sent[c]));
+                                sent[c] += amount;
+                                moved += amount;
+                            }
+                            remaining -= moved;
+                            if (moved <= epsilon) break;
+                        }
+                        for (std::size_t c = 0; c < sent.size(); ++c) {
+                            const auto child = forest.children[i][c];
+                            const double amount = sent[c];
+                            incoming[child] += amount;
+                            outputLeft[i] = std::max(0.0, outputLeft[i] - amount);
+                            device.transient.powerSentLastTick += static_cast<float>(amount);
+                            devices[child]->transient.powerReceivedLastTick += static_cast<float>(amount);
+                            if (amount > epsilon)
+                                devices[child]->transient.powerIncomingLastTick.emplace_back(device.id, static_cast<float>(amount));
+                        }
+                    }
+                    if (allocated <= epsilon) break;
                 }
-            }
+            };
 
-            // Incoming energy may satisfy the receiving device now, but cannot be forwarded until
-            // the next tick because all sends above used only start-of-send buffers.
-            for (auto& [id, device] : devices) {
-                device->power.transitEnergy = std::min(
-                    device->power.transitCapacity, device->power.transitEnergy + incoming[id]);
-                const float unmet = std::max(0.0F, device->power.demand - device->power.supplied);
-                const float consumed = std::min(unmet, device->power.transitEnergy);
-                device->power.transitEnergy -= consumed;
-                device->power.supplied += consumed;
-                device->transient.powerConsumedLastTick += consumed;
-                device->power.state = device->power.demand <= 0.0F ||
-                                              device->power.supplied >= device->power.demand
-                                          ? PowerOperationalState::powered
-                                          : device->power.supplied > 0.0F
-                                                ? PowerOperationalState::underpowered
-                                                : PowerOperationalState::offline;
+            for (int priority = static_cast<int>(PowerPriority::high);
+                 priority >= static_cast<int>(PowerPriority::low); --priority) {
+                allocate(generated, priority, false, false);
+                allocate(discharge, priority, false, true);
             }
-
-            // Local surplus may charge storage only after consumer use and outward transfer.
-            for (auto& [id, device] : devices) {
-                if (device->power.storageCapacity <= 0.0F || device->power.transitEnergy <= 0.0F)
-                    continue;
-                const PowerDeviceDefinition* definition = powerDefinition(*device);
-                const float rate = definition ? definition->storageChargePerTick : 0.0F;
-                const float charged = std::min(
-                    {rate, device->power.transitEnergy,
-                     device->power.storageCapacity - device->power.stored});
-                device->power.transitEnergy -= charged;
-                device->power.stored += charged;
-                device->transient.powerChargedLastTick = charged;
+            // No storage charging while any enabled consumer in this grid lacks power.
+            if (std::all_of(demandLeft.begin(), demandLeft.end(), [&](double demand) { return demand <= epsilon; })) {
+                for (std::size_t i = 0; i < count; ++i) {
+                    const auto* type = definitions.archetype(devices[i]->archetype);
+                    const auto* definition = type && type->powerDevice ? definitions.powerDevice(*type->powerDevice) : nullptr;
+                    chargeLeft[i] = definition ? std::min<double>(definition->storageChargePerTick,
+                        devices[i]->power.storageCapacity - devices[i]->power.stored) : 0.0;
+                    // Never cycle discharged storage back into storage in the same tick.
+                    if (devices[i]->transient.powerDischargedLastTick > 0.0F) chargeLeft[i] = 0.0;
+                }
+                allocate(generated, 0, true, false);
+            }
+            for (std::size_t i = 0; i < count; ++i) {
+                auto& device = *devices[i];
+                // Repeated source contributions can round slightly above the float component limits.
+                device.power.supplied = std::clamp(device.power.supplied, 0.0F, device.power.demand);
+                device.power.stored = std::clamp(device.power.stored, 0.0F, device.power.storageCapacity);
+                device.transient.powerCurtailedLastTick = static_cast<float>(generated[i]);
+                if (!device.power.consumptionEnabled)
+                    device.power.state = PowerOperationalState::offline;
+                else if (device.power.demand > 0.0F)
+                    device.power.state = demandLeft[i] <= epsilon ? PowerOperationalState::powered
+                        : device.power.supplied > 0.0F ? PowerOperationalState::underpowered : PowerOperationalState::offline;
+                else
+                    device.power.state = reachable[i] ? PowerOperationalState::powered : PowerOperationalState::offline;
             }
         }
     }

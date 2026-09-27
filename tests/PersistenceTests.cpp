@@ -82,8 +82,8 @@ int strategyTestMain() {
     entity.power.supplied = 3.0F;
     entity.power.stored = 15.0F;
     entity.power.storageCapacity = 50.0F;
-    entity.power.transitEnergy = 7.0F;
-    entity.power.transitCapacity = 25.0F;
+    entity.power.consumptionEnabled = false;
+    entity.power.outputEnabled = false;
     entity.power.connectionRange = 24.0F;
     entity.power.transferLimit = 10.0F;
     entity.power.maximumConnections = 4;
@@ -151,7 +151,11 @@ int strategyTestMain() {
         std::ifstream saved{savePath};
         const std::string contents((std::istreambuf_iterator<char>(saved)),
                                    std::istreambuf_iterator<char>());
-        valid = valid && contents.find("\"formatVersion\": 1") != std::string::npos;
+        valid = valid && contents.find("\"formatVersion\": 1") != std::string::npos &&
+                contents.find("transitEnergy") == std::string::npos &&
+                contents.find("transitCapacity") == std::string::npos &&
+                contents.find("consumptionEnabled") != std::string::npos &&
+                contents.find("outputEnabled") != std::string::npos;
     }
     const strategy::SaveData loaded = strategy::SaveGame::read(savePath);
     valid = valid && loaded.terrainSeed == 424242U && loaded.mapChunksPerSide == 10 &&
@@ -200,8 +204,8 @@ int strategyTestMain() {
             !loaded.entities[0].power.enabled &&
             !loaded.entities[0].power.dischargeEnabled &&
             loaded.entities[0].power.priority == strategy::PowerPriority::high &&
-            loaded.entities[0].power.transitEnergy == 7.0F &&
-            loaded.entities[0].power.transitCapacity == 25.0F &&
+            !loaded.entities[0].power.consumptionEnabled &&
+            !loaded.entities[0].power.outputEnabled &&
             loaded.entities[0].power.state == strategy::PowerOperationalState::underpowered;
     const auto loadedDrone = std::find_if(loaded.entities.begin(), loaded.entities.end(),
         [droneId](const strategy::Entity& candidate) { return candidate.id == droneId; });

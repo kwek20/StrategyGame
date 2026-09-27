@@ -39,7 +39,7 @@ struct PowerGridSnapshot {
 };
 
 // Owns the authoritative power-topology cache and performs one power allocation step.
-// Power advances at most one connection per tick through finite device transit buffers.
+// Allocates across the whole grid each tick; only explicit storage retains energy.
 class PowerGridSystem final {
   public:
     void simulate(World& world,

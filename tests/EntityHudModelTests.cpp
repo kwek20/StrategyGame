@@ -197,6 +197,21 @@ int strategyTestMain() {
     valid = valid && mixedPanel && mixedPanel->bounds.left == 0.0F &&
             mixedPanel->bounds.bottom == 720.0F;
 
+    // Power controls must remain reachable after production actions fill the original nine slots.
+    auto expanded = interactive;
+    for (int i = 0; i < 12; ++i) {
+        strategy::HudActionModel extra;
+        extra.id = "power.extra." + std::to_string(i);
+        extra.enabled = true;
+        expanded.actions.push_back(extra);
+    }
+    const auto expandedLayout = strategy::EntityHudLayout::actions(expanded, 1280, 720);
+    for (const auto& item : expanded.actions) {
+        const auto* button = expandedLayout.find(strategy::EntityHudLayout::actionElementId(item.id));
+        const auto* tooltip = expandedLayout.find("entity.tooltip");
+        valid = valid && button && tooltip && button->bounds.bottom <= tooltip->bounds.top &&
+                button->bounds.bottom > button->bounds.top;
+    }
     if (!valid) std::cerr << "Entity HUD component presentation failed\n";
     return valid ? 0 : 1;
 }

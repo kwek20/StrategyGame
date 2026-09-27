@@ -6,7 +6,6 @@
       "production": 10,
       "consumption": 0,
       "storage": 200,
-      "transitCapacity": 200,
       "connectionRange": 24,
       "transferLimit": 50,
       "chargePerTick": 2,
@@ -18,14 +17,12 @@
     "basic_generator": {
       "tags": ["producer", "generator"],
       "production": 20,
-      "transitCapacity": 100,
       "connectionRange": 24,
       "transferLimit": 20,
       "maximumConnections": 4
     },
     "basic_relay": {
       "tags": ["relay", "grid"],
-      "transitCapacity": 100,
       "connectionRange": 24,
       "transferLimit": 50,
       "maximumConnections": 6
@@ -33,7 +30,6 @@
     "basic_charger": {
       "tags": ["consumer", "charger"],
       "consumption": 5,
-      "transitCapacity": 20,
       "chargePerTick": 2,
       "chargingSlots": 1,
       "connectionRange": 24,
@@ -43,7 +39,6 @@
     "alloy_processor": {
       "tags": ["consumer", "processor"],
       "consumption": 8,
-      "transitCapacity": 32,
       "priority": "medium",
       "connectionRange": 24,
       "transferLimit": 10,
@@ -52,7 +47,6 @@
     "fuel_processor": {
       "tags": ["consumer", "processor"],
       "consumption": 8,
-      "transitCapacity": 32,
       "priority": "medium",
       "connectionRange": 24,
       "transferLimit": 10,
@@ -61,7 +55,6 @@
     "synthetic_mine": {
       "tags": ["consumer", "extractor", "synthetic"],
       "consumption": 6,
-      "transitCapacity": 24,
       "priority": "low",
       "connectionRange": 24,
       "transferLimit": 8,
@@ -70,7 +63,6 @@
     "resource_extractor": {
       "tags": ["consumer", "extractor", "economic"],
       "consumption": 6,
-      "transitCapacity": 24,
       "connectionRange": 24,
       "transferLimit": 8,
       "maximumConnections": 2
@@ -78,7 +70,6 @@
     "drone_factory": {
       "tags": ["consumer", "factory", "production"],
       "consumption": 12,
-      "transitCapacity": 48,
       "connectionRange": 24,
       "transferLimit": 14,
       "maximumConnections": 2
@@ -86,7 +77,6 @@
     "sensor_tower": {
       "tags": ["consumer", "sensor", "information"],
       "consumption": 4,
-      "transitCapacity": 16,
       "connectionRange": 24,
       "transferLimit": 6,
       "maximumConnections": 2

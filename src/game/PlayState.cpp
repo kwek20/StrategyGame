@@ -307,7 +307,21 @@ EntityHudModel PlayState::buildEntityActionHudModel(const Entity& selected,
         toggle.enabled = true;
         hud.actions.push_back(std::move(toggle));
 
-        if (selected.power.generation > 0.0F && selected.power.storageCapacity > 0.0F) {
+        for (const bool consumption : {true, false}) {
+            HudActionModel control;
+            const bool enabled = consumption ? selected.power.consumptionEnabled : selected.power.outputEnabled;
+            control.id = consumption ? "power.consumption" : "power.output";
+            control.name = Text::get(consumption
+                ? (enabled ? "power.action.consumption.disable" : "power.action.consumption.enable")
+                : (enabled ? "power.action.output.disable" : "power.action.output.enable"));
+            control.description = Text::get(consumption ? "power.action.consumption.description"
+                                                       : "power.action.output.description");
+            control.icon = enabled ? "status_powered" : "status_unpowered";
+            control.cost = Text::get("entity_hud.free");
+            control.enabled = true;
+            hud.actions.push_back(std::move(control));
+        }
+        if (selected.power.storageCapacity > 0.0F) {
             HudActionModel discharge;
             discharge.id = "power.discharge";
             discharge.name = selected.power.dischargeEnabled
@@ -695,6 +709,18 @@ void PlayState::handleEvent(const SDL_Event& event) {
                     for (EntityId id : targets)
                         session_.submit({localPlayer_, nextCommandSequence_++,
                                          SetPowerEnabledCommand{id, enabled}});
+                    return;
+                }
+                if (*actionId == "power.consumption" || *actionId == "power.output") {
+                    const bool consumption = *actionId == "power.consumption";
+                    const bool enabled = selectedHall->power &&
+                        !(consumption ? selectedHall->power.consumptionEnabled : selectedHall->power.outputEnabled);
+                    for (EntityId id : targets) {
+                        if (consumption)
+                            session_.submit({localPlayer_, nextCommandSequence_++, SetPowerConsumptionEnabledCommand{id, enabled}});
+                        else
+                            session_.submit({localPlayer_, nextCommandSequence_++, SetPowerOutputEnabledCommand{id, enabled}});
+                    }
                     return;
                 }
                 if (*actionId == "power.discharge") {
