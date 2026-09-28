@@ -539,11 +539,11 @@ int strategyTestMain() {
         const float edgeChunk = static_cast<float>(strategy::Terrain::chunkCellCount) *
                                 strategy::Terrain::spacing;
         const glm::vec2 delta = sized.startingAnchors()[0] - sized.startingAnchors()[1];
-        return glm::length(delta) >= map.extent() * 0.60F &&
+        return glm::length(delta) >= map.extent() * gameplay.matchRules().minimumOpponentSeparationNormalized &&
                std::all_of(sized.startingAnchors().begin(), sized.startingAnchors().end(),
                            [&](glm::vec2 anchor) {
-                               return std::abs(anchor.x) <= map.halfExtent() - edgeChunk &&
-                                      std::abs(anchor.y) <= map.halfExtent() - edgeChunk;
+                               return std::abs(anchor.x) <= map.halfExtent() - edgeChunk * 2.0F &&
+                                      std::abs(anchor.y) <= map.halfExtent() - edgeChunk * 2.0F;
                            });
     };
     valid = valid && verifyOpposingStarts(10) && verifyOpposingStarts(20);
@@ -709,23 +709,23 @@ int strategyTestMain() {
                              strategy::Terrain::spacing;
     const strategy::MapArea sessionMap{session.mapChunksPerSide()};
     for (const glm::vec2 base : session.startingAnchors()) {
-        // A selected anchor and the headquarters footprint must remain outside every edge chunk.
-        valid = valid && std::abs(base.x) <= sessionMap.halfExtent() - chunkWidth &&
-                std::abs(base.y) <= sessionMap.halfExtent() - chunkWidth;
+        // Starting anchors reserve two complete border chunks on both axes.
+        valid = valid && std::abs(base.x) <= sessionMap.halfExtent() - chunkWidth * 2.0F &&
+                std::abs(base.y) <= sessionMap.halfExtent() - chunkWidth * 2.0F;
         std::size_t nearbyScrap = 0;
         float nearbyCapacity = 0.0F;
         for (const strategy::Entity& resource : session.world().entities()) {
             if (!resource.resource || resource.resource.type != "scrap") continue;
             const glm::vec2 position{resource.transform.position.x, resource.transform.position.z};
-            if (glm::distance(position, base) <= 42.01F) {
+            if (glm::distance(position, base) <= 55.0F) {
                 ++nearbyScrap;
                 nearbyCapacity += resource.resource.remaining;
             }
         }
-        valid = valid && nearbyScrap >= 3 && nearbyCapacity >= 480.0F;
+        valid = valid && nearbyScrap >= 2 && nearbyCapacity >= 600.0F;
     }
     const glm::vec2 anchorDelta = session.startingAnchors()[0] - session.startingAnchors()[1];
-    valid = valid && glm::length(anchorDelta) >= sessionMap.extent() * 0.65F;
+    valid = valid && glm::length(anchorDelta) >= sessionMap.extent() * gameplay.matchRules().minimumOpponentSeparationNormalized;
 
     strategy::GameSession configuredMatch{gameplay, 123U, "spain", "japan",
         "unassigned", "unassigned", 20, 2.0F, 1.5F};
@@ -744,7 +744,7 @@ int strategyTestMain() {
     for (const strategy::Entity& entity : defaultWaterMatch.world().entities())
         if (entity.resource && entity.resource.type == "scrap")
             ++defaultScrapCount;
-    valid = valid && defaultScrapCount >= 6;
+    valid = valid && defaultScrapCount >= 4;
     const auto playerOneStart = playerOneUnit->transform.position;
     valid = session.submit({1, 1, strategy::PossessUnitCommand{playerTwoUnit->id}}) && valid;
     valid = session.submit({1, 2, strategy::PossessUnitCommand{playerOneUnit->id}}) && valid;
@@ -1149,7 +1149,8 @@ int strategyTestMain() {
                            });
     };
     valid = valid && repeatedGatherSession.players().find(1)->resources.at("alloy") > 0.0F &&
-            repeatedGatherSession.world().findEntity(loopSourceId)->resource.remaining < 160.0F &&
+            repeatedGatherSession.world().findEntity(loopSourceId)->resource.remaining <
+                gameplay.resource(strategy::ResourceArchetypeId{"scrap_node_medium"})->resourceCapacity &&
             repeatedGatherSession.world().findEntity(loopDroneId)->gatherer.sourceTarget == loopSourceId &&
             hasResourceEvent(strategy::ResourceEventKind::gatheringStarted) &&
             hasResourceEvent(strategy::ResourceEventKind::deliveryCompleted) &&

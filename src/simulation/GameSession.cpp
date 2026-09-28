@@ -249,7 +249,7 @@ GameSession::GameSession(const DefinitionRegistry& definitions,
                     static_cast<float>(attempt) / std::max(1U, maximumAttempts));
             startingRegions = selectStartingRegions(
                 terrain_, gameplay_, mapChunksPerSide_, players_.players().size(),
-                terrainSeed_);
+                terrainSeed_, generationProgress);
             break;
         } catch (const std::runtime_error&) {
             if (attempt + 1 == maximumAttempts)

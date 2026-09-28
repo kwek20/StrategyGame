@@ -2,6 +2,8 @@
 
 #include "gameplay/DefinitionRegistry.hpp"
 #include "world/MapArea.hpp"
+#include "simulation/DeterministicRandom.hpp"
+#include "world/GenerationProgress.hpp"
 
 #include <algorithm>
 #include <array>
@@ -19,12 +21,14 @@ struct StartingRegion {
     float terrainQuality{0.0F};
     int landComponent{-1};
     std::uint32_t connectedLandCells{0};
+    std::uint32_t selectionAttempt{0}; // Diagnostic only; not saved gameplay state.
 };
 
 inline std::vector<StartingRegion> selectStartingRegions(
     const Terrain& terrain, const DefinitionRegistry& definitions,
     std::uint32_t mapChunksPerSide, std::size_t playerCount,
-    std::uint32_t selectionSeed = 0x5EED1234U) {
+    std::uint32_t selectionSeed = 0x5EED1234U,
+    WorldGenerationProgress* progress = nullptr) {
     if (playerCount == 0) return {};
     const MatchRulesDefinition& rules = definitions.matchRules();
     const MapArea map{mapChunksPerSide};
@@ -113,17 +117,30 @@ inline std::vector<StartingRegion> selectStartingRegions(
     if (!foundHeadquarters)
         throw std::runtime_error("Starting-region selection requires a headquarters definition");
 
-    std::vector<StartingRegion> candidates;
-    // Excluding chunk 0 and chunk N-1 on both axes is a hard rule, independent of map size.
-    for (std::uint32_t chunkZ = 1; chunkZ + 1 < map.chunksPerSide(); ++chunkZ) {
-        for (std::uint32_t chunkX = 1; chunkX + 1 < map.chunksPerSide(); ++chunkX) {
+    if (map.chunksPerSide() < 10 || playerCount > 4)
+        throw std::runtime_error("Corner starts require at least 10 chunks per side and at most four players");
+    constexpr std::array<glm::ivec2, 4> corners{{{0, 0}, {1, 1}, {1, 0}, {0, 1}}};
+    std::vector<StartingRegion> selected;
+    for (std::size_t player = 0; player < playerCount; ++player) {
+        bool placed = false;
+        for (std::uint32_t attempt = 0; attempt < 256 && !placed; ++attempt) {
+            DeterministicRandom random(selectionSeed + attempt, "starting.positions");
+            const int offsetX = 2 + random.next() % 4;
+            const int offsetZ = 2 + random.next() % 4;
+            const int chunkX = corners[player].x ? map.chunksPerSide() - 1 - offsetX : offsetX;
+            const int chunkZ = corners[player].y ? map.chunksPerSide() - 1 - offsetZ : offsetZ;
+            const auto record = [&](const char* result) {
+                if (progress) progress->diagnostic("start player=" + std::to_string(player + 1) +
+                    " seed=" + std::to_string(selectionSeed + attempt) + " attempt=" + std::to_string(attempt + 1) +
+                    " chunk=" + std::to_string(chunkX) + "," + std::to_string(chunkZ) + " " + result);
+            };
             const glm::vec2 anchor{
                 -map.halfExtent() + (static_cast<float>(chunkX) + 0.5F) * chunkWidth,
                 -map.halfExtent() + (static_cast<float>(chunkZ) + 0.5F) * chunkWidth};
             const TerrainPlacementResult placement = terrain.evaluatePlacement(
                 anchor.x, anchor.y, headquartersFootprint,
                 {terrainPlacementBit(TerrainPlacementDomain::land), false});
-            if (!placement.valid()) continue;
+            if (!placement.valid()) { record("rejected: headquarters terrain"); continue; }
             const int anchorX = std::clamp(
                 static_cast<int>((anchor.x + map.halfExtent()) / Terrain::semanticCellSize),
                 0, connectivitySide - 1);
@@ -133,7 +150,7 @@ inline std::vector<StartingRegion> selectStartingRegions(
             const int landComponent = landComponents[connectivityIndex(anchorX, anchorZ)];
             if (landComponent < 0 ||
                 componentSizes[static_cast<std::size_t>(landComponent)] < minimumConnectedLand)
-                continue;
+                { record("rejected: insufficient connected land"); continue; }
 
             float quality = std::max(0.0F, 10.0F - placement.fit.slopeDegrees);
             std::uint32_t usableSamples = 0;
@@ -148,118 +165,24 @@ inline std::vector<StartingRegion> selectStartingRegions(
                             movementDomainBit(MovementDomain::land)) > 0.0F)
                         ++usableSamples;
                 }
-            if (usableSamples < 24) continue;
+            if (usableSamples < 24) { record("rejected: insufficient surrounding land"); continue; }
             quality += static_cast<float>(usableSamples) * 0.25F;
 
-            std::uint32_t resourceSites = 0;
-            for (int direction = 0; direction < 16; ++direction) {
-                const float angle = static_cast<float>(direction) * 0.39269908F;
-                for (const float distance : {18.0F, 26.0F, 34.0F}) {
-                    const glm::vec2 point = anchor +
-                        glm::vec2{std::cos(angle), std::sin(angle)} * distance;
-                    const TerrainSample& sample = terrain.sampleAt(point.x, point.y);
-                    if (map.contains(point, chunkWidth) && !sample.submerged &&
-                        sample.buildability != TerrainBuildabilityClass::forbidden &&
-                        sample.slopeDegrees <= 18.0F)
-                        ++resourceSites;
-                }
-            }
-            if (resourceSites < 8) continue;
-            quality += static_cast<float>(resourceSites) * 0.1F;
-            candidates.push_back({anchor,
-                                  {static_cast<int>(chunkX), static_cast<int>(chunkZ)},
-                                  quality, landComponent,
-                                  componentSizes[static_cast<std::size_t>(landComponent)]});
+            if (std::any_of(selected.begin(), selected.end(), [&](const StartingRegion& previous) {
+                    return previous.landComponent != landComponent ||
+                        glm::distance(previous.anchor, anchor) <
+                            map.extent() * rules.minimumOpponentSeparationNormalized;
+                })) { record("rejected: opponent separation or connectivity"); continue; }
+            record("accepted");
+            if (progress) progress->diagnostic("accepted position=" + std::to_string(anchor.x) + "," +
+                std::to_string(anchor.y) + " landComponent=" + std::to_string(landComponent));
+            selected.push_back({anchor, {chunkX, chunkZ}, quality, landComponent,
+                                componentSizes[static_cast<std::size_t>(landComponent)], attempt});
+            placed = true;
         }
-    }
-    if (candidates.size() < playerCount)
-        throw std::runtime_error("Terrain does not contain enough valid interior starting regions");
-
-    const auto betterRegion = [](const StartingRegion& left, const StartingRegion& right) {
-        if (left.terrainQuality != right.terrainQuality)
-            return left.terrainQuality > right.terrainQuality;
-        if (left.chunk.y != right.chunk.y) return left.chunk.y < right.chunk.y;
-        return left.chunk.x < right.chunk.x;
-    };
-    if (playerCount == 1) {
-        const auto choice = std::max_element(candidates.begin(), candidates.end(),
-            [&](const auto& left, const auto& right) { return betterRegion(right, left); });
-        return {*choice};
-    }
-
-    struct EligiblePair {
-        std::size_t left{0}, right{0};
-        float distanceSquared{0.0F};
-        float quality{0.0F};
-        std::uint32_t tieBreaker{0};
-    };
-    const float minimumSeparation =
-        map.extent() * rules.minimumOpponentSeparationNormalized;
-    const float minimumSeparationSquared = minimumSeparation * minimumSeparation;
-    std::vector<EligiblePair> eligiblePairs;
-    const auto pairHash = [selectionSeed](const StartingRegion& left,
-                                          const StartingRegion& right) {
-        std::uint32_t value = selectionSeed ^ 0xA341316CU;
-        for (const int coordinate : {left.chunk.x, left.chunk.y,
-                                     right.chunk.x, right.chunk.y}) {
-            value ^= static_cast<std::uint32_t>(coordinate) + 0x9E3779B9U +
-                     (value << 6U) + (value >> 2U);
-            value ^= value >> 16U;
-            value *= 0x7FEB352DU;
-        }
-        return value ^ (value >> 15U);
-    };
-    for (std::size_t left = 0; left < candidates.size(); ++left)
-        for (std::size_t right = left + 1; right < candidates.size(); ++right) {
-            if (candidates[left].landComponent != candidates[right].landComponent) continue;
-            const glm::vec2 delta = candidates[left].anchor - candidates[right].anchor;
-            const float distanceSquared = glm::dot(delta, delta);
-            if (distanceSquared < minimumSeparationSquared) continue;
-            const float quality = candidates[left].terrainQuality + candidates[right].terrainQuality;
-            eligiblePairs.push_back({left, right, distanceSquared, quality,
-                                     pairHash(candidates[left], candidates[right])});
-        }
-    if (eligiblePairs.empty())
-        throw std::runtime_error(
-            "Terrain has no reachable starting pair with the required map-relative separation");
-
-    // Maximize neutral territory after enforcing the map-relative minimum. Terrain quality
-    // breaks distance ties; the seed only resolves otherwise equivalent choices and player-side
-    // assignment, avoiding a fixed player-one corner without weakening opening resource space.
-    const EligiblePair* chosenPair = nullptr;
-    for (const EligiblePair& pair : eligiblePairs) {
-        if (!chosenPair || pair.distanceSquared > chosenPair->distanceSquared ||
-            (pair.distanceSquared == chosenPair->distanceSquared &&
-             (pair.quality > chosenPair->quality ||
-              (pair.quality == chosenPair->quality &&
-               pair.tieBreaker < chosenPair->tieBreaker))))
-            chosenPair = &pair;
-    }
-
-    std::vector<StartingRegion> selected;
-    const bool reversePlayers = (chosenPair->tieBreaker & 1U) != 0U;
-    selected.push_back(candidates[reversePlayers ? chosenPair->right : chosenPair->left]);
-    selected.push_back(candidates[reversePlayers ? chosenPair->left : chosenPair->right]);
-    while (selected.size() < playerCount) {
-        const StartingRegion* choice = nullptr;
-        float choiceDistance = -1.0F;
-        for (const StartingRegion& candidate : candidates) {
-            if (std::any_of(selected.begin(), selected.end(), [&](const auto& region) {
-                    return region.chunk == candidate.chunk;
-                }) || candidate.landComponent != selected.front().landComponent) continue;
-            float nearest = std::numeric_limits<float>::max();
-            for (const StartingRegion& existing : selected) {
-                const glm::vec2 delta = candidate.anchor - existing.anchor;
-                nearest = std::min(nearest, glm::dot(delta, delta));
-            }
-            if (!choice || nearest > choiceDistance ||
-                (nearest == choiceDistance && betterRegion(candidate, *choice))) {
-                choice = &candidate;
-                choiceDistance = nearest;
-            }
-        }
-        if (!choice) throw std::runtime_error("Could not separate all player starting regions");
-        selected.push_back(*choice);
+        if (!placed)
+            throw std::runtime_error("Unable to place player " + std::to_string(player + 1) +
+                                     " in its assigned corner after 256 attempts");
     }
     return selected;
 }

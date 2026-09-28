@@ -638,8 +638,8 @@ void DefinitionRegistry::loadResourceFields(const std::filesystem::path& path) {
         settings.placementAttemptsPerField =
             generation["placementAttemptsPerNode"].GetUint() * settings.maximumNodesPerField;
         settings.minimumNodeSpacing = requiredNumber(generation, "minimumNodeSpacing", context);
-        settings.startingNodesPerPlayer = generation.HasMember("startingNodesPerPlayer")
-            ? generation["startingNodesPerPlayer"].GetUint() : 0U;
+        settings.startingRequiredCapacity = generation.HasMember("startingRequiredCapacity")
+            ? requiredNumber(generation, "startingRequiredCapacity", context) : 0.0F;
         settings.startingMinimumDistance = generation.HasMember("startingMinimumDistance")
             ? generation["startingMinimumDistance"].GetFloat() : 0.0F;
         settings.startingMaximumDistance = generation.HasMember("startingMaximumDistance")
@@ -681,7 +681,8 @@ void DefinitionRegistry::loadResourceFields(const std::filesystem::path& path) {
             settings.minimumNodesPerField == 0 ||
             settings.minimumNodesPerField > settings.maximumNodesPerField ||
             settings.placementAttemptsPerField == 0 || settings.minimumNodeSpacing <= 0.0F ||
-            (settings.startingNodesPerPlayer > 0 &&
+            settings.startingRequiredCapacity < 0.0F ||
+            (settings.startingRequiredCapacity > 0 &&
              (settings.startingMinimumDistance <= 0.0F ||
               settings.startingMaximumDistance < settings.startingMinimumDistance)))
             throw std::runtime_error(context + " has invalid generation settings");

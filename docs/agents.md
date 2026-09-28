@@ -225,8 +225,12 @@ quality tests. Vegetation expansion and tuning remain deferred as well.
 - Main menu uses `Play` to open match setup.
 - Match setup exposes seed, country choices, map size, starting-resource scale, and resource
   abundance. Current named map sizes are 10x10, 15x15, and 20x20 chunks.
-- Player starts are selected deterministically from valid interior regions. Opponents remain at
-  least half a map side apart, while the match seed varies the chosen high-quality pair.
+- Player starts use assigned opposite corners, independently drawing 2–5 inward chunk offsets
+  from the same initial seed, then seed + 1 on failure (256 attempts/player). First valid starts
+  remain fixed; terrain, usable land, connectivity and half-map-side separation are checked.
+  Resource suitability is a separate pass: ordinary fields first, then top up nearby reachable
+  Scrap to 600 within radius/travel cost 55, adding nodes at distances 16–55 if needed.
+  See docs/TERRAIN_GENERATION.md section 7 for limits and failure behavior.
 - Terrain is seeded and chunked, with LOD and blended materials.
 - Resources and presentation-only vegetation use named deterministic streams.
 - Decorative grass, flowers, weeds, reeds, and stones are configured in
@@ -445,6 +449,23 @@ Then proceed to Milestone 6, the first combat slice.
 
 ## Tests and recent validation
 
+- Generation diagnostics are buffered on the generation worker and emitted as one
+  `world_generation` log entry when the generation future finishes (success, cancellation or
+  failure), in `gamedata/logs/strategy-game.log`. They include candidate chunks/seeds and rejection
+  reasons, accepted starts, opening capacity before/after top-ups, resource-layout attempts,
+  compensation additions, and final per-player travel-band capacities. No per-tick logging.
+- For opening-generation changes, start with `cmake --build build/debug --config Debug --target
+  opening_generation_tests -j 8`, then `ctest --test-dir build/debug -C Debug -R
+  '^opening_generation$' --output-on-failure`. The focused target reuses one terrain, constructs
+  no GameSessions, and takes about 5.4 seconds in Debug. It checks assigned corners, independent
+  retry seeds, stable accepted starts, deterministic selection, resource-independent starts,
+  reuse of sufficient existing Scrap and filling a forced shortfall. Labels: `fast;generation`;
+  timeout: 30 seconds. Full multi-seed and gameplay suites remain broader milestone checks.
+- 2026-09-28 corner-start/resource separation: Debug build passed. All 17 other CTest targets
+  passed after the compensation update; the game-system executable then passed after replacing
+  obsolete start-distance/node-count expectations and a hard-coded 160-Scrap depletion check.
+  Multi-seed coverage checks assigned corners, preservation of player one's accepted start,
+  deterministic layouts, fixed node capacities, and at least 600 nearby Scrap per player.
 - Resource nodes now start with their archetype's fixed capacity, including starting and fairness
   compensation nodes. Random capacity multipliers are removed from field definitions and generation.
   Existing saves retain their remaining resource amounts; new-map layouts can change because the

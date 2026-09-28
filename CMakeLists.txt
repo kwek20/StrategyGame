@@ -289,6 +289,12 @@ if(STRATEGY_BUILD_TESTS)
     set_tests_properties(resource_field_generation
         PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
+    add_executable(opening_generation_tests tests/OpeningGenerationTests.cpp)
+    strategy_target(opening_generation_tests)
+    target_link_libraries(opening_generation_tests PRIVATE strategy_gameplay strategy_world)
+    add_test(NAME opening_generation COMMAND opening_generation_tests)
+    set_tests_properties(opening_generation PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "fast;generation" TIMEOUT 30)
+
     add_executable(entity_hud_model_tests tests/EntityHudModelTests.cpp)
     strategy_target(entity_hud_model_tests)
     target_link_libraries(entity_hud_model_tests PRIVATE strategy_ui_model)
@@ -355,6 +361,7 @@ if(STRATEGY_BUILD_TESTS)
         spatial_shape_tests
         vegetation_tests
         resource_field_generation_tests
+        opening_generation_tests
         entity_hud_model_tests
         definition_registry_tests
         persistence_tests

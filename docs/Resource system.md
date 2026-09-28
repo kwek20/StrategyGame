@@ -12,6 +12,12 @@ Raw resources are not intended to become additional stockpiled currencies. They 
 
 ## Map-generation contract
 
+Player starts are accepted independently of resources. Ordinary fields are generated first for
+each resource family. Existing reachable Scrap within 55 units (and terrain travel cost 55)
+counts toward a 600-unit opening minimum. Only a shortfall causes additional nodes to be placed;
+there is no unconditional three-node starting field. Added nodes use normal terrain/collision
+rules and fixed capacities, so the minimum can be exceeded. Resource placement never moves starts.
+
 Natural raw resources are generated as fields containing nodes:
 
 - A generated resource position creates a resource field rather than one deposit.

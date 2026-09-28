@@ -303,8 +303,11 @@ int Application::run() {
                 if (cancelled) generationProgress.requestCancellation();
                 std::this_thread::sleep_for(std::chrono::milliseconds(2));
             }
+            bool generationLogged = false;
             try {
                 GameSession prepared = generation.get();
+                logger_->info("world_generation", "Generation completed\n" + generationProgress.diagnostics());
+                generationLogged = true;
                 if (cancelled) {
                     if (!running_) break;
                     continue;
@@ -339,11 +342,12 @@ int Application::run() {
                 showLoading(0.98F, Text::get("loading.finalize"));
                 stateContext_->audio.setAmbient(AudioCue::gameAmbient);
             } catch (const WorldGenerationCancelled&) {
-                logger_->info("state", "World generation cancelled");
+                logger_->info("world_generation", "Generation cancelled\n" + generationProgress.diagnostics());
                 if (!running_) break;
                 continue;
             } catch (const std::exception& error) {
-                logger_->error("world_generation", error.what());
+                logger_->error("world_generation", std::string{error.what()} +
+                    (generationLogged ? std::string{} : "\n" + generationProgress.diagnostics()));
                 states_->replace<MatchSetupState>();
             }
         } else if (request == StateRequest::buildMap) {

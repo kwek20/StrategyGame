@@ -14,7 +14,7 @@
         "regionScale": 82, "regionThreshold": 0.43,
         "fieldsPerSquareChunk": [0.055, 0.085], "fieldRadius": [4.0, 10.0],
         "nodesPerField": [2, 7], "placementAttemptsPerNode": 13, "minimumNodeSpacing": 2.7,
-        "startingNodesPerPlayer": 3, "startingMinimumDistance": 16, "startingMaximumDistance": 24,
+        "startingRequiredCapacity": 600, "startingMinimumDistance": 16, "startingMaximumDistance": 55,
         "fairness": { "travelCostBands": [55, 120, 420], "minimumCapacityRatio": 0.68,
           "minimumComparedCapacity": 160, "minimumReachableCapacity": 480,
           "maximumLayoutAttempts": 5, "compensationNodesPerAttempt": 1 }

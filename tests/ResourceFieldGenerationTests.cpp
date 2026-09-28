@@ -58,6 +58,13 @@ int strategyTestMain() {
         const strategy::Terrain terrain{seed};
         const std::vector<glm::vec2> starts = anchors(terrain, definitions, 10, seed);
         const strategy::MapArea startMap{10};
+        const auto regions = strategy::selectStartingRegions(terrain, definitions, 10, 2, seed);
+        const auto solo = strategy::selectStartingRegions(terrain, definitions, 10, 1, seed);
+        valid = valid && regions[0].anchor == solo[0].anchor &&
+                regions[0].chunk.x >= 2 && regions[0].chunk.x <= 5 &&
+                regions[0].chunk.y >= 2 && regions[0].chunk.y <= 5 &&
+                regions[1].chunk.x >= 4 && regions[1].chunk.x <= 7 &&
+                regions[1].chunk.y >= 4 && regions[1].chunk.y <= 7;
         valid = valid && starts.size() == 2 &&
                 glm::distance(starts[0], starts[1]) + 0.001F >=
                     startMap.extent() *
@@ -91,6 +98,15 @@ int strategyTestMain() {
             valid = valid && belongsToField;
         }
         signatures.insert(std::move(signature));
+        for (const auto start : starts) {
+            float nearbyScrap = 0.0F;
+            for (const auto& node : first.nodes) {
+                const auto* type = definitions.resource(node.archetype);
+                if (type && type->resourceType == "scrap" && glm::distance(start, node.position) <= 55.0F)
+                    nearbyScrap += type->resourceCapacity;
+            }
+            valid = valid && nearbyScrap >= 600.0F;
+        }
         for (const auto& entity : firstWorld.entities()) {
             const auto* type = definitions.resource(
                 strategy::ResourceArchetypeId{entity.archetype.value});

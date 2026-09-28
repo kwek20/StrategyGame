@@ -38,11 +38,12 @@ The current `Terrain` implementation:
 
 The current resource generator:
 
-- Gives each resource a fixed number of mirrored cluster pairs.
-- Samples cluster centers inside one fixed extent.
-- Uses the same global minimum/maximum height and slope rules for all resources.
-- Creates a fixed number of members with a uniformly random offset inside a square.
-- Places guaranteed mirrored opening Scrap nodes near both headquarters.
+- Generates non-mirrored fields using resource-specific biome, height, moisture and slope rules.
+- Scales ordinary field frequency with playable map area and resource abundance.
+- Samples variable node counts and weighted size variants within field radii; capacities are fixed
+  by node archetype, and nodes cannot overlap.
+- Counts existing nearby reachable Scrap before adding enough nodes to meet the opening minimum.
+- Applies travel-cost fairness compensation and bounded resource-layout retries after placement.
 
 The current vegetation generator is definition-backed and deterministic, but it is a separate
 height filter rather than a consumer of biome and surface data. Dry, aged, and fresh short grass
@@ -378,28 +379,31 @@ amphibious units, aircraft, and drones.
 
 ### 7. Select fair starting regions
 
-The fixed opposite-edge formula has been replaced by deterministic candidate-region selection.
-Every candidate is centered in an interior chunk; the outermost chunk ring is never eligible.
-Opponent separation scales with playable map size: starts must be separated by at least the
-configured fraction of the map's side length (currently one half). For two players, the generator
-maximizes separation among valid pairs after applying that minimum, with terrain quality breaking
-distance ties. The seed resolves otherwise equivalent choices and which player receives which side,
-so player one is not tied to a fixed corner. For larger future matches, each
-additional player maximizes its distance to its nearest already-selected opponent; team-aware
-minimum separation rules will be added when matches support more than two players.
+Starting positions are selected before resources. Each player is assigned a different corner:
+top-left, bottom-right, top-right, then bottom-left. Current matches use the first two.
+Maps must have at least 10 chunks per side; the selector supports at most four players.
 
-A valid starting region requires:
+Each player independently starts with the same selection seed. An attempt initializes the
+"starting.positions" random stream with seed + attempt and draws X and Z offsets from 2–5
+chunks inward from its corner. This reserves two complete border chunks. Accept the first valid
+chunk centre, retaining earlier players' positions. There are at most 256 attempts per player.
 
-- Sufficient connected buildable area for the command hub and early buildings.
-- A minimum amount of traversable land around the base.
-- An accessible opening Scrap field within the target travel-time band.
-- Comparable expansion opportunities and access to common resources.
-- No direct line through impassable terrain that traps the player.
-- A minimum distance from water, cliffs, and map boundaries unless the map preset permits them.
+Validation requires a valid headquarters footprint, a sufficiently large connected land component,
+at least 24 usable surrounding samples out of 49, land connectivity to accepted starts, and at
+least half a map side of separation from every accepted start. Resource suitability is not checked.
+Terrain quality is diagnostic only; there is no pair ranking or backtracking. If placement fails,
+the existing bounded terrain retry may restart selection on a new terrain.
 
-Generate many candidates, score them deterministically, then select a pair with strong separation
-and a bounded fairness difference. Do not mirror terrain or resources. After selection, run an
-opening-playability validator and retry using the next deterministic candidate pair if required.
+Resource generation then checks opening supply independently. For each resource family, ordinary
+fields are generated first. Scrap requires at least 600 raw units within 55 world units and a
+terrain travel cost of at most 55 from each start. Existing nearby reachable nodes count first.
+If insufficient, add fixed-capacity nodes 16–55 units from the anchor, respecting normal terrain,
+spacing and collision rules, up to 4096 candidate attempts per player. Whole nodes may overshoot
+the minimum. Existing starts are never moved to improve resources. Broader fairness compensation
+and resource-layout retries follow. Exhausted opening-resource placement reports a resource error;
+it does not regenerate terrain. Oil and Uranium have no separate opening minimum.
+Fairness compensation searches the full failed travel band and allows up to 32 passes per layout
+attempt, so asymmetric corner starts can receive additional deposits without relocating players.
 
 ### 8. Generate resource regions and fields
 
@@ -467,9 +471,9 @@ Each resource-field definition should support field distribution separately from
       { "node": "scrap_medium", "weight": 3 },
       { "node": "scrap_large", "weight": 1 }
     ],
-    "startingNodesPerPlayer": 3,
+    "startingRequiredCapacity": 600,
     "startingMinimumDistance": 16,
-    "startingMaximumDistance": 28
+    "startingMaximumDistance": 55
   }
 }
 ```

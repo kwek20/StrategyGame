@@ -4,6 +4,7 @@
 #include <atomic>
 #include <cstdint>
 #include <stdexcept>
+#include <string>
 
 namespace strategy {
 
@@ -32,6 +33,9 @@ class WorldGenerationCancelled final : public std::runtime_error {
 // The worker only writes atomics. The loading screen may read them from the render thread.
 class WorldGenerationProgress final {
   public:
+    // Worker-only writes; read only after the generation future is ready.
+    void diagnostic(std::string line) { diagnostics_ += line + '\n'; }
+    [[nodiscard]] const std::string& diagnostics() const { return diagnostics_; }
     void report(WorldGenerationPhase phase, float progress) {
         phase_.store(phase, std::memory_order_release);
         progressPermille_.store(static_cast<std::uint32_t>(
@@ -53,6 +57,7 @@ class WorldGenerationProgress final {
     }
 
   private:
+    std::string diagnostics_;
     std::atomic<WorldGenerationPhase> phase_{WorldGenerationPhase::terrainFields};
     std::atomic<std::uint32_t> progressPermille_{0};
     std::atomic<bool> cancelled_{false};
