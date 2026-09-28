@@ -27,6 +27,9 @@ acyclic routes from sources over those connections.
 - Intermediate buildings may consume power and forward the remainder.
 - Connections require operational, enabled endpoints of the same owner, overlapping connection
   ranges, and free slots. Invalid commands return explicit failure reasons.
+- Placing a connectable power building automatically creates one reciprocal link to the nearest
+  eligible operational friendly device in mutual range. The planned endpoint may be unfinished;
+  the link joins active topology when construction completes. Distance ties use stable entity ID.
 - Disabling a device removes it from active topology but retains physical links. Destruction
   immediately removes reciprocal links; rebuilding does not recreate them.
 
@@ -150,8 +153,8 @@ Root/parent identify the most recently used allocation route; primary root recor
 route, and fallback indicates use of another source.
 
 F7 is mutually exclusive with F4 terrain and F6 water diagnostics. Definition-backed green
-terrain-following range discs include relay poles. Placement shows one proposed link to the
-nearest valid endpoint; it does not automatically connect anything.
+terrain-following range discs include relay poles. Placement shows the nearest valid endpoint that
+will be connected automatically when the building is placed.
 
 Focused tests cover immediate multi-hop delivery, transfer limits including zero, equal sharing,
 upstream consumption, independent switches, priority, storage ordering/rates/capacity, source-only

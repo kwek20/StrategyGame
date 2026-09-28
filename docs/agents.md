@@ -375,6 +375,10 @@ Then proceed to Milestone 6, the first combat slice.
   non-operational/disabled endpoints, duplicates, zero/full connection capacity, range failures,
   and missing links return explicit reasons. `World::destroyEntity` removes reciprocal links
   immediately; rebuilding an entity does not restore destroyed links.
+- Placing a connectable power building creates one reciprocal link immediately to the nearest
+  operational, enabled, same-owner device with a free slot inside both endpoints' range. The new
+  planned building may be unfinished; topology activates it on completion. Equal distances use
+  the lower stable entity ID. Cancellation/destruction removes the reciprocal link normally.
 - Power state is `powered`, `underpowered`, or `offline` (`notApplicable` exists for non-devices).
   Storage participation is not a separate operational-state enum.
 - The top HUD shows power as supply/demand. Clicking it opens the power overlay. Grid connections,
@@ -382,8 +386,8 @@ Then proceed to Milestone 6, the first combat slice.
 - F7 opens a mutually exclusive power-debug view with directional latest-tick flow, node priority,
   root/parent ownership, consumption/output controls, storage, transfer limits, definition-backed connection
   ranges, and aggregate grid diagnostics. Ranges are translucent green terrain-following discs for
-  every device, including poles. A power-device placement preview draws only one green proposed
-  link to its nearest valid endpoint, or nothing when no endpoint is currently connectable.
+  every device, including poles. A power-device placement preview draws the one green link that
+  placement will create to its nearest valid endpoint, or nothing when none is connectable.
 - Grid topology and allocation are persisted and checksummed. Network transport is still future work.
 - Storage charges only after all enabled consumer demand in its component is supplied, subject to
   finite charge/discharge/storage/output limits. A store that discharged cannot recharge that tick.
@@ -449,6 +453,10 @@ Then proceed to Milestone 6, the first combat slice.
 
 ## Tests and recent validation
 
+- Terrain's world-space vertical scale is 60 units. Resource nodes and their debug geometry use
+  `Terrain::heightAt`, so they remain seated on the doubled terrain height. Biome and resource
+  height ranges remain normalized. Gameplay slope checks and navigation rise costs use the stable
+  authored 30-unit slope scale, decoupling availability from visual vertical exaggeration.
 - Generation diagnostics are buffered on the generation worker and emitted as one
   `world_generation` log entry when the generation future finishes (success, cancellation or
   failure), in `gamedata/logs/strategy-game.log`. They include candidate chunks/seeds and rejection

@@ -188,7 +188,9 @@ class Terrain final {
     static constexpr int cellCount = chunksPerSide * chunkCellCount;
     static constexpr int vertexCount = cellCount + 1;
     static constexpr float spacing = 0.375F;
-    static constexpr float heightScale = 30.0F;
+    static constexpr float heightScale = 60.0F;
+    static constexpr float gameplaySlopeHeightScale = 30.0F;
+    static constexpr float gameplaySlopeFactor = gameplaySlopeHeightScale / heightScale;
     static constexpr float semanticCellSize = 2.0F;
     static constexpr int semanticCellCount =
         static_cast<int>(cellCount * spacing / semanticCellSize);

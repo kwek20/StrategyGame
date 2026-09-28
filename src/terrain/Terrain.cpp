@@ -548,7 +548,7 @@ void Terrain::applyHydrology(std::uint32_t seed, const TerrainGeneratorDefinitio
                 const float slopeDegrees = glm::degrees(std::atan(
                     std::abs(elevation[static_cast<std::size_t>(nodes[nodeIndex - 1])] -
                              elevation[static_cast<std::size_t>(nodes[nodeIndex + 1])]) *
-                    heightScale / run));
+                    gameplaySlopeHeightScale / run));
                 const float meanderWeight =
                     1.0F - smoothstep(0.0F, settings.meanderMaximumSlopeDegrees, slopeDegrees);
                 position += normal * randomSigned(static_cast<std::uint32_t>(node), 0xAD90777DU) *
@@ -953,10 +953,10 @@ void Terrain::generateSemantics(std::uint32_t seed,
             sample.wetland = wetlandFlags_[vertexIndex] != 0;
             const float dx = (heightAt(worldX + semanticCellSize, worldZ) -
                               heightAt(worldX - semanticCellSize, worldZ)) /
-                             (2.0F * semanticCellSize);
+                             (2.0F * semanticCellSize) * gameplaySlopeFactor;
             const float dz = (heightAt(worldX, worldZ + semanticCellSize) -
                               heightAt(worldX, worldZ - semanticCellSize)) /
-                             (2.0F * semanticCellSize);
+                             (2.0F * semanticCellSize) * gameplaySlopeFactor;
             sample.slopeDegrees = glm::degrees(std::atan(std::sqrt(dx * dx + dz * dz)));
             const TerrainRegionalFields fields = fieldGenerator.sample(worldX, worldZ);
             sample.continentalness = fields.continentalness;
@@ -1422,12 +1422,13 @@ FootprintFit Terrain::fitFootprint(float worldX,
         total += height;
     }
     const float run = std::max(radius * 2.0F, spacing);
-    const float slope = glm::degrees(std::atan2(maximum - minimum, run));
+    const float slope = glm::degrees(std::atan2(
+        (maximum - minimum) * gameplaySlopeFactor, run));
     const float sampleStep = std::max(radius * 0.5F, spacing);
     const float dx = (heightAt(worldX + sampleStep, worldZ) - heightAt(worldX - sampleStep, worldZ)) /
-                     (2.0F * sampleStep);
+                     (2.0F * sampleStep) * gameplaySlopeFactor;
     const float dz = (heightAt(worldX, worldZ + sampleStep) - heightAt(worldX, worldZ - sampleStep)) /
-                     (2.0F * sampleStep);
+                     (2.0F * sampleStep) * gameplaySlopeFactor;
     return {total / static_cast<float>(offsets.size()), slope, {dx, dz}, slope <= maximumSlopeDegrees};
 }
 
@@ -1465,8 +1466,9 @@ FootprintFit Terrain::fitFootprint(float worldX, float worldZ,
                                    ? glm::vec2{(xh * zz - zh * xz) / determinant,
                                                (zh * xx - xh * xz) / determinant}
                                    : glm::vec2{0.0F};
-    const float slope = glm::degrees(std::atan(glm::length(gradient)));
-    return {total / static_cast<float>(std::max<std::size_t>(count, 1)), slope, gradient,
+    const glm::vec2 gameplayGradient = gradient * gameplaySlopeFactor;
+    const float slope = glm::degrees(std::atan(glm::length(gameplayGradient)));
+    return {total / static_cast<float>(std::max<std::size_t>(count, 1)), slope, gameplayGradient,
             slope <= footprint.maximumTiltDegrees};
 }
 

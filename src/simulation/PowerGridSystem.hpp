@@ -60,6 +60,11 @@ class PowerGridSystem final {
                                                 PlayerId player,
                                                 EntityId source,
                                                 EntityId target);
+    // Placement may create a reciprocal link before the new building is operational. The nearest
+    // eligible operational device wins; stable entity IDs resolve equal-distance ties.
+    [[nodiscard]] EntityId connectNearestForPlacement(World& world,
+                                                      PlayerId player,
+                                                      EntityId source);
 
     [[nodiscard]] const PowerGridSnapshot* snapshot(PlayerId player) const;
 

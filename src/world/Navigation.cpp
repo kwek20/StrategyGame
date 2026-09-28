@@ -344,7 +344,8 @@ std::vector<glm::vec3> Navigation::pathFromGoals(
                 if (direction[0] && direction[1] &&
                     (!passable[indexOf(x + direction[0], z)] || !passable[indexOf(x, z + direction[1])])) continue;
                 const int next = indexOf(nx, nz);
-                const float rise = std::abs(heights_[item.node] - heights_[next]);
+                const float rise = std::abs(heights_[item.node] - heights_[next]) *
+                                   Terrain::gameplaySlopeFactor;
                 const float distance = direction[0] && direction[1] ? 1.4142F : 1.0F;
                 const float traversalCost =
                     (movementCost(item.node, profile.domains) +

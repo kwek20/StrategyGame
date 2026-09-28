@@ -347,7 +347,8 @@ bool suitable(const Terrain& terrain, const MatchRulesDefinition& rules,
     const float step = Terrain::spacing * 2.0F;
     const float dx = terrain.heightAt(x + step, z) - terrain.heightAt(x - step, z);
     const float dz = terrain.heightAt(x, z + step) - terrain.heightAt(x, z - step);
-    return std::sqrt(dx * dx + dz * dz) < rules.maximumResourceSlope;
+    return std::sqrt(dx * dx + dz * dz) * Terrain::gameplaySlopeFactor <
+           rules.maximumResourceSlope;
 }
 
 bool clearOfStarts(const MatchRulesDefinition& rules,

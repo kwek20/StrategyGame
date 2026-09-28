@@ -228,6 +228,8 @@ as each drone work step runs. Resource gathering remains a separate cargo-and-de
 Power is infrastructure capacity expressed through a spatial network, not a stockpiled economic
 resource. Generators supply connected consumers through pylons or relay stations. Connections are
 visible and vulnerable.
+Placing a connectable power building inside mutual range automatically links it to the nearest
+eligible operational friendly device. The placement preview shows that exact proposed link.
 
 Power is calculated across the whole connected grid every tick, with no transit buffers or
 per-hop delay. Consumers are served high, medium, then low priority. Within a priority tier,

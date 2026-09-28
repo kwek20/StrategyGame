@@ -182,7 +182,8 @@ inline std::vector<StartingRegion> selectStartingRegions(
         }
         if (!placed)
             throw std::runtime_error("Unable to place player " + std::to_string(player + 1) +
-                                     " in its assigned corner after 256 attempts");
+                                     " in its assigned corner after 256 attempts (selection seed " +
+                                     std::to_string(selectionSeed) + ")");
     }
     return selected;
 }

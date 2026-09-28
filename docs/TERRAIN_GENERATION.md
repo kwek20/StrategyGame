@@ -24,8 +24,11 @@ The current `Terrain` implementation:
 - Uses stable authored curves without per-seed normalization or authored min/max clipping. The
   normalized storage range is only a representation boundary; the generator is free to use all of
   it.
-- Uses a 30-world-unit vertical scale so mountain silhouettes and valleys remain legible against
+- Uses a 60-world-unit vertical scale so mountain silhouettes and valleys remain legible against
   the 480-world-unit maximum map extent.
+- Biome, placement, resource, and navigation slope decisions retain the authored 30-unit gameplay
+  slope scale. Vertical exaggeration therefore changes presentation height without removing valid
+  starts or deposits. Normalized height bands are unchanged.
 - Samples expensive regional noise on a configurable coarse grid, then interpolates it across the
   render heightfield. This makes large-scale forms continuous and keeps loading work bounded.
 - Runs explicit post-processing passes: broad plain leveling, smaller-radius hill rounding, light

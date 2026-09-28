@@ -225,6 +225,33 @@ int strategyTestMain() {
         return 1;
     }
 
+    World placementWorld;
+    PowerGridSystem placementSystem;
+    Entity& placementSource = addPowerDevice(placementWorld, 1, 0.0F, 0.0F);
+    const EntityId placementSourceId = placementSource.id;
+    placementSource.construction.emplace();
+    placementSource.construction.state = BuildingLifecycleState::planned;
+    placementSource.transform.position = {0.0F, 0.0F, 0.0F};
+    Entity& farther = addPowerDevice(placementWorld, 1, 10.0F, 0.0F);
+    const EntityId fartherId = farther.id;
+    farther.transform.position = {12.0F, 0.0F, 0.0F};
+    Entity& nearer = addPowerDevice(placementWorld, 1, 10.0F, 0.0F);
+    const EntityId nearerId = nearer.id;
+    nearer.transform.position = {6.0F, 0.0F, 0.0F};
+    Entity& enemy = addPowerDevice(placementWorld, 2, 10.0F, 0.0F);
+    const EntityId placementEnemyId = enemy.id;
+    enemy.transform.position = {2.0F, 0.0F, 0.0F};
+    if (placementSystem.connectNearestForPlacement(placementWorld, 1, placementSourceId) != nearerId ||
+        placementWorld.findEntity(placementSourceId)->power.connections !=
+            std::vector<EntityId>{nearerId} ||
+        placementWorld.findEntity(nearerId)->power.connections !=
+            std::vector<EntityId>{placementSourceId} ||
+        !placementWorld.findEntity(fartherId)->power.connections.empty() ||
+        !placementWorld.findEntity(placementEnemyId)->power.connections.empty()) {
+        std::cerr << "Placed power building did not connect to its nearest eligible device\n";
+        return 1;
+    }
+
     World propagationWorld;
     PowerGridSystem propagationSystem;
     std::vector<PowerEvent> propagationEvents;

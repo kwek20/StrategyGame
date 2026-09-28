@@ -777,6 +777,10 @@ void GameSession::apply(const PlayerCommand& command) {
                 building.construction.powerRequired = recipe->constructionPower;
                 building.construction.state = BuildingLifecycleState::planned;
                 if (building.health) building.health.current = 0.0F;
+                if (const EntityId connected = powerGridSystem_.connectNearestForPlacement(
+                        world_, command.player, building.id); connected != 0)
+                    powerEvents_.push_back({PowerEventKind::connectionCreated, tick_, command.player,
+                                            building.id, connected, 0});
                 std::vector<EntityId> builders = payload.builders;
                 if (builders.empty())
                     builders.push_back(payload.entity);
