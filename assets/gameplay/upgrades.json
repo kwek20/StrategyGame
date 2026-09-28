@@ -1,9 +1,10 @@
 {
   "version": 1,
   "upgrades": [
-    { "id": "building.town_center_level_2", "researchRecipe": "town_center.research_level_2", "maximumLevel": 1, "prerequisites": [], "allowedResearchers": ["town_center"], "nameKey": "upgrade.town_center_level_2", "icon": "upgrade_town_center_level_2", "modifiers": [] },
+    { "id": "building.town_center_level_2", "descriptionKey": "upgrade.town_center_level_2.description", "researchRecipe": "town_center.research_level_2", "maximumLevel": 1, "prerequisites": [], "allowedResearchers": ["town_center"], "nameKey": "upgrade.town_center_level_2", "icon": "upgrade_town_center_level_2", "modifiers": [] },
     {
       "id": "production.efficient_training",
+      "descriptionKey": "upgrade.efficient_training.description",
       "researchRecipe": "research.efficient_training",
       "maximumLevel": 1,
       "prerequisites": [],

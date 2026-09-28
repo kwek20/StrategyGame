@@ -17,10 +17,11 @@ bool rejects(const std::filesystem::path& units,
              const std::filesystem::path& recipes,
              const std::filesystem::path& countries,
              const std::string& expected,
-             const std::filesystem::path& power = "assets/gameplay/power.json") {
+             const std::filesystem::path& power = "assets/gameplay/power.json",
+             const std::filesystem::path& buildings = "assets/gameplay/buildings.json") {
     try {
         const strategy::DefinitionRegistry registry{units,
-                                                    "assets/gameplay/buildings.json",
+                                                    buildings,
                                                     "assets/gameplay/resource_nodes.json",
                                                     "assets/gameplay/resources.json",
                                                     "assets/gameplay/weapons.json",
@@ -94,6 +95,24 @@ int strategyTestMain() {
     writeFixture(invalidUnits, noBattery);
     valid = rejects(invalidUnits, "assets/gameplay/recipes.json", "assets/gameplay/countries.json",
                     "invalid repair values") && valid;
+    std::ifstream buildingsInput("assets/gameplay/buildings.json");
+    const std::string buildingsText((std::istreambuf_iterator<char>(buildingsInput)), {});
+    const auto invalidBuildings = directory / "invalid-buildings.json";
+    const std::string emptyRequirements = "\"requiredUpgrades\": []";
+    for (const std::string requirement : {"42", "\"missing.upgrade\"", "\"production.efficient_training\",\"production.efficient_training\""}) {
+        auto text = buildingsText;
+        text.replace(text.find(emptyRequirements), emptyRequirements.size(), "\"requiredUpgrades\": [" + requirement + "]");
+        writeFixture(invalidBuildings, text);
+        valid = rejects("assets/gameplay/units.json", "assets/gameplay/recipes.json", "assets/gameplay/countries.json",
+            requirement == "42" ? "invalid requiredUpgrades" : requirement == "\"missing.upgrade\"" ? "unknown required upgrade" : "duplicate requiredUpgrades",
+            "assets/gameplay/power.json", invalidBuildings) && valid;
+    }
+    auto missingDescription = buildingsText;
+    const auto descriptionBegin = missingDescription.find("\"descriptionKey\":");
+    missingDescription.erase(descriptionBegin, missingDescription.find(',', descriptionBegin) - descriptionBegin + 1);
+    writeFixture(invalidBuildings, missingDescription);
+    valid = rejects("assets/gameplay/units.json", "assets/gameplay/recipes.json", "assets/gameplay/countries.json",
+        "requires descriptionKey", "assets/gameplay/power.json", invalidBuildings) && valid;
     std::filesystem::remove_all(directory);
     if (!valid) {
         std::cerr << "Definition registry validation failed\n";

@@ -398,6 +398,17 @@ Then proceed to Milestone 6, the first combat slice.
   deterministic queues with fixed-size queue icons; clicking an item cancels and fully refunds it.
 - Queue hover exposes product/upgrade identity. Disabled actions are visibly disabled and explain
   insufficient resources, prerequisites, limits, or other conditions.
+- Entity action tooltips appear after 0.5 seconds, wrap into a popup above the action/queue area, and
+  include resource costs, ongoing power demand, descriptions, requirements, and unmet conditions.
+  Disabled buttons remain hoverable. The top resource-bar document must not reset the entity
+  controller's hover timer. Moving within the same button preserves elapsed hover time.
+  Changed tooltip content resets the delay. Free actions omit the resource-cost line.
+- All building definitions require localized descriptionKey and requiredUpgrades fields. The
+  current requirement arrays are empty by user choice. Future upgrade IDs require level >= 1
+  on an owned, living, operational building (queued/enemy/unfinished research does not count).
+  GameSession::missingBuildingUpgrades serves UI feedback and authoritative construction gates.
+  Loss of the qualifying building affects future placement, not already built structures.
+  Requirements reuse persisted entity upgrades; no new save fields or format changes.
 - Upgrade definitions support research recipes, max levels, prerequisites, allowed researchers,
   exclusive groups, localization/icons, and deterministic modifier layers.
 - Entity HUDs use a compact split layout: left action/upgrade grid, right entity information;
@@ -434,6 +445,10 @@ Then proceed to Milestone 6, the first combat slice.
 
 ## Tests and recent validation
 
+- 2026-09-28 building/upgrade hover details and requirement support: Debug build passed;
+  `ctest --test-dir build/debug -C Debug --output-on-failure -j 4` passed all 18 tests
+  in 275.85 seconds. The delayed, wrapped popup was also visually checked with the renderer
+  fixture, including a disabled action and missing upgrade requirements.
 - CTest targets include terrain, game systems, resource delivery, spatial shapes, vegetation,
   entity HUD, definition registry, persistence, asset imports, particle definitions/runtime, state
   stack, renderer integration, and render architecture.

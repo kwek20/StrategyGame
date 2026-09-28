@@ -3,12 +3,16 @@
 #include "world/WorldGeneration.hpp"
 #include "render/ShaderManager.hpp"
 #include "ui/UiDocument.hpp"
+#include "ui/EntityHudLayout.hpp"
+#include "ui/EntityHudModel.hpp"
+#include "ui/UiController.hpp"
 #include "world/World.hpp"
 #include "world/Vegetation.hpp"
 #include "terrain/Terrain.hpp"
 
 #include <SDL3/SDL.h>
 #include <chrono>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <glad/glad.h>
@@ -211,6 +215,43 @@ out vec4 color;void main(){color=vec4(1);})";
         renderer.endFrame();
         glFinish();
         valid = noGlErrors("complete render") && valid;
+        // Render a delayed, disabled building action with all tooltip sections.
+        SDL_SetWindowSize(window, 1280, 720);
+        SDL_SyncWindow(window);
+        renderer.beginFrame(1280, 720);
+        strategy::EntityHudModel tooltipModel;
+        tooltipModel.title = "Construction drone";
+        strategy::HudActionModel buildAction;
+        buildAction.id = "construct.alloy_processor";
+        buildAction.name = "Alloy Processor";
+        buildAction.icon = "building_alloy_processor";
+        buildAction.cost = "100 Alloy, 25 Fuel";
+        buildAction.power = "Power consumption: 8 kW";
+        buildAction.description = "Converts delivered Scrap or Synthetic into Alloy. Requires full power to accept cargo.";
+        buildAction.requirements = "Required upgrades: Efficient Training";
+        buildAction.disabledReason = "Missing upgrades: Efficient Training";
+        buildAction.enabled = false;
+        tooltipModel.actions.push_back(buildAction);
+        auto tooltipUi = strategy::EntityHudLayout::actions(tooltipModel, 1280, 720);
+        const auto* buildButton = tooltipUi.find(strategy::EntityHudLayout::actionElementId(buildAction.id));
+        strategy::UiController hover;
+        hover.pointerMoved({buildButton->bounds.left + 5, buildButton->bounds.top + 5});
+        hover.apply(tooltipUi);
+        hover.advance(1.01F);
+        hover.apply(tooltipUi);
+        renderer.drawEntityHud(tooltipModel, tooltipUi);
+        renderer.endFrame();
+        glFinish();
+        valid = noGlErrors("wrapped building tooltip") && valid;
+        if (const char* screenshotPath = SDL_getenv("STRATEGY_UI_SCREENSHOT")) {
+            std::vector<unsigned char> pixels(1280 * 720 * 4), flipped(pixels.size());
+            glReadPixels(0, 0, 1280, 720, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+            for (int row = 0; row < 720; ++row)
+                std::copy_n(pixels.data() + row * 1280 * 4, 1280 * 4, flipped.data() + (719 - row) * 1280 * 4);
+            SDL_Surface* surface = SDL_CreateSurfaceFrom(1280, 720, SDL_PIXELFORMAT_RGBA32, flipped.data(), 1280 * 4);
+            valid = surface && SDL_SaveBMP(surface, screenshotPath) && valid;
+            SDL_DestroySurface(surface);
+        }
     }
     SDL_GL_DestroyContext(context);
     SDL_DestroyWindow(window);

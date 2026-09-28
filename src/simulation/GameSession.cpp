@@ -356,6 +356,22 @@ void GameSession::initializeEntity(Entity& entity) {
     }
 }
 
+std::vector<std::string> GameSession::missingBuildingUpgrades(PlayerId player, const std::string& building) const {
+    std::vector<std::string> missing;
+    const auto* definition = gameplay_.archetype(building);
+    if (!definition) return missing;
+    for (const auto& required : definition->requiredUpgrades) {
+        const bool completed = std::any_of(world_.entities().begin(), world_.entities().end(), [&](const Entity& entity) {
+            if (entity.authority.owner != player || entity.kind != EntityKind::building ||
+                !isOperational(entity) || (entity.health && entity.health.current <= 0) || !entity.upgrades) return false;
+            const auto found = entity.upgrades.levels.find(required);
+            return found != entity.upgrades.levels.end() && found->second > 0;
+        });
+        if (!completed) missing.push_back(required);
+    }
+    return missing;
+}
+
 bool GameSession::submit(PlayerCommand command) {
     if (players_.find(command.player) == nullptr) {
         return false;
@@ -390,6 +406,8 @@ bool GameSession::canStartRecipe(PlayerId playerId, EntityId producerId, RecipeI
         !isOperational(*producer) ||
         !recipe || recipe->producer != producer->archetype.value)
         return false;
+    if (recipe->product.kind == RecipeProductKind::building &&
+        !missingBuildingUpgrades(playerId, recipe->product.id).empty()) return false;
     for (const auto& [resource, amount] : recipe->cost) {
         const auto available = player->resources.find(resource);
         if (available == player->resources.end() || available->second < amount)
@@ -445,6 +463,8 @@ bool GameSession::canStartUpgrade(PlayerId playerId,
     const RecipeDefinition* recipe = gameplay_.recipe(RecipeId{upgrade->researchRecipe});
     if (!recipe || (!recipe->producer.empty() && recipe->producer != entity->archetype.value))
         return false;
+    if (recipe->product.kind == RecipeProductKind::building &&
+        !missingBuildingUpgrades(playerId, recipe->product.id).empty()) return false;
     for (const auto& [resource, amount] : recipe->cost) {
         const auto available = player->resources.find(resource);
         if (available == player->resources.end() || available->second < amount)
@@ -717,6 +737,7 @@ void GameSession::apply(const PlayerCommand& command) {
                 if (!player || !entity->flight || !recipe || recipe->product.kind != RecipeProductKind::building)
                     return;
                 const EntityArchetype* buildingDefinition = gameplay_.archetype(recipe->product.id);
+                if (!missingBuildingUpgrades(command.player, recipe->product.id).empty()) return;
                 const float footprintRadius = collisionRadius(gameplay_, recipe->product.id);
                 TerrainFootprint shape = buildingDefinition && buildingDefinition->footprint
                                              ? *buildingDefinition->footprint

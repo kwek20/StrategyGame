@@ -3,6 +3,8 @@
   "defaultPlacement": { "domains": ["land"], "requiresShore": false },
   "buildings": {
     "town_center": {
+      "descriptionKey": "building.town_center.description",
+      "requiredUpgrades": [],
       "nameKey": "entity.town_center",
       "presentation": "town_center",
       "collisionRadius": 10.5,
@@ -24,6 +26,8 @@
       }
     },
     "town_center_level_2": {
+      "descriptionKey": "building.town_center_level_2.description",
+      "requiredUpgrades": [],
       "nameKey": "entity.town_center",
       "presentation": "town_center_level_2",
       "collisionRadius": 10.5,
@@ -45,6 +49,8 @@
       }
     },
     "town_center_level_3": {
+      "descriptionKey": "building.town_center_level_3.description",
+      "requiredUpgrades": [],
       "nameKey": "entity.town_center",
       "presentation": "town_center_level_3",
       "collisionRadius": 10.5,
@@ -65,6 +71,8 @@
       }
     },
     "outpost": {
+      "descriptionKey": "building.outpost.description",
+      "requiredUpgrades": [],
       "nameKey": "building.outpost",
       "presentation": "outpost",
       "collisionRadius": 5.0,
@@ -84,6 +92,8 @@
       }
     },
     "command_hub": {
+      "descriptionKey": "building.command_hub.description",
+      "requiredUpgrades": [],
       "nameKey": "building.command_hub",
       "presentation": "command_hub",
       "collisionRadius": 10.5,
@@ -106,6 +116,8 @@
       }
     },
     "alloy_processor": {
+      "descriptionKey": "building.alloy_processor.description",
+      "requiredUpgrades": [],
       "nameKey": "building.alloy_processor",
       "presentation": "alloy_processor",
       "collisionRadius": 5.0,
@@ -119,6 +131,8 @@
       "stats": {}
     },
     "fuel_processor": {
+      "descriptionKey": "building.fuel_processor.description",
+      "requiredUpgrades": [],
       "nameKey": "building.fuel_processor",
       "presentation": "fuel_processor",
       "collisionRadius": 5.0,
@@ -132,6 +146,8 @@
       "stats": {}
     },
     "synthetic_mine": {
+      "descriptionKey": "building.synthetic_mine.description",
+      "requiredUpgrades": [],
       "nameKey": "building.synthetic_mine",
       "presentation": "synthetic_mine",
       "collisionRadius": 5.0,
@@ -147,6 +163,8 @@
       "stats": {}
     },
     "basic_generator": {
+      "descriptionKey": "building.basic_generator.description",
+      "requiredUpgrades": [],
       "nameKey": "building.basic_generator",
       "presentation": "basic_generator",
       "collisionRadius": 5.0,
@@ -160,6 +178,8 @@
       "stats": {}
     },
     "storage_silo": {
+      "descriptionKey": "building.storage_silo.description",
+      "requiredUpgrades": [],
       "nameKey": "building.storage_silo",
       "presentation": "storage_silo",
       "collisionRadius": 4.5,
@@ -171,6 +191,8 @@
       "stats": {}
     },
     "electricity_pole": {
+      "descriptionKey": "building.electricity_pole.description",
+      "requiredUpgrades": [],
       "nameKey": "building.electricity_pole",
       "presentation": "electricity_pole",
       "collisionRadius": 1.5,
@@ -183,6 +205,8 @@
       "stats": {}
     },
     "charging_pad": {
+      "descriptionKey": "building.charging_pad.description",
+      "requiredUpgrades": [],
       "nameKey": "building.charging_pad",
       "presentation": "charging_pad",
       "collisionRadius": 4.0,
@@ -196,6 +220,8 @@
       "stats": {}
     },
     "resource_extractor": {
+      "descriptionKey": "building.resource_extractor.description",
+      "requiredUpgrades": [],
       "nameKey": "building.resource_extractor",
       "presentation": "resource_extractor",
       "collisionRadius": 5.0,
@@ -208,6 +234,8 @@
       "stats": { "productionSpeed": 1 }
     },
     "drone_factory": {
+      "descriptionKey": "building.drone_factory.description",
+      "requiredUpgrades": [],
       "nameKey": "building.drone_factory",
       "presentation": "drone_factory",
       "collisionRadius": 7.0,
@@ -222,6 +250,8 @@
       "stats": { "productionSpeed": 1, "researchTime": 10 }
     },
     "sensor_tower": {
+      "descriptionKey": "building.sensor_tower.description",
+      "requiredUpgrades": [],
       "nameKey": "building.sensor_tower",
       "presentation": "sensor_tower",
       "collisionRadius": 3.0,

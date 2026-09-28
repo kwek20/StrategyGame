@@ -47,6 +47,8 @@ struct HudActionModel {
     bool enabled{true};
     bool active{false};
     float progress{0.0F};
+    std::string power;
+    std::string requirements;
 };
 
 struct HudQueueItemModel {

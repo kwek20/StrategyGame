@@ -18,9 +18,47 @@
 #include <cmath>
 #include <glm/geometric.hpp>
 #include <iostream>
+#include <sstream>
+#include <map>
 
 namespace strategy {
 namespace {
+
+std::string displayNumber(float value) {
+    std::ostringstream result;
+    result << value;
+    return result.str();
+}
+
+std::string resourceCost(const DefinitionRegistry& definitions, const RecipeDefinition* recipe, std::size_t count = 1) {
+    std::string result;
+    if (recipe) {
+        const std::map<std::string, float> sorted(recipe->cost.begin(), recipe->cost.end());
+        for (const auto& [id, amount] : sorted) {
+            if (amount == 0.0F || count == 0) continue;
+            if (!result.empty()) result += ", ";
+            const auto* resource = definitions.resourceType(ResourceId{id});
+            result += displayNumber(amount * static_cast<float>(count)) + " " +
+                      (resource ? Text::get(resource->nameKey) : id);
+        }
+    }
+    return result;
+}
+
+std::string upgradeNames(const DefinitionRegistry& definitions, const std::vector<std::string>& ids) {
+    std::string result;
+    for (const auto& id : ids) {
+        if (!result.empty()) result += ", ";
+        const auto* upgrade = definitions.upgrade(id);
+        result += upgrade ? Text::get(upgrade->nameKey) : id;
+    }
+    return result.empty() ? Text::get("entity_hud.tooltip_none") : result;
+}
+
+std::string powerDescription(const DefinitionRegistry& definitions, const EntityArchetype* entity) {
+    const auto* power = entity && entity->powerDevice ? definitions.powerDevice(*entity->powerDevice) : nullptr;
+    return Text::format("entity_hud.tooltip_power", {displayNumber(power ? power->consumption : 0.0F)});
+}
 
 bool isHomogeneousSelection(const World& world,
                             const std::vector<EntityId>& selected,
@@ -188,9 +226,10 @@ EntityHudModel PlayState::buildConstructionHudModel(const Entity& selected,
                                     PresentationId{product->presentation})
                               : "status_asset_failed";
         action.name = product ? Text::get(product->nameKey) : recipe->product.id;
-        for (const auto& [resource, amount] : recipe->cost)
-            action.cost += resource + ": " + std::to_string(static_cast<int>(amount)) + "  ";
-        action.description = Text::format(
+        action.cost = resourceCost(context_.definitions, recipe);
+        action.power = powerDescription(context_.definitions, product);
+        action.description = product ? Text::get(product->descriptionKey) + "\n" : std::string{};
+        action.description += Text::format(
             "entity_hud.drone_power",
             {std::to_string(static_cast<int>(recipe->constructionPower))});
         action.enabled = player && std::all_of(
@@ -200,6 +239,17 @@ EntityHudModel PlayState::buildConstructionHudModel(const Entity& selected,
             });
         if (!action.enabled)
             action.disabledReason = Text::get("entity_hud.insufficient_resources");
+        if (product) {
+            action.requirements = Text::format("entity_hud.tooltip_requirements",
+                {upgradeNames(context_.definitions, product->requiredUpgrades)});
+            const auto missing = session_.missingBuildingUpgrades(localPlayer_, product->id);
+            if (!missing.empty()) {
+                action.enabled = false;
+                if (!action.disabledReason.empty()) action.disabledReason += "\n";
+                action.disabledReason += Text::format("entity_hud.tooltip_missing",
+                    {upgradeNames(context_.definitions, missing)});
+            }
+        }
         action.active = constructionPlacementMode_ && recipe->id == constructionRecipeId_;
         hud.actions.push_back(std::move(action));
     }
@@ -224,21 +274,30 @@ EntityHudModel PlayState::buildEntityActionHudModel(const Entity& selected,
             action.icon = "resource_" + recipe->product.id;
         else
             action.icon = "status_asset_failed";
-        for (const auto& [resource, amount] : recipe->cost)
-            action.cost += resource + ": " + std::to_string(static_cast<int>(amount)) + " ";
+        action.cost = resourceCost(context_.definitions, recipe, targets.size());
+        action.power = powerDescription(context_.definitions, product && product->kind == EntityKind::building
+            ? product : context_.definitions.archetype(selected.archetype));
         if (player)
             action.description = Text::format(
                 "entity_hud.time_seconds",
                 {std::to_string(static_cast<int>(context_.definitions.productionDuration(
                     player->countryId, player->specializationId, selected.archetype.value,
                     recipe->product.id)))});
-        if (action.cost.empty()) action.cost = Text::get("entity_hud.free");
+        if (product && !product->descriptionKey.empty())
+            action.description = Text::get(product->descriptionKey) + "\n" + action.description;
         action.enabled = canAffordForAll(player, recipe, targets.size()) &&
                          std::all_of(targets.begin(), targets.end(), [&](EntityId id) {
                              return session_.canStartRecipe(localPlayer_, id,
                                                             RecipeId{recipe->id});
                          });
         if (!action.enabled) action.disabledReason = Text::get("entity_hud.action_unavailable");
+        if (product && product->kind == EntityKind::building) {
+            action.requirements = Text::format("entity_hud.tooltip_requirements",
+                {upgradeNames(context_.definitions, product->requiredUpgrades)});
+            const auto missing = session_.missingBuildingUpgrades(localPlayer_, product->id);
+            if (!missing.empty()) action.disabledReason = Text::format("entity_hud.tooltip_missing",
+                {upgradeNames(context_.definitions, missing)});
+        }
         hud.actions.push_back(std::move(action));
     }
     for (const UpgradeDefinition* upgrade :
@@ -249,20 +308,43 @@ EntityHudModel PlayState::buildEntityActionHudModel(const Entity& selected,
         action.icon = upgrade->icon;
         const RecipeDefinition* research =
             context_.definitions.recipe(RecipeId{upgrade->researchRecipe});
-        if (research)
-            for (const auto& [resource, amount] : research->cost)
-                action.cost += resource + ": " + std::to_string(static_cast<int>(amount)) + " ";
+        action.cost = resourceCost(context_.definitions, research, targets.size());
+        action.power = powerDescription(context_.definitions, context_.definitions.archetype(selected.archetype));
+        action.requirements = Text::format("entity_hud.tooltip_requirements",
+            {upgradeNames(context_.definitions, upgrade->prerequisites)});
         if (research)
             action.description = Text::format(
                 "entity_hud.time_seconds",
                 {std::to_string(static_cast<int>(
                     research->durationTicks * GameSession::fixedTickSeconds))});
-        if (action.cost.empty()) action.cost = Text::get("entity_hud.free");
+        if (!upgrade->descriptionKey.empty())
+            action.description = Text::get(upgrade->descriptionKey) + "\n" + action.description;
         action.enabled = canAffordForAll(player, research, targets.size()) &&
                          std::all_of(targets.begin(), targets.end(), [&](EntityId id) {
                              return session_.canStartUpgrade(localPlayer_, id, upgrade->id);
                          });
         if (!action.enabled) action.disabledReason = Text::get("entity_hud.action_unavailable");
+        std::vector<std::string> missing;
+        if (research && research->product.kind == RecipeProductKind::building) {
+            const auto* product = context_.definitions.archetype(research->product.id);
+            if (product && !product->requiredUpgrades.empty()) {
+                action.requirements += "\n" + Text::format("entity_hud.tooltip_requirements",
+                    {upgradeNames(context_.definitions, product->requiredUpgrades)});
+                missing = session_.missingBuildingUpgrades(localPlayer_, product->id);
+            }
+        }
+        for (const auto& required : upgrade->prerequisites)
+            if (std::any_of(targets.begin(), targets.end(), [&](EntityId id) {
+                const auto* entity = session_.world().findEntity(id);
+                return !entity || !entity->upgrades || !entity->upgrades.levels.contains(required) ||
+                       entity->upgrades.levels.at(required) == 0;
+            })) missing.push_back(required);
+        if (!missing.empty()) action.disabledReason = Text::format("entity_hud.tooltip_missing",
+            {upgradeNames(context_.definitions, missing)});
+        if (!canAffordForAll(player, research, targets.size())) {
+            if (!action.disabledReason.empty()) action.disabledReason += "\n";
+            action.disabledReason += Text::get("entity_hud.insufficient_resources");
+        }
         hud.actions.push_back(std::move(action));
     }
     if (selected.power) {
@@ -1450,7 +1532,8 @@ void PlayState::render(Renderer& renderer) const {
         UiDocument resourceUi = GameHudLayout::resources(
             localCount, deviceCount, powerOverlayVisible_, satelliteRevealActive_,
             renderer.viewportWidth(), renderer.viewportHeight(), config_.uiScale);
-        uiController_.apply(resourceUi);
+        // This is a separate document; do not reset the entity-button hover timer each frame.
+        resourceUi.pointerMoved(uiController_.pointer());
         renderer.drawResourceHud(*local, session_.world(), context_.definitions,
                                  powerOverlayVisible_, resourceUi);
     }

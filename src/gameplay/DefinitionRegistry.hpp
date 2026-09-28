@@ -77,7 +77,7 @@ struct RuntimeModifierLayers {
 };
 
 struct UpgradeDefinition {
-    std::string id, researchRecipe, nameKey, icon, exclusiveGroup;
+    std::string id, researchRecipe, nameKey, icon, exclusiveGroup, descriptionKey;
     std::uint32_t maximumLevel{1};
     bool affectsProducer{false};
     std::vector<std::string> prerequisites, allowedResearchers;
@@ -196,6 +196,8 @@ struct ResourceFieldGenerationDefinition {
 struct EntityArchetype {
     std::string id;
     std::string nameKey, presentation;
+    std::string descriptionKey;
+    std::vector<std::string> requiredUpgrades;
     EntityKind kind{EntityKind::decoration};
     float collisionRadius{1.0F};
     float interactionMargin{0.0F}, spawnClearance{0.0F};

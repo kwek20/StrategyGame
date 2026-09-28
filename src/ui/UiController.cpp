@@ -23,8 +23,10 @@ void UiController::apply(UiDocument& document) {
     document.pointerMoved(pointer_);
     const UiElement* hovered = document.hoveredElement();
     const std::string nextHovered = hovered ? hovered->id : std::string{};
-    if (nextHovered != hoveredId_) {
+    const std::string nextTooltip = hovered ? hovered->tooltip : std::string{};
+    if (nextHovered != hoveredId_ || nextTooltip != hoveredTooltip_) {
         hoveredId_ = nextHovered;
+        hoveredTooltip_ = nextTooltip;
         hoverSeconds_ = 0.0F;
     }
     document.focus(focusedId_);

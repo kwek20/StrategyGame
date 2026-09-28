@@ -9,7 +9,7 @@ namespace strategy {
 
 class UiController final {
   public:
-    static constexpr float tooltipDelaySeconds = 0.15F;
+    static constexpr float tooltipDelaySeconds = 0.5F;
     void pointerMoved(glm::vec2 position);
     void advance(float deltaSeconds);
     void apply(UiDocument& document);
@@ -33,6 +33,7 @@ class UiController final {
   private:
     glm::vec2 pointer_{-1.0F, -1.0F};
     std::string hoveredId_;
+    std::string hoveredTooltip_;
     std::string focusedId_;
     std::string pressedId_;
     float hoverSeconds_{0.0F};

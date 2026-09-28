@@ -8,6 +8,7 @@
 #include <glad/glad.h>
 #include <glm/gtc/type_ptr.hpp>
 #include <stdexcept>
+#include <sstream>
 #include <vector>
 
 namespace strategy {
@@ -127,6 +128,48 @@ void UiRenderer::draw(const UiDocument& document, int width, int height) const {
     std::vector<UiVertex> rectangles;
     std::vector<TextDraw> labels;
     for (const UiElement& element : document.elements()) {
+        if (element.kind == UiElementKind::tooltip) {
+            if (element.text.empty()) continue;
+            const float fontPixels = std::max(element.textScale * 8.0F, 13.0F);
+            const float padding = 12.0F;
+            const float boxWidth = std::min(element.bounds.right - element.bounds.left,
+                                            static_cast<float>(width) - 16.0F);
+            const float available = std::max(1.0F, boxWidth - padding * 2);
+            std::vector<std::string> lines;
+            std::istringstream paragraphs(element.text);
+            std::string paragraph;
+            while (std::getline(paragraphs, paragraph)) {
+                std::istringstream words(paragraph);
+                std::string line, word;
+                while (words >> word) {
+                    if (!line.empty() && font_.measureWidth(line + " " + word, fontPixels) > available) {
+                        lines.push_back(line);
+                        line.clear();
+                    }
+                    while (font_.measureWidth(word, fontPixels) > available && word.size() > 1) {
+                        std::size_t end = 1;
+                        while (end < word.size() && font_.measureWidth(word.substr(0, end + 1), fontPixels) <= available) ++end;
+                        lines.push_back(word.substr(0, end));
+                        word.erase(0, end);
+                    }
+                    if (!line.empty()) line += " ";
+                    line += word;
+                }
+                lines.push_back(line);
+            }
+            const float lineHeight = fontPixels * 1.4F;
+            const float boxHeight = padding * 2 + lineHeight * static_cast<float>(lines.size());
+            const float left = std::clamp(element.bounds.left, 8.0F, std::max(8.0F, width - boxWidth - 8));
+            const float preferredTop = element.id == "entity.tooltip" ? element.bounds.bottom - boxHeight : element.bounds.top;
+            const float top = std::clamp(preferredTop, 8.0F, std::max(8.0F, height - boxHeight - 8));
+            appendRectangle(rectangles, left - 1, top - 1, left + boxWidth + 1, top + boxHeight + 1,
+                            {0.45F, 0.55F, 0.63F}, width, height);
+            appendRectangle(rectangles, left, top, left + boxWidth, top + boxHeight, element.color, width, height);
+            for (std::size_t i = 0; i < lines.size(); ++i)
+                labels.push_back({lines[i], left + padding, top + padding + lineHeight * static_cast<float>(i),
+                                  fontPixels, i == 0 ? glm::vec3{1.0F, 0.88F, 0.52F} : element.textColor});
+            continue;
+        }
         if (element.kind != UiElementKind::label) {
             const glm::vec3 color = !element.enabled ? UiTheme::disabled
                 : (element.pressed ? element.hoverColor * 0.72F

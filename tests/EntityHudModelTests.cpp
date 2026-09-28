@@ -134,7 +134,13 @@ int strategyTestMain() {
     controller.pointerMoved(center(action));
     controller.apply(layout);
     valid = valid && controller.hoveredId() == action->id;
-    controller.advance(strategy::UiController::tooltipDelaySeconds);
+    controller.advance(0.25F);
+    controller.pointerMoved(center(action) + glm::vec2{1.0F, 1.0F});
+    controller.apply(layout);
+    controller.advance(0.24F);
+    controller.apply(layout);
+    valid = valid && !controller.visibleTooltip(layout) && layout.find("entity.tooltip")->text.empty();
+    controller.advance(0.02F);
     valid = valid && controller.visibleTooltip(layout).has_value();
     controller.apply(layout);
     valid = valid && layout.find("entity.tooltip") &&
@@ -142,6 +148,15 @@ int strategyTestMain() {
     valid = valid && controller.press(layout, center(action)) == action->id &&
             controller.pressedId() == action->id;
     valid = valid && !controller.press(layout, center(disabled));
+    valid = valid && !controller.visibleTooltip(layout);
+    controller.advance(0.51F);
+    controller.apply(layout);
+    valid = valid && controller.visibleTooltip(layout).has_value() &&
+            !layout.find("entity.tooltip")->text.empty() &&
+            layout.find("entity.tooltip")->kind == strategy::UiElementKind::tooltip;
+    controller.pointerMoved({-1,-1});
+    controller.apply(layout);
+    valid = valid && !controller.visibleTooltip(layout) && layout.find("entity.tooltip")->text.empty();
     valid = valid && controller.moveFocus(layout, 1) &&
             controller.activateFocused(layout).has_value();
 
@@ -209,7 +224,7 @@ int strategyTestMain() {
     for (const auto& item : expanded.actions) {
         const auto* button = expandedLayout.find(strategy::EntityHudLayout::actionElementId(item.id));
         const auto* tooltip = expandedLayout.find("entity.tooltip");
-        valid = valid && button && tooltip && button->bounds.bottom <= tooltip->bounds.top &&
+        valid = valid && button && tooltip && tooltip->bounds.bottom < button->bounds.top &&
                 button->bounds.bottom > button->bounds.top;
     }
     if (!valid) std::cerr << "Entity HUD component presentation failed\n";

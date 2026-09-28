@@ -240,6 +240,22 @@ The complete authoritative contract is defined in `POWER_GRID.md`.
 
 ### Building power state
 
+Building and upgrade buttons reveal a compact, wrapped information box after half a second of
+continuous hover, including disabled buttons. It shows name, resource cost, power consumption,
+description, required upgrades, and any unmet upgrade/resource condition. Construction work power
+is shown separately from ongoing grid consumption. Research buttons show the research building's
+power demand; selecting several researchers shows their combined resource cost.
+Moving within the same button keeps the hover timer running; the pointer need not stop.
+Actions with no resource cost omit the cost line.
+
+Every building definition has a localized `descriptionKey` and an explicit `requiredUpgrades`
+list. Current lists are empty to preserve availability. Future entries are upgrade IDs; each
+requires at least level 1 completed on an owned, living, operational building. Queued research,
+enemy upgrades, and unfinished buildings do not satisfy a requirement. Losing the qualifying
+building blocks new construction until another qualifies; existing buildings remain intact.
+The same rule is enforced by authoritative placement and building-upgrade/production commands.
+Editor placement remains unrestricted.
+
 Each applicable building has:
 
 - Required power

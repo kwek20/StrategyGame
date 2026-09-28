@@ -80,6 +80,7 @@ class GameSession final {
     }
     [[nodiscard]] std::uint64_t stateChecksum() const;
     [[nodiscard]] bool canStartRecipe(PlayerId player, EntityId producer, RecipeId recipe) const;
+    [[nodiscard]] std::vector<std::string> missingBuildingUpgrades(PlayerId player, const std::string& building) const;
     [[nodiscard]] bool canStartUpgrade(PlayerId player, EntityId researcher,
                                        const std::string& upgrade) const;
     [[nodiscard]] std::vector<ResourceEvent> consumeResourceEvents() {

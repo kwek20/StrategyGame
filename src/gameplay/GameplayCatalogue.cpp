@@ -152,6 +152,20 @@ void DefinitionRegistry::loadArchetypes(const std::filesystem::path& path,
         if (!item->value.IsObject())
             throw std::runtime_error("Invalid definition '" + archetype.id + "' in " +
                                      path.string());
+        if (kind == EntityKind::building) {
+            if (!item->value.HasMember("descriptionKey") || !item->value["descriptionKey"].IsString() ||
+                !item->value.HasMember("requiredUpgrades") || !item->value["requiredUpgrades"].IsArray())
+                throw std::runtime_error("Building '" + archetype.id + "' requires descriptionKey and requiredUpgrades");
+            archetype.descriptionKey = item->value["descriptionKey"].GetString();
+            for (const auto& required : item->value["requiredUpgrades"].GetArray()) {
+                if (!required.IsString() || required.GetStringLength() == 0)
+                    throw std::runtime_error("Building '" + archetype.id + "' has invalid requiredUpgrades");
+                archetype.requiredUpgrades.emplace_back(required.GetString());
+            }
+            std::sort(archetype.requiredUpgrades.begin(), archetype.requiredUpgrades.end());
+            if (std::adjacent_find(archetype.requiredUpgrades.begin(), archetype.requiredUpgrades.end()) != archetype.requiredUpgrades.end())
+                throw std::runtime_error("Building '" + archetype.id + "' has duplicate requiredUpgrades");
+        }
         if (!item->value.HasMember("collisionRadius") ||
             !item->value["collisionRadius"].IsNumber() ||
             item->value["collisionRadius"].GetFloat() < 0.0F)
@@ -932,6 +946,11 @@ const std::string& DefinitionRegistry::presentationIcon(PresentationId id) const
 
 void DefinitionRegistry::validateReferences() const {
     for (const auto& [id, entity] : entities_) {
+        if (entity.kind == EntityKind::building && !localizationKeys_.contains(entity.descriptionKey))
+            throw std::runtime_error("Building '" + id + "' references unknown descriptionKey");
+        for (const auto& required : entity.requiredUpgrades)
+            if (!upgrades_.contains(required))
+                throw std::runtime_error("Building '" + id + "' references unknown required upgrade '" + required + "'");
         if (!presentationIds_.contains(entity.presentation))
             throw std::runtime_error("Entity '" + id + "' references unknown presentation '" +
                                      entity.presentation + "'");
@@ -1017,6 +1036,8 @@ void DefinitionRegistry::validateReferences() const {
                                      resource.icon + "'");
     }
     for (const auto& [id, definition] : upgrades_) {
+        if (!definition.descriptionKey.empty() && !localizationKeys_.contains(definition.descriptionKey))
+            throw std::runtime_error("Upgrade '" + id + "' references unknown descriptionKey");
         // Research recipes are validated when the recipe catalogue is present; fixture-specific
         // catalogues may intentionally omit unrelated upgrades.
         if (!localizationKeys_.contains(definition.nameKey))
@@ -1158,6 +1179,10 @@ void DefinitionRegistry::loadUpgrades(const std::filesystem::path& path) {
         upgrade.maximumLevel = value["maximumLevel"].GetUint();
         upgrade.affectsProducer = value.HasMember("affectsProducer") && value["affectsProducer"].IsBool() && value["affectsProducer"].GetBool();
         upgrade.nameKey = value["nameKey"].GetString();
+        if (value.HasMember("descriptionKey")) {
+            if (!value["descriptionKey"].IsString()) throw std::runtime_error("Invalid upgrade descriptionKey");
+            upgrade.descriptionKey = value["descriptionKey"].GetString();
+        }
         upgrade.icon = value["icon"].GetString();
         if (value.HasMember("exclusiveGroup") && value["exclusiveGroup"].IsString())
             upgrade.exclusiveGroup = value["exclusiveGroup"].GetString();

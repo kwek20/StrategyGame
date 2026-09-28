@@ -2443,7 +2443,9 @@ void Renderer::drawStrategyHud(const World& world, EntityId selected, const Play
 void Renderer::drawEntityHud(const EntityHudModel& model,
                              const UiDocument& layout) const {
     renderGraph_.enter(RenderPassKind::overlay);
-    uiRenderer_->draw(layout, viewportWidth_, viewportHeight_);
+    UiDocument body = layout;
+    std::erase_if(body.elements(), [](const UiElement& element) { return element.kind == UiElementKind::tooltip; });
+    uiRenderer_->draw(body, viewportWidth_, viewportHeight_);
 
     if (const UiElement* selectionPanel = layout.find("selection.panel")) {
         const std::size_t visible = std::min<std::size_t>(model.selectionGroups.size(), 6);
@@ -2488,6 +2490,11 @@ void Renderer::drawEntityHud(const EntityHudModel& model,
                      element->bounds.top + padding, element->bounds.right - padding,
                      element->bounds.bottom - padding);
         }
+    if (const auto* tooltip = layout.find("entity.tooltip"); tooltip && !tooltip->text.empty()) {
+        UiDocument popup;
+        popup.elements().push_back(*tooltip);
+        uiRenderer_->draw(popup, viewportWidth_, viewportHeight_);
+    }
 }
 
 

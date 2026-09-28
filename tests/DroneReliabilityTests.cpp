@@ -240,8 +240,17 @@ int strategyTestMain() {
                         R"("repair": {"healthPerTick":7,"batteryPerTick":2.5})");
     const auto fixture = std::filesystem::temp_directory_path() / "strategy_custom_repair_units.json";
     { std::ofstream output(fixture); output << customUnits; }
-    const strategy::DefinitionRegistry customDefinitions{fixture};
+    std::ifstream buildingsFile("assets/gameplay/buildings.json");
+    std::string lockedBuildings((std::istreambuf_iterator<char>(buildingsFile)), {});
+    const auto generatorBegin = lockedBuildings.find("\"basic_generator\":");
+    const std::string emptyRequirements = "\"requiredUpgrades\": []";
+    lockedBuildings.replace(lockedBuildings.find(emptyRequirements, generatorBegin), emptyRequirements.size(),
+                            R"("requiredUpgrades": ["production.efficient_training"])");
+    const auto buildingFixture = std::filesystem::temp_directory_path() / "strategy_locked_buildings.json";
+    { std::ofstream output(buildingFixture); output << lockedBuildings; }
+    const strategy::DefinitionRegistry customDefinitions{fixture, buildingFixture};
     std::filesystem::remove(fixture);
+    std::filesystem::remove(buildingFixture);
     strategy::GameSession customRepair{customDefinitions, 123U};
     customRepair.replaceWorld({}, 123U);
     const auto repairerId = create(customRepair, customDefinitions, "Repairer", "construction_drone", {0,6,0}).id;
@@ -276,6 +285,44 @@ int strategyTestMain() {
     repairer->unitControl.orderTarget = damagedId;
     customRepair.advanceTicks();
     check(repairer->unitControl.order == strategy::UnitOrderKind::idle, "definition required for restored repair order");
+
+    // Locked definitions share one authoritative predicate with construction-menu feedback.
+    check(customRepair.missingBuildingUpgrades(1, "basic_generator").size() == 1, "upgrade lock starts unmet");
+    repairer->archetype = strategy::EntityArchetypeId{"construction_drone"};
+    const auto researchId = create(customRepair, customDefinitions, "Research", "command_hub", {0,0,0}).id;
+    auto* research = customRepair.world().findEntity(researchId);
+    research->upgrades.levels["production.efficient_training"] = 1;
+    research->authority.owner = 2;
+    check(!customRepair.missingBuildingUpgrades(1, "basic_generator").empty(), "enemy upgrade does not unlock");
+    research->authority.owner = 1;
+    research->construction.emplace();
+    research->construction.state = strategy::BuildingLifecycleState::underConstruction;
+    check(!customRepair.missingBuildingUpgrades(1, "basic_generator").empty(), "unfinished researcher does not unlock");
+    research->construction.state = strategy::BuildingLifecycleState::operational;
+    check(customRepair.missingBuildingUpgrades(1, "basic_generator").empty(), "completed owned upgrade unlocks");
+    const auto* building = customDefinitions.archetype("basic_generator");
+    glm::vec3 buildPosition{0};
+    bool foundBuildPosition = false;
+    for (int x = 40; x < 200 && !foundBuildPosition; x += 10)
+        for (int z = 40; z < 200 && !foundBuildPosition; z += 10)
+            if (customRepair.terrain().evaluatePlacement(static_cast<float>(x), static_cast<float>(z),
+                                                        *building->footprint, building->placement).valid()) {
+                buildPosition = {x, 0, z};
+                foundBuildPosition = true;
+            }
+    check(foundBuildPosition, "find valid requirement-test building site");
+    customRepair.players().find(1)->resources["alloy"] = 1000;
+    const auto beforeBuildings = customRepair.world().entities().size();
+    research->upgrades.levels["production.efficient_training"] = 0;
+    check(customRepair.submit({1, 3, strategy::PlaceBuildingCommand{repairerId, "construct.basic_generator", buildPosition}}), "queue locked placement");
+    customRepair.advanceTicks();
+    check(customRepair.world().entities().size() == beforeBuildings && customRepair.players().find(1)->resources.at("alloy") == 1000,
+          "locked placement rejects without spending resources");
+    customRepair.world().findEntity(researchId)->upgrades.levels["production.efficient_training"] = 1;
+    check(customRepair.submit({1, 4, strategy::PlaceBuildingCommand{repairerId, "construct.basic_generator", buildPosition}}), "queue unlocked placement");
+    customRepair.advanceTicks();
+    check(customRepair.world().entities().size() == beforeBuildings + 1 && customRepair.players().find(1)->resources.at("alloy") < 1000,
+          "same site builds after upgrade requirement is met");
 
     if (!valid) std::cerr << "Drone and construction reliability validation failed\n";
     return valid ? 0 : 1;

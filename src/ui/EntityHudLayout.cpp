@@ -22,12 +22,14 @@ std::string tooltip(const HudActionModel& action) {
     std::string result;
     const auto append = [&](const std::string& value) {
         if (value.empty()) return;
-        if (!result.empty()) result += " - ";
+        if (!result.empty()) result += "\n";
         result += value;
     };
     append(action.name);
-    append(action.cost);
+    if (!action.cost.empty()) append(Text::format("entity_hud.tooltip_cost", {action.cost}));
+    append(action.power);
     append(action.description);
+    append(action.requirements);
     if (!action.enabled) append(action.disabledReason);
     return result;
 }
@@ -108,10 +110,11 @@ UiDocument EntityHudLayout::actions(const EntityHudModel& model, int width, int 
         button.focused = action.active;
     }
 
-    document.label("entity.tooltip",
-        {actionPanel.left + canvas.value(8), actionPanel.bottom - canvas.value(40),
-         actionPanel.right - canvas.value(8), actionPanel.bottom - canvas.value(10)},
-        {}, 1.1F * canvas.scale(), {0.96F, 0.90F, 0.58F});
+    auto& tooltipBox = document.tooltip("entity.tooltip",
+        {panel.left + inset, canvas.value(8),
+         std::min(static_cast<float>(width) - inset, panel.left + inset + canvas.value(380)),
+         panel.top - canvas.value(64)}, {});
+    tooltipBox.textScale = 1.75F * canvas.scale();
 
     // Queues are a separate strip above the entity menu and never resize its contents.
     if (!model.queue.empty()) {
