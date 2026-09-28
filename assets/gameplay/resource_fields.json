@@ -14,7 +14,6 @@
         "regionScale": 82, "regionThreshold": 0.43,
         "fieldsPerSquareChunk": [0.055, 0.085], "fieldRadius": [4.0, 10.0],
         "nodesPerField": [2, 7], "placementAttemptsPerNode": 13, "minimumNodeSpacing": 2.7,
-        "capacityMultiplier": [0.75, 1.35],
         "startingNodesPerPlayer": 3, "startingMinimumDistance": 16, "startingMaximumDistance": 24,
         "fairness": { "travelCostBands": [55, 120, 420], "minimumCapacityRatio": 0.68,
           "minimumComparedCapacity": 160, "minimumReachableCapacity": 480,
@@ -34,7 +33,6 @@
         "regionScale": 118, "regionThreshold": 0.56,
         "fieldsPerSquareChunk": [0.018, 0.032], "fieldRadius": [3.0, 7.0],
         "nodesPerField": [2, 5], "placementAttemptsPerNode": 20, "minimumNodeSpacing": 3.0,
-        "capacityMultiplier": [0.85, 1.45],
         "fairness": { "travelCostBands": [220, 720], "minimumCapacityRatio": 0.55,
           "minimumComparedCapacity": 220, "minimumReachableCapacity": 220,
           "maximumLayoutAttempts": 5, "compensationNodesPerAttempt": 1 }
@@ -53,7 +51,6 @@
         "regionScale": 145, "regionThreshold": 0.64,
         "fieldsPerSquareChunk": [0.008, 0.018], "fieldRadius": [2.5, 6.0],
         "nodesPerField": [1, 4], "placementAttemptsPerNode": 30, "minimumNodeSpacing": 3.2,
-        "capacityMultiplier": [0.70, 1.30],
         "fairness": { "travelCostBands": [1050], "minimumCapacityRatio": 0.45,
           "minimumComparedCapacity": 120, "minimumReachableCapacity": 0,
           "maximumLayoutAttempts": 6, "compensationNodesPerAttempt": 1 }

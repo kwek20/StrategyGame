@@ -366,8 +366,7 @@ bool add(World& world,
          const ResourceNodeDefinition& type,
          float x,
          float z,
-         float rotation,
-         float capacityMultiplier = 1.0F) {
+         float rotation) {
     if (overlapsObject(world, definitions, {x, z}, type.collisionRadius))
         return false;
     Entity& entity = world.createEntity(Text::get(type.nameKey), type.id, 0);
@@ -375,7 +374,7 @@ bool add(World& world,
     entity.transform.position = {x, 0.0F, z};
     entity.transform.rotationDegrees.y = rotation;
     entity.resource.type = type.resourceType;
-    entity.resource.remaining = type.resourceCapacity * capacityMultiplier;
+    entity.resource.remaining = type.resourceCapacity;
     return true;
 }
 
@@ -401,14 +400,13 @@ bool appendNode(ResourceLayout& layout,
                 const ResourceFieldDefinition& field,
                 const ResourceNodeDefinition& type,
                 glm::vec2 position,
-                float rotation,
-                float capacityMultiplier) {
+                float rotation) {
     const auto& settings = field.generation;
     if (!nodeGrid.canPlace(position, type.collisionRadius, settings.minimumNodeSpacing) ||
         overlapsObject(world, definitions, position, type.collisionRadius))
         return false;
     layout.nodes.push_back({ResourceFieldId{field.id}, ResourceArchetypeId{type.id},
-                            position, rotation, capacityMultiplier});
+                            position, rotation});
     nodeGrid.insert(position, type.collisionRadius);
     return true;
 }
@@ -419,7 +417,7 @@ void instantiateLayout(World& world,
     for (const GeneratedResourceNode& node : layout.nodes) {
         const ResourceNodeDefinition* type = definitions.resource(node.archetype);
         if (!type || !add(world, definitions, *type, node.position.x, node.position.y,
-                          node.rotationDegrees, node.capacityMultiplier))
+                          node.rotationDegrees))
             throw std::runtime_error("Generated resource layout became invalid before instantiation");
     }
 }
@@ -483,8 +481,6 @@ void fields(ResourceLayout& layout,
                           candidate.x, candidate.y) ||
                 !clearOfStarts(rules, startingAnchors, candidate.x, candidate.y))
                 continue;
-            const float capacity = random.range(settings.minimumCapacityMultiplier,
-                                                settings.maximumCapacityMultiplier);
             const ResourceNodeDefinition& variant = selectVariant(definitions, field, random);
             // Every node is validated at its own sample. The field footprint itself is allowed to
             // cross biome boundaries and overlap any other field footprint.
@@ -492,7 +488,7 @@ void fields(ResourceLayout& layout,
                           candidate.x, candidate.y))
                 continue;
             if (appendNode(layout, nodeGrid, world, definitions, field, variant, candidate,
-                           random.range(0.0F, 360.0F), capacity)) {
+                           random.range(0.0F, 360.0F))) {
                 ++made;
             }
         }
@@ -563,7 +559,7 @@ void guaranteedStartingNodes(ResourceLayout& layout,
                         continue;
                     placed = appendNode(candidateLayout, candidateGrid, world, definitions,
                                         field, variant, position,
-                                        random.range(0.0F, 360.0F), 1.0F);
+                                        random.range(0.0F, 360.0F));
                 }
                 if (!placed) break;
             }
@@ -640,9 +636,7 @@ ResourceLayout compensateFairness(ResourceNodeGrid& nodeGrid,
                     continue;
                 const ResourceNodeDefinition& variant = selectVariant(definitions, field, random);
                 placed = appendNode(layout, nodeGrid, world, definitions, field, variant,
-                                    candidate, random.range(0.0F, 360.0F),
-                                    random.range(settings.minimumCapacityMultiplier,
-                                                 settings.maximumCapacityMultiplier));
+                                    candidate, random.range(0.0F, 360.0F));
                 if (placed)
                     layout.fields.push_back({ResourceFieldId{field.id}, candidate,
                                              settings.minimumFieldRadius, 1U});

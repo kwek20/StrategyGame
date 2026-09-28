@@ -17,6 +17,8 @@ Natural raw resources are generated as fields containing nodes:
 - A generated resource position creates a resource field rather than one deposit.
 - Each field deterministically chooses a variable node count from its definition.
 - Every node stores its own remaining raw-resource amount.
+- Initial amounts are fixed by node archetype (resource type and size); there is no random capacity multiplier.
+- Small/medium/large nodes contain 200/300/500 Scrap or Oil, and 100/200/300 Uranium.
 - A field can mix small, medium, and large node archetypes. Those archetypes may use different
   models, collision shapes, capacities, and weighted occurrence rates while yielding the same raw
   resource type.

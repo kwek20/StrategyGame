@@ -638,13 +638,6 @@ void DefinitionRegistry::loadResourceFields(const std::filesystem::path& path) {
         settings.placementAttemptsPerField =
             generation["placementAttemptsPerNode"].GetUint() * settings.maximumNodesPerField;
         settings.minimumNodeSpacing = requiredNumber(generation, "minimumNodeSpacing", context);
-        if (generation.HasMember("capacityMultiplier"))
-            std::tie(settings.minimumCapacityMultiplier,
-                     settings.maximumCapacityMultiplier) = numberRange("capacityMultiplier");
-        else {
-            settings.minimumCapacityMultiplier = 1.0F;
-            settings.maximumCapacityMultiplier = 1.0F;
-        }
         settings.startingNodesPerPlayer = generation.HasMember("startingNodesPerPlayer")
             ? generation["startingNodesPerPlayer"].GetUint() : 0U;
         settings.startingMinimumDistance = generation.HasMember("startingMinimumDistance")
@@ -688,8 +681,6 @@ void DefinitionRegistry::loadResourceFields(const std::filesystem::path& path) {
             settings.minimumNodesPerField == 0 ||
             settings.minimumNodesPerField > settings.maximumNodesPerField ||
             settings.placementAttemptsPerField == 0 || settings.minimumNodeSpacing <= 0.0F ||
-            settings.minimumCapacityMultiplier <= 0.0F ||
-            settings.minimumCapacityMultiplier > settings.maximumCapacityMultiplier ||
             (settings.startingNodesPerPlayer > 0 &&
              (settings.startingMinimumDistance <= 0.0F ||
               settings.startingMaximumDistance < settings.startingMinimumDistance)))

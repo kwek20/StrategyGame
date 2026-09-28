@@ -176,7 +176,6 @@ struct ResourceFieldGenerationDefinition {
     std::uint32_t minimumNodesPerField{2}, maximumNodesPerField{6};
     std::uint32_t placementAttemptsPerField{80};
     float minimumNodeSpacing{2.5F};
-    float minimumCapacityMultiplier{0.75F}, maximumCapacityMultiplier{1.35F};
     std::uint32_t startingNodesPerPlayer{0};
     float startingMinimumDistance{0.0F}, startingMaximumDistance{0.0F};
     struct Fairness {

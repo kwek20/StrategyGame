@@ -22,7 +22,6 @@ struct GeneratedResourceNode {
     ResourceArchetypeId archetype;
     glm::vec2 position{0.0F};
     float rotationDegrees{0.0F};
-    float capacityMultiplier{1.0F};
 };
 
 struct ResourceLayout {

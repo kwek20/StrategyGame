@@ -28,8 +28,7 @@ bool sameLayout(const strategy::ResourceLayout& left,
         const auto& a = left.nodes[index];
         const auto& b = right.nodes[index];
         if (a.field != b.field || a.archetype != b.archetype || a.position != b.position ||
-            a.rotationDegrees != b.rotationDegrees ||
-            a.capacityMultiplier != b.capacityMultiplier)
+            a.rotationDegrees != b.rotationDegrees)
             return false;
     }
     return true;
@@ -89,13 +88,15 @@ int strategyTestMain() {
                     return field.definition == node.field &&
                            glm::distance(field.center, node.position) <= field.radius + 0.001F;
                 });
-            valid = valid && belongsToField &&
-                    node.capacityMultiplier >=
-                        fieldDefinition->generation.minimumCapacityMultiplier &&
-                    node.capacityMultiplier <=
-                        fieldDefinition->generation.maximumCapacityMultiplier;
+            valid = valid && belongsToField;
         }
         signatures.insert(std::move(signature));
+        for (const auto& entity : firstWorld.entities()) {
+            const auto* type = definitions.resource(
+                strategy::ResourceArchetypeId{entity.archetype.value});
+            valid = valid && type && entity.resource &&
+                    entity.resource.remaining == type->resourceCapacity;
+        }
 
         for (std::size_t left = 0; left < first.nodes.size(); ++left)
             for (std::size_t right = left + 1; right < first.nodes.size(); ++right) {

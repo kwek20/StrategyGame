@@ -445,6 +445,10 @@ Then proceed to Milestone 6, the first combat slice.
 
 ## Tests and recent validation
 
+- Resource nodes now start with their archetype's fixed capacity, including starting and fairness
+  compensation nodes. Random capacity multipliers are removed from field definitions and generation.
+  Existing saves retain their remaining resource amounts; new-map layouts can change because the
+  generator no longer draws random capacity values.
 - 2026-09-28 building/upgrade hover details and requirement support: Debug build passed;
   `ctest --test-dir build/debug -C Debug --output-on-failure -j 4` passed all 18 tests
   in 275.85 seconds. The delayed, wrapped popup was also visually checked with the renderer
