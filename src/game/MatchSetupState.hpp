@@ -43,12 +43,15 @@ class MatchSetupState final : public GameState {
     GameConfig config_;
     TerrainGenerationDefinitions terrainDefinitions_;
     mutable UiController controller_;
+    float menuTime_{0.0F};
+    float transitionOut_{-1.0F};
 
     [[nodiscard]] UiDocument document(int width, int height) const;
     [[nodiscard]] MatchSetupOptions currentSetup() const;
     void persist();
     void activate(std::string_view id, int direction = 1);
     void cycle(std::size_t& value, std::size_t count, int direction);
+    void beginTransition(StateRequest request);
 };
 
 } // namespace strategy

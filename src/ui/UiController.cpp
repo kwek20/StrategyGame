@@ -30,8 +30,16 @@ void UiController::apply(UiDocument& document) {
         hoverSeconds_ = 0.0F;
     }
     document.focus(focusedId_);
-    for (UiElement& element : document.elements())
+    for (UiElement& element : document.elements()) {
         element.pressed = element.id == pressedId_;
+        if (element.kind == UiElementKind::button && (element.hovered || element.focused)) {
+            const float expansion = element.pressed ? -1.0F : 2.0F;
+            element.bounds.left -= expansion;
+            element.bounds.top -= expansion;
+            element.bounds.right += expansion;
+            element.bounds.bottom += expansion;
+        }
+    }
     if (document.find("entity.tooltip")) {
         const UiElement* source = document.find(hoveredId_);
         document.setText("entity.tooltip",

@@ -12,11 +12,7 @@ class SettingsState final : public GameState {
     void handleEvent(const SDL_Event&) override;
     void update(float deltaSeconds) override;
     void render(Renderer&) const override;
-    StateRequest takeRequest() override {
-        const StateRequest result = request_;
-        request_ = StateRequest::none;
-        return result;
-    }
+    StateRequest takeRequest() override;
 
   private:
     GameConfig config_;
@@ -30,5 +26,8 @@ class SettingsState final : public GameState {
     [[nodiscard]] UiDocument uiDocument(int width, int height) const;
     void activateControl(std::string_view id, int direction = 1);
     mutable UiController uiController_;
+    float menuTime_{0.0F};
+    float transitionOut_{-1.0F};
+    void beginTransition(StateRequest request);
 };
 } // namespace strategy

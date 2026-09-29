@@ -62,6 +62,14 @@ UiDocument SettingsState::uiDocument(int width, int height) const {
     }
     ui.button("settings.apply", {470, 555, 850, 593}, Text::get("settings.apply"));
     ui.button("settings.cancel", {470, 600, 850, 638}, Text::get("settings.cancel"));
+    for (UiElement& element : ui.elements()) {
+        if (element.kind == UiElementKind::modalPanel || element.kind == UiElementKind::panel)
+            element.texture = "ui/menu_panel";
+        else if (element.kind == UiElementKind::button)
+            element.texture = "ui/menu_button";
+    }
+    if (UiElement* apply = const_cast<UiElement*>(ui.find("settings.apply"))) apply->icon = "status_powered";
+    if (UiElement* cancel = const_cast<UiElement*>(ui.find("settings.cancel"))) cancel->icon = "action_stop";
     ui.scaleFromReference(width, height, config_.uiScale);
     return ui;
 }
@@ -73,6 +81,13 @@ SettingsState::SettingsState(StateContext& context)
         if (resolutions[index].first == config_.resolutionWidth &&
             resolutions[index].second == config_.resolutionHeight)
             resolution_ = index;
+    uiController_.focus("settings.resolution");
+}
+
+void SettingsState::beginTransition(StateRequest request) {
+    if (transitionOut_ >= 0.0F) return;
+    request_ = request;
+    transitionOut_ = 0.0F;
 }
 
 void SettingsState::apply() {
@@ -112,11 +127,12 @@ void SettingsState::activateControl(std::string_view id, int direction) {
             binding_ = static_cast<int>(found - std::begin(bindingNames));
     } else if (id == "settings.apply") {
         apply();
-        request_ = StateRequest::returnToMainMenu;
-    } else if (id == "settings.cancel") request_ = StateRequest::returnToMainMenu;
+        beginTransition(StateRequest::returnToMainMenu);
+    } else if (id == "settings.cancel") beginTransition(StateRequest::returnToMainMenu);
 }
 
 void SettingsState::handleEvent(const SDL_Event& event) {
+    if (transitionOut_ >= 0.0F) return;
     if (event.type == SDL_EVENT_MOUSE_MOTION) {
         windowId_ = event.motion.windowID;
         uiController_.pointerMoved({event.motion.x, event.motion.y});
@@ -149,7 +165,7 @@ void SettingsState::handleEvent(const SDL_Event& event) {
             return;
         }
         if (event.key.key == SDLK_ESCAPE)
-            request_ = StateRequest::returnToMainMenu;
+            beginTransition(StateRequest::returnToMainMenu);
         return;
     }
     if (event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
@@ -167,19 +183,24 @@ void SettingsState::handleEvent(const SDL_Event& event) {
             if (const auto activated = uiController_.activateFocused(ui))
                 activateControl(*activated);
         } else if (event.gbutton.button == SDL_GAMEPAD_BUTTON_EAST)
-            request_ = StateRequest::returnToMainMenu;
+            beginTransition(StateRequest::returnToMainMenu);
         return;
     }
-    if (event.type != SDL_EVENT_MOUSE_BUTTON_DOWN || event.button.button != SDL_BUTTON_LEFT)
+    if ((event.type != SDL_EVENT_MOUSE_BUTTON_DOWN &&
+         event.type != SDL_EVENT_MOUSE_BUTTON_UP) || event.button.button != SDL_BUTTON_LEFT)
         return;
-    context_.events.enqueue(AudioEvent{AudioCue::uiClick});
     windowId_ = event.button.windowID;
     int width = 1280, height = 720;
     if (SDL_Window* window = SDL_GetWindowFromID(windowId_))
         SDL_GetWindowSize(window, &width, &height);
     UiDocument ui = uiDocument(width, height);
-    const auto activated = uiController_.press(ui, {event.button.x, event.button.y});
+    if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
+        (void)uiController_.press(ui, {event.button.x, event.button.y});
+        return;
+    }
+    const auto activated = uiController_.release(ui, {event.button.x, event.button.y});
     if (!activated) return;
+    context_.events.enqueue(AudioEvent{AudioCue::uiClick});
     const UiElement* control = ui.find(*activated);
     const float controlCenter = control
         ? (control->bounds.left + control->bounds.right) * 0.5F
@@ -188,12 +209,31 @@ void SettingsState::handleEvent(const SDL_Event& event) {
 }
 
 void SettingsState::render(Renderer& renderer) const {
+    renderer.drawMenuBackground(std::sin(menuTime_ * 0.10F));
     UiDocument ui = uiDocument(renderer.viewportWidth(), renderer.viewportHeight());
     uiController_.apply(ui);
+    const float entrance = std::clamp(menuTime_ / 0.40F, 0.0F, 1.0F);
+    const float offset = (1.0F - entrance) * 30.0F;
+    for (UiElement& element : ui.elements()) {
+        element.bounds.top += offset;
+        element.bounds.bottom += offset;
+    }
     renderer.drawUi(ui);
+    const float fadeIn = 1.0F - std::clamp(menuTime_ / 0.50F, 0.0F, 1.0F);
+    const float fadeOut = transitionOut_ < 0.0F ? 0.0F : std::clamp(transitionOut_ / 0.24F, 0.0F, 1.0F);
+    renderer.drawScreenFade(std::max(fadeIn, fadeOut));
 }
 
 void SettingsState::update(float deltaSeconds) {
+    menuTime_ += deltaSeconds;
+    if (transitionOut_ >= 0.0F) transitionOut_ += deltaSeconds;
     uiController_.advance(deltaSeconds);
+}
+
+StateRequest SettingsState::takeRequest() {
+    if (request_ == StateRequest::none || transitionOut_ < 0.24F) return StateRequest::none;
+    const StateRequest result = request_;
+    request_ = StateRequest::none;
+    return result;
 }
 } // namespace strategy

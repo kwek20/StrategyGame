@@ -4,6 +4,7 @@
 
 #include <optional>
 #include <string>
+#include <utility>
 
 namespace strategy {
 
@@ -19,6 +20,7 @@ class UiController final {
     [[nodiscard]] std::optional<std::string> release(UiDocument& document,
                                                      glm::vec2 position);
     void clearPressed();
+    void focus(std::string id) { focusedId_ = std::move(id); }
 
     bool moveFocus(UiDocument& document, int direction);
     [[nodiscard]] std::optional<std::string> activateFocused(const UiDocument& document) const;

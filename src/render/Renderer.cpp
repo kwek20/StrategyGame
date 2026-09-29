@@ -259,7 +259,7 @@ Renderer::Renderer(Logger* logger, std::function<void()> keepResponsive)
         glDebugMessageCallback(openGlDebugMessage, logger_);
         logger_->info("renderer", "OpenGL debug output enabled");
     }
-    uiRenderer_ = std::make_unique<UiRenderer>(shaders_);
+    uiRenderer_ = std::make_unique<UiRenderer>(shaders_, resources_);
     iconAtlas_ = IconAtlas::load("assets/icons_atlas.json");
     particleEffects_ = ParticleEffectCatalogue::load();
     particleSystem_ = std::make_unique<ParticleSystem>(particleEffects_);
@@ -443,6 +443,48 @@ void Renderer::drawUi(const UiDocument& document) const {
     renderGraph_.enter(RenderPassKind::userInterface);
     ProfileScope profile(profiler_, "render.ui");
     uiRenderer_->draw(document, viewportWidth_, viewportHeight_);
+    for (const UiElement& element : document.elements()) {
+        if (element.icon.empty() || element.kind != UiElementKind::button) continue;
+        const float size = std::min(34.0F, element.bounds.bottom - element.bounds.top - 14.0F);
+        const float top = element.bounds.top +
+                          ((element.bounds.bottom - element.bounds.top) - size) * 0.5F;
+        drawIcon(element.icon, element.bounds.left + 18.0F, top,
+                 element.bounds.left + 18.0F + size, top + size,
+                 element.enabled ? glm::vec3{0.92F, 0.95F, 0.96F}
+                                 : glm::vec3{0.42F, 0.45F, 0.46F});
+    }
+}
+
+void Renderer::drawScreenFade(float opacity) const {
+    if (opacity <= 0.001F) return;
+    renderGraph_.enter(RenderPassKind::userInterface);
+    uiRenderer_->rectangle(0.0F, 0.0F, static_cast<float>(viewportWidth_),
+                           static_cast<float>(viewportHeight_), {0.0F, 0.0F, 0.0F},
+                           viewportWidth_, viewportHeight_, std::clamp(opacity, 0.0F, 1.0F));
+}
+
+void Renderer::drawMenuBackground(float pan) const {
+    renderGraph_.enter(RenderPassKind::userInterface);
+    const TextureHandle handle = resources_.requestTexture("ui/terrain_generation_concept");
+    const Texture* texture = resources_.textureOrMarker(handle);
+    constexpr float imageAspect = 1672.0F / 941.0F;
+    constexpr float zoom = 1.06F;
+    const float viewportAspect = aspectRatio();
+    float uSpan = 1.0F;
+    float vSpan = 1.0F;
+    if (viewportAspect < imageAspect)
+        uSpan = viewportAspect / imageAspect;
+    else
+        vSpan = imageAspect / viewportAspect;
+    uSpan /= zoom;
+    vSpan /= zoom;
+    const float travel = std::max(0.0F, (1.0F - uSpan) * 0.5F);
+    const float centerU = 0.5F + std::clamp(pan, -1.0F, 1.0F) * travel * 0.9F;
+    uiRenderer_->image(texture->id(), 0.0F, 0.0F,
+                       static_cast<float>(viewportWidth_), static_cast<float>(viewportHeight_),
+                       centerU - uSpan * 0.5F, 0.5F - vSpan * 0.5F,
+                       centerU + uSpan * 0.5F, 0.5F + vSpan * 0.5F,
+                       {1.0F, 1.0F, 1.0F}, viewportWidth_, viewportHeight_);
 }
 
 void Renderer::drawIcon(const std::string& id, float left, float top, float right, float bottom,
@@ -642,6 +684,8 @@ void Renderer::drawLoadingScreen(float progress, const std::string& status) cons
     renderGraph_.enter(RenderPassKind::userInterface);
     glClearColor(0.0F, 0.0F, 0.0F, 1.0F);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    const float seconds = static_cast<float>(SDL_GetTicks()) / 1000.0F;
+    drawMenuBackground(std::sin(seconds * 0.10F));
     UiDocument ui = GameHudLayout::loading(
         progress, status, viewportWidth_, viewportHeight_);
     uiRenderer_->draw(ui, viewportWidth_, viewportHeight_);

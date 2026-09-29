@@ -22,8 +22,8 @@ UiDocument GameHudLayout::resources(std::size_t localResourceCount,
              {0.16F, 0.17F, 0.18F});
     const float resourceWidth = 16.0F + static_cast<float>(localResourceCount) * 106.0F + 122.0F;
     const UiRect resources = canvas.rect(UiAnchor::topLeft, 10, 10, resourceWidth, 34, 420, 34);
-    ui.panel("resources.panel", resources,
-             {0.16F, 0.17F, 0.18F});
+    auto& resourcesPanel = ui.panel("resources.panel", resources, {0.82F, 0.84F, 0.86F});
+    resourcesPanel.texture = "ui/hud_panel";
     for (std::size_t i = 0; i < localResourceCount; ++i) {
         const float left = resources.left + canvas.value(8 + i * 106.0F);
         ui.label("resources.local." + std::to_string(i),
@@ -53,8 +53,8 @@ UiDocument GameHudLayout::resources(std::size_t localResourceCount,
         const float desiredHeight = 102.0F + static_cast<float>(powerDeviceCount) * 22.0F;
         const UiRect overlay = canvas.rect(UiAnchor::topLeft, 330, 52, 320,
                                            std::min(desiredHeight, 650.0F), 260, 102);
-        ui.panel("power.panel", overlay,
-                 {0.025F, 0.04F, 0.06F});
+        auto& powerPanel = ui.panel("power.panel", overlay, {0.82F, 0.84F, 0.86F});
+        powerPanel.texture = "ui/hud_compact";
     }
     return ui;
 }
@@ -63,7 +63,7 @@ UiDocument GameHudLayout::minimap(int viewportWidth, int viewportHeight, float u
     UiDocument ui;
     const UiLayout canvas(viewportWidth, viewportHeight, uiScale);
     const UiRect map = canvas.rect(UiAnchor::topRight, 20, 56, 190, 190, 150, 150);
-    ui.panel("strategy.minimap", map, {0.008F, 0.012F, 0.016F});
+    ui.panel("strategy.minimap", map, {0.86F, 0.88F, 0.90F}).texture = "ui/minimap_frame";
     ui.label("strategy.minimap.title",
              {map.left + canvas.value(8), map.top + canvas.value(4), 0, 0},
              Text::get("strategy.minimap"), 1.5F * canvas.scale());
@@ -75,6 +75,9 @@ UiDocument GameHudLayout::loading(float progress, const std::string& status,
     UiDocument ui;
     const UiLayout canvas(viewportWidth, viewportHeight, uiScale);
     const UiRect content = canvas.rect(UiAnchor::center, 0, 0, 520, 130, 360, 110);
+    ui.panel("loading.panel", {content.left, content.top - canvas.value(18),
+             content.right, content.bottom + canvas.value(12)}, {0.86F, 0.88F, 0.90F})
+        .texture = "ui/tooltip_panel";
     ui.label("loading.title", {content.left + canvas.value(155), content.top, 0, 0},
              Text::get("loading.title"), 3.0F * canvas.scale());
     ui.label("loading.status", {content.left + canvas.value(50),
@@ -95,7 +98,7 @@ UiDocument GameHudLayout::alerts(const std::vector<std::string>& messages,
     const UiLayout canvas(viewportWidth, viewportHeight, uiScale);
     const UiRect panel = canvas.rect(UiAnchor::topRight, 20, 220, 360,
                                      18.0F + 30.0F * messages.size(), 280, 48);
-    ui.panel("alerts.panel", panel, {0.08F, 0.035F, 0.025F});
+    ui.panel("alerts.panel", panel, {0.90F, 0.78F, 0.66F}).texture = "ui/tooltip_panel";
     for (std::size_t i = 0; i < messages.size(); ++i)
         ui.label("alerts." + std::to_string(i),
                  {panel.left + canvas.value(12), panel.top + canvas.value(10 + i * 30.0F),

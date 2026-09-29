@@ -946,9 +946,10 @@ void PlayState::handleEvent(const SDL_Event& event) {
 }
 
 UiDocument PlayState::pauseUi(int width, int height) const {
+    if (uiController_.focusedId().empty()) uiController_.focus("pause.resume");
     UiDocument document;
     document.modal("pause.panel", {30.0F, 70.0F, 335.0F, 505.0F},
-                   {0.035F, 0.055F, 0.075F});
+                   {0.72F, 0.76F, 0.80F}).texture = "ui/menu_panel";
     document.label("pause.title", {91.0F, 106.0F, 0.0F, 0.0F},
                    Text::get("pause.title"), 4.0F);
     document.button("pause.resume", {60.0F, 250.0F, 300.0F, 310.0F},
@@ -960,6 +961,11 @@ UiDocument PlayState::pauseUi(int width, int height) const {
     document.button("pause.exit", {60.0F, 410.0F, 300.0F, 470.0F},
                     Text::get("menu.exit"), {0.40F, 0.16F, 0.14F},
                     {0.72F, 0.25F, 0.20F}).textScale = 3.0F;
+    for (UiElement& element : document.elements())
+        if (element.kind == UiElementKind::button) element.texture = "ui/menu_button";
+    if (UiElement* item = const_cast<UiElement*>(document.find("pause.resume"))) item->icon = "action_move";
+    if (UiElement* item = const_cast<UiElement*>(document.find("pause.settings"))) item->icon = "action_power_priority";
+    if (UiElement* item = const_cast<UiElement*>(document.find("pause.exit"))) item->icon = "action_stop";
     document.scaleFromReference(width, height, config_.uiScale);
     return document;
 }
@@ -967,9 +973,15 @@ UiDocument PlayState::pauseUi(int width, int height) const {
 void PlayState::handlePauseEvent(const SDL_Event& event) {
     const auto activate = [&](std::string_view id) {
         if (id == "pause.resume") paused_ = false;
-        else if (id == "pause.settings") request_ = StateRequest::openSettings;
-        else if (id == "pause.exit") request_ = StateRequest::returnToMainMenu;
+        else if (pauseTransition_ < 0.0F && id == "pause.settings") {
+            pausePendingRequest_ = StateRequest::openSettings;
+            pauseTransition_ = 0.0F;
+        } else if (pauseTransition_ < 0.0F && id == "pause.exit") {
+            pausePendingRequest_ = StateRequest::returnToMainMenu;
+            pauseTransition_ = 0.0F;
+        }
     };
+    if (pauseTransition_ >= 0.0F) return;
     if (event.type == SDL_EVENT_MOUSE_MOTION) {
         uiController_.pointerMoved({event.motion.x, event.motion.y});
         return;
@@ -979,9 +991,19 @@ void PlayState::handlePauseEvent(const SDL_Event& event) {
         if (SDL_Window* window = SDL_GetWindowFromID(event.button.windowID))
             SDL_GetWindowSize(window, &width, &height);
         UiDocument document = pauseUi(width, height);
-        const auto activated = uiController_.press(
-            document, {event.button.x, event.button.y});
-        if (activated) activate(*activated);
+        (void)uiController_.press(document, {event.button.x, event.button.y});
+        return;
+    }
+    if (event.type == SDL_EVENT_MOUSE_BUTTON_UP && event.button.button == SDL_BUTTON_LEFT) {
+        int width = 1280, height = 720;
+        if (SDL_Window* window = SDL_GetWindowFromID(event.button.windowID))
+            SDL_GetWindowSize(window, &width, &height);
+        UiDocument document = pauseUi(width, height);
+        if (const auto activated = uiController_.release(
+                document, {event.button.x, event.button.y})) {
+            context_.events.enqueue(AudioEvent{AudioCue::uiClick});
+            activate(*activated);
+        }
         return;
     }
     if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_TAB) {
@@ -1014,6 +1036,11 @@ void PlayState::update(float deltaSeconds) {
     std::erase_if(hudAlerts_, [](const HudAlert& alert) { return alert.remaining <= 0.0F; });
     uiController_.advance(deltaSeconds);
     if (paused_) {
+        if (pauseTransition_ >= 0.0F) {
+            pauseTransition_ += deltaSeconds;
+            if (pauseTransition_ >= 0.24F && request_ == StateRequest::none)
+                request_ = pausePendingRequest_;
+        }
         return;
     }
     if (pickedEntity_) {
@@ -1552,7 +1579,7 @@ void PlayState::render(Renderer& renderer) const {
                                      static_cast<float>(renderer.viewportHeight()) - 42.0F);
         UiDocument placementUi;
         placementUi.tooltip("placement.reason", {left, top, left + width, top + 34.0F},
-                            constructionPreviewReason_);
+                            constructionPreviewReason_).texture = "ui/tooltip_panel";
         renderer.drawUi(placementUi);
     }
     // Terrain inspection is a UI pass and must remain after every world/overlay pass.
@@ -1574,7 +1601,19 @@ void PlayState::render(Renderer& renderer) const {
         UiDocument document = pauseUi(renderer.viewportWidth(), renderer.viewportHeight());
         uiController_.apply(document);
         renderer.drawUi(document);
+        if (pauseTransition_ >= 0.0F)
+            renderer.drawScreenFade(std::clamp(pauseTransition_ / 0.24F, 0.0F, 1.0F));
     }
+}
+
+StateRequest PlayState::takeRequest() {
+    const StateRequest result = request_;
+    request_ = StateRequest::none;
+    if (result == StateRequest::openSettings) {
+        pauseTransition_ = -1.0F;
+        pausePendingRequest_ = StateRequest::none;
+    }
+    return result;
 }
 
 } // namespace strategy

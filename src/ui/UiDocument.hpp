@@ -43,6 +43,7 @@ struct UiElement {
     bool enabled{true};
     float progress{0.0F};
     std::string icon;
+    std::string texture;
     std::string tooltip;
 };
 

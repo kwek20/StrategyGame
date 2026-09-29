@@ -27,11 +27,7 @@ class PlayState final : public GameState {
     void handleEvent(const SDL_Event& event) override;
     void update(float deltaSeconds) override;
     void render(Renderer& renderer) const override;
-    StateRequest takeRequest() override {
-        const StateRequest result = request_;
-        request_ = StateRequest::none;
-        return result;
-    }
+    StateRequest takeRequest() override;
 
   private:
     enum class ViewMode { strategy, unitControl };
@@ -53,6 +49,8 @@ class PlayState final : public GameState {
     mutable std::optional<glm::vec3> pendingMoveDestination_;
     mutable EntityId pendingOrderTarget_{0};
     bool paused_{false};
+    float pauseTransition_{-1.0F};
+    StateRequest pausePendingRequest_{StateRequest::none};
     bool detailedDebug_{false};
     bool terrainDebug_{false};
     int waterDebugMode_{0};

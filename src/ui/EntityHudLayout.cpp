@@ -83,9 +83,11 @@ UiDocument EntityHudLayout::actions(const EntityHudModel& model, int width, int 
                              panel.left + inset + actionWidth, panel.bottom - inset};
     const UiRect infoPanel{actionPanel.right + inset, panel.top + inset,
                            panel.right - inset, panel.bottom - inset};
-    document.panel("entity.panel", panel, {0.018F, 0.028F, 0.040F});
-    document.panel("entity.actions.panel", actionPanel, {0.030F, 0.050F, 0.070F});
-    document.panel("entity.info.panel", infoPanel, {0.025F, 0.040F, 0.058F});
+    document.panel("entity.panel", panel, {0.82F, 0.84F, 0.86F}).texture = "ui/hud_panel";
+    document.panel("entity.actions.panel", actionPanel, {0.82F, 0.84F, 0.86F})
+        .texture = "ui/hud_compact";
+    document.panel("entity.info.panel", infoPanel, {0.82F, 0.84F, 0.86F})
+        .texture = "ui/hud_compact";
 
     // Left: all commands, production choices and upgrades share one predictable grid.
     constexpr std::size_t actionColumns = 3;
@@ -115,11 +117,13 @@ UiDocument EntityHudLayout::actions(const EntityHudModel& model, int width, int 
          std::min(static_cast<float>(width) - inset, panel.left + inset + canvas.value(380)),
          panel.top - canvas.value(64)}, {});
     tooltipBox.textScale = 1.75F * canvas.scale();
+    tooltipBox.texture = "ui/tooltip_panel";
 
     // Queues are a separate strip above the entity menu and never resize its contents.
     if (!model.queue.empty()) {
         const UiRect queuePanel{panel.left, panel.top - canvas.value(58), panel.right, panel.top};
-        document.panel("entity.queue.panel", queuePanel, {0.025F, 0.040F, 0.058F});
+        document.panel("entity.queue.panel", queuePanel, {0.82F, 0.84F, 0.86F})
+            .texture = "ui/hud_panel";
         const std::size_t queueCount = std::min<std::size_t>(model.queue.size(), 9);
         const float queueSlotSize = canvas.value(44);
         const float queueGap = canvas.value(8);
@@ -229,8 +233,8 @@ UiDocument EntityHudLayout::selection(const EntityHudModel& model, int width, in
     const std::size_t visible = std::min<std::size_t>(model.selectionGroups.size(), 6);
     const float panelHeight = 58.0F + static_cast<float>(visible) * 34.0F;
     const UiRect panel = canvas.rect(UiAnchor::bottomLeft, 0, 0, 392, panelHeight, 300, 100);
-    document.panel("selection.panel", panel,
-                   {0.025F, 0.04F, 0.06F});
+    document.panel("selection.panel", panel, {0.82F, 0.84F, 0.86F})
+        .texture = "ui/hud_compact";
     document.label("selection.title", {panel.left + canvas.value(12),
                    panel.top + canvas.value(8), 0, 0},
                    Text::format("selection.title", {std::to_string(model.totalEntities)}),

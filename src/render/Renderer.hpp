@@ -56,6 +56,8 @@ class Renderer final {
     void recordProfile(const std::string& name, double milliseconds);
     void endFrame();
     void drawUi(const UiDocument& document) const;
+    void drawMenuBackground(float pan) const;
+    void drawScreenFade(float opacity) const;
     void drawLoadingScreen(float progress, const std::string& status) const;
     void drawTerrain(const CameraView& camera,
                      const Player* player = nullptr,

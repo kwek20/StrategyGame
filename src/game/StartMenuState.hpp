@@ -16,16 +16,14 @@ class StartMenuState final : public GameState {
     void handleEvent(const SDL_Event& event) override;
     void update(float deltaSeconds) override;
     void render(Renderer& renderer) const override;
-    StateRequest takeRequest() override {
-        const StateRequest result = request_;
-        request_ = StateRequest::none;
-        return result;
-    }
+    StateRequest takeRequest() override;
   private:
     StateRequest request_{StateRequest::none};
     mutable UiDocument ui_;
     mutable UiController uiController_;
     GameConfig config_;
+    float backgroundTime_{0.0F};
+    float transitionOut_{-1.0F};
 
     void activateControl(std::string_view id);
 };

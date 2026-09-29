@@ -47,11 +47,18 @@ MatchSetupState::MatchSetupState(StateContext& context)
         context_.logger.warning("configuration",
             std::string{"Could not load match setup profile; using defaults: "} + error.what());
     }
+    controller_.focus("match.player_country");
+}
+
+void MatchSetupState::beginTransition(StateRequest request) {
+    if (transitionOut_ >= 0.0F) return;
+    request_ = request;
+    transitionOut_ = 0.0F;
 }
 
 UiDocument MatchSetupState::document(int width, int height) const {
     UiDocument ui;
-    ui.modal("match.panel", {120, 35, 1160, 685}, {0.025F, 0.04F, 0.06F});
+    ui.modal("match.panel", {120, 35, 1160, 685}, {0.72F, 0.76F, 0.80F}).texture = "ui/menu_panel";
     ui.label("match.title", {160, 70, 0, 0}, Text::get("match_setup.title"), 3.0F);
     ui.label("match.mode", {160, 112, 0, 0}, Text::get("match_setup.mode_1v1"), 1.4F,
              {0.55F, 0.75F, 0.84F});
@@ -92,6 +99,10 @@ UiDocument MatchSetupState::document(int width, int height) const {
     ui.button("match.start", {680, 515, 1100, 570}, Text::get("match_setup.start"),
               {0.16F, 0.36F, 0.18F}, {0.28F, 0.62F, 0.24F}).textScale = 2.4F;
     ui.button("match.back", {680, 585, 1100, 635}, Text::get("match_setup.back")).textScale = 2.0F;
+    for (UiElement& element : ui.elements())
+        if (element.kind == UiElementKind::button) element.texture = "ui/menu_button";
+    if (UiElement* start = const_cast<UiElement*>(ui.find("match.start"))) start->icon = "action_move";
+    if (UiElement* back = const_cast<UiElement*>(ui.find("match.back"))) back->icon = "action_stop";
     ui.scaleFromReference(width, height, config_.uiScale);
     return ui;
 }
@@ -114,21 +125,23 @@ void MatchSetupState::activate(std::string_view id, int direction) {
     else if (id == "match.abundance") cycle(abundance_, resourceAbundance.size(), direction);
     else if (id == "match.start") {
         persist();
-        request_ = StateRequest::startGame;
+        beginTransition(StateRequest::startGame);
         return;
     } else if (id == "match.back") {
         persist();
-        request_ = StateRequest::returnToMainMenu;
+        beginTransition(StateRequest::returnToMainMenu);
         return;
     } else changed = false;
     if (changed) persist();
 }
 
 void MatchSetupState::handleEvent(const SDL_Event& event) {
+    if (transitionOut_ >= 0.0F) return;
     int width = config_.resolutionWidth, height = config_.resolutionHeight;
     std::uint32_t windowId = 0;
     if (event.type == SDL_EVENT_MOUSE_MOTION) windowId = event.motion.windowID;
-    else if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) windowId = event.button.windowID;
+    else if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN ||
+             event.type == SDL_EVENT_MOUSE_BUTTON_UP) windowId = event.button.windowID;
     else if (event.type == SDL_EVENT_KEY_DOWN) windowId = event.key.windowID;
     if (SDL_Window* window = SDL_GetWindowFromID(windowId)) SDL_GetWindowSize(window, &width, &height);
     UiDocument ui = document(width, height);
@@ -137,8 +150,12 @@ void MatchSetupState::handleEvent(const SDL_Event& event) {
         return;
     }
     if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_LEFT) {
-        context_.events.enqueue(AudioEvent{AudioCue::uiClick});
-        if (const auto id = controller_.press(ui, {event.button.x, event.button.y})) {
+        (void)controller_.press(ui, {event.button.x, event.button.y});
+        return;
+    }
+    if (event.type == SDL_EVENT_MOUSE_BUTTON_UP && event.button.button == SDL_BUTTON_LEFT) {
+        if (const auto id = controller_.release(ui, {event.button.x, event.button.y})) {
+            context_.events.enqueue(AudioEvent{AudioCue::uiClick});
             const UiElement* element = ui.find(*id);
             const float center = element ? (element->bounds.left + element->bounds.right) * 0.5F
                                          : width * 0.5F;
@@ -157,7 +174,7 @@ void MatchSetupState::handleEvent(const SDL_Event& event) {
                 changed = true;
             } else if (event.key.key == SDLK_ESCAPE) {
                 persist();
-                request_ = StateRequest::returnToMainMenu;
+                beginTransition(StateRequest::returnToMainMenu);
             }
             if (changed) persist();
             if (event.key.key != SDLK_TAB) return;
@@ -169,7 +186,7 @@ void MatchSetupState::handleEvent(const SDL_Event& event) {
                 activate(*id, event.key.key == SDLK_LEFT ? -1 : 1);
         } else if (event.key.key == SDLK_RETURN || event.key.key == SDLK_SPACE) {
             if (const auto id = controller_.activateFocused(ui)) activate(*id);
-        } else if (event.key.key == SDLK_ESCAPE) request_ = StateRequest::returnToMainMenu;
+        } else if (event.key.key == SDLK_ESCAPE) beginTransition(StateRequest::returnToMainMenu);
         return;
     }
     if (event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
@@ -182,19 +199,34 @@ void MatchSetupState::handleEvent(const SDL_Event& event) {
         } else if (event.gbutton.button == SDL_GAMEPAD_BUTTON_SOUTH) {
             if (const auto id = controller_.activateFocused(ui)) activate(*id);
         } else if (event.gbutton.button == SDL_GAMEPAD_BUTTON_EAST)
-            request_ = StateRequest::returnToMainMenu;
+            beginTransition(StateRequest::returnToMainMenu);
     }
 }
 
-void MatchSetupState::update(float deltaSeconds) { controller_.advance(deltaSeconds); }
+void MatchSetupState::update(float deltaSeconds) {
+    menuTime_ += deltaSeconds;
+    if (transitionOut_ >= 0.0F) transitionOut_ += deltaSeconds;
+    controller_.advance(deltaSeconds);
+}
 
 void MatchSetupState::render(Renderer& renderer) const {
+    renderer.drawMenuBackground(std::sin(menuTime_ * 0.10F));
     UiDocument ui = document(renderer.viewportWidth(), renderer.viewportHeight());
     controller_.apply(ui);
+    const float entrance = std::clamp(menuTime_ / 0.40F, 0.0F, 1.0F);
+    const float offset = (1.0F - entrance) * 30.0F;
+    for (UiElement& element : ui.elements()) {
+        element.bounds.top += offset;
+        element.bounds.bottom += offset;
+    }
     renderer.drawUi(ui);
+    const float fadeIn = 1.0F - std::clamp(menuTime_ / 0.50F, 0.0F, 1.0F);
+    const float fadeOut = transitionOut_ < 0.0F ? 0.0F : std::clamp(transitionOut_ / 0.24F, 0.0F, 1.0F);
+    renderer.drawScreenFade(std::max(fadeIn, fadeOut));
 }
 
 StateRequest MatchSetupState::takeRequest() {
+    if (request_ == StateRequest::none || transitionOut_ < 0.24F) return StateRequest::none;
     const StateRequest result = request_;
     request_ = StateRequest::none;
     return result;

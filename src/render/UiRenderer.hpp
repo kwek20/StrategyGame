@@ -9,10 +9,11 @@
 namespace strategy {
 
 class UiDocument;
+class ResourceManager;
 
 class UiRenderer final {
   public:
-    explicit UiRenderer(ShaderManager& shaders);
+    explicit UiRenderer(ShaderManager& shaders, ResourceManager& resources);
     ~UiRenderer();
     UiRenderer(const UiRenderer&) = delete;
     UiRenderer& operator=(const UiRenderer&) = delete;
@@ -31,7 +32,8 @@ class UiRenderer final {
                    float bottom,
                    const glm::vec3& color,
                    int width,
-                   int height) const;
+                   int height,
+                   float opacity = 1.0F) const;
     void image(std::uint32_t texture,
                float left,
                float top,
@@ -43,10 +45,12 @@ class UiRenderer final {
                float v1,
                const glm::vec3& tint,
                int width,
-               int height) const;
+               int height,
+               float opacity = 1.0F) const;
 
   private:
     ShaderManager& shaders_;
+    ResourceManager& resources_;
     ShaderHandle program_;
     std::uint32_t vao_{0}, vbo_{0};
     FontRenderer font_;
