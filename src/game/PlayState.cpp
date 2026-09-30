@@ -948,7 +948,7 @@ void PlayState::handleEvent(const SDL_Event& event) {
 UiDocument PlayState::pauseUi(int width, int height) const {
     if (uiController_.focusedId().empty()) uiController_.focus("pause.resume");
     UiDocument document;
-    document.modal("pause.panel", {30.0F, 70.0F, 335.0F, 505.0F},
+    document.modal("pause.panel", {10.0F, 38.0F, 355.0F, 532.0F},
                    {0.72F, 0.76F, 0.80F}).texture = "ui/menu_panel";
     document.label("pause.title", {91.0F, 106.0F, 0.0F, 0.0F},
                    Text::get("pause.title"), 4.0F);

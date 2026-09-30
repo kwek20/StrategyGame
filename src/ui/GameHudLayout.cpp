@@ -74,20 +74,32 @@ UiDocument GameHudLayout::loading(float progress, const std::string& status,
                                   int viewportWidth, int viewportHeight, float uiScale) {
     UiDocument ui;
     const UiLayout canvas(viewportWidth, viewportHeight, uiScale);
-    const UiRect content = canvas.rect(UiAnchor::center, 0, 0, 520, 130, 360, 110);
-    ui.panel("loading.panel", {content.left, content.top - canvas.value(18),
-             content.right, content.bottom + canvas.value(12)}, {0.86F, 0.88F, 0.90F})
+    constexpr float menuScale = 1.20F;
+    constexpr float barScale = 1.50F;
+    const UiRect content = canvas.rect(UiAnchor::center, 0, 0,
+                                       920 * menuScale, 130 * menuScale,
+                                       720 * menuScale, 110 * menuScale);
+    ui.panel("loading.panel", {content.left, content.top - canvas.value(18 * menuScale),
+             content.right, content.bottom + canvas.value(12 * menuScale)},
+             {0.86F, 0.88F, 0.90F})
         .texture = "ui/tooltip_panel";
-    ui.label("loading.title", {content.left + canvas.value(155), content.top, 0, 0},
-             Text::get("loading.title"), 3.0F * canvas.scale());
-    ui.label("loading.status", {content.left + canvas.value(50),
-             content.top + canvas.value(48), content.right - canvas.value(50),
-             content.top + canvas.value(70)}, status, 1.4F * canvas.scale(),
+    ui.label("loading.title", {content.left + canvas.value(355 * menuScale), content.top, 0, 0},
+             Text::get("loading.title"), 3.0F * menuScale * canvas.scale());
+    ui.label("loading.status", {content.left + canvas.value(50 * menuScale),
+             content.top + canvas.value(48 * menuScale),
+             content.right - canvas.value(50 * menuScale),
+             content.top + canvas.value(70 * menuScale)}, status,
+             1.4F * menuScale * canvas.scale(),
              {0.65F, 0.74F, 0.78F});
-    ui.progressBar("loading.progress",
-        {content.left + canvas.value(50), content.top + canvas.value(88),
-         content.right - canvas.value(50), content.top + canvas.value(108)},
+    const float progressTop = content.top + canvas.value(88 * menuScale);
+    const float progressHeight = canvas.value(20 * menuScale * barScale);
+    auto& loadingProgress = ui.progressBar("loading.progress",
+        {content.left + canvas.value(50 * menuScale), progressTop,
+         content.right - canvas.value(50 * menuScale), progressTop + progressHeight},
         progress, {0.18F, 0.76F, 0.88F});
+    loadingProgress.color = {1.0F, 1.0F, 1.0F};
+    loadingProgress.texture = "ui/power_progress_track";
+    loadingProgress.progressTexture = "ui/power_progress_fill";
     return ui;
 }
 

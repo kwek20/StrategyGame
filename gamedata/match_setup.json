@@ -4,7 +4,7 @@
         "mapChunksPerSide": 15,
         "startingResourcesScale": 1.0,
         "resourceAbundanceScale": 1.0,
-        "terrainSeed": 1,
+        "terrainSeed": 53456236,
         "playerOneCountry": "spain",
         "playerTwoCountry": "japan",
         "terrainLayout": "continental"

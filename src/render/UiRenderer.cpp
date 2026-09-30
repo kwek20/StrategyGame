@@ -238,11 +238,10 @@ void UiRenderer::draw(const UiDocument& document, int width, int height) const {
             if (luminance < 0.48F) textColor = UiTheme::text;
             const bool centered = element.kind == UiElementKind::button;
             const float textWidth = centered ? font_.measureWidth(displayText, fontPixels) : 0.0F;
-            const float iconOffset = centered && !element.icon.empty() ? fontPixels * 0.65F : 0.0F;
             const float x = centered
                                 ? element.bounds.left +
                                       ((element.bounds.right - element.bounds.left) - textWidth) *
-                                          0.5F + iconOffset
+                                          0.5F
                                 : element.bounds.left +
                                       (element.kind == UiElementKind::label ? 0.0F : 12.0F);
             const float top = centered
@@ -261,10 +260,15 @@ void UiRenderer::draw(const UiDocument& document, int width, int height) const {
             (element.kind != UiElementKind::panel &&
              element.kind != UiElementKind::modalPanel)) continue;
         const TextureHandle handle = resources_.requestTexture(element.texture);
-        const Texture* texture = resources_.textureOrMarker(handle);
-        image(texture->id(), element.bounds.left, element.bounds.top,
-              element.bounds.right, element.bounds.bottom, 0.0F, 0.0F, 1.0F, 1.0F,
-              element.color, width, height);
+        if (resources_.state(handle) == ResourceState::ready) {
+            const Texture* texture = resources_.texture(handle);
+            image(texture->id(), element.bounds.left, element.bounds.top,
+                  element.bounds.right, element.bounds.bottom, 0.0F, 0.0F, 1.0F, 1.0F,
+                  element.color, width, height);
+        } else {
+            rectangle(element.bounds.left, element.bounds.top, element.bounds.right,
+                      element.bounds.bottom, {0.025F, 0.04F, 0.06F}, width, height);
+        }
     }
     if (!rectangles.empty()) {
         shaders_.use(program_);
@@ -284,19 +288,43 @@ void UiRenderer::draw(const UiDocument& document, int width, int height) const {
             element.kind == UiElementKind::modalPanel ||
             element.kind == UiElementKind::tooltip) continue;
         const TextureHandle handle = resources_.requestTexture(element.texture);
-        const Texture* texture = resources_.textureOrMarker(handle);
         const glm::vec3 tint = !element.enabled ? UiTheme::disabled
             : (element.pressed ? element.hoverColor * 0.72F
             : (element.hovered || element.focused ? element.hoverColor : element.color));
-        image(texture->id(), element.bounds.left, element.bounds.top,
-              element.bounds.right, element.bounds.bottom, 0.0F, 0.0F, 1.0F, 1.0F,
-              tint, width, height);
+        const float verticalOverscan = element.kind == UiElementKind::button ? 3.0F : 0.0F;
+        if (resources_.state(handle) == ResourceState::ready) {
+            const Texture* texture = resources_.texture(handle);
+            image(texture->id(), element.bounds.left, element.bounds.top - verticalOverscan,
+                  element.bounds.right, element.bounds.bottom + verticalOverscan,
+                  0.0F, 0.0F, 1.0F, 1.0F, tint, width, height);
+        } else {
+            rectangle(element.bounds.left, element.bounds.top - verticalOverscan,
+                      element.bounds.right, element.bounds.bottom + verticalOverscan,
+                      element.color, width, height);
+        }
+        if (element.kind == UiElementKind::progressBar &&
+            !element.progressTexture.empty() && element.progress > 0.0F) {
+            const TextureHandle fillHandle = resources_.requestTexture(element.progressTexture);
+            if (resources_.state(fillHandle) == ResourceState::ready) {
+                const Texture* fill = resources_.texture(fillHandle);
+                const float right = element.bounds.left +
+                    (element.bounds.right - element.bounds.left) * element.progress;
+                image(fill->id(), element.bounds.left, element.bounds.top, right,
+                      element.bounds.bottom, 0.0F, 0.0F, element.progress, 1.0F,
+                      {1.0F, 1.0F, 1.0F}, width, height);
+            }
+        }
     }
     for (const DeferredTexture& item : tooltipTextures) {
         const TextureHandle handle = resources_.requestTexture(item.key);
-        const Texture* texture = resources_.textureOrMarker(handle);
-        image(texture->id(), item.left, item.top, item.right, item.bottom,
-              0.0F, 0.0F, 1.0F, 1.0F, item.tint, width, height);
+        if (resources_.state(handle) == ResourceState::ready) {
+            const Texture* texture = resources_.texture(handle);
+            image(texture->id(), item.left, item.top, item.right, item.bottom,
+                  0.0F, 0.0F, 1.0F, 1.0F, item.tint, width, height);
+        } else {
+            rectangle(item.left, item.top, item.right, item.bottom,
+                      {0.02F, 0.03F, 0.04F}, width, height);
+        }
     }
     font_.drawBatch(labels, width, height);
 }

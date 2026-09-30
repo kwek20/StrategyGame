@@ -12,7 +12,7 @@ namespace strategy {
 StartMenuState::StartMenuState(StateContext& context)
     : GameState(context)
     , config_(GameConfig::load(context.configPath)) {
-    ui_.panel("panel", {30, 70, 420, 625}, {0.72F, 0.76F, 0.80F}).texture = "ui/menu_panel";
+    ui_.panel("panel", {8, 35, 442, 660}, {0.72F, 0.76F, 0.80F}).texture = "ui/menu_panel";
     ui_.label("title", {60, 108, 0, 0}, Text::get("menu.title"), 3.0F);
     ui_.button("play", {60, 180, 390, 240}, Text::get("menu.play"),
                {0.16F, 0.36F, 0.18F}, {0.28F, 0.62F, 0.24F}).textScale = 3.0F;

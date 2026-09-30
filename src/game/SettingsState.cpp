@@ -24,9 +24,9 @@ UiDocument SettingsState::uiDocument(int width, int height) const {
         return std::to_string(static_cast<int>(std::round(value * 100.0F))) + "%";
     };
     const std::string enabled = Text::get("settings.on"), disabled = Text::get("settings.off");
-    ui.modal("settings.panel", {30, 20, 880, 700}, {0.035F, 0.055F, 0.075F});
-    ui.label("settings.title", {60, 52, 0, 0}, Text::get("settings.title"), 3.0F);
-    ui.label("settings.video", {60, 100, 0, 0}, Text::get("settings.video"), 2.0F,
+    ui.modal("settings.panel", {4, 4, 906, 716}, {0.035F, 0.055F, 0.075F});
+    ui.label("settings.title", {90, 70, 0, 0}, Text::get("settings.title"), 3.0F);
+    ui.label("settings.video", {95, 100, 0, 0}, Text::get("settings.video"), 2.0F,
              {0.35F, 0.72F, 0.92F});
     ui.button("settings.resolution", {60, 130, 430, 168},
               Text::format("settings.resolution", {std::to_string(resolutions[resolution_].first),
@@ -35,7 +35,7 @@ UiDocument SettingsState::uiDocument(int width, int height) const {
               Text::format("settings.fullscreen", {config_.fullscreen ? enabled : disabled}));
     ui.button("settings.ui_scale", {60, 218, 430, 248},
               Text::format("settings.ui_scale", {percent(config_.uiScale)}));
-    ui.label("settings.audio", {60, 250, 0, 0}, Text::get("settings.audio"), 2.0F,
+    ui.label("settings.audio", {95, 250, 0, 0}, Text::get("settings.audio"), 2.0F,
              {0.35F, 0.72F, 0.92F});
     const std::array<std::pair<const char*, std::string>, 4> audio{{
         {"settings.master", Text::format("settings.master_volume", {percent(config_.masterVolume)})},
@@ -49,7 +49,7 @@ UiDocument SettingsState::uiDocument(int width, int height) const {
         "settings.action.forward", "settings.action.backward", "settings.action.left",
         "settings.action.right", "settings.action.debug", "settings.action.terrain_debug",
         "settings.action.water_debug", "settings.action.power_debug", "settings.action.pause"};
-    ui.label("settings.controls", {470, 100, 0, 0}, Text::get("settings.controls"), 2.0F,
+    ui.label("settings.controls", {505, 100, 0, 0}, Text::get("settings.controls"), 2.0F,
              {0.35F, 0.72F, 0.92F});
     for (int row = 0; row < static_cast<int>(std::size(bindingNames)); ++row) {
         const auto found = config_.keybinds.find(bindingNames[row]);

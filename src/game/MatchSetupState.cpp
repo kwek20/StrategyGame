@@ -58,7 +58,7 @@ void MatchSetupState::beginTransition(StateRequest request) {
 
 UiDocument MatchSetupState::document(int width, int height) const {
     UiDocument ui;
-    ui.modal("match.panel", {120, 35, 1160, 685}, {0.72F, 0.76F, 0.80F}).texture = "ui/menu_panel";
+    ui.modal("match.panel", {80, 8, 1200, 712}, {0.72F, 0.76F, 0.80F}).texture = "ui/menu_panel";
     ui.label("match.title", {160, 70, 0, 0}, Text::get("match_setup.title"), 3.0F);
     ui.label("match.mode", {160, 112, 0, 0}, Text::get("match_setup.mode_1v1"), 1.4F,
              {0.55F, 0.75F, 0.84F});
@@ -84,7 +84,7 @@ UiDocument MatchSetupState::document(int width, int height) const {
              Text::get(resourceAbundance[abundance_].nameKey));
 
     ui.label("match.seed.label", {680, 155, 0, 0}, Text::get("match_setup.seed"), 1.45F);
-    ui.textField("match.seed", {680, 180, 1100, 225}, seedText_).textScale = 1.8F;
+    ui.textField("match.seed", {680, 180, 960, 225}, seedText_).textScale = 1.8F;
     ui.label("match.summary.map", {680, 270, 1085, 300},
              Text::format("match_setup.summary_map", {Text::get(mapSizes[mapSize_].nameKey)}),
              1.25F, {0.72F, 0.80F, 0.84F});

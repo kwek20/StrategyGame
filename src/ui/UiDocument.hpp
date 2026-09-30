@@ -44,6 +44,7 @@ struct UiElement {
     float progress{0.0F};
     std::string icon;
     std::string texture;
+    std::string progressTexture;
     std::string tooltip;
 };
 

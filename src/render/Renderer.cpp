@@ -448,8 +448,8 @@ void Renderer::drawUi(const UiDocument& document) const {
         const float size = std::min(34.0F, element.bounds.bottom - element.bounds.top - 14.0F);
         const float top = element.bounds.top +
                           ((element.bounds.bottom - element.bounds.top) - size) * 0.5F;
-        drawIcon(element.icon, element.bounds.left + 18.0F, top,
-                 element.bounds.left + 18.0F + size, top + size,
+        const float iconLeft = element.bounds.left + std::max(28.0F, size * 0.85F);
+        drawIcon(element.icon, iconLeft, top, iconLeft + size, top + size,
                  element.enabled ? glm::vec3{0.92F, 0.95F, 0.96F}
                                  : glm::vec3{0.42F, 0.45F, 0.46F});
     }
@@ -466,7 +466,13 @@ void Renderer::drawScreenFade(float opacity) const {
 void Renderer::drawMenuBackground(float pan) const {
     renderGraph_.enter(RenderPassKind::userInterface);
     const TextureHandle handle = resources_.requestTexture("ui/terrain_generation_concept");
-    const Texture* texture = resources_.textureOrMarker(handle);
+    if (resources_.state(handle) != ResourceState::ready) {
+        uiRenderer_->rectangle(0.0F, 0.0F, static_cast<float>(viewportWidth_),
+                               static_cast<float>(viewportHeight_), {0.018F, 0.028F, 0.040F},
+                               viewportWidth_, viewportHeight_);
+        return;
+    }
+    const Texture* texture = resources_.texture(handle);
     constexpr float imageAspect = 1672.0F / 941.0F;
     constexpr float zoom = 1.06F;
     const float viewportAspect = aspectRatio();
@@ -494,16 +500,9 @@ void Renderer::drawIcon(const std::string& id, float left, float top, float righ
         return;
     if (!iconAtlasTexture_)
         iconAtlasTexture_ = resources_.requestTexture(iconAtlas_.texture());
-    const Texture* texture = resources_.textureOrMarker(iconAtlasTexture_);
-    if (!texture)
-        return;
     const bool atlasReady = resources_.state(iconAtlasTexture_) == ResourceState::ready;
-    if (!atlasReady) {
-        uiRenderer_->image(texture->id(), left, top, right, bottom,
-                           0.0F, 0.0F, 1.0F, 1.0F, tint,
-                           viewportWidth_, viewportHeight_);
-        return;
-    }
+    if (!atlasReady) return;
+    const Texture* texture = resources_.texture(iconAtlasTexture_);
     glBindTexture(GL_TEXTURE_2D, texture->id());
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     constexpr float texelInset = 0.5F;
@@ -2506,33 +2505,34 @@ void Renderer::drawEntityHud(const EntityHudModel& model,
         return;
     }
 
+    const auto drawInsetIcon = [this](const std::string& icon, const UiRect& bounds,
+                                     const glm::vec3& tint = glm::vec3{1.0F}) {
+        const float width = bounds.right - bounds.left;
+        const float height = bounds.bottom - bounds.top;
+        const float iconSize = std::max(1.0F, std::min(width, height) * 0.62F);
+        const float left = bounds.left + (width - iconSize) * 0.5F;
+        const float top = bounds.top + (height - iconSize) * 0.5F;
+        drawIcon(icon, left, top, left + iconSize, top + iconSize, tint);
+    };
+
     if (const UiElement* portrait = layout.find("entity.portrait"))
-        drawIcon(model.portraitIcon, portrait->bounds.left, portrait->bounds.top,
-                 portrait->bounds.right, portrait->bounds.bottom);
+        drawInsetIcon(model.portraitIcon, portrait->bounds);
 
     for (std::size_t i = 0; i < model.cards.size(); ++i)
         if (const UiElement* card = layout.find("entity.card." + std::to_string(i)))
-            drawIcon(model.cards[i].icon, card->bounds.left, card->bounds.top,
-                     card->bounds.right, card->bounds.bottom);
+            drawInsetIcon(model.cards[i].icon, card->bounds);
 
     for (const HudActionModel& action : model.actions)
         if (const UiElement* element =
                 layout.find(EntityHudLayout::actionElementId(action.id))) {
-            const float padding = std::max(3.0F,
-                (element->bounds.bottom - element->bounds.top) * 0.08F);
             const glm::vec3 tint = action.enabled ? glm::vec3{1.0F} : glm::vec3{0.34F};
-            drawIcon(action.icon, element->bounds.left + padding, element->bounds.top + padding,
-                     element->bounds.right - padding, element->bounds.bottom - padding, tint);
+            drawInsetIcon(action.icon, element->bounds, tint);
         }
 
     for (std::size_t i = 0; i < model.queue.size(); ++i)
         if (const UiElement* element =
                 layout.find(EntityHudLayout::queueElementId(i))) {
-            const float padding = std::max(2.0F,
-                (element->bounds.bottom - element->bounds.top) * 0.09F);
-            drawIcon(model.queue[i].icon, element->bounds.left + padding,
-                     element->bounds.top + padding, element->bounds.right - padding,
-                     element->bounds.bottom - padding);
+            drawInsetIcon(model.queue[i].icon, element->bounds);
         }
     if (const auto* tooltip = layout.find("entity.tooltip"); tooltip && !tooltip->text.empty()) {
         UiDocument popup;
