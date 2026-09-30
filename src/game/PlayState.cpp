@@ -433,10 +433,10 @@ std::optional<glm::vec2> PlayState::minimapWorldAt(float screenX, float screenY)
         return std::nullopt;
 
     // These insets match the title and map-content area drawn by drawStrategyHud.
-    const float left = map->bounds.left + 8.0F;
-    const float right = map->bounds.right - 8.0F;
+    const float left = map->bounds.left + 18.0F;
+    const float right = map->bounds.right - 18.0F;
     const float top = map->bounds.top + 28.0F;
-    const float bottom = map->bounds.bottom - 8.0F;
+    const float bottom = map->bounds.bottom - 18.0F;
     const float normalizedX = std::clamp((screenX - left) / (right - left), 0.0F, 1.0F);
     const float normalizedZ = std::clamp((screenY - top) / (bottom - top), 0.0F, 1.0F);
     return MapArea{session_.mapChunksPerSide()}.worldFromNormalized(

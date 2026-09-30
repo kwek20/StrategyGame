@@ -26,7 +26,8 @@ std::string tooltip(const HudActionModel& action) {
         result += value;
     };
     append(action.name);
-    if (!action.cost.empty()) append(Text::format("entity_hud.tooltip_cost", {action.cost}));
+    if (!action.cost.empty() && action.cost != Text::get("entity_hud.free"))
+        append(Text::format("entity_hud.tooltip_cost", {action.cost}));
     append(action.power);
     append(action.description);
     append(action.requirements);
@@ -99,29 +100,36 @@ UiDocument EntityHudLayout::actions(const EntityHudModel& model, int width, int 
          actionGap * static_cast<float>(actionColumns - 1)) /
         static_cast<float>(actionColumns);
     const std::size_t actionRows = std::max<std::size_t>(1, (actionCount + actionColumns - 1) / actionColumns);
-    const float actionCellHeight = std::min(canvas.value(76),
+    const float actionCellHeight = std::min(actionCellWidth,
         (actionPanel.bottom - actionPanel.top - canvas.value(16) -
          actionGap * static_cast<float>(actionRows - 1)) / static_cast<float>(actionRows));
+    const float actionGridHeight = actionCellHeight * static_cast<float>(actionRows) +
+                                   actionGap * static_cast<float>(actionRows - 1);
+    const float actionGridTop = actionPanel.top +
+        ((actionPanel.bottom - actionPanel.top) - actionGridHeight) * 0.5F;
     for (std::size_t i = 0; i < actionCount; ++i) {
         const std::size_t column = i % actionColumns;
         const std::size_t row = i / actionColumns;
         const float left = actionPanel.left + canvas.value(8) +
                            static_cast<float>(column) * (actionCellWidth + actionGap);
-        const float top = actionPanel.top + canvas.value(8) +
+        const float top = actionGridTop +
                           static_cast<float>(row) * (actionCellHeight + actionGap);
         const HudActionModel& action = model.actions[i];
         auto& button = document.iconButton(actionElementId(action.id),
             {left, top, left + actionCellWidth, top + actionCellHeight}, action.icon,
             tooltip(action), action.enabled);
         button.focused = action.active;
-        button.texture = "ui/hud_compact";
+        button.texture = "ui/action_slot";
+        button.color = {1.0F, 1.0F, 1.0F};
+        button.hoverColor = {0.62F, 0.94F, 1.0F};
     }
 
     auto& tooltipBox = document.tooltip("entity.tooltip",
-        {panel.left + inset, canvas.value(8),
-         std::min(static_cast<float>(width) - inset, panel.left + inset + canvas.value(380)),
-         panel.top - canvas.value(64)}, {});
-    tooltipBox.textScale = 1.75F * canvas.scale();
+        {panel.left + canvas.value(16), canvas.value(16),
+         std::min(static_cast<float>(width) - canvas.value(16),
+                  panel.left + canvas.value(376)),
+         panel.top - canvas.value(16)}, {});
+    tooltipBox.textScale = 1.45F * canvas.scale();
     tooltipBox.texture = "ui/tooltip_panel";
 
     // Queues are a separate strip above the entity menu and never resize its contents.
@@ -141,7 +149,9 @@ UiDocument EntityHudLayout::actions(const EntityHudModel& model, int width, int 
                                 queueTop + queueSlotSize}, model.queue[i].icon,
                                model.queue[i].name + " - " + Text::get("entity_hud.cancel"),
                                model.queue[i].cancellable);
-            slot.texture = "ui/hud_compact";
+            slot.texture = "ui/action_slot";
+            slot.color = {1.0F, 1.0F, 1.0F};
+            slot.hoverColor = {0.62F, 0.94F, 1.0F};
         }
         document.progressBar("entity.queue.progress",
             {queuePanel.left + canvas.value(8), queuePanel.bottom - canvas.value(9),
@@ -150,18 +160,19 @@ UiDocument EntityHudLayout::actions(const EntityHudModel& model, int width, int 
     }
 
     // Right: identity and component-derived information, never interactive actions.
-    document.label("entity.title", {infoPanel.left + canvas.value(12),
-                   infoPanel.top + canvas.value(10), infoPanel.right - canvas.value(12),
-                   infoPanel.top + canvas.value(34)},
-                   model.title, 2.0F * canvas.scale());
+    document.label("entity.title", {infoPanel.left + canvas.value(18),
+                   infoPanel.top + canvas.value(18), infoPanel.right - canvas.value(18),
+                   infoPanel.top + canvas.value(40)},
+                   model.title, 1.75F * canvas.scale());
     // A multi-entity selection is represented by its compact entity cards. Drawing the
     // single-entity portrait as well duplicates the first unit and overlaps that row.
     if (model.cards.empty()) {
         auto& portrait = document.entityCard("entity.portrait",
-            {infoPanel.left + canvas.value(12), infoPanel.top + canvas.value(42),
-             infoPanel.left + canvas.value(88), infoPanel.top + canvas.value(118)},
+            {infoPanel.left + canvas.value(18), infoPanel.top + canvas.value(52),
+             infoPanel.left + canvas.value(86), infoPanel.top + canvas.value(120)},
             model.portraitIcon);
-        portrait.texture = "ui/hud_compact";
+        portrait.texture = "ui/action_slot";
+        portrait.color = {1.0F, 1.0F, 1.0F};
     }
     const std::size_t cardCapacity = std::max<std::size_t>(1,
         static_cast<std::size_t>((infoPanel.right - infoPanel.left - canvas.value(24)) /
@@ -173,7 +184,8 @@ UiDocument EntityHudLayout::actions(const EntityHudModel& model, int width, int 
         const float iconBottom = infoPanel.top + canvas.value(78);
         auto& card = document.entityCard("entity.card." + std::to_string(i),
             {left, iconTop, left + canvas.value(44), iconBottom}, model.cards[i].icon);
-        card.texture = "ui/hud_compact";
+        card.texture = "ui/action_slot";
+        card.color = {1.0F, 1.0F, 1.0F};
         const std::size_t visibleBars = std::min<std::size_t>(model.cards[i].bars.size(), 2);
         for (std::size_t barIndex = 0; barIndex < visibleBars; ++barIndex) {
             const HudBarModel& bar = model.cards[i].bars[barIndex];
@@ -194,10 +206,12 @@ UiDocument EntityHudLayout::actions(const EntityHudModel& model, int width, int 
     }
     for (std::size_t i = 0; i < model.bars.size(); ++i) {
         const auto& bar = model.bars[i];
-        const float y = infoPanel.top + canvas.value(52.0F + static_cast<float>(i) * 28.0F);
+        const bool health = bar.kind == HudBarKind::health;
+        const float y = infoPanel.top + canvas.value(54.0F + static_cast<float>(i) * 31.0F);
+        const float barHeight = canvas.value(health ? 20.0F : 14.0F);
         auto& element = document.progressBar("entity.bar." + std::to_string(i),
-            {infoPanel.left + canvas.value(102), y,
-             infoPanel.right - canvas.value(122), y + canvas.value(9)},
+            {infoPanel.left + canvas.value(98), y,
+             infoPanel.right - canvas.value(18), y + barHeight},
             bar.maximum > 0 ? bar.current / bar.maximum : 0,
             bar.kind == HudBarKind::health ? glm::vec3{0.24F, 0.78F, 0.30F}
                                            : glm::vec3{0.20F, 0.68F, 0.95F});
@@ -208,10 +222,10 @@ UiDocument EntityHudLayout::actions(const EntityHudModel& model, int width, int 
             element.progressTexture = "ui/power_progress_fill";
         }
         document.label("entity.bar.label." + std::to_string(i),
-            {infoPanel.right - canvas.value(112), y - canvas.value(8),
-             infoPanel.right - canvas.value(8), y + canvas.value(13)},
+            {infoPanel.left + canvas.value(104), y + canvas.value(2),
+             infoPanel.right - canvas.value(24), y + barHeight},
             bar.label + " " + std::to_string(static_cast<int>(bar.current)) + " / " +
-                std::to_string(static_cast<int>(bar.maximum)), 1.0F * canvas.scale());
+                std::to_string(static_cast<int>(bar.maximum)), 0.95F * canvas.scale());
     }
     const std::size_t statCount = std::min<std::size_t>(model.stats.size(), 8);
     for (std::size_t i = 0; i < statCount; ++i) {
@@ -220,29 +234,32 @@ UiDocument EntityHudLayout::actions(const EntityHudModel& model, int width, int 
         const float columnWidth = (infoPanel.right - infoPanel.left - canvas.value(24)) * 0.5F;
         const float left = infoPanel.left + canvas.value(12) +
                            static_cast<float>(column) * columnWidth;
-        const float y = infoPanel.top + canvas.value(128.0F + row * 20.0F);
+        const float y = infoPanel.top + canvas.value(132.0F + row * 19.0F);
         document.label("entity.stat." + std::to_string(i),
             {left, y, left + columnWidth - canvas.value(6),
              y + canvas.value(18)}, model.stats[i].label + "  " + model.stats[i].value,
             1.0F * canvas.scale(), {0.75F, 0.84F, 0.88F});
     }
-    const std::size_t processorRows = std::min<std::size_t>(model.processorInputs.size(), 4);
+    const std::size_t processorRows = std::min<std::size_t>(model.processorInputs.size(), 3);
     for (std::size_t i = 0; i < processorRows; ++i) {
         const auto& row = model.processorInputs[i];
-        const float y = infoPanel.top + canvas.value(212.0F + i * 20.0F);
+        const float y = infoPanel.top + canvas.value(218.0F + i * 17.0F);
         const std::string capacity = row.capacity > 0.0F
             ? decimal(row.buffered) + "/" + decimal(row.capacity)
             : decimal(row.buffered);
         document.label("entity.processor." + std::to_string(i),
-            {infoPanel.left + canvas.value(12), y,
-             infoPanel.right - canvas.value(12), y + canvas.value(18)},
+            {infoPanel.left + canvas.value(18), y,
+             infoPanel.right - canvas.value(18), y + canvas.value(15)},
             row.inputName + " " + capacity + "  ->  " + row.outputName + " " +
                 decimal(row.expectedOutput) + "  (x" + decimal(row.outputPerInput) + ")",
-            1.0F * canvas.scale(), {0.78F, 0.90F, 0.94F});
+            0.9F * canvas.scale(),
+            row.buffered > 0.0F || row.expectedOutput > 0.0F
+                ? glm::vec3{0.78F, 0.90F, 0.94F}
+                : glm::vec3{0.48F, 0.57F, 0.61F});
     }
     document.label("entity.footer",
-        {infoPanel.left + canvas.value(102), infoPanel.top + canvas.value(102),
-         infoPanel.right - canvas.value(12), infoPanel.top + canvas.value(122)},
+        {infoPanel.left + canvas.value(98), infoPanel.top + canvas.value(112),
+         infoPanel.right - canvas.value(18), infoPanel.top + canvas.value(128)},
         model.footer, 1.05F * canvas.scale(), {0.82F, 0.88F, 0.90F});
     return document;
 }
@@ -266,7 +283,8 @@ UiDocument EntityHudLayout::selection(const EntityHudModel& model, int width, in
             {panel.left + canvas.value(12), panel.top + canvas.value(36 + static_cast<float>(i) * 34),
              panel.right - canvas.value(12), panel.top + canvas.value(66 + static_cast<float>(i) * 34)},
             group.icon, group.name);
-        card.texture = "ui/hud_compact";
+        card.texture = "ui/action_slot";
+        card.color = {1.0F, 1.0F, 1.0F};
         document.label("selection.label." + std::to_string(i),
             {panel.left + canvas.value(46), panel.top + canvas.value(40 + static_cast<float>(i) * 34), 0, 0},
             Text::format("selection.group", {group.name, std::to_string(group.count)}),

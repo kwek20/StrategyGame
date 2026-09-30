@@ -7,6 +7,8 @@
 #include "ui/UiTheme.hpp"
 
 #include <algorithm>
+#include <chrono>
+#include <cmath>
 #include <glad/glad.h>
 #include <glm/gtc/type_ptr.hpp>
 #include <stdexcept>
@@ -142,7 +144,7 @@ void UiRenderer::draw(const UiDocument& document, int width, int height) const {
         if (element.kind == UiElementKind::tooltip) {
             if (element.text.empty()) continue;
             const float fontPixels = std::max(element.textScale * 8.0F, 13.0F);
-            const float padding = 12.0F;
+            const float padding = element.id == "entity.tooltip" ? 20.0F : 12.0F;
             const float boxWidth = std::min(element.bounds.right - element.bounds.left,
                                             static_cast<float>(width) - 16.0F);
             const float available = std::max(1.0F, boxWidth - padding * 2);
@@ -288,9 +290,11 @@ void UiRenderer::draw(const UiDocument& document, int width, int height) const {
             element.kind == UiElementKind::modalPanel ||
             element.kind == UiElementKind::tooltip) continue;
         const TextureHandle handle = resources_.requestTexture(element.texture);
-        const glm::vec3 tint = !element.enabled ? UiTheme::disabled
+        glm::vec3 tint = !element.enabled ? UiTheme::disabled
             : (element.pressed ? element.hoverColor * 0.72F
-            : (element.hovered || element.focused ? element.hoverColor : element.color));
+            : (element.hovered ? element.hoverColor : element.color));
+        if (element.enabled && element.focused && element.kind == UiElementKind::iconButton)
+            tint = {1.0F, 0.64F, 0.25F};
         const float verticalOverscan = element.kind == UiElementKind::button ? 3.0F : 0.0F;
         if (resources_.state(handle) == ResourceState::ready) {
             const Texture* texture = resources_.texture(handle);
@@ -309,9 +313,16 @@ void UiRenderer::draw(const UiDocument& document, int width, int height) const {
                 const Texture* fill = resources_.texture(fillHandle);
                 const float right = element.bounds.left +
                     (element.bounds.right - element.bounds.left) * element.progress;
+                glm::vec3 fillTint{1.0F, 1.0F, 1.0F};
+                if (element.progressTexture == "ui/loading_progress_fill") {
+                    const float seconds = std::chrono::duration<float>(
+                        std::chrono::steady_clock::now().time_since_epoch()).count();
+                    const float pulse = 0.92F + std::sin(seconds * 3.2F) * 0.08F;
+                    fillTint = {pulse * 0.90F, pulse * 0.98F, pulse};
+                }
                 image(fill->id(), element.bounds.left, element.bounds.top, right,
                       element.bounds.bottom, 0.0F, 0.0F, element.progress, 1.0F,
-                      {1.0F, 1.0F, 1.0F}, width, height);
+                      fillTint, width, height);
             }
         }
     }

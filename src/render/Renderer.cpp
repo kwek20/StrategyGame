@@ -2374,7 +2374,16 @@ void Renderer::drawStrategyHud(const World& world, EntityId selected, const Play
     if (!mapElement) return;
     const float mapLeft = mapElement->bounds.left, mapTop = mapElement->bounds.top,
                 mapRight = mapElement->bounds.right, mapBottom = mapElement->bounds.bottom;
-    uiRenderer_->draw(layout, viewportWidth_, viewportHeight_);
+    UiDocument minimapBase;
+    UiDocument minimapChrome;
+    for (const UiElement& element : layout.elements()) {
+        if (element.id == "strategy.minimap.frame" ||
+            element.id == "strategy.minimap.title")
+            minimapChrome.elements().push_back(element);
+        else
+            minimapBase.elements().push_back(element);
+    }
+    uiRenderer_->draw(minimapBase, viewportWidth_, viewportHeight_);
     const MapArea map = activeMapArea();
     if (player)
         for (int z = 0; z < 16; ++z)
@@ -2387,13 +2396,13 @@ void Renderer::drawStrategyHud(const World& world, EntityId selected, const Play
                     static_cast<std::size_t>(sourceZ * Player::explorationCells + sourceX);
                 auto& layer = player->visible[index] ? visibleFog : rememberedFog;
                 if (player->visible[index] || player->discovered[index]) {
-                    const float l = mapLeft + 8.0F + x * (mapRight - mapLeft - 16.0F) / 16.0F,
-                                t = mapTop + 28.0F + z * (mapBottom - mapTop - 36.0F) / 16.0F;
+                    const float l = mapLeft + 18.0F + x * (mapRight - mapLeft - 36.0F) / 16.0F,
+                                t = mapTop + 28.0F + z * (mapBottom - mapTop - 46.0F) / 16.0F;
                     appendHudRectangle(layer,
                                        l,
                                        t,
-                                       l + (mapRight - mapLeft - 16.0F) / 16.0F + 0.5F,
-                                       t + (mapBottom - mapTop - 36.0F) / 16.0F + 0.5F,
+                                       l + (mapRight - mapLeft - 36.0F) / 16.0F + 0.5F,
+                                       t + (mapBottom - mapTop - 46.0F) / 16.0F + 0.5F,
                                        viewportWidth_,
                                        viewportHeight_);
                 }
@@ -2409,8 +2418,8 @@ void Renderer::drawStrategyHud(const World& world, EntityId selected, const Play
         }
         const glm::vec2 normalized = map.normalized(
             {entity.transform.position.x, entity.transform.position.z});
-        const float x = mapLeft + 8.0F + normalized.x * (mapRight - mapLeft - 16.0F);
-        const float y = mapTop + 28.0F + normalized.y * (mapBottom - mapTop - 36.0F);
+        const float x = mapLeft + 18.0F + normalized.x * (mapRight - mapLeft - 36.0F);
+        const float y = mapTop + 28.0F + normalized.y * (mapBottom - mapTop - 46.0F);
         appendHudRectangle(
             dots, x - 2.5F, y - 2.5F, x + 2.5F, y + 2.5F, viewportWidth_, viewportHeight_);
     }
@@ -2422,8 +2431,8 @@ void Renderer::drawStrategyHud(const World& world, EntityId selected, const Play
                     cell.y * Player::explorationCells + cell.x)])
                 continue;
             const glm::vec2 normalized = map.normalized({known.position.x, known.position.z});
-            const float x = mapLeft + 8.0F + normalized.x * (mapRight - mapLeft - 16.0F),
-                        y = mapTop + 28.0F + normalized.y * (mapBottom - mapTop - 36.0F);
+            const float x = mapLeft + 18.0F + normalized.x * (mapRight - mapLeft - 36.0F),
+                        y = mapTop + 28.0F + normalized.y * (mapBottom - mapTop - 46.0F);
             appendHudRectangle(rememberedDots,
                                x - 2.0F,
                                y - 2.0F,
@@ -2466,8 +2475,8 @@ void Renderer::drawStrategyHud(const World& world, EntityId selected, const Play
                 }
                 const glm::vec2 normalized =
                     map.normalized({e.transform.position.x, e.transform.position.z});
-                float x = mapLeft + 8.0F + normalized.x * (mapRight - mapLeft - 16.0F);
-                float y = mapTop + 28.0F + normalized.y * (mapBottom - mapTop - 36.0F);
+                float x = mapLeft + 18.0F + normalized.x * (mapRight - mapLeft - 36.0F);
+                float y = mapTop + 28.0F + normalized.y * (mapBottom - mapTop - 46.0F);
                 appendHudRectangle(teamDots,
                                    x - 3.5F,
                                    y - 3.5F,
@@ -2481,6 +2490,7 @@ void Renderer::drawStrategyHud(const World& world, EntityId selected, const Play
     glBindVertexArray(0);
     glEnable(GL_CULL_FACE);
     glEnable(GL_DEPTH_TEST);
+    uiRenderer_->draw(minimapChrome, viewportWidth_, viewportHeight_);
 }
 
 void Renderer::drawEntityHud(const EntityHudModel& model,
@@ -2509,7 +2519,7 @@ void Renderer::drawEntityHud(const EntityHudModel& model,
                                      const glm::vec3& tint = glm::vec3{1.0F}) {
         const float width = bounds.right - bounds.left;
         const float height = bounds.bottom - bounds.top;
-        const float iconSize = std::max(1.0F, std::min(width, height) * 0.62F);
+        const float iconSize = std::max(1.0F, std::min(width, height) * 0.74F);
         const float left = bounds.left + (width - iconSize) * 0.5F;
         const float top = bounds.top + (height - iconSize) * 0.5F;
         drawIcon(icon, left, top, left + iconSize, top + iconSize, tint);
