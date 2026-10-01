@@ -1,0 +1,81 @@
+/* Crop the transparent top and bottom padding from the source art. */
+@spritesheet common-button-art {
+    src: "../textures/ui/menu_button.png";
+    resolution: 1x;
+    button-face: 0px 78px 2169px 522px;
+}
+/* Shared image-backed button component. The decorator resolves relative to this stylesheet. */
+.art-button {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 11dp;
+    border-width: 0;
+    background-color: transparent;
+    decorator: image(button-face fill);
+    image-color: #cbd5d8;
+    cursor: pointer;
+}
+.art-button .button-icon {
+    position: relative;
+    left: auto;
+    top: auto;
+    width: 36dp;
+    height: 36dp;
+    flex: 0 0 36dp;
+    image-color: #d7edf0;
+    pointer-events: none;
+}
+.art-button span {
+    position: relative;
+    pointer-events: none;
+}
+.art-button:hover, .art-button:focus {
+    background-color: transparent;
+    color: #ffffff;
+    image-color: #dfffff;
+}
+.art-button:hover .button-icon, .art-button:focus .button-icon {
+    image-color: #ffffff;
+}
+.art-button:active {
+    image-color: #aebfc4;
+}
+.art-button:disabled {
+    image-color: #687277;
+}
+
+/* Shared previous/value/next selector used by Settings and Match Setup. */
+.selector {
+    width: 62%;
+    height: 3.2vh;
+    min-height: 32dp;
+    display: flex;
+    align-items: center;
+    gap: 1.2%;
+}
+.selector .compact {
+    width: 3.2vh;
+    height: 3.2vh;
+    min-width: 32dp;
+    min-height: 32dp;
+    padding: 0;
+    color: #f8fce8;
+    font-size: 22dp;
+    font-weight: 700;
+    line-height: 3.2vh;
+    flex: 0 0 auto;
+}
+.selector-value {
+    height: 2.8vh;
+    min-height: 28dp;
+    line-height: 2.8vh;
+    flex: 1;
+    text-align: center;
+    background-color: #061016;
+    border: 1dp #173744;
+    color: #f3f8df;
+    font-size: 14dp;
+    font-weight: 700;
+}

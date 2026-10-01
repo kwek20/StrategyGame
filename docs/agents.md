@@ -210,8 +210,25 @@ quality tests. Vegetation expansion and tuning remain deferred as well.
 - Gameplay definitions live under `assets/gameplay/`: units, buildings, resource nodes, resources,
   conversions, weapons, power devices, recipes, upgrades, countries, specializations, rules, and
   decorations. Avoid new gameplay constants in renderer/UI code.
-- UI uses the shared `UiDocument`/HUD view-model path. Entity menus derive actions, recipes,
-  upgrades, state, and icons from the selected entity and definitions.
+- The main menu, Settings, Match Setup, pause menu, Build Mode palette, and loading overlay use RmlUi documents under
+  `assets/ui/`.
+  `RmlUiManager` connects them to the SDL 3/OpenGL render loop through one descriptor-driven
+  screen API. It owns a screen stack, shared focus/action routing, text and attribute updates,
+  rendering, and teardown. Do not add state-specific `open...Menu` renderer functions; push a
+  `RmlUiScreenDefinition`, retain its returned handle, and remove that exact handle when the state
+  is destroyed. Handle-based removal is required because replacement states are constructed before
+  the previous state is destroyed. Remaining gameplay screens still use `UiDocument` while they
+  are migrated.
+- Loading uses `assets/ui/loading.rml` and `loading.rcss`. `drawLoadingScreen` creates one overlay
+  handle lazily, updates its status/progress properties, and `finishLoadingScreen` removes it before
+  normal state rendering resumes.
+- Play owns the `pause_menu.rml` handle while paused. Settings temporarily covers that document;
+  closing Settings reveals it again. Replacing Play removes the exact pause handle after the new
+  state has been constructed.
+- Build Mode owns `build_menu.rml`. Its palette buttons are generated from
+  `matchRules.buildPalette`; do not duplicate the building list in RML. RmlUi pointer capture blocks
+  placement clicks behind the menu.
+  Entity menus derive actions, recipes, upgrades, state, and icons from definitions.
 - Render architecture includes explicit passes, shader/material managers, async model/texture
   resources, a frame graph, icon atlas, and OpenGL diagnostics.
 - Save/load stores authoritative player, entity/component, terrain-foundation, fog/intelligence,
@@ -422,9 +439,9 @@ Then proceed to Milestone 6, the first combat slice.
 - Entity HUDs use a compact split layout: left action/upgrade grid, right entity information;
   queues sit above. Homogeneous multi-selection shows the shared menu plus compact per-unit cards
   with health/power bars.
-- Main, match setup, pause, settings, loading, editor, HUD, and power overlay use the shared UI
-  framework with responsive layout, UI scaling, focus navigation, consistent disabled colors,
-  tooltip delay, contrast, and clipping rules.
+- The main menu uses RmlUi flex layout, percentage insets, min/max dimensions, CSS hover/focus
+  states, and existing menu textures. Match setup, pause, settings, loading, editor, HUD, and the
+  power overlay still use the shared `UiDocument` path during the incremental migration.
 - Audio is event-driven with menu music and action hooks; actual content remains largely placeholder.
 - Data-driven particle system is integrated with Kenney textures. Current effects include Alloy/Fuel
   processing, Scrap/dust/oil gathering, construction beam/contact, kinetic muzzle/tracer/impact,
@@ -452,6 +469,21 @@ Then proceed to Milestone 6, the first combat slice.
 - Keep third-party licenses and attribution when moving/extracting asset packs.
 
 ## Tests and recent validation
+
+- 2026-10-01 gameplay HUD migration: the resource/power strip, minimap chrome, entity details,
+  action palette, production queue, mixed-selection controls, alerts, and placement feedback now
+  use `assets/ui/gameplay_hud.rml` and `.rcss`. `PlayState` supplies definition-driven markup and
+  preserves existing command dispatch. The renderer draws only the black minimap interior plus
+  fog/marker data before RmlUi draws the permanent frame. The old `UiDocument`, `UiController`,
+  `UiLayout`, `EntityHudLayout`, `GameHudLayout`, and `UiTheme` files were removed. Debug panels
+  use direct debug rendering. Focused Debug builds and `entity_hud_model_tests`,
+  `state_stack_tests`, and `renderer_integration_tests` passed.
+- Image-backed menu buttons share `assets/ui/common_buttons.rcss`. Use the `art-button` class with
+  an optional `button-icon` and a label `span`; its RCSS image decorator supplies
+  `menu_button.png`, so do not add a decorative image child. The shared flex layout centers the
+  icon and label as one group and owns hover/focus/pressed/disabled tinting. Build and gameplay
+  action slots use the separate `action_slot_transparent.png` decorator. Screen RCSS should define
+  only dimensions, typography, and screen-specific movement.
 
 - Terrain's world-space vertical scale is 60 units. Resource nodes and their debug geometry use
   `Terrain::heightAt`, so they remain seated on the doubled terrain height. Biome and resource

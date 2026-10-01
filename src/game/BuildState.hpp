@@ -3,16 +3,17 @@
 #include "game/RtsCamera.hpp"
 #include "gameplay/GameplayCatalogue.hpp"
 #include "persistence/GameConfig.hpp"
+#include "render/RmlUiManager.hpp"
 #include "world/World.hpp"
-#include "ui/EntityHudModel.hpp"
-#include "ui/UiController.hpp"
 
 #include <optional>
 #include <string>
+#include <string_view>
 namespace strategy {
 class BuildState final : public GameState {
   public:
     BuildState(StateContext& context, std::uint32_t terrainSeed);
+    ~BuildState() override;
     void handleEvent(const SDL_Event& event) override;
     void update(float deltaSeconds) override;
     void render(Renderer& renderer) const override;
@@ -37,7 +38,10 @@ class BuildState final : public GameState {
     bool forward_{false}, backward_{false}, left_{false}, right_{false}, orbiting_{false},
         mousePanning_{false}, acceleratedCamera_{false}, leftShift_{false}, rightShift_{false};
     StateRequest request_{StateRequest::none};
-    mutable UiController uiController_;
-    [[nodiscard]] EntityHudModel paletteHud() const;
+    RmlUiScreenHandle screen_{};
+
+    void activateMenu(std::string_view id);
+    void refreshMenu() const;
+    [[nodiscard]] std::string paletteMarkup() const;
 };
 } // namespace strategy

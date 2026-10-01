@@ -1,145 +1,188 @@
 #include "game/BuildState.hpp"
 
-#include "localization/Text.hpp"
 #include "diagnostics/Logger.hpp"
+#include "localization/Text.hpp"
 #include "persistence/SaveGame.hpp"
 #include "render/Renderer.hpp"
 #include "terrain/Terrain.hpp"
-#include "ui/EntityHudModel.hpp"
-#include "ui/EntityHudLayout.hpp"
 #include "world/Collision.hpp"
 #include "world/WorldGeneration.hpp"
 
 #include <SDL3/SDL.h>
 #include <algorithm>
-#include <iostream>
+#include <stdexcept>
+#include <utility>
+#include <vector>
+
 namespace strategy {
+namespace {
+std::string escapeRml(std::string value) {
+    const std::pair<std::string_view, std::string_view> replacements[]{
+        {"&", "&amp;"}, {"<", "&lt;"}, {">", "&gt;"}, {"\"", "&quot;"}};
+    for (const auto& [from, to] : replacements) {
+        std::size_t position = 0;
+        while ((position = value.find(from, position)) != std::string::npos) {
+            value.replace(position, from.size(), to);
+            position += to.size();
+        }
+    }
+    return value;
+}
+} // namespace
+
 BuildState::BuildState(StateContext& context, std::uint32_t terrainSeed)
     : GameState(context)
     , terrainSeed_(terrainSeed)
     , config_(GameConfig::load(context.configPath))
     , gameplay_(context.definitions)
     , status_(Text::get("status.ready")) {
+    if (!context_.renderer)
+        throw std::runtime_error("Build mode requires a renderer");
     const Terrain terrain{terrainSeed};
     (void)populateResources(world_, terrain, gameplay_, terrainSeed);
+
+    std::vector<std::string> controls;
+    for (const std::string& id : gameplay_.matchRules().buildPalette)
+        if (gameplay_.archetype(id))
+            controls.push_back("build.palette." + id);
+    controls.insert(controls.end(), {"build.team", "build.undo", "build.save", "build.exit"});
+    screen_ = context_.renderer->pushUiScreen({"assets/ui/build_menu.rml",
+                                               {{"build-title", Text::get("build.title")},
+                                                {"team-label", Text::get("build.change_team")},
+                                                {"undo-label", Text::get("build.undo")},
+                                                {"save-label", Text::get("build.save")},
+                                                {"exit-label", Text::get("build.exit")}},
+                                               controls,
+                                               controls,
+                                               config_.uiScale});
+    context_.renderer->setUiText("build-palette", paletteMarkup());
+    context_.renderer->focusUi(0);
+    refreshMenu();
 }
 
-EntityHudModel BuildState::paletteHud() const {
-    EntityHudModel hud;
+BuildState::~BuildState() {
+    context_.renderer->removeUiScreen(screen_);
+}
+
+std::string BuildState::paletteMarkup() const {
+    std::string markup;
     for (const std::string& id : gameplay_.matchRules().buildPalette) {
         const EntityArchetype* type = gameplay_.archetype(id);
-        if (!type) continue;
-        hud.actions.push_back({id,
-            gameplay_.presentationIcon(PresentationId{type->presentation}),
-            Text::get(type->nameKey), status_, {}, {}, true,
-            id == gameplay_.matchRules().buildPalette.at(paletteIndex_)});
+        if (!type)
+            continue;
+        const std::string icon = gameplay_.presentationIcon(PresentationId{type->presentation});
+        markup += "<button id=\"build.palette." + escapeRml(id) + "\" class=\"build-slot\">";
+        markup += "<img src=\"../icons/source/" + escapeRml(icon) + ".png\"/>";
+        markup += "<span>" + escapeRml(Text::get(type->nameKey)) + "</span></button>";
     }
-    return hud;
+    return markup;
+}
+
+void BuildState::refreshMenu() const {
+    const auto& palette = gameplay_.matchRules().buildPalette;
+    context_.renderer->setUiText(
+        "build-team",
+        Text::format("status.team", {Text::get(team_ == 1 ? "build.team.a" : "build.team.b")}));
+    context_.renderer->setUiText("build-status", status_);
+    for (std::size_t index = 0; index < palette.size(); ++index)
+        context_.renderer->setUiAttribute("build.palette." + palette[index],
+                                          "class",
+                                          index == paletteIndex_ ? "build-slot selected"
+                                                                 : "build-slot");
+}
+
+void BuildState::activateMenu(std::string_view id) {
+    const auto& palette = gameplay_.matchRules().buildPalette;
+    if (id.starts_with("build.palette.")) {
+        const std::string archetype{id.substr(std::string_view{"build.palette."}.size())};
+        const auto found = std::find(palette.begin(), palette.end(), archetype);
+        if (found != palette.end()) {
+            paletteIndex_ = static_cast<std::size_t>(found - palette.begin());
+            if (const EntityArchetype* type = gameplay_.archetype(archetype))
+                status_ = Text::format("status.selected", {Text::get(type->nameKey)});
+        }
+    } else if (id == "build.team") {
+        team_ = team_ == 1 ? 2 : 1;
+        status_ =
+            Text::format("status.team", {Text::get(team_ == 1 ? "build.team.a" : "build.team.b")});
+    } else if (id == "build.undo") {
+        if (!world_.entities().empty()) {
+            world_.destroyEntity(world_.entities().back().id);
+            status_ = Text::get("status.undo");
+        }
+    } else if (id == "build.save") {
+        try {
+            SaveGame::write(config_.savePath(), terrainSeed_, world_);
+            status_ = Text::format("status.saved", {config_.saveFile});
+            context_.logger.info("persistence", "Saved map to " + config_.savePath().string());
+        } catch (const std::exception& error) {
+            status_ = Text::get("status.save_failed");
+            context_.logger.error("persistence", error.what());
+        }
+    } else if (id == "build.exit") {
+        request_ = StateRequest::returnToMainMenu;
+    }
+    refreshMenu();
 }
 
 void BuildState::handleEvent(const SDL_Event& event) {
+    context_.renderer->handleUiEvent(event);
+    if (const auto action = context_.renderer->takeUiAction()) {
+        activateMenu(*action);
+        return;
+    }
+
     if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat) {
         if (event.key.key == SDLK_ESCAPE) {
-            request_ = StateRequest::returnToMainMenu;
+            activateMenu("build.exit");
             return;
         }
         if (event.key.key == SDLK_T) {
-            team_ = team_ == 1 ? 2 : 1;
-            status_ = Text::format("status.team",
-                                   {Text::get(team_ == 1 ? "build.team.a" : "build.team.b")});
+            activateMenu("build.team");
             return;
         }
-        if (event.key.key == SDLK_1) {
-            paletteIndex_ = 0;
-            const auto* type = gameplay_.archetype(gameplay_.matchRules().buildPalette.at(0));
-            status_ = Text::format("status.selected", {Text::get(type->nameKey)});
+        if (event.key.key >= SDLK_1 && event.key.key <= SDLK_9) {
+            const std::size_t index = static_cast<std::size_t>(event.key.key - SDLK_1);
+            if (index < gameplay_.matchRules().buildPalette.size())
+                activateMenu("build.palette." + gameplay_.matchRules().buildPalette[index]);
             return;
         }
-        if (event.key.key == SDLK_2 && gameplay_.matchRules().buildPalette.size() > 1) {
-            paletteIndex_ = 1;
-            const auto* type = gameplay_.archetype(gameplay_.matchRules().buildPalette.at(1));
-            status_ = Text::format("status.selected", {Text::get(type->nameKey)});
-            return;
-        }
-        if (event.key.key == SDLK_BACKSPACE && !world_.entities().empty()) {
-            world_.destroyEntity(world_.entities().back().id);
-            status_ = Text::get("status.undo");
+        if (event.key.key == SDLK_BACKSPACE) {
+            activateMenu("build.undo");
             return;
         }
         if (event.key.key == SDLK_F5) {
-            try {
-                SaveGame::write(config_.savePath(), terrainSeed_, world_);
-                status_ = Text::format("status.saved", {config_.saveFile});
-                context_.logger.info("persistence",
-                                     "Saved map to " + config_.savePath().string());
-            } catch (const std::exception& error) {
-                status_ = Text::get("status.save_failed");
-                context_.logger.error("persistence", error.what());
-            }
+            activateMenu("build.save");
             return;
         }
         if (event.key.key == SDLK_TAB) {
-            EntityHudModel hud = paletteHud();
-            UiDocument layout = EntityHudLayout::actions(
-                hud, config_.resolutionWidth, config_.resolutionHeight, config_.uiScale);
-            uiController_.moveFocus(layout,
-                (SDL_GetModState() & SDL_KMOD_SHIFT) ? -1 : 1);
+            context_.renderer->focusUi((SDL_GetModState() & SDL_KMOD_SHIFT) ? -1 : 1);
             return;
         }
         if (event.key.key == SDLK_RETURN || event.key.key == SDLK_SPACE) {
-            EntityHudModel hud = paletteHud();
-            UiDocument layout = EntityHudLayout::actions(
-                hud, config_.resolutionWidth, config_.resolutionHeight, config_.uiScale);
-            if (const auto element = uiController_.activateFocused(layout))
-                if (const auto id = EntityHudLayout::actionId(*element)) {
-                    const auto& palette = gameplay_.matchRules().buildPalette;
-                    const auto found = std::find(palette.begin(), palette.end(), *id);
-                    if (found != palette.end())
-                        paletteIndex_ = static_cast<std::size_t>(found - palette.begin());
-                }
+            context_.renderer->activateFocusedUiItem();
+            if (const auto action = context_.renderer->takeUiAction())
+                activateMenu(*action);
             return;
         }
     }
     if (event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
-        EntityHudModel hud = paletteHud();
-        UiDocument layout = EntityHudLayout::actions(
-            hud, config_.resolutionWidth, config_.resolutionHeight, config_.uiScale);
         if (event.gbutton.button == SDL_GAMEPAD_BUTTON_DPAD_RIGHT)
-            uiController_.moveFocus(layout, 1);
+            context_.renderer->focusUi(1);
         else if (event.gbutton.button == SDL_GAMEPAD_BUTTON_DPAD_LEFT)
-            uiController_.moveFocus(layout, -1);
+            context_.renderer->focusUi(-1);
         else if (event.gbutton.button == SDL_GAMEPAD_BUTTON_SOUTH) {
-            if (const auto element = uiController_.activateFocused(layout))
-                if (const auto id = EntityHudLayout::actionId(*element)) {
-                    const auto& palette = gameplay_.matchRules().buildPalette;
-                    const auto found = std::find(palette.begin(), palette.end(), *id);
-                    if (found != palette.end())
-                        paletteIndex_ = static_cast<std::size_t>(found - palette.begin());
-                }
+            context_.renderer->activateFocusedUiItem();
+            if (const auto action = context_.renderer->takeUiAction())
+                activateMenu(*action);
         } else if (event.gbutton.button == SDL_GAMEPAD_BUTTON_EAST)
-            request_ = StateRequest::returnToMainMenu;
+            activateMenu("build.exit");
         return;
     }
+    if ((event.type == SDL_EVENT_MOUSE_BUTTON_DOWN || event.type == SDL_EVENT_MOUSE_BUTTON_UP) &&
+        event.button.button == SDL_BUTTON_LEFT && context_.renderer->pointerOverUi())
+        return;
     if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_LEFT) {
-        int width = 0, height = 0;
-        if (SDL_Window* window = SDL_GetWindowFromID(event.button.windowID))
-            SDL_GetWindowSize(window, &width, &height);
-        EntityHudModel hud = paletteHud();
-        UiDocument layout = EntityHudLayout::actions(hud, width, height, config_.uiScale);
-        const glm::vec2 point{event.button.x, event.button.y};
-        if (const auto activated = uiController_.press(layout, point)) {
-            if (const auto id = EntityHudLayout::actionId(*activated)) {
-                const auto& palette = gameplay_.matchRules().buildPalette;
-                const auto found = std::find(palette.begin(), palette.end(), *id);
-                if (found != palette.end()) {
-                    paletteIndex_ = static_cast<std::size_t>(found - palette.begin());
-                    const EntityArchetype* type = gameplay_.archetype(*id);
-                    status_ = Text::format("status.selected", {Text::get(type->nameKey)});
-                }
-                return;
-            }
-        }
-        if (layout.find("entity.panel")->bounds.contains(point)) return;
         pendingPlacement_ = glm::vec2{event.button.x, event.button.y};
         return;
     }
@@ -169,8 +212,8 @@ void BuildState::handleEvent(const SDL_Event& event) {
         return;
     }
     if (event.type == SDL_EVENT_MOUSE_MOTION) {
-        uiController_.pointerMoved({event.motion.x, event.motion.y});
-        hoverPosition_ = glm::vec2{event.motion.x, event.motion.y};
+        if (!context_.renderer->pointerOverUi())
+            hoverPosition_ = glm::vec2{event.motion.x, event.motion.y};
         return;
     }
     if (event.type == SDL_EVENT_MOUSE_WHEEL) {
@@ -205,8 +248,8 @@ void BuildState::handleEvent(const SDL_Event& event) {
         break;
     }
 }
+
 void BuildState::update(float deltaSeconds) {
-    uiController_.advance(deltaSeconds);
     camera_.pan(float(forward_) - float(backward_),
                 float(right_) - float(left_),
                 deltaSeconds,
@@ -229,30 +272,30 @@ void BuildState::render(Renderer& renderer) const {
         shape.rotationDegrees += entityRotation;
         TerrainPlacementResult terrainPlacement;
         if (type->kind == EntityKind::building)
-            terrainPlacement = renderer.evaluateTerrainPlacement(
-                position.x, position.z, shape, type->placement);
+            terrainPlacement =
+                renderer.evaluateTerrainPlacement(position.x, position.z, shape, type->placement);
         else {
-            terrainPlacement.fit = renderer.fitTerrainFootprint(
-                position.x, position.z, radius, 90.0F);
+            terrainPlacement.fit =
+                renderer.fitTerrainFootprint(position.x, position.z, radius, 90.0F);
             if (!terrainPlacement.fit.valid)
                 terrainPlacement.failure = TerrainPlacementFailure::excessiveSlope;
         }
         const FootprintFit& footprint = terrainPlacement.fit;
         const SpatialShape placementShape = spatialShape(
-            gameplay_, EntityArchetypeId{entityType}, {position.x, position.z},
-            entityRotation);
+            gameplay_, EntityArchetypeId{entityType}, {position.x, position.z}, entityRotation);
         if (!terrainPlacement.valid() || overlapsObject(world_, gameplay_, placementShape)) {
             status_ = Text::get("status.blocked");
         } else {
-            Entity& entity =
-                world_.createEntity(Text::get(type->nameKey), entityType, team_);
+            Entity& entity = world_.createEntity(Text::get(type->nameKey), entityType, team_);
             gameplay_.initializeEntity(entity);
             entity.transform.position = {position.x, 0.0F, position.z};
             entity.transform.rotationDegrees.y = entityRotation;
             if (entity.kind == EntityKind::building) {
-                world_.foundations().push_back(TerrainFoundation{
-                    entity.id, {position.x, footprint.height, position.z}, shape,
-                    footprint.gradient});
+                world_.foundations().push_back(
+                    TerrainFoundation{entity.id,
+                                      {position.x, footprint.height, position.z},
+                                      shape,
+                                      footprint.gradient});
                 renderer.setTerrainFoundations(world_.foundations());
             }
             if (entity.unitControl)
@@ -270,10 +313,7 @@ void BuildState::render(Renderer& renderer) const {
     renderer.drawWorld(world_, view);
     if (hoveredEntity_ != 0)
         renderer.drawEntityOutline(world_, hoveredEntity_, view);
-    EntityHudModel hud = paletteHud();
-    UiDocument layout = EntityHudLayout::actions(
-        hud, renderer.viewportWidth(), renderer.viewportHeight(), config_.uiScale);
-    uiController_.apply(layout);
-    renderer.drawEntityHud(hud, layout);
+    refreshMenu();
+    renderer.drawRmlUi();
 }
 } // namespace strategy

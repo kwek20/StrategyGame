@@ -8,6 +8,7 @@
     "assimp",
     "stb",
     "freetype",
+    "rmlui",
     "rapidjson"
   ]
 }

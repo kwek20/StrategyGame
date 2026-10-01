@@ -1,14 +1,14 @@
 #include "app/Application.hpp"
 
-#include "app/GameState.hpp"
 #include "app/GameEvents.hpp"
+#include "app/GameState.hpp"
 #include "audio/AudioSystem.hpp"
 #include "diagnostics/Logger.hpp"
 #include "game/BuildState.hpp"
+#include "game/MatchSetupState.hpp"
 #include "game/PlayState.hpp"
 #include "game/SettingsState.hpp"
 #include "game/StartMenuState.hpp"
-#include "game/MatchSetupState.hpp"
 #include "gameplay/DefinitionRegistry.hpp"
 #include "localization/Text.hpp"
 #include "persistence/GameConfig.hpp"
@@ -133,8 +133,8 @@ Application::Application() {
         return text ? reinterpret_cast<const char*>(text) : "unknown";
     };
     logger_->info("system",
-                  std::string("OpenGL vendor=") + glText(GL_VENDOR) + " renderer=" +
-                      glText(GL_RENDERER) + " version=" + glText(GL_VERSION));
+                  std::string("OpenGL vendor=") + glText(GL_VENDOR) +
+                      " renderer=" + glText(GL_RENDERER) + " version=" + glText(GL_VERSION));
     logger_->info("configuration",
                   "Resolution=" + std::to_string(startupConfig.resolutionWidth) + "x" +
                       std::to_string(startupConfig.resolutionHeight) +
@@ -146,22 +146,22 @@ Application::Application() {
     const auto pumpBootstrap = [this, &startupQuitRequested]() {
         SDL_Event event{};
         while (SDL_PollEvent(&event))
-            if (event.type == SDL_EVENT_QUIT) startupQuitRequested = true;
+            if (event.type == SDL_EVENT_QUIT)
+                startupQuitRequested = true;
         drawBootstrapLoading(window_);
     };
-    auto initialDefinitions = std::async(
-        std::launch::async, [] { return std::make_unique<DefinitionRegistry>(); });
-    while (initialDefinitions.wait_for(std::chrono::milliseconds(0)) !=
-               std::future_status::ready) {
+    auto initialDefinitions =
+        std::async(std::launch::async, [] { return std::make_unique<DefinitionRegistry>(); });
+    while (initialDefinitions.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
         pumpBootstrap();
         std::this_thread::sleep_for(std::chrono::milliseconds(8));
     }
     definitions_ = initialDefinitions.get();
     renderer_ = std::make_unique<Renderer>(logger_.get(), pumpBootstrap);
-    if (startupQuitRequested) running_ = false;
-    stateContext_ =
-        std::make_unique<StateContext>(
-            StateContext{*audio_, events_, *logger_, *definitions_, "gamedata/config.json"});
+    if (startupQuitRequested)
+        running_ = false;
+    stateContext_ = std::make_unique<StateContext>(StateContext{
+        *audio_, events_, *logger_, *definitions_, "gamedata/config.json", renderer_.get()});
     states_ = std::make_unique<StateStack>(*stateContext_);
     states_->push<StartMenuState>();
     states_->applyPendingChanges();
@@ -217,19 +217,20 @@ int Application::run() {
             else if (progress.finished())
                 phase = progress.failed == 0 ? Text::get("loading.assets.ready")
                                              : Text::get("loading.assets.failed");
-            showLoading(progressStart + progressRange * progress.fraction(),
-                        Text::format("loading.assets",
-                                     {std::to_string(progress.completed),
-                                      std::to_string(progress.total), phase}));
+            showLoading(
+                progressStart + progressRange * progress.fraction(),
+                Text::format(
+                    "loading.assets",
+                    {std::to_string(progress.completed), std::to_string(progress.total), phase}));
             if (!progress.finished())
                 std::this_thread::sleep_for(std::chrono::milliseconds(5));
         } while (!progress.finished());
         if (progress.failed > 0)
-            logger_->warning("assets",
-                             std::to_string(progress.failed) + " preload assets failed");
+            logger_->warning("assets", std::to_string(progress.failed) + " preload assets failed");
     };
 
     while (running_) {
+        renderer_->finishLoadingScreen();
         SDL_Event event{};
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_EVENT_QUIT) {
@@ -250,12 +251,15 @@ int Application::run() {
             MatchSetupOptions setup = state->matchSetup();
             WorldGenerationProgress generationProgress;
             renderer_->preloadAssetGroup("match");
-            auto generation = std::async(
-                std::launch::async, [this, setup, &generationProgress]() mutable {
-                    return GameSession(*definitions_, setup.terrainSeed,
+            auto generation =
+                std::async(std::launch::async, [this, setup, &generationProgress]() mutable {
+                    return GameSession(*definitions_,
+                                       setup.terrainSeed,
                                        std::move(setup.playerOneCountry),
-                                       std::move(setup.playerTwoCountry), "unassigned",
-                                       "unassigned", setup.mapChunksPerSide,
+                                       std::move(setup.playerTwoCountry),
+                                       "unassigned",
+                                       "unassigned",
+                                       setup.mapChunksPerSide,
                                        setup.startingResourcesScale,
                                        setup.resourceAbundanceScale,
                                        TerrainLayoutId{std::move(setup.terrainLayout)},
@@ -265,13 +269,20 @@ int Application::run() {
                 switch (phase) {
                 case WorldGenerationPhase::terrainFields:
                     return Text::get("loading.terrain_fields");
-                case WorldGenerationPhase::water: return Text::get("loading.water");
-                case WorldGenerationPhase::navigation: return Text::get("loading.navigation");
-                case WorldGenerationPhase::starts: return Text::get("loading.starts");
-                case WorldGenerationPhase::resources: return Text::get("loading.resources");
-                case WorldGenerationPhase::validation: return Text::get("loading.validation");
-                case WorldGenerationPhase::decoration: return Text::get("loading.decoration");
-                case WorldGenerationPhase::complete: return Text::get("loading.world_ready");
+                case WorldGenerationPhase::water:
+                    return Text::get("loading.water");
+                case WorldGenerationPhase::navigation:
+                    return Text::get("loading.navigation");
+                case WorldGenerationPhase::starts:
+                    return Text::get("loading.starts");
+                case WorldGenerationPhase::resources:
+                    return Text::get("loading.resources");
+                case WorldGenerationPhase::validation:
+                    return Text::get("loading.validation");
+                case WorldGenerationPhase::decoration:
+                    return Text::get("loading.decoration");
+                case WorldGenerationPhase::complete:
+                    return Text::get("loading.world_ready");
                 }
                 return Text::get("loading.world");
             };
@@ -280,16 +291,14 @@ int Application::run() {
             };
             bool cancelled = false;
             float displayedGenerationFraction = 0.0F;
-            while (generation.wait_for(std::chrono::milliseconds(0)) !=
-                   std::future_status::ready) {
+            while (generation.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
                 const WorldGenerationProgressSnapshot snapshot = generationProgress.snapshot();
                 const float generationFraction =
                     (static_cast<float>(phaseOrdinal(snapshot.phase)) + snapshot.phaseProgress) /
                     7.0F;
                 displayedGenerationFraction =
                     std::max(displayedGenerationFraction, generationFraction);
-                showLoading(0.04F + displayedGenerationFraction * 0.64F,
-                            phaseText(snapshot.phase));
+                showLoading(0.04F + displayedGenerationFraction * 0.64F, phaseText(snapshot.phase));
                 SDL_Event loadingEvent{};
                 while (SDL_PollEvent(&loadingEvent)) {
                     if (loadingEvent.type == SDL_EVENT_QUIT) {
@@ -300,21 +309,25 @@ int Application::run() {
                         cancelled = true;
                     }
                 }
-                if (cancelled) generationProgress.requestCancellation();
+                if (cancelled)
+                    generationProgress.requestCancellation();
                 std::this_thread::sleep_for(std::chrono::milliseconds(2));
             }
             bool generationLogged = false;
             try {
                 GameSession prepared = generation.get();
-                logger_->info("world_generation", "Generation completed\n" + generationProgress.diagnostics());
+                logger_->info("world_generation",
+                              "Generation completed\n" + generationProgress.diagnostics());
                 generationLogged = true;
                 if (cancelled) {
-                    if (!running_) break;
+                    if (!running_)
+                        break;
                     continue;
                 }
-                renderer_->stageGeneratedTerrain(prepared.terrain(), prepared.terrainSeed(),
-                                                  prepared.mapChunksPerSide(),
-                                                  prepared.world().foundations());
+                renderer_->stageGeneratedTerrain(prepared.terrain(),
+                                                 prepared.terrainSeed(),
+                                                 prepared.mapChunksPerSide(),
+                                                 prepared.world().foundations());
                 while (!renderer_->terrainUploadFinished()) {
                     showLoading(0.68F + renderer_->terrainUploadProgress() * 0.16F,
                                 Text::get("loading.terrain_upload"));
@@ -334,7 +347,8 @@ int Application::run() {
                     }
                 }
                 if (cancelled) {
-                    if (!running_) break;
+                    if (!running_)
+                        break;
                     continue;
                 }
                 preloadAssets("match", 0.84F, 0.12F);
@@ -342,12 +356,16 @@ int Application::run() {
                 showLoading(0.98F, Text::get("loading.finalize"));
                 stateContext_->audio.setAmbient(AudioCue::gameAmbient);
             } catch (const WorldGenerationCancelled&) {
-                logger_->info("world_generation", "Generation cancelled\n" + generationProgress.diagnostics());
-                if (!running_) break;
+                logger_->info("world_generation",
+                              "Generation cancelled\n" + generationProgress.diagnostics());
+                if (!running_)
+                    break;
                 continue;
             } catch (const std::exception& error) {
-                logger_->error("world_generation", std::string{error.what()} +
-                    (generationLogged ? std::string{} : "\n" + generationProgress.diagnostics()));
+                logger_->error("world_generation",
+                               std::string{error.what()} +
+                                   (generationLogged ? std::string{}
+                                                     : "\n" + generationProgress.diagnostics()));
                 states_->replace<MatchSetupState>();
             }
         } else if (request == StateRequest::buildMap) {
@@ -367,8 +385,8 @@ int Application::run() {
                 const GameConfig config = GameConfig::load(stateContext_->configPath);
                 SaveData data = SaveGame::read(config.savePath());
                 showLoading(0.30F, Text::get("loading.terrain"));
-                renderer_->regenerateTerrain(data.terrainSeed, data.mapChunksPerSide,
-                                              TerrainLayoutId{data.terrainLayout});
+                renderer_->regenerateTerrain(
+                    data.terrainSeed, data.mapChunksPerSide, TerrainLayoutId{data.terrainLayout});
                 showLoading(0.36F, Text::get("loading.world"));
                 preloadAssets("match", 0.40F, 0.52F);
                 states_->replace<PlayState>(std::move(data));
@@ -396,6 +414,7 @@ int Application::run() {
             logger_->info("lifecycle", "Exit requested");
             running_ = false;
         }
+        renderer_->finishLoadingScreen();
         states_->applyPendingChanges();
         events_.dispatchQueued();
         if (!running_) {
@@ -411,7 +430,8 @@ int Application::run() {
         states_->current()->update(delta);
         renderer_->updateParticles(delta);
         renderer_->recordProfile(
-            "simulation", std::chrono::duration<double, std::milli>(Clock::now() - simulationStart).count());
+            "simulation",
+            std::chrono::duration<double, std::milli>(Clock::now() - simulationStart).count());
 
         int width = 1;
         int height = 1;
@@ -420,7 +440,8 @@ int Application::run() {
         const auto renderStart = Clock::now();
         states_->current()->render(*renderer_);
         renderer_->recordProfile(
-            "render.total", std::chrono::duration<double, std::milli>(Clock::now() - renderStart).count());
+            "render.total",
+            std::chrono::duration<double, std::milli>(Clock::now() - renderStart).count());
         renderer_->endFrame();
         SDL_GL_SwapWindow(window_);
         ++frames;

@@ -31,6 +31,7 @@ find_package(assimp CONFIG REQUIRED)
 find_package(RapidJSON CONFIG REQUIRED)
 find_package(Stb REQUIRED)
 find_package(Freetype REQUIRED)
+find_package(RmlUi CONFIG REQUIRED)
 
 function(strategy_target target)
     target_include_directories(${target} PUBLIC "${CMAKE_SOURCE_DIR}/src")
@@ -100,12 +101,7 @@ target_link_libraries(strategy_gameplay PUBLIC strategy_world RapidJSON)
 
 # Presentation-ready data assembled outside the renderer.
 add_library(strategy_ui_model STATIC
-    src/ui/EntityHudLayout.cpp
     src/ui/EntityHudModel.cpp
-    src/ui/GameHudLayout.cpp
-    src/ui/UiController.cpp
-    src/ui/UiDocument.cpp
-    src/ui/UiLayout.cpp
 )
 strategy_target(strategy_ui_model)
 target_link_libraries(strategy_ui_model
@@ -179,6 +175,7 @@ add_library(strategy_render STATIC
     src/render/RenderGraph.cpp
     src/render/RenderPass.cpp
     src/render/Renderer.cpp
+    src/render/RmlUiManager.cpp
     src/render/ShaderManager.cpp
     src/render/UiRenderer.cpp
 )
@@ -188,9 +185,10 @@ target_compile_definitions(strategy_render PRIVATE
 )
 target_link_libraries(strategy_render
     PUBLIC strategy_assets strategy_camera strategy_diagnostics strategy_particles strategy_persistence strategy_players
-           strategy_terrain strategy_world SDL3::SDL3 glad::glad Freetype::Freetype
+           strategy_terrain strategy_world SDL3::SDL3 glad::glad Freetype::Freetype RmlUi::RmlUi
     PRIVATE strategy_localization strategy_ui_model
 )
+target_include_directories(strategy_render PRIVATE ${Stb_INCLUDE_DIR})
 
 # Interactive states compose engine subsystems but own no platform loop.
 add_library(strategy_states STATIC

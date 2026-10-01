@@ -3,7 +3,6 @@
 #include "core/EventBus.hpp"
 #include "diagnostics/Logger.hpp"
 #include "gameplay/DefinitionRegistry.hpp"
-#include "ui/UiDocument.hpp"
 
 #include <filesystem>
 #include <iostream>
@@ -78,15 +77,6 @@ int strategyTestMain() {
     events.unsubscribe<TestEvent>(subscription);
     events.publish(TestEvent{10});
     valid = valid && received == 5;
-
-    strategy::UiDocument ui;
-    ui.button("confirm", {10, 10, 110, 50}, "Confirm");
-    ui.textField("name", {10, 60, 210, 100}, "Player");
-    ui.pointerMoved({20, 20});
-    valid = valid && ui.hovered("confirm") && !ui.hovered("name");
-    const auto activated = ui.activate({20, 75});
-    ui.focus(activated ? *activated : "");
-    valid = valid && activated && *activated == "name" && ui.focused("name");
 
     logger.info("test", "diagnostic entry");
     logger.flush();

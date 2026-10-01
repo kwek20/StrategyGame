@@ -1,0 +1,39 @@
+<rml>
+    <head>
+        <link type="text/rcss" href="common_buttons.rcss"/>
+        <title>Main Menu</title>
+        <link type="text/rcss" href="main_menu.rcss"/>
+    </head>
+    <body>
+        <div id="menu-shell">
+            <img id="panel-art" src="../textures/ui/menu_panel.png"/>
+            <div id="menu-content">
+                <h1 id="menu-title">STRATEGY GAME</h1>
+                <div id="title-rule"/>
+                <div id="button-stack">
+                    <button id="play" class="art-button menu-button primary">
+                        <img class="button-icon" src="../icons/source/action_move.png"/>
+                        <span id="play-label">PLAY</span>
+                    </button>
+                    <button id="build" class="art-button menu-button">
+                        <img class="button-icon" src="../icons/source/action_construct.png"/>
+                        <span id="build-label">BUILD MODE</span>
+                    </button>
+                    <button id="load" class="art-button menu-button">
+                        <img class="button-icon" src="../icons/source/resource_data.png"/>
+                        <span id="load-label">LOAD GAME</span>
+                    </button>
+                    <button id="settings" class="art-button menu-button">
+                        <img class="button-icon" src="../icons/source/action_power_priority.png"/>
+                        <span id="settings-label">SETTINGS</span>
+                    </button>
+                    <button id="exit" class="art-button menu-button danger">
+                        <img class="button-icon" src="../icons/source/action_stop.png"/>
+                        <span id="exit-label">EXIT</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+        <div id="version">v0.1.0&nbsp;&nbsp;|&nbsp;&nbsp;DEVELOPMENT</div>
+    </body>
+</rml>

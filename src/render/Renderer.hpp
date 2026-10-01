@@ -1,8 +1,8 @@
 #pragma once
 
-#include "assets/ResourceManager.hpp"
 #include "assets/IconAtlas.hpp"
 #include "assets/ParticleEffectDefinitions.hpp"
+#include "assets/ResourceManager.hpp"
 #include "diagnostics/FrameProfiler.hpp"
 #include "persistence/GameConfig.hpp"
 #include "players/Player.hpp"
@@ -12,17 +12,20 @@
 #include "render/ParticleRenderer.hpp"
 #include "render/RenderCommandQueue.hpp"
 #include "render/RenderGraph.hpp"
+#include "render/RmlUiManager.hpp"
 #include "render/ShaderManager.hpp"
 #include "terrain/Terrain.hpp"
 #include "world/Entity.hpp"
 #include "world/MapArea.hpp"
 
+#include <SDL3/SDL_events.h>
 #include <array>
 #include <chrono>
 #include <cstdint>
 #include <functional>
 #include <glm/vec3.hpp>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -31,7 +34,6 @@
 namespace strategy {
 
 class RtsCamera;
-class UiDocument;
 class UiRenderer;
 class Logger;
 class World;
@@ -44,8 +46,7 @@ struct ResourceLayout;
 
 class Renderer final {
   public:
-    explicit Renderer(Logger* logger = nullptr,
-                      std::function<void()> keepResponsive = {});
+    explicit Renderer(Logger* logger = nullptr, std::function<void()> keepResponsive = {});
     ~Renderer();
 
     Renderer(const Renderer&) = delete;
@@ -55,10 +56,27 @@ class Renderer final {
     void beginProfileFrame();
     void recordProfile(const std::string& name, double milliseconds);
     void endFrame();
-    void drawUi(const UiDocument& document) const;
+    [[nodiscard]] RmlUiScreenHandle pushUiScreen(RmlUiScreenDefinition definition);
+    void removeUiScreen(RmlUiScreenHandle handle);
+    void handleUiEvent(const SDL_Event& event);
+    void focusUi(int direction);
+    void activateFocusedUiItem();
+    [[nodiscard]] std::string focusedUiId() const;
+    [[nodiscard]] std::optional<std::string> takeUiAction();
+    [[nodiscard]] bool pointerOverUi() const;
+    void setUiControls(std::vector<std::string> focusOrder,
+                       std::vector<std::string> actionIds);
+    [[nodiscard]] std::optional<RmlUiRect> uiBounds(const std::string& id) const;
+    void setUiText(const std::string& id, const std::string& text);
+    void setUiValue(const std::string& id, const std::string& value);
+    [[nodiscard]] std::string uiValue(const std::string& id) const;
+    void setUiAttribute(const std::string& id, const std::string& name, const std::string& value);
+    void setUiProperty(const std::string& id, const std::string& name, const std::string& value);
+    void drawRmlUi();
     void drawMenuBackground(float pan) const;
     void drawScreenFade(float opacity) const;
     void drawLoadingScreen(float progress, const std::string& status) const;
+    void finishLoadingScreen();
     void drawTerrain(const CameraView& camera,
                      const Player* player = nullptr,
                      bool terrainDebug = false,
@@ -81,25 +99,16 @@ class Renderer final {
     void updateParticles(float deltaSeconds);
     void drawParticles(const CameraView& camera) const;
     void clearParticles();
-    void drawResourceHud(const Player& player,
-                         const World& world,
-                         const DefinitionRegistry& definitions,
-                         bool powerOverlayVisible,
-                         const UiDocument& layout) const;
     void drawPowerConnections(const World& world,
                               const CameraView& camera,
                               PlayerId owner,
                               bool diagnostics = false) const;
-    void drawPowerRanges(const World& world,
-                         const CameraView& camera,
-                         PlayerId owner) const;
+    void drawPowerRanges(const World& world, const CameraView& camera, PlayerId owner) const;
     void drawPowerPlacementConnection(const World& world,
                                       const CameraView& camera,
                                       PlayerId owner,
                                       const Entity& placementPreview) const;
-    void drawPowerDebugHud(const World& world,
-                           PlayerId owner,
-                           glm::vec3 worldPosition) const;
+    void drawPowerDebugHud(const World& world, PlayerId owner, glm::vec3 worldPosition) const;
     void drawDebugHud(const RtsCamera& camera, std::size_t entityCount) const;
     void drawDetailedDebugHud(const CameraView& camera,
                               const Entity* entity,
@@ -108,15 +117,13 @@ class Renderer final {
                               std::uint64_t tick,
                               std::size_t entityCount) const;
     void drawVisionRanges(const CameraView& camera, const Entity* entity) const;
-    void drawResourceFieldDebug(const ResourceLayout& layout,
-                                const CameraView& camera) const;
-    void drawTerrainDebugHud(glm::vec3 worldPosition,
-                             const ResourceLayout& resources) const;
+    void drawResourceFieldDebug(const ResourceLayout& layout, const CameraView& camera) const;
+    void drawTerrainDebugHud(glm::vec3 worldPosition, const ResourceLayout& resources) const;
     void drawWaterDebugHud(glm::vec3 worldPosition, int mode) const;
-    void drawEntityHud(const EntityHudModel& model, const UiDocument& layout) const;
-    void
-    drawStrategyHud(const World& world, EntityId selected, const Player* player,
-                    const UiDocument& layout) const;
+    void drawStrategyHud(const World& world,
+                         EntityId selected,
+                         const Player* player,
+                         const RmlUiRect& minimap) const;
     void drawCrosshair() const;
     void drawSelectionBox(const glm::vec2& start, const glm::vec2& end) const;
     [[nodiscard]] std::vector<EntityId> unitsInScreenRectangle(const glm::vec2& start,
@@ -146,13 +153,18 @@ class Renderer final {
     [[nodiscard]] float aspectRatio() const {
         return static_cast<float>(viewportWidth_) / static_cast<float>(viewportHeight_);
     }
-    [[nodiscard]] int viewportWidth() const { return viewportWidth_; }
-    [[nodiscard]] int viewportHeight() const { return viewportHeight_; }
+    [[nodiscard]] int viewportWidth() const {
+        return viewportWidth_;
+    }
+    [[nodiscard]] int viewportHeight() const {
+        return viewportHeight_;
+    }
     void regenerateTerrain(std::uint32_t seed,
                            std::uint32_t chunksPerSide = Terrain::chunksPerSide,
                            TerrainLayoutId layout = TerrainLayoutId{"continental"});
     // Copies CPU-generated terrain and schedules bounded render-thread uploads.
-    void stageGeneratedTerrain(const Terrain& terrain, std::uint32_t seed,
+    void stageGeneratedTerrain(const Terrain& terrain,
+                               std::uint32_t seed,
                                std::uint32_t chunksPerSide,
                                const std::vector<TerrainFoundation>& foundations = {});
     [[nodiscard]] float terrainUploadProgress() const;
@@ -173,17 +185,19 @@ class Renderer final {
         framesPerSecond_ = fps;
     }
     [[nodiscard]] float terrainHeightAt(float worldX, float worldZ) const;
-    [[nodiscard]] FootprintFit fitTerrainFootprint(float worldX, float worldZ, float radius,
-                                                   float maximumSlopeDegrees) const {
+    [[nodiscard]] FootprintFit
+    fitTerrainFootprint(float worldX, float worldZ, float radius, float maximumSlopeDegrees) const {
         return terrain_.fitFootprint(worldX, worldZ, radius, maximumSlopeDegrees);
     }
-    [[nodiscard]] FootprintFit fitTerrainFootprint(float worldX, float worldZ,
-                                                   const TerrainFootprint& footprint) const {
+    [[nodiscard]] FootprintFit
+    fitTerrainFootprint(float worldX, float worldZ, const TerrainFootprint& footprint) const {
         return terrain_.fitFootprint(worldX, worldZ, footprint);
     }
-    [[nodiscard]] TerrainPlacementResult evaluateTerrainPlacement(
-        float worldX, float worldZ, const TerrainFootprint& footprint,
-        TerrainPlacementProfile profile) const {
+    [[nodiscard]] TerrainPlacementResult
+    evaluateTerrainPlacement(float worldX,
+                             float worldZ,
+                             const TerrainFootprint& footprint,
+                             TerrainPlacementProfile profile) const {
         return terrain_.evaluatePlacement(worldX, worldZ, footprint, profile);
     }
     [[nodiscard]] std::size_t loadedModelCount() const {
@@ -246,6 +260,7 @@ class Renderer final {
     int viewportWidth_{1};
     int viewportHeight_{1};
     float framesPerSecond_{0.0F};
+    std::unique_ptr<RmlUiManager> rmlUi_;
     std::unique_ptr<UiRenderer> uiRenderer_;
     Logger* logger_{nullptr};
     mutable std::vector<TextDraw> pendingText_;
@@ -259,16 +274,23 @@ class Renderer final {
     mutable TextureHandle iconAtlasTexture_{};
     mutable float displayedLoadingProgress_{0.0F};
     mutable bool loadingProgressInitialized_{false};
+    mutable RmlUiScreenHandle loadingScreen_{};
     mutable std::chrono::steady_clock::time_point lastLoadingProgressUpdate_{};
     std::unordered_map<std::string, AssetPreloadSet> preloadGroups_;
     [[nodiscard]] ModelHandle modelHandle(const std::string& archetype) const;
     [[nodiscard]] float activeWorldExtent() const {
         return activeMapArea().extent();
     }
-    [[nodiscard]] MapArea activeMapArea() const { return MapArea{activeTerrainChunksPerSide_}; }
+    [[nodiscard]] MapArea activeMapArea() const {
+        return MapArea{activeTerrainChunksPerSide_};
+    }
     void bindTerrainTextures() const;
     void ensureTerrainChunks();
-    void drawIcon(const std::string& id, float left, float top, float right, float bottom,
+    void drawIcon(const std::string& id,
+                  float left,
+                  float top,
+                  float right,
+                  float bottom,
                   const glm::vec3& tint = {1.0F, 1.0F, 1.0F}) const;
     void refreshModelShaderBindings();
     void uploadTerrainChunk(int chunkX, int chunkZ);

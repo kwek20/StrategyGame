@@ -1,0 +1,152 @@
+body {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    color: #edf6da;
+    font-family: "Segoe UI";
+    pointer-events: none;
+}
+#build-shell {
+    position: absolute;
+    left: 2%;
+    right: 2%;
+    bottom: 2%;
+    height: 36%;
+    pointer-events: auto;
+    animation: .28s quadratic-out enter;
+}
+#build-panel-art {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    image-color: #e0e7e9;
+    pointer-events: none;
+}
+#build-content {
+    position: absolute;
+    left: 4%;
+    right: 4%;
+    top: 12%;
+    bottom: 12%;
+    display: flex;
+    flex-direction: column;
+}
+#build-header {
+    height: 48dp;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+#build-header div {
+    display: flex;
+    align-items: baseline;
+}
+#build-title {
+    margin: 0 18dp 0 0;
+    color: #fff8cb;
+    font-size: 25dp;
+}
+#build-team {
+    color: #54d7f2;
+    font-size: 14dp;
+}
+#build-status {
+    max-width: 48%;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    color: #b8d3da;
+    font-size: 14dp;
+    text-align: right;
+}
+#build-rule {
+    height: 2dp;
+    background-color: #1da6c9;
+    margin-bottom: 10dp;
+}
+#build-palette {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8dp;
+    flex: 1;
+    overflow: hidden;
+}
+.build-slot {
+    position: relative;
+    decorator: image("../textures/ui/action_slot_transparent.png" fill);
+    image-color: #d6dfe1;
+    width: 84dp;
+    height: 84dp;
+    border-width: 0;
+    background-color: #071116;
+    color: #eaf4dc;
+    cursor: pointer;
+}
+.build-slot img {
+    position: absolute;
+    left: 17dp;
+    top: 7dp;
+    width: 50dp;
+    height: 50dp;
+    pointer-events: none;
+}
+.build-slot span {
+    position: absolute;
+    left: 4dp;
+    right: 4dp;
+    bottom: 5dp;
+    height: 18dp;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-size: 10dp;
+    text-align: center;
+    pointer-events: none;
+}
+.build-slot:hover,.build-slot:focus {
+    background-color: #12323b;
+    image-color: #e8ffff;
+    outline: 2dp #2ac4df;
+}
+.build-slot.selected {
+    background-color: #143d2c;
+    image-color: #dffff0;
+    outline: 3dp #42e891;
+}
+.build-slot.selected img {
+    image-color: #e9ffdb;
+}
+#build-footer {
+    height: 42dp;
+    display: flex;
+    justify-content: flex-end;
+    gap: 9dp;
+    margin-top: 9dp;
+}
+#build-footer button {
+    width: 135dp;
+    height: 39dp;
+    border-width: 0;
+    background-color: #081116;
+    color: #eff7dd;
+    font-size: 13dp;
+    font-weight: 700;
+    cursor: pointer;
+}
+#build-footer button:hover,#build-footer button:focus {
+    background-color: #12323b;
+    outline: 2dp #2ac4df;
+}
+#build-footer .danger {
+    color: #ffd5ce;
+}
+@keyframes enter {
+    from {
+        opacity: 0;
+        bottom: -4%;
+    }
+    to {
+        opacity: 1;
+        bottom: 2%;
+    }
+}

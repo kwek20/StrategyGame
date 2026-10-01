@@ -9,7 +9,6 @@
 
 namespace strategy {
 
-class UiDocument;
 class ResourceManager;
 
 class UiRenderer final {
@@ -19,7 +18,6 @@ class UiRenderer final {
     UiRenderer(const UiRenderer&) = delete;
     UiRenderer& operator=(const UiRenderer&) = delete;
 
-    void draw(const UiDocument& document, int width, int height) const;
     [[nodiscard]] float measureText(const std::string& value, float scale) const;
     void text(const std::string& value,
               float x,

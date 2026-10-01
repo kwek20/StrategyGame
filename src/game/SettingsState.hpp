@@ -1,7 +1,7 @@
 #pragma once
 #include "app/GameState.hpp"
 #include "persistence/GameConfig.hpp"
-#include "ui/UiController.hpp"
+#include "render/RmlUiManager.hpp"
 
 #include <array>
 #include <string_view>
@@ -9,6 +9,7 @@ namespace strategy {
 class SettingsState final : public GameState {
   public:
     explicit SettingsState(StateContext& context);
+    ~SettingsState() override;
     void handleEvent(const SDL_Event&) override;
     void update(float deltaSeconds) override;
     void render(Renderer&) const override;
@@ -23,11 +24,11 @@ class SettingsState final : public GameState {
     static constexpr std::array<std::pair<int, int>, 4> resolutions{
         {{1280, 720}, {1600, 900}, {1920, 1080}, {2560, 1440}}};
     void apply();
-    [[nodiscard]] UiDocument uiDocument(int width, int height) const;
+    void refreshUi();
     void activateControl(std::string_view id, int direction = 1);
-    mutable UiController uiController_;
     float menuTime_{0.0F};
     float transitionOut_{-1.0F};
+    RmlUiScreenHandle screen_{};
     void beginTransition(StateRequest request);
 };
 } // namespace strategy

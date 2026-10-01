@@ -1,0 +1,115 @@
+body {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    color: #f2f8d8;
+    font-family: "Segoe UI";
+    pointer-events: none;
+}
+#menu-shell {
+    position: absolute;
+    left: 2.5%;
+    top: 5%;
+    width: 40%;
+    height: 90%;
+    animation: 0.45s quadratic-out menu-enter;
+    pointer-events: auto;
+}
+#panel-art {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    image-color: #e4e9eb;
+    pointer-events: none;
+}
+#menu-content {
+    position: absolute;
+    left: 13%;
+    right: 13%;
+    top: 12%;
+    bottom: 13%;
+    display: flex;
+    flex-direction: column;
+}
+#menu-title {
+    margin: 0;
+    height: 58dp;
+    color: #fff8c9;
+    font-size: 38dp;
+    font-weight: 700;
+    letter-spacing: 1dp;
+}
+#title-rule {
+    height: 2dp;
+    margin-bottom: 26dp;
+    background-color: #1da6c9;
+}
+#button-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 14dp;
+    flex: 1;
+}
+.menu-button {
+    width: 90%;
+    height: 12%;
+    padding: 0 24dp;
+    border-width: 0;
+    background-color: transparent;
+    color: #edf6da;
+    font-size: 25dp;
+    font-weight: 700;
+    letter-spacing: 0.5dp;
+    cursor: pointer;
+    left: 0;
+    transition: left color 0.12s quadratic-out;
+}
+.menu-button:hover, .menu-button:focus {
+    color: #ffffff;
+    left: 7dp;
+}
+.menu-button:active {
+    left: 7dp;
+    opacity: 0.86;
+}
+.primary {
+    color: #edffd9;
+}
+.danger {
+    margin-top: auto;
+    color: #ffd8cf;
+}
+#version {
+    position: absolute;
+    right: 2.5%;
+    bottom: 2.5%;
+    color: #b5cbd5;
+    font-size: 14dp;
+    letter-spacing: 0.5dp;
+}
+@keyframes menu-enter {
+    from {
+        opacity: 0;
+        left: -1.5%;
+    }
+    to {
+        opacity: 1;
+        left: 2.5%;
+    }
+}
+@media (max-width: 900px) {
+    #menu-shell {
+        left: 1%;
+        width: 47%;
+        min-width: 360dp;
+    }
+    #menu-title {
+        font-size: 32dp;
+    }
+    .menu-button {
+        height: 56dp;
+        font-size: 22dp;
+    }
+}

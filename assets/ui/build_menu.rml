@@ -1,0 +1,37 @@
+<rml>
+    <head>
+        <link type="text/rcss" href="common_buttons.rcss"/>
+        <title>Build Mode</title>
+        <link type="text/rcss" href="build_menu.rcss"/>
+    </head>
+    <body>
+        <div id="build-shell">
+            <img id="build-panel-art" src="../textures/ui/hud_panel.png"/>
+            <div id="build-content">
+                <div id="build-header">
+                    <div>
+                        <h1 id="build-title">BUILD MODE</h1>
+                        <span id="build-team"/>
+                    </div>
+                    <span id="build-status"/>
+                </div>
+                <div id="build-rule"/>
+                <div id="build-palette"/>
+                <div id="build-footer">
+                    <button id="build.team" class="art-button">
+                        <span id="team-label"/>
+                    </button>
+                    <button id="build.undo" class="art-button">
+                        <span id="undo-label"/>
+                    </button>
+                    <button id="build.save" class="art-button">
+                        <span id="save-label"/>
+                    </button>
+                    <button id="build.exit" class="art-button danger">
+                        <span id="exit-label"/>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </body>
+</rml>

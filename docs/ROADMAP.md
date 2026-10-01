@@ -569,10 +569,16 @@ These tracks continue throughout all milestones rather than waiting for a final 
 
 ### Interface architecture
 
-- The shared `UiDocument` path now covers menus, loading, editor controls, the in-game HUD,
-  entity actions, queues, the minimap, and the power overlay.
-- Responsive layout primitives provide anchors, padding, rows, columns, minimum sizes, and
-  resolution-aware UI scaling. Reference-layout screens are fitted and centered within a safe area.
+- RmlUi 6.3 now drives the main menu, Settings, Match Setup, pause menu, Build Mode palette,
+  loading overlay, and the complete gameplay HUD from RML/RCSS. The gameplay document owns the
+  resource strip, power details, entity information/actions/queues, mixed selection controls,
+  alerts, placement feedback, and minimap frame. The minimap's explored cells and entity markers
+  remain a clipped renderer data layer below the RmlUi frame. All screens share a
+  descriptor-driven screen stack for document loading, focus/action routing, live values, and
+  teardown, so new UI should reuse that service. The former `UiDocument`, `UiController`, and
+  hard-coded HUD layout builders have been removed.
+- RCSS provides anchors, padding, flex rows/columns, minimum sizes, overflow handling, and
+  resolution-aware UI scaling. Screens fit within image safe areas without C++ pixel layouts.
 - Keyboard and gamepad focus navigation supports Tab/D-pad movement, Enter/Space/South
   activation, and Escape/East back behavior.
 - The shared UI theme defines disabled states and minimum text contrast. Text is clipped with

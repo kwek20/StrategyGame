@@ -1,0 +1,161 @@
+<rml>
+    <head>
+        <link type="text/rcss" href="common_buttons.rcss"/>
+        <title>Settings</title>
+        <link type="text/rcss" href="settings.rcss"/>
+    </head>
+    <body>
+        <div id="shell">
+            <img class="panel-art" src="../textures/ui/menu_panel.png"/>
+            <div id="content">
+                <h1 id="settings-title">SETTINGS</h1>
+                <div class="rule"/>
+                <div class="columns">
+                    <div class="column">
+                        <h2 id="settings-video">VIDEO</h2>
+                        <div class="setting-row">
+                            <span id="resolution-label" class="label"/>
+                            <div class="selector">
+                                <button id="settings.resolution.left" class="art-button compact">
+                                    <span>-</span>
+                                </button>
+                                <span id="settings.resolution.value" class="selector-value"/>
+                                <button id="settings.resolution.right" class="art-button compact">
+                                    <span>+</span>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="setting-row">
+                            <span id="fullscreen-label" class="label"/>
+                            <button id="settings.fullscreen" class="art-button wide">
+                                <span id="settings.fullscreen.value"/>
+                            </button>
+                        </div>
+                        <div class="setting-row">
+                            <span id="ui-scale-label" class="label"/>
+                            <div class="selector">
+                                <button id="settings.ui_scale.left" class="art-button compact">
+                                    <span>-</span>
+                                </button>
+                                <span id="settings.ui_scale.value" class="selector-value"/>
+                                <button id="settings.ui_scale.right" class="art-button compact">
+                                    <span>+</span>
+                                </button>
+                            </div>
+                        </div>
+                        <h2 id="settings-audio">AUDIO</h2>
+                        <div class="setting-row">
+                            <span id="master-label" class="label"/>
+                            <div class="selector">
+                                <button id="settings.master.left" class="art-button compact">
+                                    <span>-</span>
+                                </button>
+                                <span id="settings.master.value" class="selector-value"/>
+                                <button id="settings.master.right" class="art-button compact">
+                                    <span>+</span>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="setting-row">
+                            <span id="music-label" class="label"/>
+                            <div class="selector">
+                                <button id="settings.music.left" class="art-button compact">
+                                    <span>-</span>
+                                </button>
+                                <span id="settings.music.value" class="selector-value"/>
+                                <button id="settings.music.right" class="art-button compact">
+                                    <span>+</span>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="setting-row">
+                            <span id="effects-label" class="label"/>
+                            <div class="selector">
+                                <button id="settings.effects.left" class="art-button compact">
+                                    <span>-</span>
+                                </button>
+                                <span id="settings.effects.value" class="selector-value"/>
+                                <button id="settings.effects.right" class="art-button compact">
+                                    <span>+</span>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="setting-row">
+                            <span id="mute-label" class="label"/>
+                            <button id="settings.muted" class="art-button wide">
+                                <span id="settings.muted.value"/>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="column controls">
+                        <h2 id="settings-controls">CONTROLS</h2>
+                        <div id="binding-list">
+                            <div class="binding-row">
+                                <span id="bind.forward.label" class="binding-label"/>
+                                <button id="settings.bind.forward" class="art-button binding">
+                                    <span id="bind.forward.value" class="keycap"/>
+                                </button>
+                            </div>
+                            <div class="binding-row">
+                                <span id="bind.backward.label" class="binding-label"/>
+                                <button id="settings.bind.backward" class="art-button binding">
+                                    <span id="bind.backward.value" class="keycap"/>
+                                </button>
+                            </div>
+                            <div class="binding-row">
+                                <span id="bind.left.label" class="binding-label"/>
+                                <button id="settings.bind.left" class="art-button binding">
+                                    <span id="bind.left.value" class="keycap"/>
+                                </button>
+                            </div>
+                            <div class="binding-row">
+                                <span id="bind.right.label" class="binding-label"/>
+                                <button id="settings.bind.right" class="art-button binding">
+                                    <span id="bind.right.value" class="keycap"/>
+                                </button>
+                            </div>
+                            <div class="binding-row">
+                                <span id="bind.debug.label" class="binding-label"/>
+                                <button id="settings.bind.debug" class="art-button binding">
+                                    <span id="bind.debug.value" class="keycap"/>
+                                </button>
+                            </div>
+                            <div class="binding-row">
+                                <span id="bind.terrain_debug.label" class="binding-label"/>
+                                <button id="settings.bind.terrain_debug" class="art-button binding">
+                                    <span id="bind.terrain_debug.value" class="keycap"/>
+                                </button>
+                            </div>
+                            <div class="binding-row">
+                                <span id="bind.water_debug.label" class="binding-label"/>
+                                <button id="settings.bind.water_debug" class="art-button binding">
+                                    <span id="bind.water_debug.value" class="keycap"/>
+                                </button>
+                            </div>
+                            <div class="binding-row">
+                                <span id="bind.power_debug.label" class="binding-label"/>
+                                <button id="settings.bind.power_debug" class="art-button binding">
+                                    <span id="bind.power_debug.value" class="keycap"/>
+                                </button>
+                            </div>
+                            <div class="binding-row">
+                                <span id="bind.pause.label" class="binding-label"/>
+                                <button id="settings.bind.pause" class="art-button binding">
+                                    <span id="bind.pause.value" class="keycap"/>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="footer">
+                    <button id="settings.cancel" class="art-button action danger">
+                        <span id="cancel-label"/>
+                    </button>
+                    <button id="settings.apply" class="art-button action primary">
+                        <span id="apply-label"/>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </body>
+</rml>

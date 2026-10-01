@@ -1,14 +1,10 @@
 #include "diagnostics/Logger.hpp"
 #include "render/Renderer.hpp"
-#include "world/WorldGeneration.hpp"
 #include "render/ShaderManager.hpp"
-#include "ui/UiDocument.hpp"
-#include "ui/EntityHudLayout.hpp"
-#include "ui/EntityHudModel.hpp"
-#include "ui/UiController.hpp"
-#include "world/World.hpp"
-#include "world/Vegetation.hpp"
 #include "terrain/Terrain.hpp"
+#include "world/Vegetation.hpp"
+#include "world/World.hpp"
+#include "world/WorldGeneration.hpp"
 
 #include <SDL3/SDL.h>
 #include <chrono>
@@ -40,8 +36,8 @@ int strategyTestMain() {
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 5);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
-    SDL_Window* window = SDL_CreateWindow(
-        "renderer-test", 640, 360, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN);
+    SDL_Window* window =
+        SDL_CreateWindow("renderer-test", 640, 360, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN);
     if (!window) {
         std::cout << "Renderer test skipped: " << SDL_GetError() << '\n';
         SDL_Quit();
@@ -87,8 +83,7 @@ out vec4 color;void main(){color=vec4(1);})";
         const strategy::ShaderHandle fileShader =
             shaders.loadFiles("reload-test", vertexPath, fragmentPath);
         const std::uint32_t originalProgram = shaders.program(fileShader);
-        write(fragmentPath,
-              "#version 450 core\nout vec4 color;void main(){color=vec4(0,1,0,1);}");
+        write(fragmentPath, "#version 450 core\nout vec4 color;void main(){color=vec4(0,1,0,1);}");
         std::filesystem::last_write_time(
             fragmentPath, std::filesystem::file_time_type::clock::now() + std::chrono::seconds(1));
         std::this_thread::sleep_for(std::chrono::milliseconds(260));
@@ -112,8 +107,8 @@ out vec4 color;void main(){color=vec4(1);})";
         strategy::Renderer renderer{&logger};
         const strategy::Terrain generatedTerrain{12345};
         renderer.stageGeneratedTerrain(generatedTerrain, 12345, 10);
-        valid = !renderer.terrainUploadFinished() && renderer.terrainUploadProgress() == 0.0F &&
-                valid;
+        valid =
+            !renderer.terrainUploadFinished() && renderer.terrainUploadProgress() == 0.0F && valid;
 
         strategy::CameraView camera;
         camera.position = {24, 30, 35};
@@ -161,20 +156,16 @@ out vec4 color;void main(){color=vec4(1);})";
         vegetationChunk.instances.push_back(vegetationInstance);
         vegetation.chunks().push_back(std::move(vegetationChunk));
 
-        strategy::UiDocument ui;
-        ui.panel("panel", {12, 12, 240, 90}, {0.04F, 0.07F, 0.10F});
-        ui.label("label", {24, 24, 220, 60}, "Renderer integration", 1.5F);
-
         renderer.preloadAssetGroup("match");
         strategy::AssetLoadProgress loadProgress = renderer.assetProgress("match");
-        for (int frame = 0; frame < 400 &&
-             (!loadProgress.finished() || !renderer.terrainUploadFinished()); ++frame) {
+        for (int frame = 0;
+             frame < 400 && (!loadProgress.finished() || !renderer.terrainUploadFinished());
+             ++frame) {
             renderer.beginProfileFrame();
             renderer.beginFrame(640, 360);
             renderer.drawTerrain(camera);
             renderer.drawVegetation(vegetation, camera);
             renderer.drawWorld(world, camera);
-            renderer.drawUi(ui);
             renderer.endFrame();
             glFinish();
             valid = noGlErrors("frame") && valid;
@@ -188,8 +179,8 @@ out vec4 color;void main(){color=vec4(1);})";
         // currently required presentation models were uploaded.
         valid = loadProgress.total >= 44 && loadProgress.completed == loadProgress.total &&
                 loadProgress.failed == 0 && renderer.loadedModelCount() >= 29 &&
-                renderer.terrainUploadFinished() &&
-                renderer.terrainUploadProgress() == 1.0F && valid;
+                renderer.terrainUploadFinished() && renderer.terrainUploadProgress() == 1.0F &&
+                valid;
         valid = renderer.textureState(texture) == strategy::ResourceState::ready &&
                 noGlErrors("standalone texture") && valid;
         renderer.beginProfileFrame();
@@ -209,68 +200,95 @@ out vec4 color;void main(){color=vec4(1);})";
         placementPreview.transform.position = {1000.0F, 0.0F, 1000.0F};
         renderer.drawPowerPlacementConnection(world, camera, 1, placementPreview);
         renderer.drawPowerConnections(world, camera, 1, true);
-        renderer.drawUi(ui);
         renderer.drawTerrainDebugHud({0.0F, 0.0F, 0.0F}, {});
         renderer.drawPowerDebugHud(world, 1, {0.0F, 0.0F, 0.0F});
         renderer.endFrame();
         glFinish();
         valid = noGlErrors("complete render") && valid;
-        // Render a delayed, disabled building action with all tooltip sections.
-        SDL_SetWindowSize(window, 1280, 720);
-        SDL_SyncWindow(window);
         renderer.beginFrame(1280, 720);
-        strategy::EntityHudModel tooltipModel;
-        tooltipModel.title = "Construction drone";
-        tooltipModel.portraitIcon = "unit_construction_drone";
-        tooltipModel.bars.push_back({"Health", 72.0F, 100.0F,
-                                     strategy::HudBarKind::health});
-        tooltipModel.bars.push_back({"Power", 46.0F, 100.0F,
-                                     strategy::HudBarKind::power});
-        tooltipModel.stats.push_back({"Cargo", "4 / 10", "resource_scrap"});
-        tooltipModel.stats.push_back({"Vision", "14.0", "building_sensor_tower"});
-        strategy::HudActionModel buildAction;
-        buildAction.id = "construct.alloy_processor";
-        buildAction.name = "Alloy Processor";
-        buildAction.icon = "building_alloy_processor";
-        buildAction.cost = "100 Alloy, 25 Fuel";
-        buildAction.costIcons = {"resource_alloy", "resource_fuel"};
-        buildAction.power = "Power consumption: 8 kW";
-        buildAction.description = "Converts delivered Scrap or Synthetic into Alloy. Requires full power to accept cargo.";
-        buildAction.requirements = "Required upgrades: Efficient Training";
-        buildAction.disabledReason = "Missing upgrades: Efficient Training";
-        buildAction.enabled = false;
-        tooltipModel.actions.push_back(buildAction);
-        static constexpr const char* previewIcons[]{
-            "building_command_hub", "building_basic_generator", "building_storage_silo",
-            "building_electricity_pole", "building_charging_pad", "building_resource_extractor",
-            "building_drone_factory", "building_sensor_tower", "action_power_connect",
-            "action_power_priority"};
-        for (std::size_t i = 0; i < std::size(previewIcons); ++i) {
-            strategy::HudActionModel preview;
-            preview.id = "preview." + std::to_string(i);
-            preview.name = "Preview action";
-            preview.icon = previewIcons[i];
-            preview.enabled = true;
-            preview.active = i == 2;
-            tooltipModel.actions.push_back(std::move(preview));
-        }
-        auto tooltipUi = strategy::EntityHudLayout::actions(tooltipModel, 1280, 720);
-        const auto* buildButton = tooltipUi.find(strategy::EntityHudLayout::actionElementId(buildAction.id));
-        strategy::UiController hover;
-        hover.pointerMoved({buildButton->bounds.left + 5, buildButton->bounds.top + 5});
-        hover.apply(tooltipUi);
-        hover.advance(1.01F);
-        hover.apply(tooltipUi);
-        renderer.drawEntityHud(tooltipModel, tooltipUi);
+        renderer.drawLoadingScreen(0.42F, "GENERATING TERRAIN FIELDS");
         renderer.endFrame();
         glFinish();
-        valid = noGlErrors("wrapped building tooltip") && valid;
+        valid = noGlErrors("RmlUi loading screen") && valid;
+        renderer.finishLoadingScreen();
+        const strategy::RmlUiScreenHandle pauseScreen =
+            renderer.pushUiScreen({"assets/ui/pause_menu.rml",
+                                   {},
+                                   {"pause.resume", "pause.settings", "pause.exit"},
+                                   {"pause.resume", "pause.settings", "pause.exit"},
+                                   1.0F});
+        renderer.beginFrame(1280, 720);
+        renderer.drawRmlUi();
+        renderer.endFrame();
+        glFinish();
+        valid = noGlErrors("RmlUi pause menu") && valid;
+        renderer.removeUiScreen(pauseScreen);
+        const strategy::RmlUiScreenHandle settingsScreen =
+            renderer.pushUiScreen({"assets/ui/settings.rml",
+                                   {},
+                                   {"settings.resolution.left", "settings.apply"},
+                                   {"settings.resolution.left", "settings.apply"},
+                                   1.0F});
+        renderer.setUiText("resolution-label", "RESOLUTION");
+        renderer.setUiText("settings.resolution.value", "1280 x 720");
+        renderer.setUiText("settings-controls", "CONTROLS");
+        renderer.setUiText("bind.forward.label", "MOVE FORWARD");
+        renderer.setUiText("bind.forward.value", "W");
+        renderer.setUiText("apply-label", "APPLY AND BACK");
+        renderer.beginFrame(1280, 720);
+        renderer.drawRmlUi();
+        renderer.endFrame();
+        glFinish();
+        valid = noGlErrors("RmlUi settings menu") && valid;
+        renderer.removeUiScreen(settingsScreen);
+        const strategy::RmlUiScreenHandle buildScreen =
+            renderer.pushUiScreen({"assets/ui/build_menu.rml",
+                                   {},
+                                   {"build.palette.command_hub"},
+                                   {"build.palette.command_hub"},
+                                   1.0F});
+        renderer.setUiText("build-palette",
+                           "<button id=\"build.palette.command_hub\" class=\"build-slot selected\">"
+                           "<img src=\"../icons/source/building_command_hub.png\"/>"
+                           "<span>COMMAND HUB</span></button>");
+        renderer.focusUi(0);
+        renderer.beginFrame(1280, 720);
+        renderer.drawRmlUi();
+        renderer.endFrame();
+        glFinish();
+        valid = noGlErrors("RmlUi build menu") && valid;
+        renderer.removeUiScreen(buildScreen);
+        const strategy::RmlUiScreenHandle gameplayScreen =
+            renderer.pushUiScreen({"assets/ui/gameplay_hud.rml",
+                                   {},
+                                   {"resources.power", "hud.satellite", "hud.menu"},
+                                   {"resources.power", "hud.satellite", "hud.menu"},
+                                   1.0F});
+        renderer.setUiText("resources-content",
+                           "<div class='resource'><img src='../icons/source/resource_scrap.png'/><span>125</span></div>");
+        renderer.setUiText("entity-content",
+                           "<div class='entity-info'><div class='entity-title'>CONSTRUCTION DRONE</div>"
+                           "<div class='hud-bar health'><div class='hud-fill' style='width:72%;'></div>"
+                           "<span>HEALTH 72 / 100</span></div></div>"
+                           "<div class='entity-actions'><button id='action.preview' class='action'>"
+                           "<img src='../icons/source/building_alloy_processor.png'/></button></div>");
+        renderer.setUiControls({"resources.power", "action.preview"},
+                               {"resources.power", "action.preview"});
+        renderer.beginFrame(1280, 720);
+        renderer.drawRmlUi();
+        renderer.endFrame();
+        glFinish();
+        valid = noGlErrors("RmlUi gameplay HUD") && valid;
+        renderer.removeUiScreen(gameplayScreen);
         if (const char* screenshotPath = SDL_getenv("STRATEGY_UI_SCREENSHOT")) {
             std::vector<unsigned char> pixels(1280 * 720 * 4), flipped(pixels.size());
             glReadPixels(0, 0, 1280, 720, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
             for (int row = 0; row < 720; ++row)
-                std::copy_n(pixels.data() + row * 1280 * 4, 1280 * 4, flipped.data() + (719 - row) * 1280 * 4);
-            SDL_Surface* surface = SDL_CreateSurfaceFrom(1280, 720, SDL_PIXELFORMAT_RGBA32, flipped.data(), 1280 * 4);
+                std::copy_n(pixels.data() + row * 1280 * 4,
+                            1280 * 4,
+                            flipped.data() + (719 - row) * 1280 * 4);
+            SDL_Surface* surface =
+                SDL_CreateSurfaceFrom(1280, 720, SDL_PIXELFORMAT_RGBA32, flipped.data(), 1280 * 4);
             valid = surface && SDL_SaveBMP(surface, screenshotPath) && valid;
             SDL_DestroySurface(surface);
         }

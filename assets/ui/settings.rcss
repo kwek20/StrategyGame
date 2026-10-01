@@ -1,0 +1,166 @@
+body {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    color: #edf6da;
+    font-family: "Segoe UI";
+    pointer-events: none;
+}
+#shell {
+    position: absolute;
+    left: 8%;
+    top: 4%;
+    width: 84%;
+    height: 92%;
+    pointer-events: auto;
+    animation: .35s quadratic-out enter;
+}
+.panel-art {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    image-color: #e2e8ea;
+    pointer-events: none;
+}
+#content {
+    position: absolute;
+    left: 15%;
+    right: 15%;
+    top: 12%;
+    bottom: 10%;
+    display: flex;
+    flex-direction: column;
+}
+h1 {
+    margin: 0;
+    height: 48dp;
+    font-size: 34dp;
+    color: #fff8c9;
+}
+.rule {
+    height: 2dp;
+    background-color: #1da6c9;
+    margin-bottom: 14dp;
+}
+.columns {
+    display: flex;
+    gap: 5%;
+    flex: 1;
+    overflow: hidden;
+}
+.column {
+    width: 45%;
+    display: flex;
+    flex-direction: column;
+}
+.controls {
+    width: 45%;
+}
+h2 {
+    height: 25dp;
+    margin: 3dp 0 6dp;
+    color: #63d8f4;
+    font-size: 20dp;
+}
+.setting-row {
+    height: 5.2vh;
+    min-height: 48dp;
+    margin-bottom: .35vh;
+    display: flex;
+    flex-direction: column;
+}
+.label {
+    height: 1.6vh;
+    min-height: 14dp;
+    margin-left: .5%;
+    color: #b6ced6;
+    font-size: 11dp;
+    letter-spacing: .4dp;
+}
+.wide {
+    height: 3.2vh;
+    min-height: 32dp;
+    width: 62%;
+    color: #f2f8dd;
+    font-size: 14dp;
+    font-weight: 700;
+}
+#binding-list {
+    display: flex;
+    flex-direction: column;
+    gap: .45vh;
+}
+.binding-row {
+    height: 3.8vh;
+    min-height: 36dp;
+    display: flex;
+    align-items: center;
+    gap: 2%;
+}
+.binding-label {
+    flex: 1;
+    min-width: 0;
+    color: #edf6da;
+    font-size: 12dp;
+    font-weight: 700;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+.binding {
+    width: 28%;
+    min-width: 96dp;
+    height: 3.2vh;
+    min-height: 32dp;
+    padding: 0 2%;
+    color: #f2f8dd;
+    font-size: 12dp;
+    font-weight: 700;
+}
+.keycap {
+    width: 72dp;
+    height: 22dp;
+    line-height: 22dp;
+    padding: 0 6dp;
+    background-color: #07171e;
+    border: 1dp #249bb7;
+    color: #82e4f7;
+    text-align: center;
+    font-size: 11dp;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+.footer {
+    height: 48dp;
+    margin-top: 7dp;
+    display: flex;
+    justify-content: space-between;
+}
+.action {
+    width: 205dp;
+    height: 43dp;
+    color: #f2f8dd;
+    font-size: 15dp;
+    font-weight: 700;
+}
+.primary {
+    color: #dfffca;
+}
+.danger {
+    color: #ffd7cf;
+}
+button:hover, button:focus {
+    color: #fff;
+    outline: 2dp #28b6d2;
+}
+@keyframes enter {
+    from {
+        opacity: 0;
+        top: 7%;
+    }
+    to {
+        opacity: 1;
+        top: 4%;
+    }
+}

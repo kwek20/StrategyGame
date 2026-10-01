@@ -1,9 +1,5 @@
 #include "gameplay/GameplayCatalogue.hpp"
 #include "ui/EntityHudModel.hpp"
-#include "ui/EntityHudLayout.hpp"
-#include "ui/UiController.hpp"
-#include "ui/GameHudLayout.hpp"
-#include "ui/UiLayout.hpp"
 #include "world/World.hpp"
 
 #include <algorithm>
@@ -12,248 +8,46 @@
 int strategyTestMain() {
     const strategy::GameplayCatalogue definitions;
     strategy::World world;
-    strategy::Entity& first = world.createEntity("Drone", "construction_drone", 1);
+    auto& first = world.createEntity("Drone", "construction_drone", 1);
     definitions.initializeEntity(first);
-    const strategy::EntityId firstId = first.id;
-    strategy::Entity& second = world.createEntity("Drone", "construction_drone", 1);
+    const auto firstId = first.id;
+    auto& second = world.createEntity("Drone", "construction_drone", 1);
     definitions.initializeEntity(second);
-    const strategy::EntityId secondId = second.id;
+    const auto secondId = second.id;
 
-    const strategy::EntityHudModel single = strategy::EntityHudModelBuilder::build(
-        world, firstId, {}, definitions);
-    bool valid = single.totalEntities == 1 && single.cards.empty() &&
-                 single.bars.size() == 2 && single.stats.size() == 6;
-
-    const strategy::EntityHudModel multiple = strategy::EntityHudModelBuilder::build(
+    const auto single = strategy::EntityHudModelBuilder::build(world, firstId, {}, definitions);
+    bool valid = single.totalEntities == 1 && single.cards.empty() && single.bars.size() == 2 &&
+                 single.stats.size() == 6;
+    const auto multiple = strategy::EntityHudModelBuilder::build(
         world, firstId, {firstId, secondId}, definitions);
     valid = valid && multiple.totalEntities == 2 && multiple.cards.size() == 2 &&
-            multiple.cards[0].bars.size() == 2 && multiple.cards[1].bars.size() == 2 &&
-            multiple.selectionGroups.size() == 1 && multiple.selectionGroups[0].count == 2;
-    const strategy::UiDocument multipleActions =
-        strategy::EntityHudLayout::actions(multiple, 1280, 720);
-    valid = valid && multipleActions.find("entity.portrait") == nullptr &&
-            multipleActions.find("entity.card.0") != nullptr &&
-            multipleActions.find("entity.card.1") != nullptr &&
-            multipleActions.find("entity.card.0.bar.0") != nullptr &&
-            multipleActions.find("entity.card.0.bar.1") != nullptr &&
-            multipleActions.find("entity.card.1.bar.0") != nullptr &&
-            multipleActions.find("entity.card.1.bar.1") != nullptr;
+            multiple.selectionGroups.size() == 1 && multiple.selectionGroups[0].count == 2 &&
+            multiple.cards[0].bars.size() == 2 && multiple.cards[1].bars.size() == 2;
 
-    strategy::Entity& building = world.createEntity("Hub", "command_hub", 1);
+    auto& building = world.createEntity("Hub", "command_hub", 1);
     definitions.initializeEntity(building);
-    const strategy::EntityId buildingId = building.id;
-    const strategy::EntityHudModel buildingHud = strategy::EntityHudModelBuilder::build(
-        world, buildingId, {}, definitions);
+    const auto buildingHud = strategy::EntityHudModelBuilder::build(
+        world, building.id, {}, definitions);
     valid = valid && buildingHud.totalEntities == 1 && !buildingHud.bars.empty() &&
             buildingHud.stats.size() >= 3 && !buildingHud.processorInputs.empty() &&
             !buildingHud.processorState.empty();
 
-    strategy::Entity& resource = world.createEntity("Scrap field", "scrap_node_small", 0);
+    auto& resource = world.createEntity("Scrap field", "scrap_node_small", 0);
     definitions.initializeEntity(resource);
     resource.resource.remaining = 137.5F;
-    const strategy::EntityHudModel resourceHud = strategy::EntityHudModelBuilder::build(
+    const auto resourceHud = strategy::EntityHudModelBuilder::build(
         world, resource.id, {}, definitions);
-    const auto remaining = std::find_if(
-        resourceHud.stats.begin(), resourceHud.stats.end(), [](const auto& stat) {
-            return stat.label == "RESOURCE LEFT";
-        });
-    valid = valid && resourceHud.totalEntities == 1 &&
-            remaining != resourceHud.stats.end() &&
+    const auto remaining = std::find_if(resourceHud.stats.begin(), resourceHud.stats.end(),
+        [](const auto& stat) { return stat.label == "RESOURCE LEFT"; });
+    valid = valid && remaining != resourceHud.stats.end() &&
             remaining->value.find("137.5") != std::string::npos;
 
-    strategy::EntityHudModel interactive = buildingHud;
-    interactive.actions.push_back(
-        {"command_hub.train_construction_drone", "unit_drone", "Train drone", {}, {}, {}, true});
-    interactive.actions.push_back(
-        {"locked.action", "status_asset_failed", "Locked", {}, {}, {}, false});
-    interactive.queue.push_back({"unit_drone", "Construction drone", 0.5F, true});
-    strategy::UiDocument layout = strategy::EntityHudLayout::actions(interactive, 1280, 720);
-    const strategy::UiElement* actionPanel = layout.find("entity.actions.panel");
-    const strategy::UiElement* infoPanel = layout.find("entity.info.panel");
-    const strategy::UiElement* action = layout.find(strategy::EntityHudLayout::actionElementId(
-        "command_hub.train_construction_drone"));
-    const auto center = [](const strategy::UiElement* element) {
-        return glm::vec2{(element->bounds.left + element->bounds.right) * 0.5F,
-                         (element->bounds.top + element->bounds.bottom) * 0.5F};
-    };
-    valid = valid && actionPanel && infoPanel && actionPanel->bounds.right < infoPanel->bounds.left &&
-            action && strategy::EntityHudLayout::actionId(action->id) ==
-                std::optional<std::string>{"command_hub.train_construction_drone"};
-    const strategy::UiElement* disabled =
-        layout.find(strategy::EntityHudLayout::actionElementId("locked.action"));
-    valid = valid && disabled && !disabled->enabled &&
-            !layout.activate(center(disabled));
-    const strategy::UiElement* queue = layout.find(strategy::EntityHudLayout::queueElementId(0));
-    const strategy::UiElement* queueProgress = layout.find("entity.queue.progress");
-    const strategy::UiElement* queuePanel = layout.find("entity.queue.panel");
-    const strategy::UiElement* entityPanel = layout.find("entity.panel");
-    valid = valid && queue && queuePanel && queueProgress && entityPanel &&
-            entityPanel->bounds.left == 0.0F && entityPanel->bounds.bottom == 720.0F &&
-            queuePanel->bounds.left == entityPanel->bounds.left &&
-            queuePanel->bounds.right == entityPanel->bounds.right &&
-            queuePanel->bounds.bottom == entityPanel->bounds.top &&
-            queue->bounds.right - queue->bounds.left == 44.0F &&
-            queue->bounds.bottom - queue->bounds.top == 44.0F &&
-            queue->tooltip == "Construction drone - CANCEL" &&
-            queueProgress->progressTexture == "ui/production_progress_fill" &&
-            strategy::EntityHudLayout::queueIndex(queue->id) == 0;
-
-    interactive.queue.push_back({"unit_worker", "Worker", 0.0F, true});
-    interactive.queue.push_back({"upgrade_efficient_training", "Upgrade", 0.0F, true});
-    const strategy::UiDocument multiQueueLayout =
-        strategy::EntityHudLayout::actions(interactive, 1280, 720);
-    const strategy::UiElement* multiQueuePanel = multiQueueLayout.find("entity.queue.panel");
-    const strategy::UiElement* secondQueue =
-        multiQueueLayout.find(strategy::EntityHudLayout::queueElementId(1));
-    const strategy::UiElement* thirdQueue =
-        multiQueueLayout.find(strategy::EntityHudLayout::queueElementId(2));
-    valid = valid && multiQueuePanel && secondQueue && thirdQueue &&
-            multiQueuePanel->bounds.left == queuePanel->bounds.left &&
-            multiQueuePanel->bounds.right == queuePanel->bounds.right &&
-            secondQueue->bounds.right - secondQueue->bounds.left == 44.0F &&
-            thirdQueue->bounds.right - thirdQueue->bounds.left == 44.0F &&
-            secondQueue->bounds.left - queue->bounds.left == 52.0F &&
-            thirdQueue->bounds.left - secondQueue->bounds.left == 52.0F;
-    layout.pointerMoved(center(action));
-    valid = valid && layout.hoveredElement() &&
-            layout.hoveredElement()->id == action->id;
-
-    strategy::Entity& mixedBuilding = world.createEntity("Hub", "command_hub", 1);
+    auto& mixedBuilding = world.createEntity("Hub", "command_hub", 1);
     definitions.initializeEntity(mixedBuilding);
-    const strategy::EntityHudModel mixed = strategy::EntityHudModelBuilder::build(
+    const auto mixed = strategy::EntityHudModelBuilder::build(
         world, firstId, {firstId, mixedBuilding.id}, definitions);
-    strategy::UiDocument selectionLayout =
-        strategy::EntityHudLayout::selection(mixed, 1280, 720);
-    const strategy::UiElement* expectedSelectionRow =
-        selectionLayout.find(strategy::EntityHudLayout::selectionElementId("construction_drone"));
-    const strategy::UiElement* selectionRow = expectedSelectionRow
-        ? selectionLayout.hitTest(center(expectedSelectionRow))
-        : nullptr;
-    valid = valid && mixed.selectionGroups.size() == 2 && selectionRow &&
-            strategy::EntityHudLayout::selectionArchetype(selectionRow->id).has_value();
+    valid = valid && mixed.selectionGroups.size() == 2;
 
-    strategy::UiController controller;
-    controller.pointerMoved(center(action));
-    controller.apply(layout);
-    valid = valid && controller.hoveredId() == action->id;
-    controller.advance(0.25F);
-    controller.pointerMoved(center(action) + glm::vec2{1.0F, 1.0F});
-    controller.apply(layout);
-    controller.advance(0.24F);
-    controller.apply(layout);
-    valid = valid && !controller.visibleTooltip(layout) && layout.find("entity.tooltip")->text.empty();
-    controller.advance(0.02F);
-    valid = valid && controller.visibleTooltip(layout).has_value();
-    controller.apply(layout);
-    valid = valid && layout.find("entity.tooltip") &&
-            layout.find("entity.tooltip")->text.starts_with("Train drone");
-    valid = valid && controller.press(layout, center(action)) == action->id &&
-            controller.pressedId() == action->id;
-    valid = valid && !controller.press(layout, center(disabled));
-    valid = valid && !controller.visibleTooltip(layout);
-    controller.advance(0.51F);
-    controller.apply(layout);
-    valid = valid && controller.visibleTooltip(layout).has_value() &&
-            !layout.find("entity.tooltip")->text.empty() &&
-            layout.find("entity.tooltip")->kind == strategy::UiElementKind::tooltip;
-    controller.pointerMoved({-1,-1});
-    controller.apply(layout);
-    valid = valid && !controller.visibleTooltip(layout) && layout.find("entity.tooltip")->text.empty();
-    valid = valid && controller.moveFocus(layout, 1) &&
-            controller.activateFocused(layout).has_value();
-
-    strategy::UiDocument interaction;
-    interaction.button("menu.first", {10, 10, 110, 50}, "First");
-    interaction.button("menu.second", {10, 60, 110, 100}, "Second");
-    strategy::UiController menuController;
-    menuController.focus("menu.first");
-    menuController.apply(interaction);
-    valid = valid && interaction.focused("menu.first") &&
-            menuController.press(interaction, {50, 30}).has_value() &&
-            !menuController.release(interaction, {150, 30}).has_value() &&
-            menuController.pressedId().empty();
-    valid = valid && menuController.press(interaction, {50, 30}).has_value() &&
-            menuController.release(interaction, {50, 30}) == "menu.first";
-    strategy::UiDocument rebuiltInteraction;
-    rebuiltInteraction.button("menu.first", {10, 10, 110, 50}, "First");
-    rebuiltInteraction.button("menu.second", {10, 60, 110, 100}, "Second");
-    menuController.apply(rebuiltInteraction);
-    valid = valid && rebuiltInteraction.focused("menu.first") &&
-            menuController.moveFocus(rebuiltInteraction, 1) &&
-            menuController.activateFocused(rebuiltInteraction) == "menu.second";
-
-    strategy::UiDocument resources =
-        strategy::GameHudLayout::resources(3, 2, true, false, 1280, 720);
-    valid = valid && resources.find("hud.top_bar") && resources.find("resources.panel") &&
-            resources.find("resources.power") &&
-            resources.find("hud.satellite") &&
-            resources.find("hud.menu") &&
-            resources.find("power.panel") &&
-            resources.hitTest({345.0F, 25.0F})->id == "resources.power" &&
-            resources.hitTest({1220.0F, 25.0F})->id == "hud.menu" &&
-            resources.hitTest({1080.0F, 25.0F})->id == "hud.satellite" &&
-            resources.find("resources.panel")->texture == "ui/hud_panel" &&
-            resources.find("hud.top_bar")->bounds.left == 0.0F &&
-            resources.find("hud.top_bar")->bounds.right == 1280.0F &&
-            resources.find("hud.top_bar")->bounds.bottom == 54.0F;
-
-    const strategy::UiLayout wideCanvas(1920, 1080, 1.0F);
-    const strategy::UiRect anchored = wideCanvas.rect(
-        strategy::UiAnchor::bottomRight, 20.0F, 20.0F, 200.0F, 100.0F);
-    valid = valid && anchored.right <= 1920.0F && anchored.bottom <= 1080.0F &&
-            anchored.left > 1500.0F && anchored.top > 800.0F;
-    const auto columns = wideCanvas.row(anchored, 3, 8.0F, 32.0F);
-    valid = valid && columns.size() == 3 && columns[0].right < columns[1].left &&
-            columns[2].right <= anchored.right;
-
-    strategy::UiDocument responsiveHud =
-        strategy::EntityHudLayout::actions(interactive, 1920, 1080, 1.25F);
-    const strategy::UiElement* responsivePanel = responsiveHud.find("entity.panel");
-    valid = valid && responsivePanel && responsivePanel->bounds.left >= 0.0F &&
-            responsivePanel->bounds.bottom <= 1080.0F;
-
-    const strategy::UiDocument unitLayout =
-        strategy::EntityHudLayout::actions(single, 1280, 720);
-    const strategy::UiDocument directLayout =
-        strategy::EntityHudLayout::directControl(single, 1280, 720);
-    const strategy::UiElement* unitPanel = unitLayout.find("entity.panel");
-    const strategy::UiElement* directPanel = directLayout.find("entity.panel");
-    valid = valid && unitPanel && directPanel && entityPanel &&
-            unitPanel->bounds.right - unitPanel->bounds.left ==
-                entityPanel->bounds.right - entityPanel->bounds.left &&
-            unitPanel->bounds.bottom - unitPanel->bounds.top ==
-                entityPanel->bounds.bottom - entityPanel->bounds.top &&
-            directPanel->bounds.right - directPanel->bounds.left ==
-                unitPanel->bounds.right - unitPanel->bounds.left &&
-            directPanel->bounds.bottom - directPanel->bounds.top ==
-                unitPanel->bounds.bottom - unitPanel->bounds.top;
-
-    const strategy::UiDocument mixedLayout =
-        strategy::EntityHudLayout::selection(mixed, 1280, 720);
-    const strategy::UiElement* mixedPanel = mixedLayout.find("selection.panel");
-    valid = valid && mixedPanel && mixedPanel->bounds.left == 0.0F &&
-            mixedPanel->bounds.bottom == 720.0F;
-
-    // Power controls must remain reachable after production actions fill the original nine slots.
-    auto expanded = interactive;
-    for (int i = 0; i < 12; ++i) {
-        strategy::HudActionModel extra;
-        extra.id = "power.extra." + std::to_string(i);
-        extra.enabled = true;
-        expanded.actions.push_back(extra);
-    }
-    const auto expandedLayout = strategy::EntityHudLayout::actions(expanded, 1280, 720);
-    for (const auto& item : expanded.actions) {
-        const auto* button = expandedLayout.find(strategy::EntityHudLayout::actionElementId(item.id));
-        const auto* tooltip = expandedLayout.find("entity.tooltip");
-        const auto* expandedPanel = expandedLayout.find("entity.actions.panel");
-        valid = valid && button && tooltip && tooltip->bounds.bottom < button->bounds.top &&
-                expandedPanel && button->bounds.bottom > button->bounds.top &&
-                button->bounds.left >= expandedPanel->bounds.left &&
-                button->bounds.right <= expandedPanel->bounds.right &&
-                button->bounds.top >= expandedPanel->bounds.top &&
-                button->bounds.bottom <= expandedPanel->bounds.bottom;
-    }
-    if (!valid) std::cerr << "Entity HUD component presentation failed\n";
+    if (!valid) std::cerr << "Entity HUD model presentation failed\n";
     return valid ? 0 : 1;
 }

@@ -4,12 +4,10 @@
 #include "core/EventBus.hpp"
 #include "diagnostics/Logger.hpp"
 #include "localization/Text.hpp"
-#include "ui/EntityHudModel.hpp"
-#include "ui/EntityHudLayout.hpp"
-#include "ui/GameHudLayout.hpp"
 #include "persistence/SaveGame.hpp"
 #include "render/Renderer.hpp"
 #include "terrain/Terrain.hpp"
+#include "ui/EntityHudModel.hpp"
 #include "world/Collision.hpp"
 #include "world/MapArea.hpp"
 
@@ -18,8 +16,8 @@
 #include <cmath>
 #include <glm/geometric.hpp>
 #include <iostream>
-#include <sstream>
 #include <map>
+#include <sstream>
 
 namespace strategy {
 namespace {
@@ -30,17 +28,42 @@ std::string displayNumber(float value) {
     return result.str();
 }
 
-std::string resourceCost(const DefinitionRegistry& definitions, const RecipeDefinition* recipe,
+std::string escapeRml(std::string_view value) {
+    std::string result;
+    result.reserve(value.size());
+    for (char c : value) {
+        if (c == '&') result += "&amp;";
+        else if (c == '<') result += "&lt;";
+        else if (c == '>') result += "&gt;";
+        else if (c == '\"') result += "&quot;";
+        else result += c;
+    }
+    return result;
+}
+
+std::string hudIcon(std::string_view icon) {
+    return "../icons/source/" + escapeRml(icon) + ".png";
+}
+
+int barPercent(float current, float maximum) {
+    return maximum <= 0.0F ? 0 : static_cast<int>(std::clamp(current / maximum, 0.0F, 1.0F) * 100.0F);
+}
+
+std::string resourceCost(const DefinitionRegistry& definitions,
+                         const RecipeDefinition* recipe,
                          std::size_t count = 1,
                          std::vector<std::string>* icons = nullptr) {
     std::string result;
     if (recipe) {
         const std::map<std::string, float> sorted(recipe->cost.begin(), recipe->cost.end());
         for (const auto& [id, amount] : sorted) {
-            if (amount == 0.0F || count == 0) continue;
-            if (!result.empty()) result += ", ";
+            if (amount == 0.0F || count == 0)
+                continue;
+            if (!result.empty())
+                result += ", ";
             const auto* resource = definitions.resourceType(ResourceId{id});
-            if (icons) icons->push_back(resource ? resource->icon : "resource_" + id);
+            if (icons)
+                icons->push_back(resource ? resource->icon : "resource_" + id);
             result += displayNumber(amount * static_cast<float>(count)) + " " +
                       (resource ? Text::get(resource->nameKey) : id);
         }
@@ -48,10 +71,12 @@ std::string resourceCost(const DefinitionRegistry& definitions, const RecipeDefi
     return result;
 }
 
-std::string upgradeNames(const DefinitionRegistry& definitions, const std::vector<std::string>& ids) {
+std::string upgradeNames(const DefinitionRegistry& definitions,
+                         const std::vector<std::string>& ids) {
     std::string result;
     for (const auto& id : ids) {
-        if (!result.empty()) result += ", ";
+        if (!result.empty())
+            result += ", ";
         const auto* upgrade = definitions.upgrade(id);
         result += upgrade ? Text::get(upgrade->nameKey) : id;
     }
@@ -59,8 +84,10 @@ std::string upgradeNames(const DefinitionRegistry& definitions, const std::vecto
 }
 
 std::string powerDescription(const DefinitionRegistry& definitions, const EntityArchetype* entity) {
-    const auto* power = entity && entity->powerDevice ? definitions.powerDevice(*entity->powerDevice) : nullptr;
-    return Text::format("entity_hud.tooltip_power", {displayNumber(power ? power->consumption : 0.0F)});
+    const auto* power =
+        entity && entity->powerDevice ? definitions.powerDevice(*entity->powerDevice) : nullptr;
+    return Text::format("entity_hud.tooltip_power",
+                        {displayNumber(power ? power->consumption : 0.0F)});
 }
 
 bool isHomogeneousSelection(const World& world,
@@ -81,9 +108,12 @@ std::vector<EntityId> actionTargets(EntityId selectedEntity,
 
 const char* powerPriorityName(PowerPriority priority) {
     switch (priority) {
-    case PowerPriority::low: return "LOW";
-    case PowerPriority::medium: return "MEDIUM";
-    case PowerPriority::high: return "HIGH";
+    case PowerPriority::low:
+        return "LOW";
+    case PowerPriority::medium:
+        return "MEDIUM";
+    case PowerPriority::high:
+        return "HIGH";
     }
     return "MEDIUM";
 }
@@ -110,18 +140,23 @@ void appendSyntheticRoutes(EntityHudModel& hud,
     bool synthetic = false;
     for (EntityId id : targets) {
         const Entity* entity = world.findEntity(id);
-        if (!entity || !entity->gatherer) continue;
-        if (entity->gatherer.carriedResource == "synthetic") synthetic = true;
+        if (!entity || !entity->gatherer)
+            continue;
+        if (entity->gatherer.carriedResource == "synthetic")
+            synthetic = true;
         if (const Entity* source = world.findEntity(entity->gatherer.sourceTarget);
-            source && source->resource && source->resource.type == "synthetic") synthetic = true;
+            source && source->resource && source->resource.type == "synthetic")
+            synthetic = true;
     }
-    if (!synthetic) return;
+    if (!synthetic)
+        return;
     for (const std::string output : {std::string{"alloy"}, std::string{"fuel"}}) {
         float bestRatio = 0.0F;
         bool available = false;
         for (const Entity& processor : world.entities()) {
             if (processor.authority.owner != player || !processor.processor ||
-                !isOperational(processor)) continue;
+                !isOperational(processor))
+                continue;
             const auto* conversion = definitions.conversionFor(
                 BuildingArchetypeId{processor.archetype.value}, ResourceId{"synthetic"});
             if (conversion && conversion->output.value == output) {
@@ -134,11 +169,12 @@ void appendSyntheticRoutes(EntityHudModel& hud,
         action.id = "delivery-output:" + output;
         action.icon = resource ? resource->icon : "status_asset_failed";
         action.name = Text::get(output == "alloy" ? "processor.route.synthetic_alloy"
-                                                   : "processor.route.synthetic_fuel");
+                                                  : "processor.route.synthetic_fuel");
         action.description = "x" + std::to_string(bestRatio);
         action.cost = Text::get("entity_hud.free");
         action.enabled = available;
-        if (!available) action.disabledReason = Text::get("entity_hud.no_compatible_processor");
+        if (!available)
+            action.disabledReason = Text::get("entity_hud.no_compatible_processor");
         hud.actions.push_back(std::move(action));
     }
 }
@@ -169,8 +205,7 @@ PlayState::PlayState(StateContext& context, MatchSetupOptions setup)
     initializeStartingView();
 }
 
-PlayState::PlayState(StateContext& context, MatchSetupOptions setup,
-                     GameSession preparedSession)
+PlayState::PlayState(StateContext& context, MatchSetupOptions setup, GameSession preparedSession)
     : GameState(context)
     , session_(std::move(preparedSession))
     , config_(GameConfig::load(context.configPath)) {
@@ -180,7 +215,8 @@ PlayState::PlayState(StateContext& context, MatchSetupOptions setup,
 
 void PlayState::initializeStartingView() {
     for (const Entity& entity : session_.world().entities()) {
-        if (entity.authority.owner != localPlayer_) continue;
+        if (entity.authority.owner != localPlayer_)
+            continue;
         if (entity.archetype.value == "command_hub")
             camera_.focusAt(entity.transform.position);
         if (entity.archetype.value == "construction_drone")
@@ -196,11 +232,15 @@ PlayState::PlayState(StateContext& context, SaveData data)
                data.playerTwoCountry,
                data.playerOneSpecialization,
                data.playerTwoSpecialization,
-               data.mapChunksPerSide, 1.0F, 1.0F,
+               data.mapChunksPerSide,
+               1.0F,
+               1.0F,
                TerrainLayoutId{data.terrainLayout})
     , config_(GameConfig::load(context.configPath)) {
-    session_.replaceWorld(std::move(data.entities), data.terrainSeed,
-                          std::move(data.foundations), data.mapChunksPerSide,
+    session_.replaceWorld(std::move(data.entities),
+                          data.terrainSeed,
+                          std::move(data.foundations),
+                          data.mapChunksPerSide,
                           TerrainLayoutId{data.terrainLayout});
     session_.restorePlayerProgress(1,
                                    std::move(data.resources[0]),
@@ -212,45 +252,218 @@ PlayState::PlayState(StateContext& context, SaveData data)
                                    std::move(data.intelligence[1]));
 }
 
+PlayState::~PlayState() {
+    if (pauseScreen_)
+        context_.renderer->removeUiScreen(pauseScreen_);
+    if (hudScreen_)
+        context_.renderer->removeUiScreen(hudScreen_);
+}
+
+void PlayState::ensureGameplayHud(Renderer& renderer) const {
+    if (hudScreen_)
+        return;
+    hudScreen_ = renderer.pushUiScreen({"assets/ui/gameplay_hud.rml",
+                                        {},
+                                        {"resources.power", "hud.satellite", "hud.menu"},
+                                        {"resources.power", "hud.satellite", "hud.menu"},
+                                        config_.uiScale});
+}
+
+void PlayState::updateGameplayHud(Renderer& renderer, const Player* player) const {
+    ensureGameplayHud(renderer);
+    std::vector<std::string> focus{"resources.power", "hud.satellite", "hud.menu"};
+    std::vector<std::string> actions = focus;
+    std::ostringstream resources;
+    if (player) {
+        for (const ResourceDefinition* resource : context_.definitions.enabledResources()) {
+            if (resource->storage != ResourceStorageKind::stockpile)
+                continue;
+            const auto found = player->resources.find(resource->id);
+            const float amount = found == player->resources.end() ? 0.0F : found->second;
+            resources << "<div class='resource'><img src='" << hudIcon(resource->icon)
+                      << "'/><span>" << static_cast<unsigned>(amount) << "</span></div>";
+        }
+    }
+    float generation = 0.0F, demand = 0.0F, supplied = 0.0F, stored = 0.0F, capacity = 0.0F;
+    std::size_t devices = 0;
+    std::vector<std::string> deviceLines;
+    for (const Entity& entity : session_.world().entities()) {
+        if (!player || entity.authority.owner != player->id || !entity.power)
+            continue;
+        const EntityArchetype* archetype = context_.definitions.archetype(entity.archetype);
+        if (!archetype || !archetype->powerDevice)
+            continue;
+        ++devices;
+        generation += entity.power->enabled ? entity.power->generation : 0.0F;
+        demand += entity.power->enabled && entity.power->consumptionEnabled ? entity.power->demand : 0.0F;
+        supplied += entity.power->enabled ? entity.power->supplied : 0.0F;
+        stored += entity.power->stored;
+        capacity += entity.power->storageCapacity;
+        std::ostringstream line;
+        line << escapeRml(entity.name) << "  " << static_cast<int>(entity.power->supplied) << "/"
+             << static_cast<int>(entity.power->demand) << " kW  "
+             << powerPriorityName(entity.power->priority) << "  GRID " << entity.power->gridId;
+        deviceLines.push_back(line.str());
+    }
+    renderer.setUiText("stockpile-resources", resources.str());
+    renderer.setUiText("resources.power.label",
+                       std::to_string(static_cast<int>(demand)) + "/" +
+                           std::to_string(static_cast<int>(generation)) + " kW");
+    renderer.setUiText("hud.satellite.label", satelliteRevealActive_ ? "SAT ON" : "SAT");
+
+    std::ostringstream power;
+    power << "<h2>POWER GRID</h2><div class='power-summary'>SUPPLIED " << static_cast<int>(supplied)
+          << " / DEMAND " << static_cast<int>(demand) << " kW &nbsp; CAPACITY "
+          << static_cast<int>(generation) << " kW</div><div class='power-summary'>STORAGE "
+          << static_cast<int>(stored) << " / " << static_cast<int>(capacity) << " kWh &nbsp; DEVICES "
+          << devices << "</div>";
+    for (const auto& line : deviceLines)
+        power << "<div class='power-device'>" << line << "</div>";
+    renderer.setUiText("power-content", power.str());
+    renderer.setUiAttribute("power-panel", "class", powerOverlayVisible_ ? "" : "hidden");
+
+    std::ostringstream entity;
+    std::optional<EntityHudModel> hud;
+    const Entity* selected = session_.world().findEntity(possessedEntity_ ? possessedEntity_ : selectedEntity_);
+    const bool sameType = selected && isHomogeneousSelection(session_.world(), selectedUnits_, selected->archetype.value);
+    if (viewMode_ == ViewMode::unitControl && selected) {
+        hud = EntityHudModelBuilder::build(session_.world(), selected->id, {}, context_.definitions);
+        hud->footer = Text::get("unit.escape");
+    } else if (!selectedUnits_.empty() && !sameType) {
+        hud = EntityHudModelBuilder::build(session_.world(), selectedEntity_, selectedUnits_, context_.definitions);
+    } else if (selected && selected->authority.owner == localPlayer_) {
+        hud = selected->archetype.value == "construction_drone" ? buildConstructionHudModel(*selected, player)
+                                                                  : buildEntityActionHudModel(*selected, player);
+    } else if (selected && selected->resource) {
+        hud = EntityHudModelBuilder::build(session_.world(), selectedEntity_, selectedUnits_, context_.definitions);
+    }
+    if (hud) {
+        std::ostringstream entityInfo;
+        entityInfo << "<div class='entity-info'><div class='entity-title'>" << escapeRml(hud->title)
+                   << "</div><div class='entity-main'><img class='portrait' src='" << hudIcon(hud->portraitIcon)
+                   << "'/><div class='bars-stats'>";
+        for (const HudBarModel& bar : hud->bars) {
+            const char* kind = bar.kind == HudBarKind::health ? "health" : bar.kind == HudBarKind::power ? "power" : "construction";
+            entityInfo << "<div class='hud-bar " << kind << "'><div class='hud-fill' style='width:"
+                       << barPercent(bar.current, bar.maximum) << "%;'></div><span>" << escapeRml(bar.label)
+                       << " " << displayNumber(bar.current) << " / " << displayNumber(bar.maximum) << "</span></div>";
+        }
+        for (const HudStatModel& stat : hud->stats)
+            entityInfo << "<div class='stat'>" << escapeRml(stat.label) << " " << escapeRml(stat.value) << "</div>";
+        entityInfo << "</div></div></div>";
+        entity << "<div class='entity-actions'>";
+        for (const HudSelectionGroupModel& group : hud->selectionGroups) {
+            const std::string id = "selection." + group.archetype;
+            focus.push_back(id); actions.push_back(id);
+            entity << "<button id='" << escapeRml(id) << "' class='selection-group'><img src='"
+                   << hudIcon(group.icon) << "'/><span>" << group.count << "</span></button>";
+        }
+        for (const HudActionModel& action : hud->actions) {
+            const std::string id = "action." + action.id;
+            if (action.enabled) { focus.push_back(id); actions.push_back(id); }
+            entity << "<button id='" << escapeRml(id) << "' class='action"
+                   << (action.active ? " active" : "") << "'" << (action.enabled ? "" : " disabled='disabled'")
+                   << "><img src='" << hudIcon(action.icon) << "'/><div class='tooltip'><b>"
+                   << escapeRml(action.name) << "</b><br/>" << escapeRml(action.description);
+            if (!action.cost.empty() && action.cost != Text::get("entity_hud.free")) entity << "<br/>COST: " << escapeRml(action.cost);
+            if (!action.power.empty()) entity << "<br/>" << escapeRml(action.power);
+            if (!action.requirements.empty()) entity << "<br/>" << escapeRml(action.requirements);
+            if (!action.disabledReason.empty()) entity << "<br/>" << escapeRml(action.disabledReason);
+            entity << "</div></button>";
+        }
+        entity << "</div>";
+        entity << entityInfo.str();
+        if (!hud->queue.empty()) {
+            entity << "<div class='queue'><h3>QUEUE</h3>";
+            for (std::size_t i = 0; i < hud->queue.size(); ++i) {
+                const std::string id = "queue." + std::to_string(i);
+                if (hud->queue[i].cancellable) { focus.push_back(id); actions.push_back(id); }
+                entity << "<button id='" << id << "'" << (hud->queue[i].cancellable ? "" : " disabled='disabled'")
+                       << "><img src='" << hudIcon(hud->queue[i].icon) << "'/><span>"
+                       << escapeRml(hud->queue[i].name) << " " << barPercent(hud->queue[i].progress, 1.0F) << "%</span></button>";
+            }
+            entity << "</div>";
+        }
+        if (!hud->footer.empty()) entity << "<div class='footer'>" << escapeRml(hud->footer) << "</div>";
+    }
+    renderer.setUiText("entity-content", entity.str());
+    renderer.setUiAttribute("entity-shell", "class", hud ? "" : "hidden");
+
+    std::ostringstream alerts;
+    for (const HudAlert& alert : hudAlerts_) alerts << "<div class='alert'>" << escapeRml(alert.text) << "</div>";
+    renderer.setUiText("alerts", alerts.str());
+    renderer.setUiText("placement-reason", constructionPlacementMode_ && !constructionPreviewValid_ ? escapeRml(constructionPreviewReason_) : "");
+    renderer.setUiProperty("placement-reason", "left", std::to_string(static_cast<int>(pointerScreen_.x + 18.0F)) + "px");
+    renderer.setUiProperty("placement-reason", "top", std::to_string(static_cast<int>(pointerScreen_.y + 18.0F)) + "px");
+    renderer.setUiProperty("placement-reason", "display", constructionPlacementMode_ && !constructionPreviewValid_ && !constructionPreviewReason_.empty() ? "block" : "none");
+    renderer.setUiControls(std::move(focus), std::move(actions));
+}
+
+void PlayState::setPaused(bool paused) {
+    if (paused_ == paused)
+        return;
+    paused_ = paused;
+    if (paused_) {
+        pauseScreen_ =
+            context_.renderer->pushUiScreen({"assets/ui/pause_menu.rml",
+                                             {{"pause-title", Text::get("pause.title")},
+                                              {"resume-label", Text::get("pause.resume")},
+                                              {"settings-label", Text::get("menu.settings")},
+                                              {"exit-label", Text::get("menu.exit")}},
+                                             {"pause.resume", "pause.settings", "pause.exit"},
+                                             {"pause.resume", "pause.settings", "pause.exit"},
+                                             config_.uiScale});
+    } else if (pauseScreen_) {
+        context_.renderer->removeUiScreen(pauseScreen_);
+        pauseScreen_ = {};
+    }
+}
+
 EntityHudModel PlayState::buildConstructionHudModel(const Entity& selected,
                                                     const Player* player) const {
     EntityHudModel hud = EntityHudModelBuilder::build(
         session_.world(), selected.id, selectedUnits_, context_.definitions);
-    appendSyntheticRoutes(hud, session_.world(), context_.definitions, localPlayer_,
+    appendSyntheticRoutes(hud,
+                          session_.world(),
+                          context_.definitions,
+                          localPlayer_,
                           actionTargets(selected.id, selectedUnits_));
     for (const std::string& building : context_.definitions.matchRules().buildPalette) {
         const RecipeDefinition* recipe =
             context_.definitions.recipe(RecipeId{"construct." + building});
-        if (!recipe || recipe->product.kind != RecipeProductKind::building) continue;
+        if (!recipe || recipe->product.kind != RecipeProductKind::building)
+            continue;
         const EntityArchetype* product = context_.definitions.archetype(recipe->product.id);
         HudActionModel action;
         action.id = recipe->id;
-        action.icon = product ? context_.definitions.presentationIcon(
-                                    PresentationId{product->presentation})
-                              : "status_asset_failed";
+        action.icon =
+            product ? context_.definitions.presentationIcon(PresentationId{product->presentation})
+                    : "status_asset_failed";
         action.name = product ? Text::get(product->nameKey) : recipe->product.id;
         action.cost = resourceCost(context_.definitions, recipe, 1, &action.costIcons);
         action.power = powerDescription(context_.definitions, product);
         action.description = product ? Text::get(product->descriptionKey) + "\n" : std::string{};
-        action.description += Text::format(
-            "entity_hud.drone_power",
-            {std::to_string(static_cast<int>(recipe->constructionPower))});
-        action.enabled = player && std::all_of(
-            recipe->cost.begin(), recipe->cost.end(), [&](const auto& cost) {
+        action.description +=
+            Text::format("entity_hud.drone_power",
+                         {std::to_string(static_cast<int>(recipe->constructionPower))});
+        action.enabled =
+            player && std::all_of(recipe->cost.begin(), recipe->cost.end(), [&](const auto& cost) {
                 const auto found = player->resources.find(cost.first);
                 return found != player->resources.end() && found->second >= cost.second;
             });
         if (!action.enabled)
             action.disabledReason = Text::get("entity_hud.insufficient_resources");
         if (product) {
-            action.requirements = Text::format("entity_hud.tooltip_requirements",
-                {upgradeNames(context_.definitions, product->requiredUpgrades)});
+            action.requirements =
+                Text::format("entity_hud.tooltip_requirements",
+                             {upgradeNames(context_.definitions, product->requiredUpgrades)});
             const auto missing = session_.missingBuildingUpgrades(localPlayer_, product->id);
             if (!missing.empty()) {
                 action.enabled = false;
-                if (!action.disabledReason.empty()) action.disabledReason += "\n";
-                action.disabledReason += Text::format("entity_hud.tooltip_missing",
-                    {upgradeNames(context_.definitions, missing)});
+                if (!action.disabledReason.empty())
+                    action.disabledReason += "\n";
+                action.disabledReason += Text::format(
+                    "entity_hud.tooltip_missing", {upgradeNames(context_.definitions, missing)});
             }
         }
         action.active = constructionPlacementMode_ && recipe->id == constructionRecipeId_;
@@ -271,36 +484,41 @@ EntityHudModel PlayState::buildEntityActionHudModel(const Entity& selected,
         action.id = recipe->id;
         action.name = product ? Text::get(product->nameKey) : recipe->product.id;
         if (product)
-            action.icon = context_.definitions.presentationIcon(
-                PresentationId{product->presentation});
+            action.icon =
+                context_.definitions.presentationIcon(PresentationId{product->presentation});
         else if (recipe->product.kind == RecipeProductKind::resource)
             action.icon = "resource_" + recipe->product.id;
         else
             action.icon = "status_asset_failed";
-        action.cost = resourceCost(context_.definitions, recipe, targets.size(),
-                                   &action.costIcons);
-        action.power = powerDescription(context_.definitions, product && product->kind == EntityKind::building
-            ? product : context_.definitions.archetype(selected.archetype));
+        action.cost = resourceCost(context_.definitions, recipe, targets.size(), &action.costIcons);
+        action.power = powerDescription(context_.definitions,
+                                        product && product->kind == EntityKind::building
+                                            ? product
+                                            : context_.definitions.archetype(selected.archetype));
         if (player)
-            action.description = Text::format(
-                "entity_hud.time_seconds",
-                {std::to_string(static_cast<int>(context_.definitions.productionDuration(
-                    player->countryId, player->specializationId, selected.archetype.value,
-                    recipe->product.id)))});
+            action.description =
+                Text::format("entity_hud.time_seconds",
+                             {std::to_string(static_cast<int>(
+                                 context_.definitions.productionDuration(player->countryId,
+                                                                         player->specializationId,
+                                                                         selected.archetype.value,
+                                                                         recipe->product.id)))});
         if (product && !product->descriptionKey.empty())
             action.description = Text::get(product->descriptionKey) + "\n" + action.description;
         action.enabled = canAffordForAll(player, recipe, targets.size()) &&
                          std::all_of(targets.begin(), targets.end(), [&](EntityId id) {
-                             return session_.canStartRecipe(localPlayer_, id,
-                                                            RecipeId{recipe->id});
+                             return session_.canStartRecipe(localPlayer_, id, RecipeId{recipe->id});
                          });
-        if (!action.enabled) action.disabledReason = Text::get("entity_hud.action_unavailable");
+        if (!action.enabled)
+            action.disabledReason = Text::get("entity_hud.action_unavailable");
         if (product && product->kind == EntityKind::building) {
-            action.requirements = Text::format("entity_hud.tooltip_requirements",
-                {upgradeNames(context_.definitions, product->requiredUpgrades)});
+            action.requirements =
+                Text::format("entity_hud.tooltip_requirements",
+                             {upgradeNames(context_.definitions, product->requiredUpgrades)});
             const auto missing = session_.missingBuildingUpgrades(localPlayer_, product->id);
-            if (!missing.empty()) action.disabledReason = Text::format("entity_hud.tooltip_missing",
-                {upgradeNames(context_.definitions, missing)});
+            if (!missing.empty())
+                action.disabledReason = Text::format("entity_hud.tooltip_missing",
+                                                     {upgradeNames(context_.definitions, missing)});
         }
         hud.actions.push_back(std::move(action));
     }
@@ -312,42 +530,51 @@ EntityHudModel PlayState::buildEntityActionHudModel(const Entity& selected,
         action.icon = upgrade->icon;
         const RecipeDefinition* research =
             context_.definitions.recipe(RecipeId{upgrade->researchRecipe});
-        action.cost = resourceCost(context_.definitions, research, targets.size(),
-                                   &action.costIcons);
-        action.power = powerDescription(context_.definitions, context_.definitions.archetype(selected.archetype));
-        action.requirements = Text::format("entity_hud.tooltip_requirements",
-            {upgradeNames(context_.definitions, upgrade->prerequisites)});
+        action.cost =
+            resourceCost(context_.definitions, research, targets.size(), &action.costIcons);
+        action.power = powerDescription(context_.definitions,
+                                        context_.definitions.archetype(selected.archetype));
+        action.requirements =
+            Text::format("entity_hud.tooltip_requirements",
+                         {upgradeNames(context_.definitions, upgrade->prerequisites)});
         if (research)
-            action.description = Text::format(
-                "entity_hud.time_seconds",
-                {std::to_string(static_cast<int>(
-                    research->durationTicks * GameSession::fixedTickSeconds))});
+            action.description =
+                Text::format("entity_hud.time_seconds",
+                             {std::to_string(static_cast<int>(research->durationTicks *
+                                                              GameSession::fixedTickSeconds))});
         if (!upgrade->descriptionKey.empty())
             action.description = Text::get(upgrade->descriptionKey) + "\n" + action.description;
         action.enabled = canAffordForAll(player, research, targets.size()) &&
                          std::all_of(targets.begin(), targets.end(), [&](EntityId id) {
                              return session_.canStartUpgrade(localPlayer_, id, upgrade->id);
                          });
-        if (!action.enabled) action.disabledReason = Text::get("entity_hud.action_unavailable");
+        if (!action.enabled)
+            action.disabledReason = Text::get("entity_hud.action_unavailable");
         std::vector<std::string> missing;
         if (research && research->product.kind == RecipeProductKind::building) {
             const auto* product = context_.definitions.archetype(research->product.id);
             if (product && !product->requiredUpgrades.empty()) {
-                action.requirements += "\n" + Text::format("entity_hud.tooltip_requirements",
-                    {upgradeNames(context_.definitions, product->requiredUpgrades)});
+                action.requirements +=
+                    "\n" +
+                    Text::format("entity_hud.tooltip_requirements",
+                                 {upgradeNames(context_.definitions, product->requiredUpgrades)});
                 missing = session_.missingBuildingUpgrades(localPlayer_, product->id);
             }
         }
         for (const auto& required : upgrade->prerequisites)
             if (std::any_of(targets.begin(), targets.end(), [&](EntityId id) {
-                const auto* entity = session_.world().findEntity(id);
-                return !entity || !entity->upgrades || !entity->upgrades.levels.contains(required) ||
-                       entity->upgrades.levels.at(required) == 0;
-            })) missing.push_back(required);
-        if (!missing.empty()) action.disabledReason = Text::format("entity_hud.tooltip_missing",
-            {upgradeNames(context_.definitions, missing)});
+                    const auto* entity = session_.world().findEntity(id);
+                    return !entity || !entity->upgrades ||
+                           !entity->upgrades.levels.contains(required) ||
+                           entity->upgrades.levels.at(required) == 0;
+                }))
+                missing.push_back(required);
+        if (!missing.empty())
+            action.disabledReason = Text::format("entity_hud.tooltip_missing",
+                                                 {upgradeNames(context_.definitions, missing)});
         if (!canAffordForAll(player, research, targets.size())) {
-            if (!action.disabledReason.empty()) action.disabledReason += "\n";
+            if (!action.disabledReason.empty())
+                action.disabledReason += "\n";
             action.disabledReason += Text::get("entity_hud.insufficient_resources");
         }
         hud.actions.push_back(std::move(action));
@@ -359,9 +586,11 @@ EntityHudModel PlayState::buildEntityActionHudModel(const Entity& selected,
         connect.description = Text::get("power.action.connect.description");
         connect.icon = "action_power_connect";
         connect.cost = Text::get("entity_hud.free");
-        connect.enabled = targets.size() == 1 && isOperational(selected) && selected.power.enabled &&
+        connect.enabled = targets.size() == 1 && isOperational(selected) &&
+                          selected.power.enabled &&
                           selected.power.connections.size() < selected.power.maximumConnections;
-        if (!connect.enabled) connect.disabledReason = Text::get("entity_hud.action_unavailable");
+        if (!connect.enabled)
+            connect.disabledReason = Text::get("entity_hud.action_unavailable");
         hud.actions.push_back(std::move(connect));
 
         HudActionModel disconnect;
@@ -371,7 +600,8 @@ EntityHudModel PlayState::buildEntityActionHudModel(const Entity& selected,
         disconnect.icon = "action_power_disconnect";
         disconnect.cost = Text::get("entity_hud.free");
         disconnect.enabled = targets.size() == 1 && !selected.power.connections.empty();
-        if (!disconnect.enabled) disconnect.disabledReason = Text::get("entity_hud.action_unavailable");
+        if (!disconnect.enabled)
+            disconnect.disabledReason = Text::get("entity_hud.action_unavailable");
         hud.actions.push_back(std::move(disconnect));
 
         HudActionModel priority;
@@ -396,13 +626,15 @@ EntityHudModel PlayState::buildEntityActionHudModel(const Entity& selected,
 
         for (const bool consumption : {true, false}) {
             HudActionModel control;
-            const bool enabled = consumption ? selected.power.consumptionEnabled : selected.power.outputEnabled;
+            const bool enabled =
+                consumption ? selected.power.consumptionEnabled : selected.power.outputEnabled;
             control.id = consumption ? "power.consumption" : "power.output";
-            control.name = Text::get(consumption
-                ? (enabled ? "power.action.consumption.disable" : "power.action.consumption.enable")
-                : (enabled ? "power.action.output.disable" : "power.action.output.enable"));
+            control.name = Text::get(consumption ? (enabled ? "power.action.consumption.disable"
+                                                            : "power.action.consumption.enable")
+                                                 : (enabled ? "power.action.output.disable"
+                                                            : "power.action.output.enable"));
             control.description = Text::get(consumption ? "power.action.consumption.description"
-                                                       : "power.action.output.description");
+                                                        : "power.action.output.description");
             control.icon = enabled ? "status_powered" : "status_unpowered";
             control.cost = Text::get("entity_hud.free");
             control.enabled = true;
@@ -415,8 +647,8 @@ EntityHudModel PlayState::buildEntityActionHudModel(const Entity& selected,
                                  ? Text::get("power.action.discharge.disable")
                                  : Text::get("power.action.discharge.enable");
             discharge.description = Text::get("power.action.discharge.description");
-            discharge.icon = selected.power.dischargeEnabled ? "status_powered"
-                                                              : "status_unpowered";
+            discharge.icon =
+                selected.power.dischargeEnabled ? "status_powered" : "status_unpowered";
             discharge.cost = Text::get("entity_hud.free");
             discharge.enabled = true;
             hud.actions.push_back(std::move(discharge));
@@ -427,26 +659,88 @@ EntityHudModel PlayState::buildEntityActionHudModel(const Entity& selected,
 }
 
 std::optional<glm::vec2> PlayState::minimapWorldAt(float screenX, float screenY) const {
-    int width = config_.resolutionWidth;
-    int height = config_.resolutionHeight;
-    if (SDL_Window* window = SDL_GetWindowFromID(inputWindowId_))
-        SDL_GetWindowSize(window, &width, &height);
-
-    const UiDocument minimap = GameHudLayout::minimap(width, height, config_.uiScale);
-    const UiElement* map = minimap.find("strategy.minimap");
-    const UiElement* content = minimap.find("strategy.minimap.background");
-    if (!map || !map->bounds.contains({screenX, screenY}))
+    if (!context_.renderer)
         return std::nullopt;
-
-    if (!content) return std::nullopt;
-    const float left = content->bounds.left;
-    const float right = content->bounds.right;
-    const float top = content->bounds.top;
-    const float bottom = content->bounds.bottom;
+    const auto content = context_.renderer->uiBounds("minimap-content");
+    if (!content || !content->contains(screenX, screenY))
+        return std::nullopt;
+    const float left = content->left, right = content->right;
+    const float top = content->top, bottom = content->bottom;
     const float normalizedX = std::clamp((screenX - left) / (right - left), 0.0F, 1.0F);
     const float normalizedZ = std::clamp((screenY - top) / (bottom - top), 0.0F, 1.0F);
-    return MapArea{session_.mapChunksPerSide()}.worldFromNormalized(
-        {normalizedX, normalizedZ});
+    return MapArea{session_.mapChunksPerSide()}.worldFromNormalized({normalizedX, normalizedZ});
+}
+
+bool PlayState::handleGameplayHudAction(const std::string& action) {
+    if (action == "hud.menu") { setPaused(true); return true; }
+    if (action == "resources.power") { powerOverlayVisible_ = !powerOverlayVisible_; return true; }
+    if (action == "hud.satellite" && satelliteImageryAvailable_) { satelliteRevealActive_ = !satelliteRevealActive_; return true; }
+    if (action.starts_with("selection.")) {
+        const std::string chosen = action.substr(10);
+        const bool removeType = (SDL_GetModState() & SDL_KMOD_SHIFT) != 0;
+        selectedUnits_.erase(std::remove_if(selectedUnits_.begin(), selectedUnits_.end(), [&](EntityId id) {
+            const Entity* entity = session_.world().findEntity(id);
+            return !entity || (removeType ? entity->archetype.value == chosen : entity->archetype.value != chosen);
+        }), selectedUnits_.end());
+        selectedEntity_ = selectedUnits_.empty() ? 0 : selectedUnits_.front();
+        if (selectedUnits_.size() == 1) selectedUnits_.clear();
+        lastWorldClickEntity_ = 0;
+        return true;
+    }
+    const Entity* selected = session_.world().findEntity(selectedEntity_);
+    if (!selected || selected->authority.owner != localPlayer_)
+        return false;
+    if (action.starts_with("queue.")) {
+        const auto index = static_cast<std::uint32_t>(std::stoul(action.substr(6)));
+        session_.submit({localPlayer_, nextCommandSequence_++, CancelProductionCommand{selected->id, index}});
+        return true;
+    }
+    if (!action.starts_with("action.")) return false;
+    const std::string id = action.substr(7);
+    const auto targets = actionTargets(selectedEntity_, selectedUnits_);
+    if (selected->archetype.value == "construction_drone" && !id.starts_with("delivery-output:")) {
+        constructionRecipeId_ = id; constructionPlacementMode_ = true; return true;
+    }
+    if (id == "power.connect" || id == "power.disconnect") {
+        powerLinkMode_ = id == "power.connect" ? PowerLinkMode::connect : PowerLinkMode::disconnect;
+        powerLinkSource_ = selected->id; powerOverlayVisible_ = true; return true;
+    }
+    if (id == "power.priority") {
+        const PowerPriority current = selected->power ? selected->power->priority : PowerPriority::medium;
+        const PowerPriority next = current == PowerPriority::low ? PowerPriority::medium : current == PowerPriority::medium ? PowerPriority::high : PowerPriority::low;
+        for (EntityId target : targets) session_.submit({localPlayer_, nextCommandSequence_++, SetPowerPriorityCommand{target, next}});
+        return true;
+    }
+    if (id == "power.toggle") {
+        const bool enabled = selected->power && !selected->power->enabled;
+        for (EntityId target : targets) session_.submit({localPlayer_, nextCommandSequence_++, SetPowerEnabledCommand{target, enabled}});
+        return true;
+    }
+    if (id == "power.consumption" || id == "power.output") {
+        const bool consumption = id == "power.consumption";
+        const bool enabled = selected->power && !(consumption ? selected->power->consumptionEnabled : selected->power->outputEnabled);
+        for (EntityId target : targets)
+            if (consumption) session_.submit({localPlayer_, nextCommandSequence_++, SetPowerConsumptionEnabledCommand{target, enabled}});
+            else session_.submit({localPlayer_, nextCommandSequence_++, SetPowerOutputEnabledCommand{target, enabled}});
+        return true;
+    }
+    if (id == "power.discharge") {
+        const bool enabled = selected->power && !selected->power->dischargeEnabled;
+        for (EntityId target : targets) session_.submit({localPlayer_, nextCommandSequence_++, SetPowerDischargeEnabledCommand{target, enabled}});
+        return true;
+    }
+    if (id.starts_with("delivery-output:")) {
+        const std::string output = id.substr(16);
+        for (EntityId target : targets) session_.submit({localPlayer_, nextCommandSequence_++, SetDeliveryOutputCommand{target, output}});
+        return true;
+    }
+    if (const RecipeDefinition* recipe = context_.definitions.recipe(RecipeId{id})) {
+        for (EntityId target : targets) session_.submit({localPlayer_, nextCommandSequence_++, StartRecipeCommand{target, recipe->id}});
+        context_.events.enqueue(AudioEvent{AudioCue::trainUnit});
+    } else if (const UpgradeDefinition* upgrade = context_.definitions.upgrade(id)) {
+        for (EntityId target : targets) session_.submit({localPlayer_, nextCommandSequence_++, StartUpgradeCommand{target, upgrade->id}});
+    }
+    return true;
 }
 
 void PlayState::handleEvent(const SDL_Event& event) {
@@ -470,28 +764,39 @@ void PlayState::handleEvent(const SDL_Event& event) {
     if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
         event.key.key == bound("terrain_debug", SDLK_F4)) {
         terrainDebug_ = !terrainDebug_;
-        if (terrainDebug_) { waterDebugMode_ = 0; powerDebug_ = false; }
+        if (terrainDebug_) {
+            waterDebugMode_ = 0;
+            powerDebug_ = false;
+        }
         return;
     }
     if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
         event.key.key == bound("water_debug", SDLK_F6)) {
         waterDebugMode_ = (waterDebugMode_ + 1) % 4;
-        if (waterDebugMode_ != 0) { terrainDebug_ = false; powerDebug_ = false; }
+        if (waterDebugMode_ != 0) {
+            terrainDebug_ = false;
+            powerDebug_ = false;
+        }
         return;
     }
     if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
         event.key.key == bound("power_debug", SDLK_F7)) {
         powerDebug_ = !powerDebug_;
-        if (powerDebug_) { terrainDebug_ = false; waterDebugMode_ = 0; }
+        if (powerDebug_) {
+            terrainDebug_ = false;
+            waterDebugMode_ = 0;
+        }
         return;
     }
     if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat && event.key.key == SDLK_F5) {
         try {
-            SaveGame::write(
-                config_.savePath(), session_.terrainSeed(), session_.world(), &session_.players(),
-                session_.mapChunksPerSide(), session_.terrainLayout().value);
-            context_.logger.info("persistence",
-                                 "Saved game to " + config_.savePath().string());
+            SaveGame::write(config_.savePath(),
+                            session_.terrainSeed(),
+                            session_.world(),
+                            &session_.players(),
+                            session_.mapChunksPerSide(),
+                            session_.terrainLayout().value);
+            context_.logger.info("persistence", "Saved game to " + config_.savePath().string());
             context_.events.enqueue(AudioEvent{AudioCue::saveGame});
         } catch (const std::exception& error) {
             context_.logger.error("persistence", error.what());
@@ -504,14 +809,15 @@ void PlayState::handleEvent(const SDL_Event& event) {
             pendingTerrainSeed_ = data.terrainSeed;
             pendingTerrainChunksPerSide_ = data.mapChunksPerSide;
             pendingTerrainLayout_ = TerrainLayoutId{data.terrainLayout};
-            session_.replaceWorld(std::move(data.entities), data.terrainSeed,
-                                  std::move(data.foundations), data.mapChunksPerSide,
+            session_.replaceWorld(std::move(data.entities),
+                                  data.terrainSeed,
+                                  std::move(data.foundations),
+                                  data.mapChunksPerSide,
                                   TerrainLayoutId{data.terrainLayout});
             possessedEntity_ = 0;
             viewMode_ = ViewMode::strategy;
             setMouseCaptured(false);
-            context_.logger.info("persistence",
-                                 "Loaded game from " + config_.savePath().string());
+            context_.logger.info("persistence", "Loaded game from " + config_.savePath().string());
             context_.events.enqueue(AudioEvent{AudioCue::loadGame});
         } catch (const std::exception& error) {
             context_.logger.error("persistence", error.what());
@@ -522,8 +828,8 @@ void PlayState::handleEvent(const SDL_Event& event) {
         if (Entity* selected = session_.world().findEntity(selectedEntity_);
             selected && selected->authority.owner == localPlayer_ && selected->construction &&
             !isOperational(*selected)) {
-            session_.submit({localPlayer_, nextCommandSequence_++,
-                             CancelConstructionCommand{selected->id}});
+            session_.submit(
+                {localPlayer_, nextCommandSequence_++, CancelConstructionCommand{selected->id}});
             selectedEntity_ = 0;
             selectedUnits_.clear();
         }
@@ -577,7 +883,7 @@ void PlayState::handleEvent(const SDL_Event& event) {
             setMouseCaptured(false);
             return;
         }
-        paused_ = !paused_;
+        setPaused(!paused_);
         orbiting_ = false;
         mousePanning_ = false;
         return;
@@ -586,264 +892,24 @@ void PlayState::handleEvent(const SDL_Event& event) {
         handlePauseEvent(event);
         return;
     }
-    if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN &&
-        event.button.button == SDL_BUTTON_LEFT && viewMode_ == ViewMode::strategy) {
+    if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_LEFT &&
+        viewMode_ == ViewMode::strategy) {
         if (const auto world = minimapWorldAt(event.button.x, event.button.y)) {
             camera_.focusAt({world->x, camera_.focus().y, world->y});
             draggingSelection_ = false;
             return;
         }
     }
-    const auto hudResources = context_.definitions.enabledResources();
-    const std::size_t localResourceCount = std::count_if(
-        hudResources.begin(), hudResources.end(), [](const ResourceDefinition* resource) {
-            return resource->storage == ResourceStorageKind::stockpile;
-        });
-    const std::size_t powerDeviceCount = std::count_if(
-        session_.world().entities().begin(), session_.world().entities().end(),
-        [&](const Entity& entity) {
-            const EntityArchetype* archetype = context_.definitions.archetype(entity.archetype);
-            return entity.authority.owner == localPlayer_ && archetype && archetype->powerDevice;
-        });
-    if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_LEFT) {
-        int width = 0, height = 0;
-        if (SDL_Window* window = SDL_GetWindowFromID(inputWindowId_))
-            SDL_GetWindowSize(window, &width, &height);
-        UiDocument resourceUi = GameHudLayout::resources(
-            localResourceCount, powerDeviceCount, powerOverlayVisible_, satelliteRevealActive_,
-            width, height,
-            config_.uiScale);
-        const std::optional<std::string> hudAction =
-            uiController_.press(resourceUi, {event.button.x, event.button.y});
-        if (hudAction == "hud.menu") {
-            paused_ = true;
-            forward_ = backward_ = left_ = right_ = running_ = false;
-            orbiting_ = false;
-            mousePanning_ = false;
+    if (context_.renderer) {
+        context_.renderer->handleUiEvent(event);
+        if (const auto action = context_.renderer->takeUiAction(); action && handleGameplayHudAction(*action))
             return;
-        }
-        if (hudAction == "resources.power") {
-            powerOverlayVisible_ = !powerOverlayVisible_;
-            return;
-        }
-        if (hudAction == "hud.satellite" && satelliteImageryAvailable_) {
-            satelliteRevealActive_ = !satelliteRevealActive_;
-            return;
-        }
-        if (const UiElement* panel = resourceUi.find("power.panel");
-            panel && panel->bounds.contains({event.button.x, event.button.y}))
-            return;
-        if (const UiElement* panel = resourceUi.find("resources.panel");
-            panel && panel->bounds.contains({event.button.x, event.button.y}))
-            return;
-        if (const UiElement* panel = resourceUi.find("hud.top_bar");
-            panel && panel->bounds.contains({event.button.x, event.button.y}))
+        if ((event.type == SDL_EVENT_MOUSE_BUTTON_DOWN || event.type == SDL_EVENT_MOUSE_BUTTON_UP) &&
+            context_.renderer->pointerOverUi())
             return;
     }
-    const Entity* droneForBuildHud = session_.world().findEntity(selectedEntity_);
-    const bool homogeneousSelection =
-        droneForBuildHud && isHomogeneousSelection(session_.world(), selectedUnits_,
-                                                   droneForBuildHud->archetype.value);
-    const bool buildHudVisible = viewMode_ == ViewMode::strategy && droneForBuildHud &&
-                                 (selectedUnits_.empty() || homogeneousSelection) &&
-                                 droneForBuildHud->authority.owner == localPlayer_ &&
-                                 droneForBuildHud->archetype.value == "construction_drone";
-    if (event.type == SDL_EVENT_MOUSE_MOTION)
-        uiController_.pointerMoved({event.motion.x, event.motion.y});
-    if (buildHudVisible && (event.type == SDL_EVENT_MOUSE_MOTION ||
-                            (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN &&
-                             event.button.button == SDL_BUTTON_LEFT))) {
-        int windowHeight = 0, windowWidth = 0;
-        if (SDL_Window* window = SDL_GetWindowFromID(inputWindowId_)) SDL_GetWindowSize(window, &windowWidth, &windowHeight);
-        const Player* player = session_.players().find(localPlayer_);
-        EntityHudModel hud = buildConstructionHudModel(*droneForBuildHud, player);
-        UiDocument layout = EntityHudLayout::actions(
-            hud, windowWidth, windowHeight, config_.uiScale);
-        const glm::vec2 point = event.type == SDL_EVENT_MOUSE_MOTION
-            ? glm::vec2{event.motion.x, event.motion.y}
-            : glm::vec2{event.button.x, event.button.y};
-        uiController_.apply(layout);
-        if (event.type == SDL_EVENT_MOUSE_MOTION)
-            constructionCursorScreen_ = point;
-        else if (const auto activated = uiController_.press(layout, point)) {
-            if (const auto actionId = EntityHudLayout::actionId(*activated)) {
-                if (actionId->starts_with("delivery-output:")) {
-                    const std::string output = actionId->substr(std::string{"delivery-output:"}.size());
-                    for (EntityId id : actionTargets(selectedEntity_, selectedUnits_))
-                        session_.submit({localPlayer_, nextCommandSequence_++,
-                                         SetDeliveryOutputCommand{id, output}});
-                    return;
-                }
-                constructionRecipeId_ = *actionId;
-                constructionPlacementMode_ = true;
-                return;
-            }
-        }
-        if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && layout.find("entity.panel") &&
-            layout.find("entity.panel")->bounds.contains(point)) return;
-    }
-    // Right-click always cancels an active placement preview, including invalid (red) previews.
-    if (powerLinkMode_ != PowerLinkMode::none &&
-        event.type == SDL_EVENT_MOUSE_BUTTON_DOWN &&
-        event.button.button == SDL_BUTTON_RIGHT) {
-        powerLinkMode_ = PowerLinkMode::none;
-        powerLinkSource_ = 0;
-        return;
-    }
-    if (constructionPlacementMode_ && event.type == SDL_EVENT_MOUSE_BUTTON_DOWN &&
-        event.button.button == SDL_BUTTON_RIGHT) {
-        constructionPlacementMode_ = false;
-        pendingConstructionScreen_.reset();
-        pendingConstructionPosition_.reset();
-        constructionCursorScreen_.reset();
-        return;
-    }
-    if (constructionPlacementMode_ && event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_LEFT) {
-        pendingConstructionScreen_ = glm::vec2{event.button.x, event.button.y};
-        return;
-    }
-    if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_LEFT &&
-        viewMode_ == ViewMode::strategy && !selectedUnits_.empty() &&
-        !homogeneousSelection) {
-        int windowHeight = 0, width = 0;
-        if (SDL_Window* window = SDL_GetWindowFromID(inputWindowId_))
-            SDL_GetWindowSize(window, &width, &windowHeight);
-        const EntityHudModel hud = EntityHudModelBuilder::build(
-            session_.world(), selectedEntity_, selectedUnits_, context_.definitions);
-        UiDocument layout = EntityHudLayout::selection(
-            hud, width, windowHeight, config_.uiScale);
-        const glm::vec2 point{event.button.x, event.button.y};
-        const auto activated = uiController_.press(layout, point);
-        if (activated) {
-            const auto chosen = EntityHudLayout::selectionArchetype(*activated);
-            if (!chosen) return;
-            const bool removeType = (SDL_GetModState() & SDL_KMOD_SHIFT) != 0;
-            selectedUnits_.erase(
-                std::remove_if(selectedUnits_.begin(),
-                               selectedUnits_.end(),
-                               [&](EntityId id) {
-                                   const Entity* entity = session_.world().findEntity(id);
-                                   return !entity || (removeType ? entity->archetype.value == *chosen
-                                                                 : entity->archetype.value != *chosen);
-                               }),
-                selectedUnits_.end());
-            selectedEntity_ = selectedUnits_.empty() ? 0 : selectedUnits_.front();
-            if (selectedUnits_.size() == 1) {
-                selectedUnits_.clear();
-            }
-            lastWorldClickEntity_ = 0;
-            return;
-        }
-        if (layout.find("selection.panel")->bounds.contains(point)) return;
-    }
-    const Entity* selectedHall = session_.world().findEntity(selectedEntity_);
-    const bool ownsSelectedHall = selectedHall && selectedHall->authority.owner == localPlayer_ &&
-                                  (selectedUnits_.empty() || homogeneousSelection);
-    if (ownsSelectedHall &&
-        (event.type == SDL_EVENT_MOUSE_MOTION ||
-         (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_LEFT))) {
-        const Player* local = session_.players().find(localPlayer_);
-        int width = 0, height = 0;
-        if (SDL_Window* window = SDL_GetWindowFromID(inputWindowId_))
-            SDL_GetWindowSize(window, &width, &height);
-        EntityHudModel hud = buildEntityActionHudModel(*selectedHall, local);
-        UiDocument layout = hud.actions.empty() && hud.queue.empty()
-            ? EntityHudLayout::directControl(hud, width, height, config_.uiScale)
-            : EntityHudLayout::actions(hud, width, height, config_.uiScale);
-        const glm::vec2 point = event.type == SDL_EVENT_MOUSE_MOTION
-            ? glm::vec2{event.motion.x, event.motion.y}
-            : glm::vec2{event.button.x, event.button.y};
-        uiController_.apply(layout);
-        if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
-            const auto activated = uiController_.press(layout, point);
-            if (!activated && layout.find("entity.panel") &&
-                layout.find("entity.panel")->bounds.contains(point)) {
-                // Disabled controls still consume the click instead of selecting the world below.
-                return;
-            } else if (activated && EntityHudLayout::queueIndex(*activated)) {
-                const std::size_t queueIndex = *EntityHudLayout::queueIndex(*activated);
-                session_.submit({localPlayer_, nextCommandSequence_++,
-                                 CancelProductionCommand{
-                                     selectedHall->id,
-                                     static_cast<std::uint32_t>(queueIndex)}});
-                return;
-            } else if (activated) {
-                const auto actionId = EntityHudLayout::actionId(*activated);
-                if (!actionId) return;
-                const std::vector<EntityId> targets = actionTargets(selectedEntity_, selectedUnits_);
-                if (*actionId == "power.connect" || *actionId == "power.disconnect") {
-                    powerLinkMode_ = *actionId == "power.connect" ? PowerLinkMode::connect
-                                                                  : PowerLinkMode::disconnect;
-                    powerLinkSource_ = selectedHall->id;
-                    powerOverlayVisible_ = true;
-                    return;
-                }
-                if (*actionId == "power.priority") {
-                    const PowerPriority current = selectedHall->power
-                                                      ? selectedHall->power->priority
-                                                      : PowerPriority::medium;
-                    const PowerPriority nextPriority = current == PowerPriority::low
-                                                           ? PowerPriority::medium
-                                                           : current == PowerPriority::medium
-                                                                 ? PowerPriority::high
-                                                                 : PowerPriority::low;
-                    for (EntityId id : targets)
-                        session_.submit({localPlayer_, nextCommandSequence_++,
-                                         SetPowerPriorityCommand{id, nextPriority}});
-                    return;
-                }
-                if (*actionId == "power.toggle") {
-                    const bool enabled = selectedHall->power && !selectedHall->power->enabled;
-                    for (EntityId id : targets)
-                        session_.submit({localPlayer_, nextCommandSequence_++,
-                                         SetPowerEnabledCommand{id, enabled}});
-                    return;
-                }
-                if (*actionId == "power.consumption" || *actionId == "power.output") {
-                    const bool consumption = *actionId == "power.consumption";
-                    const bool enabled = selectedHall->power &&
-                        !(consumption ? selectedHall->power.consumptionEnabled : selectedHall->power.outputEnabled);
-                    for (EntityId id : targets) {
-                        if (consumption)
-                            session_.submit({localPlayer_, nextCommandSequence_++, SetPowerConsumptionEnabledCommand{id, enabled}});
-                        else
-                            session_.submit({localPlayer_, nextCommandSequence_++, SetPowerOutputEnabledCommand{id, enabled}});
-                    }
-                    return;
-                }
-                if (*actionId == "power.discharge") {
-                    const bool enabled = selectedHall->power &&
-                                         !selectedHall->power->dischargeEnabled;
-                    for (EntityId id : targets)
-                        session_.submit({localPlayer_, nextCommandSequence_++,
-                                         SetPowerDischargeEnabledCommand{id, enabled}});
-                    return;
-                }
-                if (actionId->starts_with("delivery-output:")) {
-                    const std::string output = actionId->substr(std::string{"delivery-output:"}.size());
-                    for (EntityId id : targets)
-                        session_.submit({localPlayer_, nextCommandSequence_++,
-                                         SetDeliveryOutputCommand{id, output}});
-                    return;
-                }
-                if (const RecipeDefinition* recipe =
-                        context_.definitions.recipe(RecipeId{*actionId})) {
-                    for (EntityId id : targets)
-                        session_.submit({localPlayer_, nextCommandSequence_++,
-                                         StartRecipeCommand{id, recipe->id}});
-                    context_.events.enqueue(AudioEvent{AudioCue::trainUnit});
-                } else if (const UpgradeDefinition* upgrade =
-                               context_.definitions.upgrade(*actionId)) {
-                    const auto submitUpgrade = [&](EntityId id) {
-                        session_.submit({localPlayer_, nextCommandSequence_++,
-                                         StartUpgradeCommand{id, upgrade->id}});
-                    };
-                    for (EntityId id : targets) submitUpgrade(id);
-                }
-                return;
-            }
-        }
-    }
+    if (event.type == SDL_EVENT_MOUSE_MOTION && constructionPlacementMode_)
+        constructionCursorScreen_ = glm::vec2{event.motion.x, event.motion.y};
     if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_LEFT &&
         viewMode_ == ViewMode::strategy) {
         draggingSelection_ = true;
@@ -951,35 +1017,11 @@ void PlayState::handleEvent(const SDL_Event& event) {
         }
 }
 
-UiDocument PlayState::pauseUi(int width, int height) const {
-    if (uiController_.focusedId().empty()) uiController_.focus("pause.resume");
-    UiDocument document;
-    document.modal("pause.panel", {10.0F, 38.0F, 355.0F, 532.0F},
-                   {0.72F, 0.76F, 0.80F}).texture = "ui/menu_panel";
-    document.label("pause.title", {91.0F, 106.0F, 0.0F, 0.0F},
-                   Text::get("pause.title"), 4.0F);
-    document.button("pause.resume", {60.0F, 250.0F, 300.0F, 310.0F},
-                    Text::get("pause.resume"), {0.16F, 0.36F, 0.18F},
-                    {0.28F, 0.62F, 0.24F}).textScale = 3.0F;
-    document.button("pause.settings", {60.0F, 330.0F, 300.0F, 390.0F},
-                    Text::get("menu.settings"), {0.14F, 0.25F, 0.36F},
-                    {0.30F, 0.48F, 0.65F}).textScale = 3.0F;
-    document.button("pause.exit", {60.0F, 410.0F, 300.0F, 470.0F},
-                    Text::get("menu.exit"), {0.40F, 0.16F, 0.14F},
-                    {0.72F, 0.25F, 0.20F}).textScale = 3.0F;
-    for (UiElement& element : document.elements())
-        if (element.kind == UiElementKind::button) element.texture = "ui/menu_button";
-    if (UiElement* item = const_cast<UiElement*>(document.find("pause.resume"))) item->icon = "action_move";
-    if (UiElement* item = const_cast<UiElement*>(document.find("pause.settings"))) item->icon = "action_power_priority";
-    if (UiElement* item = const_cast<UiElement*>(document.find("pause.exit"))) item->icon = "action_stop";
-    document.scaleFromReference(width, height, config_.uiScale);
-    return document;
-}
-
 void PlayState::handlePauseEvent(const SDL_Event& event) {
     const auto activate = [&](std::string_view id) {
-        if (id == "pause.resume") paused_ = false;
-        else if (pauseTransition_ < 0.0F && id == "pause.settings") {
+        if (id == "pause.resume") {
+            setPaused(false);
+        } else if (pauseTransition_ < 0.0F && id == "pause.settings") {
             pausePendingRequest_ = StateRequest::openSettings;
             pauseTransition_ = 0.0F;
         } else if (pauseTransition_ < 0.0F && id == "pause.exit") {
@@ -987,60 +1029,39 @@ void PlayState::handlePauseEvent(const SDL_Event& event) {
             pauseTransition_ = 0.0F;
         }
     };
-    if (pauseTransition_ >= 0.0F) return;
-    if (event.type == SDL_EVENT_MOUSE_MOTION) {
-        uiController_.pointerMoved({event.motion.x, event.motion.y});
+    if (pauseTransition_ >= 0.0F)
         return;
-    }
-    if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_LEFT) {
-        int width = 1280, height = 720;
-        if (SDL_Window* window = SDL_GetWindowFromID(event.button.windowID))
-            SDL_GetWindowSize(window, &width, &height);
-        UiDocument document = pauseUi(width, height);
-        (void)uiController_.press(document, {event.button.x, event.button.y});
-        return;
-    }
-    if (event.type == SDL_EVENT_MOUSE_BUTTON_UP && event.button.button == SDL_BUTTON_LEFT) {
-        int width = 1280, height = 720;
-        if (SDL_Window* window = SDL_GetWindowFromID(event.button.windowID))
-            SDL_GetWindowSize(window, &width, &height);
-        UiDocument document = pauseUi(width, height);
-        if (const auto activated = uiController_.release(
-                document, {event.button.x, event.button.y})) {
-            context_.events.enqueue(AudioEvent{AudioCue::uiClick});
-            activate(*activated);
-        }
-        return;
-    }
-    if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_TAB) {
-        UiDocument document = pauseUi(config_.resolutionWidth, config_.resolutionHeight);
-        uiController_.moveFocus(document,
-            (SDL_GetModState() & SDL_KMOD_SHIFT) ? -1 : 1);
-        return;
-    }
-    if (event.type == SDL_EVENT_KEY_DOWN &&
-        (event.key.key == SDLK_RETURN || event.key.key == SDLK_SPACE)) {
-        UiDocument document = pauseUi(config_.resolutionWidth, config_.resolutionHeight);
-        if (const auto id = uiController_.activateFocused(document)) activate(*id);
-        return;
-    }
-    if (event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
-        UiDocument document = pauseUi(config_.resolutionWidth, config_.resolutionHeight);
+
+    context_.renderer->handleUiEvent(event);
+    if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat) {
+        if (event.key.key == SDLK_TAB || event.key.key == SDLK_DOWN)
+            context_.renderer->focusUi((SDL_GetModState() & SDL_KMOD_SHIFT) ? -1 : 1);
+        else if (event.key.key == SDLK_UP)
+            context_.renderer->focusUi(-1);
+        else if (event.key.key == SDLK_RETURN || event.key.key == SDLK_SPACE)
+            context_.renderer->activateFocusedUiItem();
+        else if (event.key.key == SDLK_ESCAPE)
+            setPaused(false);
+    } else if (event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
         if (event.gbutton.button == SDL_GAMEPAD_BUTTON_DPAD_DOWN)
-            uiController_.moveFocus(document, 1);
+            context_.renderer->focusUi(1);
         else if (event.gbutton.button == SDL_GAMEPAD_BUTTON_DPAD_UP)
-            uiController_.moveFocus(document, -1);
-        else if (event.gbutton.button == SDL_GAMEPAD_BUTTON_SOUTH) {
-            if (const auto id = uiController_.activateFocused(document)) activate(*id);
-        } else if (event.gbutton.button == SDL_GAMEPAD_BUTTON_EAST)
-            paused_ = false;
+            context_.renderer->focusUi(-1);
+        else if (event.gbutton.button == SDL_GAMEPAD_BUTTON_SOUTH)
+            context_.renderer->activateFocusedUiItem();
+        else if (event.gbutton.button == SDL_GAMEPAD_BUTTON_EAST)
+            setPaused(false);
+    }
+    if (const auto action = context_.renderer->takeUiAction()) {
+        context_.events.enqueue(AudioEvent{AudioCue::uiClick});
+        activate(*action);
     }
 }
 
 void PlayState::update(float deltaSeconds) {
-    for (HudAlert& alert : hudAlerts_) alert.remaining -= deltaSeconds;
+    for (HudAlert& alert : hudAlerts_)
+        alert.remaining -= deltaSeconds;
     std::erase_if(hudAlerts_, [](const HudAlert& alert) { return alert.remaining <= 0.0F; });
-    uiController_.advance(deltaSeconds);
     if (paused_) {
         if (pauseTransition_ >= 0.0F) {
             pauseTransition_ += deltaSeconds;
@@ -1055,10 +1076,12 @@ void PlayState::update(float deltaSeconds) {
         if (powerLinkMode_ != PowerLinkMode::none) {
             if (clicked != 0 && clicked != powerLinkSource_) {
                 if (powerLinkMode_ == PowerLinkMode::connect)
-                    session_.submit({localPlayer_, nextCommandSequence_++,
+                    session_.submit({localPlayer_,
+                                     nextCommandSequence_++,
                                      ConnectPowerCommand{powerLinkSource_, clicked}});
                 else
-                    session_.submit({localPlayer_, nextCommandSequence_++,
+                    session_.submit({localPlayer_,
+                                     nextCommandSequence_++,
                                      DisconnectPowerCommand{powerLinkSource_, clicked}});
             }
             powerLinkMode_ = PowerLinkMode::none;
@@ -1086,11 +1109,11 @@ void PlayState::update(float deltaSeconds) {
             selectedEntity_ = clicked;
             selectedUnits_.clear();
             if (clicked != 0)
-                context_.events.enqueue(AudioEvent{
-                    session_.world().findEntity(clicked) &&
-                            session_.world().findEntity(clicked)->production
-                        ? AudioCue::buildingOpen
-                        : AudioCue::selection});
+                context_.events.enqueue(
+                    AudioEvent{session_.world().findEntity(clicked) &&
+                                       session_.world().findEntity(clicked)->production
+                                   ? AudioCue::buildingOpen
+                                   : AudioCue::selection});
             if (const Entity* selected = session_.world().findEntity(selectedEntity_);
                 confirmedDoubleClick && selected && selected->authority.owner == localPlayer_ &&
                 selected->unitControl && selected->unitControl.directlyControllable) {
@@ -1114,7 +1137,8 @@ void PlayState::update(float deltaSeconds) {
         lastWorldClickEntity_ = 0;
     }
     const Entity* selectionContext = session_.world().findEntity(selectedEntity_);
-    const bool homogeneousDrones = selectionContext &&
+    const bool homogeneousDrones =
+        selectionContext &&
         isHomogeneousSelection(session_.world(), selectedUnits_, "construction_drone");
     if (!selectionContext || selectionContext->archetype.value != "construction_drone" ||
         (!selectedUnits_.empty() && !homogeneousDrones)) {
@@ -1134,17 +1158,20 @@ void PlayState::update(float deltaSeconds) {
                 if (target && target->processor && target->authority.owner == localPlayer_ &&
                     entity->gatherer) {
                     if (entity->gatherer.carriedAmount > 0.0F)
-                        session_.submit({localPlayer_, nextCommandSequence_++,
+                        session_.submit({localPlayer_,
+                                         nextCommandSequence_++,
                                          DeliverResourceCommand{id, target->id}});
                     else
-                        session_.submit({localPlayer_, nextCommandSequence_++,
+                        session_.submit({localPlayer_,
+                                         nextCommandSequence_++,
                                          SetPreferredProcessorCommand{id, target->id}});
                 } else if (target && target->resource)
                     session_.submit({localPlayer_,
                                      nextCommandSequence_++,
                                      GatherResourceCommand{id, target->id}});
                 else if (target && target->construction && !isOperational(*target))
-                    session_.submit({localPlayer_, nextCommandSequence_++, ConstructCommand{id, target->id}});
+                    session_.submit(
+                        {localPlayer_, nextCommandSequence_++, ConstructCommand{id, target->id}});
                 else if (target && target->health && target->authority.owner != 0 &&
                          target->authority.owner != localPlayer_)
                     session_.submit({localPlayer_,
@@ -1164,21 +1191,27 @@ void PlayState::update(float deltaSeconds) {
     }
     if (pendingConstructionPosition_) {
         EntityId drone = selectedEntity_;
-        if (!selectedUnits_.empty()) drone = selectedUnits_.front();
+        if (!selectedUnits_.empty())
+            drone = selectedUnits_.front();
         if (constructionPreviewValid_)
-        if (const Entity* builder = session_.world().findEntity(drone); builder && builder->flight) {
-            std::vector<EntityId> builders;
-            if (selectedUnits_.empty()) builders.push_back(drone);
-            else
-                for (EntityId id : selectedUnits_)
-                    if (const Entity* selected = session_.world().findEntity(id);
-                        selected && selected->authority.owner == localPlayer_ && selected->flight)
-                        builders.push_back(id);
-            session_.submit({localPlayer_, nextCommandSequence_++,
-                             PlaceBuildingCommand{drone, constructionRecipeId_,
-                                                  *pendingConstructionPosition_,
-                                                  std::move(builders)}});
-        }
+            if (const Entity* builder = session_.world().findEntity(drone);
+                builder && builder->flight) {
+                std::vector<EntityId> builders;
+                if (selectedUnits_.empty())
+                    builders.push_back(drone);
+                else
+                    for (EntityId id : selectedUnits_)
+                        if (const Entity* selected = session_.world().findEntity(id);
+                            selected && selected->authority.owner == localPlayer_ &&
+                            selected->flight)
+                            builders.push_back(id);
+                session_.submit({localPlayer_,
+                                 nextCommandSequence_++,
+                                 PlaceBuildingCommand{drone,
+                                                      constructionRecipeId_,
+                                                      *pendingConstructionPosition_,
+                                                      std::move(builders)}});
+            }
         pendingConstructionPosition_.reset();
         if (constructionPreviewValid_)
             constructionPlacementMode_ = false;
@@ -1207,17 +1240,16 @@ void PlayState::update(float deltaSeconds) {
             context_.events.enqueue(AudioEvent{AudioCue::deliveryComplete});
             break;
         case ResourceEventKind::conversionCompleted:
-            std::erase_if(hudAlerts_, [&](const HudAlert& alert) {
-                return alert.source == event.target;
-            });
+            std::erase_if(hudAlerts_,
+                          [&](const HudAlert& alert) { return alert.source == event.target; });
             context_.events.enqueue(AudioEvent{AudioCue::conversionComplete});
             break;
         case ResourceEventKind::waitingForPower:
             if (std::none_of(hudAlerts_.begin(), hudAlerts_.end(), [&](const HudAlert& alert) {
                     return alert.source == event.target;
                 }))
-                hudAlerts_.push_back({event.target,
-                                      Text::get("processor.alert.waiting_power"), 8.0F});
+                hudAlerts_.push_back(
+                    {event.target, Text::get("processor.alert.waiting_power"), 8.0F});
             context_.events.enqueue(AudioEvent{AudioCue::resourceWarning});
             break;
         case ResourceEventKind::destinationLost:
@@ -1231,25 +1263,44 @@ void PlayState::update(float deltaSeconds) {
         }
     }
     for (const PowerEvent& event : session_.consumePowerEvents()) {
-        if (event.player != localPlayer_) continue;
+        if (event.player != localPlayer_)
+            continue;
         std::string message;
         switch (event.kind) {
-        case PowerEventKind::connectionCreated: message = Text::get("power.alert.connected"); break;
-        case PowerEventKind::connectionRemoved: message = Text::get("power.alert.disconnected"); break;
-        case PowerEventKind::shortage: message = Text::get("power.alert.shortage"); break;
-        case PowerEventKind::recovered: message = Text::get("power.alert.recovered"); break;
-        case PowerEventKind::shutdown: message = Text::get("power.alert.shutdown"); break;
+        case PowerEventKind::connectionCreated:
+            message = Text::get("power.alert.connected");
+            break;
+        case PowerEventKind::connectionRemoved:
+            message = Text::get("power.alert.disconnected");
+            break;
+        case PowerEventKind::shortage:
+            message = Text::get("power.alert.shortage");
+            break;
+        case PowerEventKind::recovered:
+            message = Text::get("power.alert.recovered");
+            break;
+        case PowerEventKind::shutdown:
+            message = Text::get("power.alert.shutdown");
+            break;
         case PowerEventKind::commandRejected:
             powerLinkMode_ = PowerLinkMode::connect;
             powerLinkSource_ = event.source;
             switch (event.reason) {
-            case PowerFailureReason::outOfRange: message = Text::get("power.alert.out_of_range"); break;
-            case PowerFailureReason::connectionLimit: message = Text::get("power.alert.connection_limit"); break;
-            case PowerFailureReason::disabled: message = Text::get("power.alert.disabled"); break;
+            case PowerFailureReason::outOfRange:
+                message = Text::get("power.alert.out_of_range");
+                break;
+            case PowerFailureReason::connectionLimit:
+                message = Text::get("power.alert.connection_limit");
+                break;
+            case PowerFailureReason::disabled:
+                message = Text::get("power.alert.disabled");
+                break;
             case PowerFailureReason::alreadyConnected:
                 message = Text::get("power.alert.already_connected");
                 break;
-            case PowerFailureReason::enemyTarget: message = Text::get("power.alert.enemy_target"); break;
+            case PowerFailureReason::enemyTarget:
+                message = Text::get("power.alert.enemy_target");
+                break;
             case PowerFailureReason::notOperational:
                 message = Text::get("power.alert.not_operational");
                 break;
@@ -1257,7 +1308,9 @@ void PlayState::update(float deltaSeconds) {
                 powerLinkMode_ = PowerLinkMode::disconnect;
                 message = Text::get("power.alert.not_connected");
                 break;
-            default: message = Text::get("power.alert.invalid_target"); break;
+            default:
+                message = Text::get("power.alert.invalid_target");
+                break;
             }
             break;
         }
@@ -1267,9 +1320,7 @@ void PlayState::update(float deltaSeconds) {
 
 void PlayState::sanitizeEntityReferences() {
     const World& world = session_.world();
-    const auto missing = [&](EntityId id) {
-        return id != 0 && world.findEntity(id) == nullptr;
-    };
+    const auto missing = [&](EntityId id) { return id != 0 && world.findEntity(id) == nullptr; };
 
     std::erase_if(selectedUnits_, missing);
     if (missing(selectedEntity_))
@@ -1304,16 +1355,14 @@ void PlayState::sanitizeEntityReferences() {
         setMouseCaptured(false);
     }
 
-    std::erase_if(hudAlerts_, [&](const HudAlert& alert) {
-        return missing(alert.source);
-    });
+    std::erase_if(hudAlerts_, [&](const HudAlert& alert) { return missing(alert.source); });
 }
 
 void PlayState::render(Renderer& renderer) const {
     if (pendingTerrainSeed_) {
         renderer.regenerateTerrain(*pendingTerrainSeed_,
-            pendingTerrainChunksPerSide_.value_or(Terrain::chunksPerSide),
-            pendingTerrainLayout_.value_or(TerrainLayoutId{"continental"}));
+                                   pendingTerrainChunksPerSide_.value_or(Terrain::chunksPerSide),
+                                   pendingTerrainLayout_.value_or(TerrainLayoutId{"continental"}));
         pendingTerrainSeed_.reset();
         pendingTerrainChunksPerSide_.reset();
         pendingTerrainLayout_.reset();
@@ -1491,102 +1540,13 @@ void PlayState::render(Renderer& renderer) const {
                                       session_.tick(),
                                       session_.world().size());
     }
-    if (viewMode_ == ViewMode::unitControl && possessedEntity_ != 0) {
-        if (const Entity* controlled = session_.world().findEntity(possessedEntity_)) {
-            EntityHudModel hud = EntityHudModelBuilder::build(
-                session_.world(), possessedEntity_, {}, context_.definitions);
-            hud.footer = Text::get("unit.escape");
-            UiDocument layout = EntityHudLayout::directControl(
-                hud, renderer.viewportWidth(), renderer.viewportHeight(), config_.uiScale);
-            renderer.drawEntityHud(hud, layout);
+    if (!paused_) {
+        updateGameplayHud(renderer, local);
+        if (viewMode_ == ViewMode::unitControl && possessedEntity_ != 0)
             renderer.drawCrosshair();
-        }
-    } else {
-        UiDocument minimap = GameHudLayout::minimap(
-            renderer.viewportWidth(), renderer.viewportHeight(), config_.uiScale);
-        renderer.drawStrategyHud(session_.world(), selectedEntity_, visibilityPlayer, minimap);
-        const Entity* selected = session_.world().findEntity(selectedEntity_);
-        const bool sameType = selected && isHomogeneousSelection(
-            session_.world(), selectedUnits_, selected->archetype.value);
-        if (!selectedUnits_.empty() && !sameType) {
-            EntityHudModel hud = EntityHudModelBuilder::build(
-                session_.world(), selectedEntity_, selectedUnits_, context_.definitions);
-            UiDocument layout = EntityHudLayout::selection(
-                hud, renderer.viewportWidth(), renderer.viewportHeight(), config_.uiScale);
-            uiController_.apply(layout);
-            renderer.drawEntityHud(hud, layout);
-        }
-        if (selected && selected->authority.owner == localPlayer_ &&
-            selected->archetype.value == "construction_drone" &&
-            (selectedUnits_.empty() || sameType)) {
-            EntityHudModel hud = buildConstructionHudModel(*selected, local);
-            UiDocument layout = EntityHudLayout::actions(
-                hud, renderer.viewportWidth(), renderer.viewportHeight(), config_.uiScale);
-            uiController_.apply(layout);
-            renderer.drawEntityHud(hud, layout);
-        }
-        if (selected && selected->resource &&
-            (selectedUnits_.empty() || sameType)) {
-            EntityHudModel hud = EntityHudModelBuilder::build(
-                session_.world(), selectedEntity_, selectedUnits_, context_.definitions);
-            UiDocument layout = EntityHudLayout::directControl(
-                hud, renderer.viewportWidth(), renderer.viewportHeight(), config_.uiScale);
-            renderer.drawEntityHud(hud, layout);
-        }
-        if (selected && selected->authority.owner == localPlayer_ &&
-            selected->archetype.value != "construction_drone" &&
-            (selectedUnits_.empty() || sameType)) {
-            EntityHudModel hud = buildEntityActionHudModel(*selected, local);
-            UiDocument layout = hud.actions.empty() && hud.queue.empty()
-                ? EntityHudLayout::directControl(
-                      hud, renderer.viewportWidth(), renderer.viewportHeight(), config_.uiScale)
-                : EntityHudLayout::actions(
-                      hud, renderer.viewportWidth(), renderer.viewportHeight(), config_.uiScale);
-            uiController_.apply(layout);
-            renderer.drawEntityHud(hud, layout);
-        }
-    }
-    // The resource bar and its expanded power panel are top-level HUD. Draw them
-    // after world outlines and entity panels so selection geometry cannot bleed
-    // through the opaque overlay.
-    if (local)
-    {
-        const auto resources = context_.definitions.enabledResources();
-        const std::size_t localCount = std::count_if(
-            resources.begin(), resources.end(), [](const ResourceDefinition* resource) {
-                return resource->storage == ResourceStorageKind::stockpile;
-            });
-        const std::size_t deviceCount = std::count_if(
-            session_.world().entities().begin(), session_.world().entities().end(),
-            [&](const Entity& entity) {
-                const EntityArchetype* archetype = context_.definitions.archetype(entity.archetype);
-                return entity.authority.owner == localPlayer_ && archetype && archetype->powerDevice;
-            });
-        UiDocument resourceUi = GameHudLayout::resources(
-            localCount, deviceCount, powerOverlayVisible_, satelliteRevealActive_,
-            renderer.viewportWidth(), renderer.viewportHeight(), config_.uiScale);
-        // This is a separate document; do not reset the entity-button hover timer each frame.
-        resourceUi.pointerMoved(uiController_.pointer());
-        renderer.drawResourceHud(*local, session_.world(), context_.definitions,
-                                 powerOverlayVisible_, resourceUi);
-    }
-    if (!hudAlerts_.empty()) {
-        std::vector<std::string> messages;
-        for (const HudAlert& alert : hudAlerts_) messages.push_back(alert.text);
-        renderer.drawUi(GameHudLayout::alerts(messages, renderer.viewportWidth(),
-                                              renderer.viewportHeight(), config_.uiScale));
-    }
-    if (constructionPlacementMode_ && !constructionPreviewValid_ &&
-        !constructionPreviewReason_.empty()) {
-        const float width = 310.0F;
-        const float left = std::clamp(pointerScreen_.x + 18.0F, 8.0F,
-                                      static_cast<float>(renderer.viewportWidth()) - width - 8.0F);
-        const float top = std::clamp(pointerScreen_.y + 18.0F, 8.0F,
-                                     static_cast<float>(renderer.viewportHeight()) - 42.0F);
-        UiDocument placementUi;
-        placementUi.tooltip("placement.reason", {left, top, left + width, top + 34.0F},
-                            constructionPreviewReason_).texture = "ui/tooltip_panel";
-        renderer.drawUi(placementUi);
+        else if (const auto minimap = renderer.uiBounds("minimap-content"))
+            renderer.drawStrategyHud(session_.world(), selectedEntity_, visibilityPlayer, *minimap);
+        renderer.drawRmlUi();
     }
     // Terrain inspection is a UI pass and must remain after every world/overlay pass.
     // Keeping it at the top of the visual stack also prevents entity outlines from
@@ -1604,9 +1564,7 @@ void PlayState::render(Renderer& renderer) const {
         renderer.drawPowerDebugHud(session_.world(), localPlayer_, cursor);
     }
     if (paused_) {
-        UiDocument document = pauseUi(renderer.viewportWidth(), renderer.viewportHeight());
-        uiController_.apply(document);
-        renderer.drawUi(document);
+        renderer.drawRmlUi();
         if (pauseTransition_ >= 0.0F)
             renderer.drawScreenFade(std::clamp(pauseTransition_ / 0.24F, 0.0F, 1.0F));
     }

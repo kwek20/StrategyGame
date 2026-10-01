@@ -20,6 +20,7 @@ struct StateContext {
     Logger& logger;
     DefinitionRegistry& definitions;
     std::filesystem::path configPath;
+    Renderer* renderer{};
 };
 
 using MatchSetupOptions = MatchSetupProfile;

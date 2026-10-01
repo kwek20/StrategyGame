@@ -1,0 +1,38 @@
+<rml>
+    <head>
+        <link type="text/rcss" href="common_buttons.rcss"/>
+        <title>Gameplay HUD</title>
+        <link type="text/rcss" href="gameplay_hud.rcss"/>
+    </head>
+    <body>
+        <div id="top-shell">
+            <div id="resources-content">
+                <div id="stockpile-resources"/>
+                <button id="resources.power" class="resource power-resource">
+                    <img src="../icons/source/resource_power.png"/>
+                    <span id="resources.power.label"/>
+                </button>
+            </div>
+            <button id="hud.satellite" class="art-button top-action top-menu-button">
+                <span id="hud.satellite.label">SAT</span>
+            </button>
+            <button id="hud.menu" class="art-button top-action top-menu-button">
+                <span>MENU</span>
+            </button>
+        </div>
+        <div id="power-panel">
+            <img class="panel-art" src="../textures/ui/hud_panel.png"/>
+            <div id="power-content"/>
+        </div>
+        <div id="alerts"/>
+        <div id="minimap-shell">
+            <div id="minimap-content"/>
+            <img id="minimap-frame" src="../textures/ui/minimap_frame_overlay.png"/>
+        </div>
+        <div id="entity-shell">
+            <img class="panel-art" src="../textures/ui/hud_panel.png"/>
+            <div id="entity-content"/>
+        </div>
+        <div id="placement-reason"/>
+    </body>
+</rml>

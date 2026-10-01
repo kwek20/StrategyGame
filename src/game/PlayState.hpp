@@ -1,15 +1,14 @@
 #pragma once
 
 #include "app/GameState.hpp"
+#include "game/GameplayParticlePresenter.hpp"
 #include "game/RtsCamera.hpp"
 #include "game/ThirdPersonCamera.hpp"
-#include "game/GameplayParticlePresenter.hpp"
 #include "persistence/GameConfig.hpp"
 #include "persistence/SaveGame.hpp"
+#include "render/RmlUiManager.hpp"
 #include "simulation/GameSession.hpp"
 #include "ui/EntityHudModel.hpp"
-#include "ui/UiDocument.hpp"
-#include "ui/UiController.hpp"
 
 #include <cstdint>
 #include <glm/vec3.hpp>
@@ -24,6 +23,7 @@ class PlayState final : public GameState {
     PlayState(StateContext& context, MatchSetupOptions setup);
     PlayState(StateContext& context, MatchSetupOptions setup, GameSession preparedSession);
     PlayState(StateContext& context, SaveData data);
+    ~PlayState() override;
     void handleEvent(const SDL_Event& event) override;
     void update(float deltaSeconds) override;
     void render(Renderer& renderer) const override;
@@ -51,6 +51,7 @@ class PlayState final : public GameState {
     bool paused_{false};
     float pauseTransition_{-1.0F};
     StateRequest pausePendingRequest_{StateRequest::none};
+    RmlUiScreenHandle pauseScreen_{};
     bool detailedDebug_{false};
     bool terrainDebug_{false};
     int waterDebugMode_{0};
@@ -63,7 +64,11 @@ class PlayState final : public GameState {
     enum class PowerLinkMode { none, connect, disconnect };
     PowerLinkMode powerLinkMode_{PowerLinkMode::none};
     EntityId powerLinkSource_{0};
-    struct HudAlert { EntityId source{0}; std::string text; float remaining{0.0F}; };
+    struct HudAlert {
+        EntityId source{0};
+        std::string text;
+        float remaining{0.0F};
+    };
     std::vector<HudAlert> hudAlerts_;
     StateRequest request_{StateRequest::none};
     GameConfig config_;
@@ -91,7 +96,7 @@ class PlayState final : public GameState {
     mutable std::optional<glm::vec4> pendingSelectionRectangle_;
     mutable std::optional<std::vector<EntityId>> pickedEntities_;
     std::uint32_t inputWindowId_{0};
-    mutable UiController uiController_;
+    mutable RmlUiScreenHandle hudScreen_{};
     bool constructionPlacementMode_{false};
     std::string constructionRecipeId_{"construct.command_hub"};
     mutable std::optional<glm::vec2> pendingConstructionScreen_;
@@ -104,11 +109,13 @@ class PlayState final : public GameState {
     void setMouseCaptured(bool captured);
     void sanitizeEntityReferences();
     void initializeStartingView();
-    [[nodiscard]] std::optional<glm::vec2> minimapWorldAt(float screenX,
-                                                          float screenY) const;
+    [[nodiscard]] std::optional<glm::vec2> minimapWorldAt(float screenX, float screenY) const;
+    void ensureGameplayHud(Renderer& renderer) const;
+    void updateGameplayHud(Renderer& renderer, const Player* player) const;
+    bool handleGameplayHudAction(const std::string& action);
 
     void handlePauseEvent(const SDL_Event& event);
-    [[nodiscard]] UiDocument pauseUi(int width, int height) const;
+    void setPaused(bool paused);
     [[nodiscard]] EntityHudModel buildConstructionHudModel(const Entity& selected,
                                                            const Player* player) const;
     [[nodiscard]] EntityHudModel buildEntityActionHudModel(const Entity& selected,
