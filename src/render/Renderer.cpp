@@ -787,7 +787,7 @@ void Renderer::drawLoadingScreen(float progress, const std::string& status) cons
     rmlUi_->setText("loading-percentage",
                     visibleProgress >= 1.0F ? Text::get("loading.ready")
                                             : std::to_string(percentage) + "%");
-    rmlUi_->setProperty("loading-fill", "width", std::to_string(visibleProgress * 100.0F) + "%");
+    rmlUi_->setAttribute("loading-fill", "value", std::to_string(visibleProgress));
     rmlUi_->render(viewportWidth_, viewportHeight_);
 }
 

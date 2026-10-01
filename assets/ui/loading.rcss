@@ -9,9 +9,9 @@ body {
 #loading-shell {
     position: absolute;
     left: 6%;
-    top: 29%;
+    top: 32%;
     width: 88%;
-    height: 42%;
+    height: 36%;
     animation: .3s quadratic-out enter;
 }
 #loading-panel-art {
@@ -24,30 +24,30 @@ body {
     position: absolute;
     left: 8%;
     right: 8%;
-    top: 16%;
+    top: 19%;
     bottom: 15%;
     display: flex;
     flex-direction: column;
 }
 #loading-header {
-    height: 46dp;
+    height: 40dp;
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 14dp;
+    gap: 10dp;
 }
 #loading-title {
     margin: 0;
-    height: 42dp;
-    line-height: 42dp;
+    height: 36dp;
+    line-height: 36dp;
     color: #fff9d0;
     font-size: 34dp;
 }
 #loading-percentage {
-    min-width: 58dp;
-    height: 30dp;
-    line-height: 30dp;
-    padding: 0 8dp;
+    min-width: 52dp;
+    height: 26dp;
+    line-height: 26dp;
+    padding: 0 7dp;
     text-align: center;
     background-color: #031017;
     border: 1dp #24586a;
@@ -56,7 +56,9 @@ body {
     font-weight: 700;
 }
 #loading-status-row {
-    height: 38dp;
+    height: 32dp;
+    margin-top: 3dp;
+    margin-bottom: 6dp;
     display: flex;
     align-items: center;
     color: #b9e8f5;
@@ -76,8 +78,8 @@ body {
 #loading-track {
     position: relative;
     width: 100%;
-    height: 68dp;
-    margin-top: 5dp;
+    height: 62dp;
+    margin-top: 0;
 }
 #loading-track-art {
     position: absolute;
@@ -89,57 +91,27 @@ body {
     position: absolute;
     left: 2.8%;
     right: 2.8%;
-    top: 20%;
-    height: 60%;
+    top: 24%;
+    height: 52%;
     overflow: hidden;
 }
 #loading-fill {
     position: absolute;
     left: 0;
     top: 0;
-    width: 0%;
-    height: 100%;
-}
-#loading-fill-art {
-    position: absolute;
-    left: 0;
-    top: 0;
     width: 100%;
     height: 100%;
-    image-color: #ffffff;
-    animation: 1.1s infinite shimmer;
-}
-#loading-lead {
-    position: absolute;
-    right: 0;
-    top: 0;
-    width: 65dp;
-    height: 100%;
-    animation: .75s infinite lead-pulse;
-}
-#loading-ticks {
-    position: absolute;
-    left: 2.8%;
-    right: 2.8%;
-    top: 28%;
-    height: 44%;
-    display: flex;
-    justify-content: space-between;
-}
-#loading-ticks span {
-    width: 1dp;
-    height: 100%;
-    background-color: #247a94;
-    opacity: .5;
+    fill-image: "../textures/ui/loading_progress_energy.png";
+    image-color: #c4edf2;
 }
 @keyframes enter {
     from {
         opacity: 0;
-        top: 32%;
+        top: 35%;
     }
     to {
         opacity: 1;
-        top: 29%;
+        top: 32%;
     }
 }
 @keyframes pulse {
@@ -151,27 +123,5 @@ body {
     }
     100% {
         opacity: .3;
-    }
-}
-@keyframes lead-pulse {
-    0% {
-        opacity: .68;
-    }
-    50% {
-        opacity: 1;
-    }
-    100% {
-        opacity: .68;
-    }
-}
-@keyframes shimmer {
-    0% {
-        image-color: #b7eefa;
-    }
-    50% {
-        image-color: #ffffff;
-    }
-    100% {
-        image-color: #b7eefa;
     }
 }
