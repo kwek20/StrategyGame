@@ -46,6 +46,10 @@ struct UiElement {
     std::string texture;
     std::string progressTexture;
     std::string tooltip;
+    std::vector<std::string> tooltipIcons;
+    bool active{false};
+    bool keyboardFocusable{true};
+    bool centerIconWithText{false};
 };
 
 class UiDocument final {
@@ -79,6 +83,7 @@ class UiDocument final {
     [[nodiscard]] std::optional<std::string> activate(glm::vec2 position);
     void focus(std::string_view id);
     void setText(std::string_view id, std::string text);
+    void setTooltipIcons(std::string_view id, std::vector<std::string> icons);
     [[nodiscard]] bool hovered(std::string_view id) const;
     [[nodiscard]] bool focused(std::string_view id) const;
     [[nodiscard]] const UiElement* find(std::string_view id) const;

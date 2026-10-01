@@ -64,7 +64,15 @@ UiDocument GameHudLayout::minimap(int viewportWidth, int viewportHeight, float u
     UiDocument ui;
     const UiLayout canvas(viewportWidth, viewportHeight, uiScale);
     const UiRect map = canvas.rect(UiAnchor::topRight, 20, 56, 190, 190, 150, 150);
-    ui.panel("strategy.minimap", map, {0.005F, 0.008F, 0.010F});
+    // The full bounds remain available for hit testing, but draw nothing. The black
+    // unexplored background is restricted to the frame's actual inner opening so it
+    // cannot appear through the transparent exterior corners.
+    ui.label("strategy.minimap", map, {}, 1.0F);
+    auto& background = ui.scrollList(
+        "strategy.minimap.background",
+        {map.left + canvas.value(18), map.top + canvas.value(28),
+         map.right - canvas.value(18), map.bottom - canvas.value(18)});
+    background.color = {0.005F, 0.008F, 0.010F};
     ui.panel("strategy.minimap.frame", map, {1.0F, 1.0F, 1.0F})
         .texture = "ui/minimap_frame_overlay";
     ui.label("strategy.minimap.title",
@@ -79,39 +87,41 @@ UiDocument GameHudLayout::loading(float progress, const std::string& status,
     const UiLayout canvas(viewportWidth, viewportHeight, uiScale);
     constexpr float menuScale = 1.20F;
     const UiRect content = canvas.rect(UiAnchor::center, 0, 0,
-                                       920 * menuScale, 130 * menuScale,
-                                       720 * menuScale, 110 * menuScale);
-    ui.panel("loading.panel", {content.left, content.top - canvas.value(18 * menuScale),
-             content.right, content.bottom + canvas.value(12 * menuScale)},
+                                       1000 * menuScale, 190 * menuScale,
+                                       780 * menuScale, 150 * menuScale);
+    ui.panel("loading.panel", {content.left, content.top - canvas.value(24 * menuScale),
+             content.right, content.bottom + canvas.value(22 * menuScale)},
              {0.86F, 0.88F, 0.90F})
         .texture = "ui/tooltip_panel";
-    ui.label("loading.title", {content.left + canvas.value(355 * menuScale),
-             content.top + canvas.value(20), 0, 0},
+    ui.label("loading.title", {content.left + canvas.value(395 * menuScale),
+             content.top + canvas.value(20 * menuScale), 0, 0},
              Text::get("loading.title"), 2.8F * menuScale * canvas.scale());
     ui.label("loading.status", {content.left + canvas.value(50 * menuScale),
-             content.top + canvas.value(58),
+             content.top + canvas.value(66 * menuScale),
              content.right - canvas.value(50 * menuScale),
-             content.top + canvas.value(78)}, status,
+             content.top + canvas.value(88 * menuScale)}, status,
              1.65F * menuScale * canvas.scale(),
              {0.78F, 0.93F, 1.0F});
-    const float progressTop = content.top + canvas.value(88);
-    const float progressHeight = canvas.value(44);
-    const float progressInset = canvas.value(46 * menuScale);
+    const float progressTop = content.top + canvas.value(112 * menuScale);
+    const float progressHeight = canvas.value(46 * menuScale);
+    const float progressInset = canvas.value(54 * menuScale);
     auto& loadingProgress = ui.progressBar("loading.progress",
         {content.left + progressInset, progressTop,
          content.right - progressInset, progressTop + progressHeight},
         progress, {0.18F, 0.76F, 0.88F});
     loadingProgress.color = {1.0F, 1.0F, 1.0F};
-    loadingProgress.texture = "ui/loading_progress_track";
+    loadingProgress.texture = "ui/loading_progress_frame";
     loadingProgress.progressTexture = "ui/loading_progress_fill";
 
-    const std::string percentage =
-        std::to_string(static_cast<int>(std::round(std::clamp(progress, 0.0F, 1.0F) * 100.0F))) + "%";
-    const float percentageWidth = canvas.value(static_cast<float>(percentage.size()) * 8.0F);
-    const float percentageLeft = (content.left + content.right - percentageWidth) * 0.5F;
+    const float clampedProgress = std::clamp(progress, 0.0F, 1.0F);
+    const std::string percentage = clampedProgress >= 1.0F
+        ? Text::get("loading.ready")
+        : std::to_string(static_cast<int>(std::round(clampedProgress * 100.0F))) + "%";
+    const float percentageWidth = canvas.value(58.0F);
+    const float percentageLeft = content.right - progressInset - canvas.value(88.0F);
     ui.label("loading.percentage",
-             {percentageLeft, progressTop + canvas.value(13),
-              percentageLeft + percentageWidth, progressTop + canvas.value(33)},
+             {percentageLeft, progressTop + canvas.value(13.0F),
+              percentageLeft + percentageWidth, progressTop + canvas.value(33.0F)},
              percentage, 1.25F * canvas.scale(), {0.94F, 1.0F, 1.0F});
     return ui;
 }

@@ -5,7 +5,8 @@
 namespace strategy {
 namespace {
 bool focusable(const UiElement& element) {
-    return element.enabled && (element.kind == UiElementKind::button ||
+    return element.enabled && element.keyboardFocusable &&
+        (element.kind == UiElementKind::button ||
         element.kind == UiElementKind::iconButton || element.kind == UiElementKind::textField ||
         element.kind == UiElementKind::entityCard || element.kind == UiElementKind::queueSlot);
 }
@@ -44,6 +45,9 @@ void UiController::apply(UiDocument& document) {
         const UiElement* source = document.find(hoveredId_);
         document.setText("entity.tooltip",
             source && hoverSeconds_ >= tooltipDelaySeconds ? source->tooltip : std::string{});
+        document.setTooltipIcons("entity.tooltip",
+            source && hoverSeconds_ >= tooltipDelaySeconds
+                ? source->tooltipIcons : std::vector<std::string>{});
     }
 }
 
@@ -53,8 +57,10 @@ std::optional<std::string> UiController::press(UiDocument& document, glm::vec2 p
     const UiElement* hit = document.hitTest(position);
     pressedId_ = hit ? hit->id : std::string{};
     if (!hit || !hit->enabled) return std::nullopt;
-    focusedId_ = hit->id;
-    document.focus(focusedId_);
+    if (hit->keyboardFocusable) {
+        focusedId_ = hit->id;
+        document.focus(focusedId_);
+    }
     return hit->id;
 }
 

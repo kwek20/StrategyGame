@@ -5,6 +5,7 @@
 #include "core/EventBus.hpp"
 #include "render/Renderer.hpp"
 #include "localization/Text.hpp"
+#include "ui/UiTheme.hpp"
 
 #include <SDL3/SDL.h>
 #include <algorithm>
@@ -20,6 +21,8 @@ constexpr const char* bindingNames[]{
 
 UiDocument SettingsState::uiDocument(int width, int height) const {
     UiDocument ui;
+    constexpr float settingsRowStep = UiTheme::menuControlHeight + 1.0F;
+    constexpr float settingsControlHeight = UiTheme::menuControlHeight - UiTheme::spaceXs;
     const auto percent = [](float value) {
         return std::to_string(static_cast<int>(std::round(value * 100.0F))) + "%";
     };
@@ -43,8 +46,9 @@ UiDocument SettingsState::uiDocument(int width, int height) const {
         {"settings.effects", Text::format("settings.effects_volume", {percent(config_.effectsVolume)})},
         {"settings.muted", Text::format("settings.mute", {config_.muted ? enabled : disabled})}}};
     for (std::size_t row = 0; row < audio.size(); ++row)
-        ui.button(audio[row].first, {60.0F, 285.0F + row * 45.0F, 430.0F,
-                                    323.0F + row * 45.0F}, audio[row].second);
+        ui.button(audio[row].first, {60.0F, 285.0F + row * settingsRowStep, 430.0F,
+                                    285.0F + row * settingsRowStep + settingsControlHeight},
+                  audio[row].second);
     static constexpr const char* actionKeys[]{
         "settings.action.forward", "settings.action.backward", "settings.action.left",
         "settings.action.right", "settings.action.debug", "settings.action.terrain_debug",
@@ -57,7 +61,8 @@ UiDocument SettingsState::uiDocument(int width, int height) const {
         const std::string value = binding_ == row ? Text::get("settings.press_key")
             : Text::format("settings.bound_to", {SDL_GetKeyName(key)});
         ui.button(std::string("settings.bind.") + bindingNames[row],
-                  {470.0F, 130.0F + row * 45.0F, 850.0F, 168.0F + row * 45.0F},
+                  {470.0F, 130.0F + row * settingsRowStep, 850.0F,
+                   130.0F + row * settingsRowStep + settingsControlHeight},
                   Text::get(actionKeys[row]) + "     " + value);
     }
     ui.button("settings.apply", {470, 555, 850, 593}, Text::get("settings.apply"));

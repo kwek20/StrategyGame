@@ -5,6 +5,13 @@
 namespace strategy {
 
 struct UiTheme final {
+    static constexpr float spaceXs = 6.0F;
+    static constexpr float spaceSm = 10.0F;
+    static constexpr float spaceMd = 16.0F;
+    static constexpr float spaceLg = 24.0F;
+    static constexpr float menuContentInset = 52.0F;
+    static constexpr float menuControlGap = 10.0F;
+    static constexpr float menuControlHeight = 44.0F;
     static constexpr glm::vec3 panel{0.025F, 0.04F, 0.06F};
     static constexpr glm::vec3 control{0.10F, 0.16F, 0.22F};
     static constexpr glm::vec3 controlHover{0.22F, 0.38F, 0.52F};

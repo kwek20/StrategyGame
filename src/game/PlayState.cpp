@@ -30,7 +30,9 @@ std::string displayNumber(float value) {
     return result.str();
 }
 
-std::string resourceCost(const DefinitionRegistry& definitions, const RecipeDefinition* recipe, std::size_t count = 1) {
+std::string resourceCost(const DefinitionRegistry& definitions, const RecipeDefinition* recipe,
+                         std::size_t count = 1,
+                         std::vector<std::string>* icons = nullptr) {
     std::string result;
     if (recipe) {
         const std::map<std::string, float> sorted(recipe->cost.begin(), recipe->cost.end());
@@ -38,6 +40,7 @@ std::string resourceCost(const DefinitionRegistry& definitions, const RecipeDefi
             if (amount == 0.0F || count == 0) continue;
             if (!result.empty()) result += ", ";
             const auto* resource = definitions.resourceType(ResourceId{id});
+            if (icons) icons->push_back(resource ? resource->icon : "resource_" + id);
             result += displayNumber(amount * static_cast<float>(count)) + " " +
                       (resource ? Text::get(resource->nameKey) : id);
         }
@@ -226,7 +229,7 @@ EntityHudModel PlayState::buildConstructionHudModel(const Entity& selected,
                                     PresentationId{product->presentation})
                               : "status_asset_failed";
         action.name = product ? Text::get(product->nameKey) : recipe->product.id;
-        action.cost = resourceCost(context_.definitions, recipe);
+        action.cost = resourceCost(context_.definitions, recipe, 1, &action.costIcons);
         action.power = powerDescription(context_.definitions, product);
         action.description = product ? Text::get(product->descriptionKey) + "\n" : std::string{};
         action.description += Text::format(
@@ -274,7 +277,8 @@ EntityHudModel PlayState::buildEntityActionHudModel(const Entity& selected,
             action.icon = "resource_" + recipe->product.id;
         else
             action.icon = "status_asset_failed";
-        action.cost = resourceCost(context_.definitions, recipe, targets.size());
+        action.cost = resourceCost(context_.definitions, recipe, targets.size(),
+                                   &action.costIcons);
         action.power = powerDescription(context_.definitions, product && product->kind == EntityKind::building
             ? product : context_.definitions.archetype(selected.archetype));
         if (player)
@@ -308,7 +312,8 @@ EntityHudModel PlayState::buildEntityActionHudModel(const Entity& selected,
         action.icon = upgrade->icon;
         const RecipeDefinition* research =
             context_.definitions.recipe(RecipeId{upgrade->researchRecipe});
-        action.cost = resourceCost(context_.definitions, research, targets.size());
+        action.cost = resourceCost(context_.definitions, research, targets.size(),
+                                   &action.costIcons);
         action.power = powerDescription(context_.definitions, context_.definitions.archetype(selected.archetype));
         action.requirements = Text::format("entity_hud.tooltip_requirements",
             {upgradeNames(context_.definitions, upgrade->prerequisites)});
@@ -429,14 +434,15 @@ std::optional<glm::vec2> PlayState::minimapWorldAt(float screenX, float screenY)
 
     const UiDocument minimap = GameHudLayout::minimap(width, height, config_.uiScale);
     const UiElement* map = minimap.find("strategy.minimap");
+    const UiElement* content = minimap.find("strategy.minimap.background");
     if (!map || !map->bounds.contains({screenX, screenY}))
         return std::nullopt;
 
-    // These insets match the title and map-content area drawn by drawStrategyHud.
-    const float left = map->bounds.left + 18.0F;
-    const float right = map->bounds.right - 18.0F;
-    const float top = map->bounds.top + 28.0F;
-    const float bottom = map->bounds.bottom - 18.0F;
+    if (!content) return std::nullopt;
+    const float left = content->bounds.left;
+    const float right = content->bounds.right;
+    const float top = content->bounds.top;
+    const float bottom = content->bounds.bottom;
     const float normalizedX = std::clamp((screenX - left) / (right - left), 0.0F, 1.0F);
     const float normalizedZ = std::clamp((screenY - top) / (bottom - top), 0.0F, 1.0F);
     return MapArea{session_.mapChunksPerSide()}.worldFromNormalized(

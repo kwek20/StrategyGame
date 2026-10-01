@@ -51,9 +51,11 @@ void presentGatherer(const Entity& entity, const DefinitionRegistry& definitions
     model.stats.push_back({Text::get("entity_hud.cargo"), cargoName +
                            std::to_string(static_cast<int>(entity.gatherer.carriedAmount)) +
                                " / " +
-                               std::to_string(static_cast<int>(entity.gatherer.carryCapacity))});
+                               std::to_string(static_cast<int>(entity.gatherer.carryCapacity)),
+                           cargo ? cargo->icon : "resource_materials"});
     model.stats.push_back(
-        {Text::get("entity_hud.gather"), decimal(entity.gatherer.gatherPerSecond) + "/s"});
+        {Text::get("entity_hud.gather"), decimal(entity.gatherer.gatherPerSecond) + "/s",
+         "action_gather"});
     const char* stage = "entity_hud.task_idle";
     if (entity.unitControl) {
         if (entity.unitControl.order == UnitOrderKind::gather) stage = "entity_hud.task_gathering";
@@ -65,18 +67,19 @@ void presentGatherer(const Entity& entity, const DefinitionRegistry& definitions
         else if (entity.unitControl.order == UnitOrderKind::stranded)
             stage = "entity_hud.task_stranded";
     }
-    model.stats.push_back({Text::get("entity_hud.loop_stage"), Text::get(stage)});
+    model.stats.push_back({Text::get("entity_hud.loop_stage"), Text::get(stage), "status_queue"});
 }
 
 void presentMovement(const Entity& entity, const DefinitionRegistry&, EntityHudModel& model) {
     if (entity.unitControl)
         model.stats.push_back(
-            {Text::get("entity_hud.speed"), decimal(entity.unitControl.movementSpeed)});
+            {Text::get("entity_hud.speed"), decimal(entity.unitControl.movementSpeed), "action_move"});
 }
 
 void presentVision(const Entity& entity, const DefinitionRegistry&, EntityHudModel& model) {
     if (entity.vision)
-        model.stats.push_back({Text::get("entity_hud.vision"), decimal(entity.vision.sightRange)});
+        model.stats.push_back({Text::get("entity_hud.vision"), decimal(entity.vision.sightRange),
+                               "building_sensor_tower"});
 }
 
 void presentResource(const Entity& entity, const DefinitionRegistry& definitions,
@@ -88,14 +91,15 @@ void presentResource(const Entity& entity, const DefinitionRegistry& definitions
                                               : entity.resource.type;
     model.stats.push_back(
         {Text::get("entity_hud.resource_remaining"),
-         decimal(std::max(0.0F, entity.resource.remaining)) + " " + resourceName});
+         decimal(std::max(0.0F, entity.resource.remaining)) + " " + resourceName,
+         resource ? resource->icon : "resource_materials"});
 }
 
 void presentConstruction(const Entity& entity, const DefinitionRegistry&, EntityHudModel& model) {
     if (entity.construction && !isOperational(entity))
         model.bars.push_back({Text::get("entity_hud.construction"),
                               entity.construction.powerProgress,
-                              entity.construction.powerRequired, HudBarKind::power});
+                              entity.construction.powerRequired, HudBarKind::construction});
 }
 
 void presentPowerDevice(const Entity& entity, const DefinitionRegistry& definitions,
@@ -105,13 +109,15 @@ void presentPowerDevice(const Entity& entity, const DefinitionRegistry& definiti
     const PowerDeviceDefinition* device = definitions.powerDevice(*archetype->powerDevice);
     if (!device) return;
     if (device->production > 0.0F)
-        model.stats.push_back({Text::get("entity_hud.generation"), decimal(device->production) + " kW"});
+        model.stats.push_back({Text::get("entity_hud.generation"), decimal(device->production) + " kW",
+                               "resource_power"});
     if (device->consumption > 0.0F)
-        model.stats.push_back({Text::get("entity_hud.consumption"), decimal(device->consumption) + " kW"});
+        model.stats.push_back({Text::get("entity_hud.consumption"), decimal(device->consumption) + " kW",
+                               "resource_power"});
     if (entity.power && entity.power.demand > 0.0F)
         model.stats.push_back({Text::get("entity_hud.power_supplied"),
                                decimal(entity.power.supplied) + " / " +
-                                   decimal(entity.power.demand) + " kW"});
+                                   decimal(entity.power.demand) + " kW", "status_powered"});
 }
 
 void presentProcessor(const Entity& entity, const DefinitionRegistry& definitions,
@@ -141,7 +147,8 @@ void presentProcessor(const Entity& entity, const DefinitionRegistry& definition
     case ProcessorOperationalState::powered: model.processorState = Text::get("processor.state.powered"); break;
     default: model.processorState = Text::get("processor.state.idle"); break;
     }
-    model.stats.push_back({Text::get("entity_hud.processor_state"), model.processorState});
+    model.stats.push_back({Text::get("entity_hud.processor_state"), model.processorState,
+                           "status_processing"});
     if (entity.processor.waitingForPower)
         model.footer = Text::get("entity_hud.processor_waiting_power");
 }
@@ -150,7 +157,7 @@ void presentProduction(const Entity& entity, const DefinitionRegistry& definitio
                        EntityHudModel& model) {
     if (!entity.production) return;
     model.stats.push_back({Text::get("entity_hud.queue"),
-                           std::to_string(entity.production.queue.size())});
+                           std::to_string(entity.production.queue.size()), "status_queue"});
     for (const ProductionOrder& order : entity.production.queue) {
         std::string name = order.productId;
         if (!order.upgradeId.empty()) {
@@ -168,7 +175,7 @@ void presentProduction(const Entity& entity, const DefinitionRegistry& definitio
 void presentUpgrades(const Entity& entity, const DefinitionRegistry&, EntityHudModel& model) {
     if (entity.upgrades)
         model.stats.push_back({Text::get("entity_hud.upgrades"),
-                               std::to_string(entity.upgrades.levels.size())});
+                               std::to_string(entity.upgrades.levels.size()), "status_locked"});
 }
 
 using ComponentPresenter = void (*)(const Entity&, const DefinitionRegistry&, EntityHudModel&);
@@ -215,12 +222,14 @@ EntityHudModel EntityHudModelBuilder::build(const World& world,
         if (entities.front()->gatherer) {
             const GathererComponent& gatherer = entities.front()->gatherer;
             if (const Entity* source = world.findEntity(gatherer.sourceTarget))
-                result.stats.push_back({Text::get("entity_hud.resource_source"), source->name});
+                result.stats.push_back({Text::get("entity_hud.resource_source"), source->name,
+                                        "action_gather"});
             if (const Entity* destination = world.findEntity(gatherer.deliveryTarget != 0
                                                                   ? gatherer.deliveryTarget
                                                                   : gatherer.preferredProcessor))
                 result.stats.push_back(
-                    {Text::get("entity_hud.delivery_destination"), destination->name});
+                    {Text::get("entity_hud.delivery_destination"), destination->name,
+                     "action_move"});
             if (gatherer.waitingForProcessor)
                 result.footer = Text::get("entity_hud.no_compatible_processor");
         }

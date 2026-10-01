@@ -257,6 +257,9 @@ class Renderer final {
     mutable std::array<TextureHandle, 4> terrainTextures_{};
     mutable TextureHandle foundationTexture_{};
     mutable TextureHandle iconAtlasTexture_{};
+    mutable float displayedLoadingProgress_{0.0F};
+    mutable bool loadingProgressInitialized_{false};
+    mutable std::chrono::steady_clock::time_point lastLoadingProgressUpdate_{};
     std::unordered_map<std::string, AssetPreloadSet> preloadGroups_;
     [[nodiscard]] ModelHandle modelHandle(const std::string& archetype) const;
     [[nodiscard]] float activeWorldExtent() const {

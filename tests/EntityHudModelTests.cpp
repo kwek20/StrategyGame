@@ -84,9 +84,10 @@ int strategyTestMain() {
     valid = valid && disabled && !disabled->enabled &&
             !layout.activate(center(disabled));
     const strategy::UiElement* queue = layout.find(strategy::EntityHudLayout::queueElementId(0));
+    const strategy::UiElement* queueProgress = layout.find("entity.queue.progress");
     const strategy::UiElement* queuePanel = layout.find("entity.queue.panel");
     const strategy::UiElement* entityPanel = layout.find("entity.panel");
-    valid = valid && queue && queuePanel && entityPanel &&
+    valid = valid && queue && queuePanel && queueProgress && entityPanel &&
             entityPanel->bounds.left == 0.0F && entityPanel->bounds.bottom == 720.0F &&
             queuePanel->bounds.left == entityPanel->bounds.left &&
             queuePanel->bounds.right == entityPanel->bounds.right &&
@@ -94,6 +95,7 @@ int strategyTestMain() {
             queue->bounds.right - queue->bounds.left == 44.0F &&
             queue->bounds.bottom - queue->bounds.top == 44.0F &&
             queue->tooltip == "Construction drone - CANCEL" &&
+            queueProgress->progressTexture == "ui/production_progress_fill" &&
             strategy::EntityHudLayout::queueIndex(queue->id) == 0;
 
     interactive.queue.push_back({"unit_worker", "Worker", 0.0F, true});
@@ -244,8 +246,13 @@ int strategyTestMain() {
     for (const auto& item : expanded.actions) {
         const auto* button = expandedLayout.find(strategy::EntityHudLayout::actionElementId(item.id));
         const auto* tooltip = expandedLayout.find("entity.tooltip");
+        const auto* expandedPanel = expandedLayout.find("entity.actions.panel");
         valid = valid && button && tooltip && tooltip->bounds.bottom < button->bounds.top &&
-                button->bounds.bottom > button->bounds.top;
+                expandedPanel && button->bounds.bottom > button->bounds.top &&
+                button->bounds.left >= expandedPanel->bounds.left &&
+                button->bounds.right <= expandedPanel->bounds.right &&
+                button->bounds.top >= expandedPanel->bounds.top &&
+                button->bounds.bottom <= expandedPanel->bounds.bottom;
     }
     if (!valid) std::cerr << "Entity HUD component presentation failed\n";
     return valid ? 0 : 1;

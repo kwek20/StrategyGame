@@ -444,11 +444,24 @@ void Renderer::drawUi(const UiDocument& document) const {
     ProfileScope profile(profiler_, "render.ui");
     uiRenderer_->draw(document, viewportWidth_, viewportHeight_);
     for (const UiElement& element : document.elements()) {
-        if (element.icon.empty() || element.kind != UiElementKind::button) continue;
-        const float size = std::min(34.0F, element.bounds.bottom - element.bounds.top - 14.0F);
+        if (element.icon.empty() || (element.kind != UiElementKind::button &&
+                                     element.kind != UiElementKind::label)) continue;
+        const float size = element.kind == UiElementKind::label
+            ? std::min(element.bounds.right - element.bounds.left,
+                       element.bounds.bottom - element.bounds.top)
+            : std::min(34.0F, element.bounds.bottom - element.bounds.top - 14.0F);
         const float top = element.bounds.top +
                           ((element.bounds.bottom - element.bounds.top) - size) * 0.5F;
-        const float iconLeft = element.bounds.left + std::max(28.0F, size * 0.85F);
+        float iconLeft = element.bounds.left + std::max(28.0F, size * 0.85F);
+        if (element.kind == UiElementKind::label)
+            iconLeft = element.bounds.left +
+                ((element.bounds.right - element.bounds.left) - size) * 0.5F;
+        else if (element.centerIconWithText) {
+            const float textWidth = uiRenderer_->measureText(element.text, element.textScale);
+            const float groupWidth = size + 9.0F + textWidth;
+            iconLeft = element.bounds.left +
+                ((element.bounds.right - element.bounds.left) - groupWidth) * 0.5F;
+        }
         drawIcon(element.icon, iconLeft, top, iconLeft + size, top + size,
                  element.enabled ? glm::vec3{0.92F, 0.95F, 0.96F}
                                  : glm::vec3{0.42F, 0.45F, 0.46F});
@@ -685,8 +698,24 @@ void Renderer::drawLoadingScreen(float progress, const std::string& status) cons
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     const float seconds = static_cast<float>(SDL_GetTicks()) / 1000.0F;
     drawMenuBackground(std::sin(seconds * 0.10F));
+    const float target = std::clamp(progress, 0.0F, 1.0F);
+    const auto now = std::chrono::steady_clock::now();
+    if (!loadingProgressInitialized_ || target + 0.02F < displayedLoadingProgress_) {
+        displayedLoadingProgress_ = target;
+        loadingProgressInitialized_ = true;
+    } else {
+        const float elapsed = std::clamp(
+            std::chrono::duration<float>(now - lastLoadingProgressUpdate_).count(), 0.0F, 0.1F);
+        const float blend = 1.0F - std::exp(-elapsed * 7.0F);
+        displayedLoadingProgress_ += (target - displayedLoadingProgress_) * blend;
+        if (target >= 1.0F && displayedLoadingProgress_ > 0.995F)
+            displayedLoadingProgress_ = 1.0F;
+    }
+    lastLoadingProgressUpdate_ = now;
+    const float visibleProgress =
+        std::round(displayedLoadingProgress_ * 100.0F) / 100.0F;
     UiDocument ui = GameHudLayout::loading(
-        progress, status, viewportWidth_, viewportHeight_);
+        visibleProgress, status, viewportWidth_, viewportHeight_);
     uiRenderer_->draw(ui, viewportWidth_, viewportHeight_);
 }
 
@@ -2371,9 +2400,10 @@ void Renderer::drawStrategyHud(const World& world, EntityId selected, const Play
     (void)selected;
     std::vector<glm::vec2> dots, rememberedFog, visibleFog, rememberedDots;
     const UiElement* mapElement = layout.find("strategy.minimap");
-    if (!mapElement) return;
-    const float mapLeft = mapElement->bounds.left, mapTop = mapElement->bounds.top,
-                mapRight = mapElement->bounds.right, mapBottom = mapElement->bounds.bottom;
+    const UiElement* mapContent = layout.find("strategy.minimap.background");
+    if (!mapElement || !mapContent) return;
+    const float mapLeft = mapContent->bounds.left, mapTop = mapContent->bounds.top,
+                mapRight = mapContent->bounds.right, mapBottom = mapContent->bounds.bottom;
     UiDocument minimapBase;
     UiDocument minimapChrome;
     for (const UiElement& element : layout.elements()) {
@@ -2396,13 +2426,13 @@ void Renderer::drawStrategyHud(const World& world, EntityId selected, const Play
                     static_cast<std::size_t>(sourceZ * Player::explorationCells + sourceX);
                 auto& layer = player->visible[index] ? visibleFog : rememberedFog;
                 if (player->visible[index] || player->discovered[index]) {
-                    const float l = mapLeft + 18.0F + x * (mapRight - mapLeft - 36.0F) / 16.0F,
-                                t = mapTop + 28.0F + z * (mapBottom - mapTop - 46.0F) / 16.0F;
+                    const float l = mapLeft + x * (mapRight - mapLeft) / 16.0F,
+                                t = mapTop + z * (mapBottom - mapTop) / 16.0F;
                     appendHudRectangle(layer,
                                        l,
                                        t,
-                                       l + (mapRight - mapLeft - 36.0F) / 16.0F + 0.5F,
-                                       t + (mapBottom - mapTop - 46.0F) / 16.0F + 0.5F,
+                                       l + (mapRight - mapLeft) / 16.0F + 0.5F,
+                                       t + (mapBottom - mapTop) / 16.0F + 0.5F,
                                        viewportWidth_,
                                        viewportHeight_);
                 }
@@ -2418,8 +2448,8 @@ void Renderer::drawStrategyHud(const World& world, EntityId selected, const Play
         }
         const glm::vec2 normalized = map.normalized(
             {entity.transform.position.x, entity.transform.position.z});
-        const float x = mapLeft + 18.0F + normalized.x * (mapRight - mapLeft - 36.0F);
-        const float y = mapTop + 28.0F + normalized.y * (mapBottom - mapTop - 46.0F);
+        const float x = mapLeft + normalized.x * (mapRight - mapLeft);
+        const float y = mapTop + normalized.y * (mapBottom - mapTop);
         appendHudRectangle(
             dots, x - 2.5F, y - 2.5F, x + 2.5F, y + 2.5F, viewportWidth_, viewportHeight_);
     }
@@ -2431,8 +2461,8 @@ void Renderer::drawStrategyHud(const World& world, EntityId selected, const Play
                     cell.y * Player::explorationCells + cell.x)])
                 continue;
             const glm::vec2 normalized = map.normalized({known.position.x, known.position.z});
-            const float x = mapLeft + 18.0F + normalized.x * (mapRight - mapLeft - 36.0F),
-                        y = mapTop + 28.0F + normalized.y * (mapBottom - mapTop - 46.0F);
+            const float x = mapLeft + normalized.x * (mapRight - mapLeft),
+                        y = mapTop + normalized.y * (mapBottom - mapTop);
             appendHudRectangle(rememberedDots,
                                x - 2.0F,
                                y - 2.0F,
@@ -2475,8 +2505,8 @@ void Renderer::drawStrategyHud(const World& world, EntityId selected, const Play
                 }
                 const glm::vec2 normalized =
                     map.normalized({e.transform.position.x, e.transform.position.z});
-                float x = mapLeft + 18.0F + normalized.x * (mapRight - mapLeft - 36.0F);
-                float y = mapTop + 28.0F + normalized.y * (mapBottom - mapTop - 46.0F);
+                float x = mapLeft + normalized.x * (mapRight - mapLeft);
+                float y = mapTop + normalized.y * (mapBottom - mapTop);
                 appendHudRectangle(teamDots,
                                    x - 3.5F,
                                    y - 3.5F,
@@ -2535,9 +2565,31 @@ void Renderer::drawEntityHud(const EntityHudModel& model,
     for (const HudActionModel& action : model.actions)
         if (const UiElement* element =
                 layout.find(EntityHudLayout::actionElementId(action.id))) {
-            const glm::vec3 tint = action.enabled ? glm::vec3{1.0F} : glm::vec3{0.34F};
+            const glm::vec3 tint = !action.enabled ? glm::vec3{0.64F}
+                : (element->pressed ? glm::vec3{0.82F, 0.66F, 0.44F}
+                : (element->active ? glm::vec3{1.0F, 0.64F, 0.30F}
+                : (element->hovered ? glm::vec3{0.78F, 0.96F, 1.0F}
+                : (element->focused ? glm::vec3{0.82F, 0.94F, 1.0F}
+                                    : glm::vec3{1.0F}))));
             drawInsetIcon(action.icon, element->bounds, tint);
         }
+
+    for (std::size_t i = 0; i < model.bars.size(); ++i)
+        if (const UiElement* bar = layout.find("entity.bar." + std::to_string(i));
+            bar && !bar->icon.empty()) {
+            const float size = std::min(18.0F, bar->bounds.bottom - bar->bounds.top);
+            const float right = bar->bounds.left - 5.0F;
+            drawIcon(bar->icon, right - size, bar->bounds.top, right,
+                     bar->bounds.top + size,
+                     model.bars[i].kind == HudBarKind::health
+                         ? glm::vec3{1.0F, 0.48F, 0.42F}
+                         : glm::vec3{0.52F, 0.90F, 1.0F});
+        }
+
+    for (std::size_t i = 0; i < model.stats.size(); ++i)
+        if (const UiElement* icon = layout.find("entity.stat.icon." + std::to_string(i));
+            icon && !model.stats[i].icon.empty())
+            drawInsetIcon(model.stats[i].icon, icon->bounds, {0.92F, 0.97F, 1.0F});
 
     for (std::size_t i = 0; i < model.queue.size(); ++i)
         if (const UiElement* element =

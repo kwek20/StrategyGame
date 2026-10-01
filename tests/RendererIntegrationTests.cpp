@@ -221,17 +221,39 @@ out vec4 color;void main(){color=vec4(1);})";
         renderer.beginFrame(1280, 720);
         strategy::EntityHudModel tooltipModel;
         tooltipModel.title = "Construction drone";
+        tooltipModel.portraitIcon = "unit_construction_drone";
+        tooltipModel.bars.push_back({"Health", 72.0F, 100.0F,
+                                     strategy::HudBarKind::health});
+        tooltipModel.bars.push_back({"Power", 46.0F, 100.0F,
+                                     strategy::HudBarKind::power});
+        tooltipModel.stats.push_back({"Cargo", "4 / 10", "resource_scrap"});
+        tooltipModel.stats.push_back({"Vision", "14.0", "building_sensor_tower"});
         strategy::HudActionModel buildAction;
         buildAction.id = "construct.alloy_processor";
         buildAction.name = "Alloy Processor";
         buildAction.icon = "building_alloy_processor";
         buildAction.cost = "100 Alloy, 25 Fuel";
+        buildAction.costIcons = {"resource_alloy", "resource_fuel"};
         buildAction.power = "Power consumption: 8 kW";
         buildAction.description = "Converts delivered Scrap or Synthetic into Alloy. Requires full power to accept cargo.";
         buildAction.requirements = "Required upgrades: Efficient Training";
         buildAction.disabledReason = "Missing upgrades: Efficient Training";
         buildAction.enabled = false;
         tooltipModel.actions.push_back(buildAction);
+        static constexpr const char* previewIcons[]{
+            "building_command_hub", "building_basic_generator", "building_storage_silo",
+            "building_electricity_pole", "building_charging_pad", "building_resource_extractor",
+            "building_drone_factory", "building_sensor_tower", "action_power_connect",
+            "action_power_priority"};
+        for (std::size_t i = 0; i < std::size(previewIcons); ++i) {
+            strategy::HudActionModel preview;
+            preview.id = "preview." + std::to_string(i);
+            preview.name = "Preview action";
+            preview.icon = previewIcons[i];
+            preview.enabled = true;
+            preview.active = i == 2;
+            tooltipModel.actions.push_back(std::move(preview));
+        }
         auto tooltipUi = strategy::EntityHudLayout::actions(tooltipModel, 1280, 720);
         const auto* buildButton = tooltipUi.find(strategy::EntityHudLayout::actionElementId(buildAction.id));
         strategy::UiController hover;

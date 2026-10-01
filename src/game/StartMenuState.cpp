@@ -4,6 +4,7 @@
 #include "core/EventBus.hpp"
 #include "localization/Text.hpp"
 #include "render/Renderer.hpp"
+#include "ui/UiTheme.hpp"
 
 #include <SDL3/SDL.h>
 #include <cmath>
@@ -12,16 +13,19 @@ namespace strategy {
 StartMenuState::StartMenuState(StateContext& context)
     : GameState(context)
     , config_(GameConfig::load(context.configPath)) {
+    constexpr float inset = UiTheme::menuContentInset;
+    constexpr float buttonHeight = 60.0F;
+    constexpr float buttonStep = buttonHeight + UiTheme::menuControlGap;
     ui_.panel("panel", {8, 35, 442, 660}, {0.72F, 0.76F, 0.80F}).texture = "ui/menu_panel";
-    ui_.label("title", {60, 108, 0, 0}, Text::get("menu.title"), 3.0F);
-    ui_.button("play", {60, 180, 390, 240}, Text::get("menu.play"),
+    ui_.label("title", {8 + inset, 108, 0, 0}, Text::get("menu.title"), 3.0F);
+    ui_.button("play", {8 + inset, 180, 390, 180 + buttonHeight}, Text::get("menu.play"),
                {0.16F, 0.36F, 0.18F}, {0.28F, 0.62F, 0.24F}).textScale = 3.0F;
-    ui_.button("build", {60, 250, 390, 310}, Text::get("menu.build"),
+    ui_.button("build", {8 + inset, 180 + buttonStep, 390, 180 + buttonStep + buttonHeight}, Text::get("menu.build"),
                {0.14F, 0.27F, 0.40F}, {0.25F, 0.48F, 0.70F}).textScale = 3.0F;
-    ui_.button("load", {60, 320, 390, 380}, Text::get("menu.load"),
+    ui_.button("load", {8 + inset, 180 + buttonStep * 2, 390, 180 + buttonStep * 2 + buttonHeight}, Text::get("menu.load"),
                {0.31F, 0.27F, 0.13F}, {0.54F, 0.46F, 0.20F}).textScale = 3.0F;
-    ui_.button("settings", {60, 390, 390, 450}, Text::get("menu.settings")).textScale = 3.0F;
-    ui_.button("exit", {60, 500, 390, 560}, Text::get("menu.exit"),
+    ui_.button("settings", {8 + inset, 180 + buttonStep * 3, 390, 180 + buttonStep * 3 + buttonHeight}, Text::get("menu.settings")).textScale = 3.0F;
+    ui_.button("exit", {8 + inset, 500, 390, 500 + buttonHeight}, Text::get("menu.exit"),
                {0.40F, 0.16F, 0.14F}, {0.72F, 0.25F, 0.20F}).textScale = 3.0F;
     for (UiElement& element : ui_.elements())
         if (element.kind == UiElementKind::button) element.texture = "ui/menu_button";

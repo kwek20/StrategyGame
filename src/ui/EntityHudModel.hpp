@@ -10,7 +10,7 @@ namespace strategy {
 class DefinitionRegistry;
 class World;
 
-enum class HudBarKind { health, power };
+enum class HudBarKind { health, power, construction };
 
 struct HudBarModel {
     std::string label;
@@ -22,6 +22,7 @@ struct HudBarModel {
 struct HudStatModel {
     std::string label;
     std::string value;
+    std::string icon;
 };
 
 struct HudEntityCardModel {
@@ -49,6 +50,7 @@ struct HudActionModel {
     float progress{0.0F};
     std::string power;
     std::string requirements;
+    std::vector<std::string> costIcons;
 };
 
 struct HudQueueItemModel {

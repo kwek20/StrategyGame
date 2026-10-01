@@ -125,6 +125,12 @@ void UiDocument::setText(std::string_view id, std::string text) {
         found->text = std::move(text);
 }
 
+void UiDocument::setTooltipIcons(std::string_view id, std::vector<std::string> icons) {
+    const auto found = std::find_if(
+        elements_.begin(), elements_.end(), [&](const UiElement& item) { return item.id == id; });
+    if (found != elements_.end()) found->tooltipIcons = std::move(icons);
+}
+
 bool UiDocument::hovered(std::string_view id) const {
     const auto found = std::find_if(
         elements_.begin(), elements_.end(), [&](const UiElement& item) { return item.id == id; });
