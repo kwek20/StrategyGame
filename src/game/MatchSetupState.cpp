@@ -61,115 +61,115 @@ UiDocument MatchSetupState::document(int width, int height) const {
     UiDocument ui;
     ui.modal("match.panel", {175, 45, 1105, 675}, {0.72F, 0.76F, 0.80F})
         .texture = "ui/menu_panel";
-    ui.label("match.title", {240, 74, 588, 103}, Text::get("match_setup.title"), 2.8F);
-    ui.label("match.mode", {240, 108, 588, 128}, Text::get("match_setup.mode_1v1"), 1.35F,
+    ui.label("match.title", {260, 82, 572, 111}, Text::get("match_setup.title"), 2.8F);
+    ui.label("match.mode", {260, 116, 572, 136}, Text::get("match_setup.mode_1v1"), 1.35F,
              {0.55F, 0.75F, 0.84F});
-    ui.scrollList("match.title.divider", {240, 138, 1040, 140}).color = {0.12F, 0.54F, 0.68F};
+    ui.scrollList("match.title.divider", {260, 146, 1020, 148}).color = {0.12F, 0.54F, 0.68F};
 
     const auto section = [&ui](const std::string& id, float top, const std::string& text) {
-        ui.label(id, {240, top, 588, top + 21}, text, 1.48F, {0.38F, 0.88F, 1.0F});
+        ui.label(id, {260, top, 572, top + 21}, text, 1.48F, {0.38F, 0.88F, 1.0F});
     };
     const auto selector = [&ui](const std::string& id, float top,
                                 const std::string& label, const std::string& value) {
-        ui.label(id + ".label", {240, top, 588, top + 17}, label, 1.08F,
+        ui.label(id + ".label", {260, top, 572, top + 17}, label, 1.08F,
                  {0.54F, 0.67F, 0.72F});
-        UiElement& left = ui.button(id + ".left", {240, top + 18, 272, top + 48}, "<",
+        UiElement& left = ui.button(id + ".left", {260, top + 18, 294, top + 54}, "<",
                                     {0.08F, 0.15F, 0.19F}, {0.12F, 0.55F, 0.68F});
         left.textScale = 1.55F;
         left.keyboardFocusable = false;
         left.texture = "ui/menu_button";
-        UiElement& choice = ui.button(id, {278, top + 18, 550, top + 48}, value,
+        UiElement& choice = ui.button(id, {300, top + 18, 532, top + 54}, value,
                                       {0.11F, 0.22F, 0.27F}, {0.16F, 0.66F, 0.78F});
         choice.textScale = 1.40F;
         choice.texture = "ui/menu_button";
-        UiElement& right = ui.button(id + ".right", {556, top + 18, 588, top + 48}, ">",
+        UiElement& right = ui.button(id + ".right", {538, top + 18, 572, top + 54}, ">",
                                      {0.08F, 0.15F, 0.19F}, {0.12F, 0.55F, 0.68F});
         right.textScale = 1.55F;
         right.keyboardFocusable = false;
         right.texture = "ui/menu_button";
     };
     const auto& countries = context_.definitions.countries();
-    section("match.players.header", 158, Text::get("match_setup.section_players"));
-    selector("match.player_country", 182, Text::get("match_setup.player_country"),
+    section("match.players.header", 160, Text::get("match_setup.section_players"));
+    selector("match.player_country", 184, Text::get("match_setup.player_country"),
              Text::get(countries[playerOneCountry_].nameKey));
-    selector("match.opponent_country", 239, Text::get("match_setup.opponent_country"),
+    selector("match.opponent_country", 244, Text::get("match_setup.opponent_country"),
              Text::get(countries[playerTwoCountry_].nameKey));
     const auto& layouts = terrainDefinitions_.layouts();
-    section("match.world.header", 307, Text::get("match_setup.section_world"));
-    selector("match.terrain_layout", 331, Text::get("match_setup.terrain_layout"),
+    section("match.world.header", 310, Text::get("match_setup.section_world"));
+    selector("match.terrain_layout", 334, Text::get("match_setup.terrain_layout"),
              Text::get(layouts[terrainLayout_].nameKey));
-    selector("match.map_size", 389, Text::get("match_setup.map_size"),
+    selector("match.map_size", 394, Text::get("match_setup.map_size"),
              Text::get(mapSizes[mapSize_].nameKey));
-    section("match.economy.header", 457, Text::get("match_setup.section_economy"));
-    selector("match.starting_resources", 481, Text::get("match_setup.starting_resources"),
+    section("match.economy.header", 450, Text::get("match_setup.section_economy"));
+    selector("match.starting_resources", 474, Text::get("match_setup.starting_resources"),
              Text::get(resourceStarts[startingResources_].nameKey));
-    selector("match.abundance", 539, Text::get("match_setup.resource_abundance"),
+    selector("match.abundance", 532, Text::get("match_setup.resource_abundance"),
              Text::get(resourceAbundance[abundance_].nameKey));
 
-    ui.label("match.options.header", {635, 158, 1035, 179},
+    ui.label("match.options.header", {650, 160, 1015, 181},
              Text::get("match_setup.section_options"), 1.48F, {0.38F, 0.88F, 1.0F});
-    ui.label("match.seed.label", {635, 184, 1035, 201}, Text::get("match_setup.seed"), 1.08F,
+    ui.label("match.seed.label", {650, 186, 1015, 203}, Text::get("match_setup.seed"), 1.08F,
              {0.54F, 0.67F, 0.72F});
-    ui.textField("match.seed", {635, 203, 805, 235}, seedText_).textScale = 1.42F;
-    UiElement& randomSeed = ui.button("match.random_seed", {815, 203, 1035, 235},
+    ui.textField("match.seed", {650, 205, 805, 241}, seedText_).textScale = 1.42F;
+    UiElement& randomSeed = ui.button("match.random_seed", {815, 205, 1015, 241},
                                       Text::get("match_setup.random_seed"),
                                       {0.10F, 0.22F, 0.27F}, {0.16F, 0.62F, 0.74F});
     randomSeed.textScale = 1.20F;
     randomSeed.icon = "resource_data";
     randomSeed.centerIconWithText = true;
 
-    UiElement& summaryPanel = ui.panel("match.summary.panel", {625, 258, 1035, 455},
+    UiElement& summaryPanel = ui.panel("match.summary.panel", {640, 268, 1015, 485},
                                        {0.84F, 0.88F, 0.90F});
     summaryPanel.texture = "ui/hud_compact_lifted";
-    ui.label("match.summary.header", {650, 274, 860, 295}, Text::get("match_setup.summary"),
+    ui.label("match.summary.header", {665, 284, 855, 305}, Text::get("match_setup.summary"),
              1.45F, {0.38F, 0.88F, 1.0F});
     const auto summaryRow = [&ui](const std::string& id, float top, const std::string& icon,
                                   const std::string& label, const std::string& value) {
         if (icon.starts_with("ui/")) {
-            UiElement& emblem = ui.panel(id + ".icon", {650, top - 3, 678, top + 25},
+            UiElement& emblem = ui.panel(id + ".icon", {665, top - 3, 693, top + 25},
                                           {1.0F, 1.0F, 1.0F});
             emblem.texture = icon;
         } else {
-            UiElement& iconElement = ui.label(id + ".icon", {651, top - 1, 677, top + 25}, "");
+            UiElement& iconElement = ui.label(id + ".icon", {666, top - 1, 692, top + 25}, "");
             iconElement.icon = icon;
         }
-        ui.label(id + ".value", {686, top, 885, top + 22}, label + "  " + value, 1.0F,
+        ui.label(id + ".value", {701, top, 875, top + 22}, label + "  " + value, 1.0F,
                  {0.94F, 0.97F, 0.98F});
     };
-    UiElement& preview = ui.panel("match.summary.preview", {890, 296, 1010, 408},
+    UiElement& preview = ui.panel("match.summary.preview", {885, 306, 990, 424},
                                   {1.0F, 1.0F, 1.0F});
     preview.texture = "ui/match_preview_filler";
-    for (const UiRect edge : {UiRect{887, 293, 1013, 295}, UiRect{887, 409, 1013, 411},
-                              UiRect{887, 295, 889, 409}, UiRect{1011, 295, 1013, 409}})
+    for (const UiRect edge : {UiRect{882, 303, 993, 305}, UiRect{882, 425, 993, 427},
+                              UiRect{882, 305, 884, 425}, UiRect{991, 305, 993, 425}})
         ui.scrollList("match.preview.border." + std::to_string(ui.elements().size()), edge)
             .color = {0.12F, 0.54F, 0.68F};
-    ui.label("match.summary.preview.caption", {890, 415, 1010, 434},
+    ui.label("match.summary.preview.caption", {885, 431, 990, 450},
              Text::get("match_setup.tactical_overview"), 0.95F, {0.48F, 0.72F, 0.80F});
-    summaryRow("match.summary.player", 302,
+    summaryRow("match.summary.player", 312,
                "ui/country_emblem_" + countries[playerOneCountry_].id,
                Text::get("match_setup.summary_player"),
                Text::get(countries[playerOneCountry_].nameKey));
-    summaryRow("match.summary.opponent", 333,
+    summaryRow("match.summary.opponent", 343,
                "ui/country_emblem_" + countries[playerTwoCountry_].id,
                Text::get("match_setup.summary_opponent"),
                Text::get(countries[playerTwoCountry_].nameKey));
-    summaryRow("match.summary.map", 364, "building_sensor_tower",
+    summaryRow("match.summary.map", 374, "building_sensor_tower",
                Text::get("match_setup.summary_map_label"),
                Text::get(mapSizes[mapSize_].nameKey));
-    summaryRow("match.summary.resources", 395, "resource_materials",
+    summaryRow("match.summary.resources", 405, "resource_materials",
                Text::get("match_setup.summary_resources_label"),
                Text::get(resourceStarts[startingResources_].nameKey));
-    summaryRow("match.summary.deposits", 426, "resource_scrap",
+    summaryRow("match.summary.deposits", 436, "resource_scrap",
                Text::get("match_setup.summary_deposits_label"),
                Text::get(resourceAbundance[abundance_].nameKey));
 
-    UiElement& start = ui.button("match.start", {650, 485, 1025, 532},
+    UiElement& start = ui.button("match.start", {655, 500, 1010, 552},
                                  Text::get("match_setup.start"),
                                  {0.14F, 0.40F, 0.22F}, {0.22F, 0.68F, 0.34F});
     start.textScale = 2.0F;
     start.icon = "action_move";
     start.centerIconWithText = true;
-    UiElement& back = ui.button("match.back", {730, 550, 945, 586},
+    UiElement& back = ui.button("match.back", {735, 568, 935, 608},
                                 Text::get("match_setup.back"),
                                 {0.09F, 0.14F, 0.17F}, {0.18F, 0.34F, 0.42F});
     back.textScale = 1.50F;

@@ -83,7 +83,7 @@
   "match_setup.summary_resources": "STARTING RESOURCES: {0}",
   "match_setup.summary_deposits": "DEPOSITS: {0}",
   "match_setup.summary": "MATCH SUMMARY",
-  "match_setup.summary_player": "PLAYER",
+  "match_setup.summary_player": "YOU",
   "match_setup.summary_opponent": "RIVAL",
   "match_setup.summary_map_label": "MAP",
   "match_setup.summary_resources_label": "START",
