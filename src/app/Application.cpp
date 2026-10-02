@@ -228,6 +228,38 @@ int Application::run() {
         if (progress.failed > 0)
             logger_->warning("assets", std::to_string(progress.failed) + " preload assets failed");
     };
+    const auto waitForLoadingConfirmation = [this, &showLoading]() {
+        while (running_) {
+            showLoading(1.0F, Text::get("loading.click_to_start"));
+            SDL_Event event{};
+            while (SDL_PollEvent(&event)) {
+                if (event.type == SDL_EVENT_QUIT) {
+                    running_ = false;
+                    return false;
+                }
+                if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN)
+                    return true;
+                if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat) {
+                    if (event.key.key == SDLK_RETURN || event.key.key == SDLK_SPACE)
+                        return true;
+                    if (event.key.key == SDLK_ESCAPE)
+                        return false;
+                }
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(16));
+        }
+        return false;
+    };
+    const auto restoreMatchSetupAfterLoading = [this]() {
+        renderer_->finishLoadingScreen();
+        states_->replace<MatchSetupState>();
+        states_->applyPendingChanges();
+    };
+    const auto restoreMainMenuAfterLoading = [this]() {
+        renderer_->finishLoadingScreen();
+        states_->replace<StartMenuState>();
+        states_->applyPendingChanges();
+    };
 
     while (running_) {
         renderer_->finishLoadingScreen();
@@ -298,7 +330,7 @@ int Application::run() {
                     7.0F;
                 displayedGenerationFraction =
                     std::max(displayedGenerationFraction, generationFraction);
-                showLoading(0.04F + displayedGenerationFraction * 0.64F, phaseText(snapshot.phase));
+                showLoading(0.12F + displayedGenerationFraction * 0.56F, phaseText(snapshot.phase));
                 SDL_Event loadingEvent{};
                 while (SDL_PollEvent(&loadingEvent)) {
                     if (loadingEvent.type == SDL_EVENT_QUIT) {
@@ -322,6 +354,7 @@ int Application::run() {
                 if (cancelled) {
                     if (!running_)
                         break;
+                    restoreMatchSetupAfterLoading();
                     continue;
                 }
                 renderer_->stageGeneratedTerrain(prepared.terrain(),
@@ -349,17 +382,25 @@ int Application::run() {
                 if (cancelled) {
                     if (!running_)
                         break;
+                    restoreMatchSetupAfterLoading();
                     continue;
                 }
                 preloadAssets("match", 0.84F, 0.12F);
-                states_->replace<PlayState>(std::move(setup), std::move(prepared));
                 showLoading(0.98F, Text::get("loading.finalize"));
+                if (!waitForLoadingConfirmation()) {
+                    if (!running_)
+                        break;
+                    restoreMatchSetupAfterLoading();
+                    continue;
+                }
+                states_->replace<PlayState>(std::move(setup), std::move(prepared));
                 stateContext_->audio.setAmbient(AudioCue::gameAmbient);
             } catch (const WorldGenerationCancelled&) {
                 logger_->info("world_generation",
                               "Generation cancelled\n" + generationProgress.diagnostics());
                 if (!running_)
                     break;
+                restoreMatchSetupAfterLoading();
                 continue;
             } catch (const std::exception& error) {
                 logger_->error("world_generation",
@@ -371,17 +412,23 @@ int Application::run() {
         } else if (request == StateRequest::buildMap) {
             logger_->info("state", "Opening map builder");
             const std::uint32_t seed = state->terrainSeed();
-            showLoading(0.08F, Text::get("loading.terrain"));
+            showLoading(0.12F, Text::get("loading.terrain"));
             renderer_->regenerateTerrain(seed);
             showLoading(0.32F, Text::get("loading.world"));
             preloadAssets("build", 0.36F, 0.56F);
-            states_->replace<BuildState>(seed);
             showLoading(0.94F, Text::get("loading.finalize"));
+            if (!waitForLoadingConfirmation()) {
+                if (!running_)
+                    break;
+                restoreMainMenuAfterLoading();
+                continue;
+            }
+            states_->replace<BuildState>(seed);
             stateContext_->audio.setAmbient(AudioCue::buildAmbient);
         } else if (request == StateRequest::loadGame) {
             logger_->info("state", "Loading saved game");
             try {
-                showLoading(0.08F, Text::get("loading.save"));
+                showLoading(0.12F, Text::get("loading.save"));
                 const GameConfig config = GameConfig::load(stateContext_->configPath);
                 SaveData data = SaveGame::read(config.savePath());
                 showLoading(0.30F, Text::get("loading.terrain"));
@@ -389,8 +436,14 @@ int Application::run() {
                     data.terrainSeed, data.mapChunksPerSide, TerrainLayoutId{data.terrainLayout});
                 showLoading(0.36F, Text::get("loading.world"));
                 preloadAssets("match", 0.40F, 0.52F);
-                states_->replace<PlayState>(std::move(data));
                 showLoading(0.94F, Text::get("loading.finalize"));
+                if (!waitForLoadingConfirmation()) {
+                    if (!running_)
+                        break;
+                    restoreMainMenuAfterLoading();
+                    continue;
+                }
+                states_->replace<PlayState>(std::move(data));
                 stateContext_->audio.setAmbient(AudioCue::gameAmbient);
             } catch (const std::exception& error) {
                 logger_->error("persistence",

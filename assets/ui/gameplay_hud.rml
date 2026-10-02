@@ -30,7 +30,8 @@
             <img id="minimap-frame" src="../textures/ui/minimap_frame_overlay.png"/>
         </div>
         <div id="entity-shell">
-            <img class="panel-art" src="../textures/ui/hud_panel.png"/>
+            <img class="panel-art entity-actions-art" src="../textures/ui/hud_panel.png"/>
+            <img class="panel-art entity-info-art" src="../textures/ui/hud_compact.png"/>
             <div id="entity-content"/>
         </div>
         <div id="placement-reason"/>

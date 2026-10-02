@@ -277,14 +277,16 @@ class RmlUiManager::Impl final : public Rml::EventListener {
         }
         if (!fontLoaded_)
             throw std::runtime_error("Could not load an RmlUi font");
-        context_->AddEventListener("click", this);
+        // Documents such as the gameplay HUD replace dynamic children every frame. Activating on
+        // press keeps a valid target even when that child is rebuilt before mouse release.
+        context_->AddEventListener("mousedown", this);
     }
 
     ~Impl() override {
         while (!screens_.empty())
             removeScreen(screens_.back().handle);
         if (context_) {
-            context_->RemoveEventListener("click", this);
+            context_->RemoveEventListener("mousedown", this);
             Rml::RemoveContext(context_->GetName());
             context_ = nullptr;
         }
@@ -293,6 +295,8 @@ class RmlUiManager::Impl final : public Rml::EventListener {
 
     RmlUiScreenHandle pushScreen(RmlUiScreenDefinition definition) {
         pendingAction_.reset();
+        if (screens_.empty())
+            uiScale_ = std::clamp(definition.uiScale, 0.75F, 1.5F);
         if (!screens_.empty())
             screens_.back().document->Hide();
         Screen screen;
@@ -309,6 +313,13 @@ class RmlUiManager::Impl final : public Rml::EventListener {
         applyDensity();
         focusCurrent();
         return screens_.back().handle;
+    }
+
+    void setScale(float scale) {
+        uiScale_ = std::clamp(scale, 0.75F, 1.5F);
+        applyDensity();
+        if (context_)
+            context_->Update();
     }
 
     void removeScreen(RmlUiScreenHandle handle) {
@@ -348,9 +359,15 @@ class RmlUiManager::Impl final : public Rml::EventListener {
             context_->ProcessMouseMove(static_cast<int>(event.motion.x * density),
                                        static_cast<int>(event.motion.y * density),
                                        modifiers);
-        else if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN)
+        else if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
+            // HUD content is regenerated as selection changes. Refresh the pointer from the
+            // button event so a click cannot target the element that occupied the cursor during
+            // the preceding frame when the physical mouse has not moved.
+            context_->ProcessMouseMove(static_cast<int>(event.button.x * density),
+                                       static_cast<int>(event.button.y * density),
+                                       modifiers);
             context_->ProcessMouseButtonDown(mouseButton(event.button.button), modifiers);
-        else if (event.type == SDL_EVENT_MOUSE_BUTTON_UP)
+        } else if (event.type == SDL_EVENT_MOUSE_BUTTON_UP)
             context_->ProcessMouseButtonUp(mouseButton(event.button.button), modifiers);
         else if (event.type == SDL_EVENT_MOUSE_WHEEL)
             context_->ProcessMouseWheel({-event.wheel.x, -event.wheel.y}, modifiers);
@@ -512,9 +529,8 @@ class RmlUiManager::Impl final : public Rml::EventListener {
     }
 
     void applyDensity() {
-        if (!screens_.empty())
-            context_->SetDensityIndependentPixelRatio(
-                std::clamp(screens_.back().definition.uiScale, 0.75F, 1.5F));
+        if (context_)
+            context_->SetDensityIndependentPixelRatio(uiScale_);
     }
 
     void focusCurrent() {
@@ -530,6 +546,7 @@ class RmlUiManager::Impl final : public Rml::EventListener {
     bool fontLoaded_{false};
     std::vector<Screen> screens_;
     RmlUiScreenHandle nextHandle_{1};
+    float uiScale_{1.0F};
     std::optional<std::string> pendingAction_;
 };
 
@@ -538,6 +555,9 @@ RmlUiManager::RmlUiManager()
 RmlUiManager::~RmlUiManager() = default;
 RmlUiScreenHandle RmlUiManager::pushScreen(RmlUiScreenDefinition definition) {
     return impl_->pushScreen(std::move(definition));
+}
+void RmlUiManager::setScale(float scale) {
+    impl_->setScale(scale);
 }
 void RmlUiManager::removeScreen(RmlUiScreenHandle handle) {
     impl_->removeScreen(handle);

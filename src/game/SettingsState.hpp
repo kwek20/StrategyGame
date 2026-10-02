@@ -17,6 +17,8 @@ class SettingsState final : public GameState {
 
   private:
     GameConfig config_;
+    float originalUiScale_{1.0F};
+    bool applied_{false};
     StateRequest request_{StateRequest::none};
     std::size_t resolution_{0};
     int binding_{-1};

@@ -556,6 +556,9 @@ Renderer::~Renderer() {
 RmlUiScreenHandle Renderer::pushUiScreen(RmlUiScreenDefinition definition) {
     return rmlUi_->pushScreen(std::move(definition));
 }
+void Renderer::setUiScale(float scale) {
+    rmlUi_->setScale(scale);
+}
 void Renderer::removeUiScreen(RmlUiScreenHandle handle) {
     rmlUi_->removeScreen(handle);
 }
@@ -762,7 +765,10 @@ void Renderer::drawLoadingScreen(float progress, const std::string& status) cons
     drawMenuBackground(std::sin(seconds * 0.10F));
     const float target = std::clamp(progress, 0.0F, 1.0F);
     const auto now = std::chrono::steady_clock::now();
-    if (!loadingProgressInitialized_ || target + 0.02F < displayedLoadingProgress_) {
+    if (target >= 1.0F) {
+        displayedLoadingProgress_ = 1.0F;
+        loadingProgressInitialized_ = true;
+    } else if (!loadingProgressInitialized_ || target + 0.02F < displayedLoadingProgress_) {
         displayedLoadingProgress_ = target;
         loadingProgressInitialized_ = true;
     } else {
@@ -770,8 +776,6 @@ void Renderer::drawLoadingScreen(float progress, const std::string& status) cons
             std::chrono::duration<float>(now - lastLoadingProgressUpdate_).count(), 0.0F, 0.1F);
         const float blend = 1.0F - std::exp(-elapsed * 7.0F);
         displayedLoadingProgress_ += (target - displayedLoadingProgress_) * blend;
-        if (target >= 1.0F && displayedLoadingProgress_ > 0.995F)
-            displayedLoadingProgress_ = 1.0F;
     }
     lastLoadingProgressUpdate_ = now;
     const float visibleProgress = std::round(displayedLoadingProgress_ * 100.0F) / 100.0F;
@@ -783,11 +787,24 @@ void Renderer::drawLoadingScreen(float progress, const std::string& status) cons
                                              1.0F});
     }
     const int percentage = static_cast<int>(std::round(visibleProgress * 100.0F));
-    rmlUi_->setText("loading-status", status);
-    rmlUi_->setText("loading-percentage",
-                    visibleProgress >= 1.0F ? Text::get("loading.ready")
-                                            : std::to_string(percentage) + "%");
+    const bool awaitingStart = visibleProgress >= 1.0F;
+    rmlUi_->setText("loading-title",
+                    awaitingStart ? Text::get("loading.click_to_start")
+                                  : Text::get("loading.title"));
+    rmlUi_->setAttribute("loading-header", "class", awaitingStart ? "ready" : "");
+    rmlUi_->setText("loading-status", awaitingStart ? std::string{} : status);
+    rmlUi_->setText("loading-percentage", std::to_string(percentage) + "%");
+    rmlUi_->setProperty("loading-percentage", "display", awaitingStart ? "none" : "block");
+    rmlUi_->setProperty("loading-status-row", "display", "flex");
+    rmlUi_->setProperty("loading-status-row", "visibility",
+                        awaitingStart ? "hidden" : "visible");
+    const std::string progressPosition = std::to_string(visibleProgress * 100.0F) + "%";
     rmlUi_->setAttribute("loading-fill", "value", std::to_string(visibleProgress));
+    rmlUi_->setProperty("loading-fill-lead", "left", progressPosition);
+    rmlUi_->setProperty("loading-fill-lead", "display",
+                        visibleProgress > 0.0F && visibleProgress < 1.0F ? "block" : "none");
+    rmlUi_->setProperty("loading-dots", "display",
+                        visibleProgress < 1.0F ? "block" : "none");
     rmlUi_->render(viewportWidth_, viewportHeight_);
 }
 

@@ -352,15 +352,30 @@ void PlayState::updateGameplayHud(Renderer& renderer, const Player* player) cons
             entityInfo << "<div class='stat'>" << escapeRml(stat.label) << " " << escapeRml(stat.value) << "</div>";
         entityInfo << "</div></div></div>";
         entity << "<div class='entity-actions'>";
+        std::size_t actionColumn = 0;
+        const auto beginAction = [&]() {
+            if (actionColumn == 0)
+                entity << "<div class='action-row'>";
+        };
+        const auto endAction = [&]() {
+            ++actionColumn;
+            if (actionColumn == 4) {
+                entity << "</div>";
+                actionColumn = 0;
+            }
+        };
         for (const HudSelectionGroupModel& group : hud->selectionGroups) {
             const std::string id = "selection." + group.archetype;
             focus.push_back(id); actions.push_back(id);
+            beginAction();
             entity << "<button id='" << escapeRml(id) << "' class='selection-group'><img src='"
                    << hudIcon(group.icon) << "'/><span>" << group.count << "</span></button>";
+            endAction();
         }
         for (const HudActionModel& action : hud->actions) {
             const std::string id = "action." + action.id;
             if (action.enabled) { focus.push_back(id); actions.push_back(id); }
+            beginAction();
             entity << "<button id='" << escapeRml(id) << "' class='action"
                    << (action.active ? " active" : "") << "'" << (action.enabled ? "" : " disabled='disabled'")
                    << "><img src='" << hudIcon(action.icon) << "'/><div class='tooltip'><b>"
@@ -370,7 +385,10 @@ void PlayState::updateGameplayHud(Renderer& renderer, const Player* player) cons
             if (!action.requirements.empty()) entity << "<br/>" << escapeRml(action.requirements);
             if (!action.disabledReason.empty()) entity << "<br/>" << escapeRml(action.disabledReason);
             entity << "</div></button>";
+            endAction();
         }
+        if (actionColumn != 0)
+            entity << "</div>";
         entity << "</div>";
         entity << entityInfo.str();
         if (!hud->queue.empty()) {
@@ -910,6 +928,13 @@ void PlayState::handleEvent(const SDL_Event& event) {
     }
     if (event.type == SDL_EVENT_MOUSE_MOTION && constructionPlacementMode_)
         constructionCursorScreen_ = glm::vec2{event.motion.x, event.motion.y};
+    if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_LEFT &&
+        viewMode_ == ViewMode::strategy && constructionPlacementMode_) {
+        constructionCursorScreen_ = glm::vec2{event.button.x, event.button.y};
+        pendingConstructionScreen_ = constructionCursorScreen_;
+        draggingSelection_ = false;
+        return;
+    }
     if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_LEFT &&
         viewMode_ == ViewMode::strategy) {
         draggingSelection_ = true;

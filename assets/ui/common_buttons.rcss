@@ -66,6 +66,8 @@
     font-weight: 700;
     line-height: 3.2vh;
     flex: 0 0 auto;
+    decorator: image("../textures/ui/compact_button.png" fill);
+    image-color: #dce7ea;
 }
 .selector-value {
     height: 2.8vh;

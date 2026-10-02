@@ -47,7 +47,8 @@ std::string baseId(std::string_view id, int& direction) {
 
 SettingsState::SettingsState(StateContext& context)
     : GameState(context)
-    , config_(GameConfig::load(context.configPath)) {
+    , config_(GameConfig::load(context.configPath))
+    , originalUiScale_(config_.uiScale) {
     if (!context_.renderer)
         throw std::runtime_error("Settings requires a renderer");
     for (std::size_t index = 0; index < resolutions.size(); ++index)
@@ -99,6 +100,8 @@ SettingsState::SettingsState(StateContext& context)
 }
 
 SettingsState::~SettingsState() {
+    if (!applied_)
+        context_.renderer->setUiScale(originalUiScale_);
     context_.renderer->removeUiScreen(screen_);
 }
 
@@ -138,6 +141,7 @@ void SettingsState::apply() {
     config_.resolutionWidth = resolutions[resolution_].first;
     config_.resolutionHeight = resolutions[resolution_].second;
     config_.write(context_.configPath);
+    applied_ = true;
     context_.audio.setMasterVolume(config_.masterVolume);
     context_.audio.setMusicVolume(config_.musicVolume);
     context_.audio.setEffectsVolume(config_.effectsVolume);
@@ -157,8 +161,10 @@ void SettingsState::activateControl(std::string_view rawId, int direction) {
             static_cast<int>(resolutions.size()));
     else if (id == "settings.fullscreen")
         config_.fullscreen = !config_.fullscreen;
-    else if (id == "settings.ui_scale")
+    else if (id == "settings.ui_scale") {
         config_.uiScale = std::clamp(config_.uiScale + direction * .1F, .75F, 1.5F);
+        context_.renderer->setUiScale(config_.uiScale);
+    }
     else if (id == "settings.master")
         config_.masterVolume = std::clamp(config_.masterVolume + direction * .1F, 0.F, 1.F);
     else if (id == "settings.music")

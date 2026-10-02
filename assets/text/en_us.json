@@ -35,6 +35,7 @@
   "loading.decoration": "SCATTERING VEGETATION",
   "loading.world_ready": "WORLD DATA READY",
   "loading.ready": "READY",
+  "loading.click_to_start": "CLICK TO START",
   "loading.terrain_upload": "UPLOADING TERRAIN",
   "loading.save": "READING SAVE DATA",
   "loading.finalize": "FINALIZING",

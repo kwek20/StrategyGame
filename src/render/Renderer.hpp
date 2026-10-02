@@ -57,6 +57,7 @@ class Renderer final {
     void recordProfile(const std::string& name, double milliseconds);
     void endFrame();
     [[nodiscard]] RmlUiScreenHandle pushUiScreen(RmlUiScreenDefinition definition);
+    void setUiScale(float scale);
     void removeUiScreen(RmlUiScreenHandle handle);
     void handleUiEvent(const SDL_Event& event);
     void focusUi(int direction);

@@ -210,6 +210,23 @@ out vec4 color;void main(){color=vec4(1);})";
         renderer.endFrame();
         glFinish();
         valid = noGlErrors("RmlUi loading screen") && valid;
+        renderer.beginFrame(1280, 720);
+        renderer.drawLoadingScreen(1.0F, "CLICK TO START");
+        renderer.endFrame();
+        glFinish();
+        valid = noGlErrors("RmlUi completed loading screen") && valid;
+        if (const char* loadingScreenshotPath = SDL_getenv("STRATEGY_LOADING_SCREENSHOT")) {
+            std::vector<unsigned char> pixels(1280 * 720 * 4), flipped(pixels.size());
+            glReadPixels(0, 0, 1280, 720, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+            for (int row = 0; row < 720; ++row)
+                std::copy_n(pixels.data() + row * 1280 * 4,
+                            1280 * 4,
+                            flipped.data() + (719 - row) * 1280 * 4);
+            SDL_Surface* surface = SDL_CreateSurfaceFrom(
+                1280, 720, SDL_PIXELFORMAT_RGBA32, flipped.data(), 1280 * 4);
+            valid = surface && SDL_SaveBMP(surface, loadingScreenshotPath) && valid;
+            SDL_DestroySurface(surface);
+        }
         renderer.finishLoadingScreen();
         const strategy::RmlUiScreenHandle pauseScreen =
             renderer.pushUiScreen({"assets/ui/pause_menu.rml",
@@ -279,6 +296,44 @@ out vec4 color;void main(){color=vec4(1);})";
         renderer.endFrame();
         glFinish();
         valid = noGlErrors("RmlUi gameplay HUD") && valid;
+        const auto unscaledActionBounds = renderer.uiBounds("action.preview");
+        renderer.setUiScale(1.5F);
+        renderer.beginFrame(1280, 720);
+        renderer.drawRmlUi();
+        renderer.endFrame();
+        glFinish();
+        const auto scaledActionBounds = renderer.uiBounds("action.preview");
+        if (!unscaledActionBounds || !scaledActionBounds ||
+            scaledActionBounds->right - scaledActionBounds->left <=
+                (unscaledActionBounds->right - unscaledActionBounds->left) * 1.25F) {
+            std::cerr << "RmlUi global scale did not resize the active HUD\n";
+            valid = false;
+        }
+        renderer.setUiScale(1.0F);
+        renderer.beginFrame(1280, 720);
+        renderer.drawRmlUi();
+        renderer.endFrame();
+        glFinish();
+        if (const auto bounds = renderer.uiBounds("action.preview")) {
+            SDL_Event down{};
+            down.type = SDL_EVENT_MOUSE_BUTTON_DOWN;
+            down.button.button = SDL_BUTTON_LEFT;
+            down.button.x = (bounds->left + bounds->right) * 0.5F;
+            down.button.y = (bounds->top + bounds->bottom) * 0.5F;
+            renderer.handleUiEvent(down);
+            const auto clicked = renderer.takeUiAction();
+            SDL_Event up = down;
+            up.type = SDL_EVENT_MOUSE_BUTTON_UP;
+            renderer.handleUiEvent(up);
+            if (!clicked || *clicked != "action.preview") {
+                std::cerr << "RmlUi gameplay action did not receive a pointer click at "
+                          << down.button.x << ", " << down.button.y << "\n";
+                valid = false;
+            }
+        } else {
+            std::cerr << "RmlUi gameplay action has no bounds\n";
+            valid = false;
+        }
         renderer.removeUiScreen(gameplayScreen);
         if (const char* screenshotPath = SDL_getenv("STRATEGY_UI_SCREENSHOT")) {
             std::vector<unsigned char> pixels(1280 * 720 * 4), flipped(pixels.size());

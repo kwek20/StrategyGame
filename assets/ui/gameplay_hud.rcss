@@ -174,12 +174,24 @@ button:hover, button:focus {
 }
 #entity-shell {
     position: absolute;
-    left: 2%;
-    bottom: 2%;
-    width: 68%;
-    height: 24vh;
-    min-height: 270dp;
+    left: 0;
+    bottom: 0;
+    width: 64%;
+    height: 32vh;
+    min-height: 350dp;
     pointer-events: auto;
+}
+.entity-actions-art {
+    left: 0;
+    top: 0;
+    width: 69%;
+    height: 100%;
+}
+.entity-info-art {
+    left: 70%;
+    top: 0;
+    width: 30%;
+    height: 100%;
 }
 #entity-shell.hidden,#power-panel.hidden {
     display: none;
@@ -188,18 +200,17 @@ button:hover, button:focus {
     position: absolute;
     left: 2.5%;
     right: 2.5%;
-    top: 11%;
-    bottom: 11%;
+    top: 9%;
+    bottom: 9%;
     display: flex;
-    gap: 1.5%;
+    gap: 2%;
     overflow: hidden;
 }
 .entity-info {
-    flex: 1;
-    width: auto;
-    min-width: 280dp;
-    padding-left: 2%;
-    border-left: 1dp #24586a;
+    flex: 0 0 28%;
+    width: 28%;
+    min-width: 250dp;
+    padding-left: 1%;
     display: flex;
     flex-direction: column;
 }
@@ -232,7 +243,9 @@ button:hover, button:focus {
     height: 1.65vh;
     min-height: 18dp;
     margin-bottom: .55vh;
-    background-color: #071116;
+    background-color: transparent;
+    decorator: image("../textures/ui/entity_progress_track.png" fill);
+    image-color: #d5dde0;
     overflow: hidden;
 }
 .hud-fill {
@@ -240,13 +253,16 @@ button:hover, button:focus {
     left: 0;
     top: 0;
     bottom: 0;
-    background-color: #cf3030;
+    background-color: transparent;
+    decorator: image("../textures/ui/health_progress_fill.png" fill);
 }
 .hud-bar.power .hud-fill {
-    background-color: #1caee1;
+    background-color: transparent;
+    decorator: image("../textures/ui/power_progress_fill.png" fill);
 }
 .hud-bar.construction .hud-fill {
-    background-color: #e08b25;
+    background-color: transparent;
+    decorator: image("../textures/ui/production_progress_fill.png" fill);
 }
 .hud-bar span {
     position: absolute;
@@ -261,13 +277,21 @@ button:hover, button:focus {
     line-height: 1.55vh;
 }
 .entity-actions {
-    flex: 0 0 62%;
-    width: 62%;
+    flex: 0 0 68%;
+    width: 68%;
+    min-width: 0;
     display: flex;
-    flex-wrap: wrap;
+    flex-direction: column;
     align-content: flex-start;
-    gap: .6vh;
+    gap: .5vh;
     overflow: hidden;
+}
+.action-row {
+    width: 100%;
+    height: 6vh;
+    min-height: 64dp;
+    display: flex;
+    gap: .5vh;
 }
 .action {
     position: relative;
@@ -277,6 +301,7 @@ button:hover, button:focus {
     height: 6vh;
     min-width: 64dp;
     min-height: 64dp;
+    flex: 0 0 6vh;
 }
 .action img {
     width: 72%;
@@ -337,17 +362,18 @@ button:hover, button:focus {
 .selection-group {
     decorator: image("../textures/ui/action_slot_transparent.png" fill);
     image-color: #d6dfe1;
-    width: 10vh;
-    height: 7vh;
-    min-width: 120dp;
-    min-height: 76dp;
+    width: 6vh;
+    height: 6vh;
+    min-width: 64dp;
+    min-height: 64dp;
+    flex: 0 0 6vh;
     display: flex;
     align-items: center;
     justify-content: center;
 }
 .selection-group img {
-    width: 54dp;
-    height: 54dp;
+    width: 70%;
+    height: 70%;
 }
 .selection-group span {
     margin-left: 7dp;

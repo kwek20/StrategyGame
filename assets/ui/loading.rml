@@ -5,7 +5,7 @@
     </head>
     <body>
         <div id="loading-shell">
-            <img id="loading-panel-art" src="../textures/ui/tooltip_panel.png"/>
+            <img id="loading-panel-art" src="../textures/ui/loading_panel.png"/>
             <div id="loading-content">
                 <div id="loading-header">
                     <h1 id="loading-title">LOADING</h1>
@@ -16,10 +16,11 @@
                     <span id="loading-dots">...</span>
                 </div>
                 <div id="loading-track">
-                    <img id="loading-track-art" src="../textures/ui/loading_progress_frame.png"/>
                     <div id="loading-track-inner">
                         <progress id="loading-fill" value="0" max="1" direction="right"/>
+                        <img id="loading-fill-lead" src="../textures/ui/loading_progress_lead.png"/>
                     </div>
+                    <img id="loading-track-art" src="../textures/ui/loading_progress_frame.png"/>
                 </div>
             </div>
         </div>
