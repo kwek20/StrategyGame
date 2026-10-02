@@ -778,7 +778,7 @@ void Renderer::drawLoadingScreen(float progress, const std::string& status) cons
         displayedLoadingProgress_ += (target - displayedLoadingProgress_) * blend;
     }
     lastLoadingProgressUpdate_ = now;
-    const float visibleProgress = std::round(displayedLoadingProgress_ * 100.0F) / 100.0F;
+    const float visibleProgress = displayedLoadingProgress_;
     if (!loadingScreen_) {
         loadingScreen_ = rmlUi_->pushScreen({"assets/ui/loading.rml",
                                              {{"loading-title", Text::get("loading.title")}},
@@ -798,11 +798,7 @@ void Renderer::drawLoadingScreen(float progress, const std::string& status) cons
     rmlUi_->setProperty("loading-status-row", "display", "flex");
     rmlUi_->setProperty("loading-status-row", "visibility",
                         awaitingStart ? "hidden" : "visible");
-    const std::string progressPosition = std::to_string(visibleProgress * 100.0F) + "%";
     rmlUi_->setAttribute("loading-fill", "value", std::to_string(visibleProgress));
-    rmlUi_->setProperty("loading-fill-lead", "left", progressPosition);
-    rmlUi_->setProperty("loading-fill-lead", "display",
-                        visibleProgress > 0.0F && visibleProgress < 1.0F ? "block" : "none");
     rmlUi_->setProperty("loading-dots", "display",
                         visibleProgress < 1.0F ? "block" : "none");
     rmlUi_->render(viewportWidth_, viewportHeight_);

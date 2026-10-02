@@ -1,0 +1,30 @@
+/* One neutral texture, cropped by the native progress element's value.
+   The track and label stay fixed; only the visible fill changes length. */
+.progress-track {
+    position: relative;
+    background-color: #061016;
+    border: 1dp #42606b;
+    overflow: hidden;
+}
+.progress-fill {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    fill-image: "../textures/ui/progress_fill.png";
+    image-color: #54d7f2;
+    pointer-events: none;
+}
+.progress-fill.health { image-color: #ef645c; }
+.progress-fill.power { image-color: #54d7f2; }
+.progress-fill.construction { image-color: #efbf56; }
+.progress-label {
+    position: absolute;
+    left: 6dp;
+    top: 1dp;
+    color: #ffffff;
+    font-weight: 700;
+    text-shadow: 1dp 1dp #000000;
+    pointer-events: none;
+}

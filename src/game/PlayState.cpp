@@ -45,8 +45,13 @@ std::string hudIcon(std::string_view icon) {
     return "../icons/source/" + escapeRml(icon) + ".png";
 }
 
+float barRatio(float current, float maximum) {
+    return maximum <= 0.0F || !std::isfinite(current) || !std::isfinite(maximum)
+               ? 0.0F : std::clamp(current / maximum, 0.0F, 1.0F);
+}
+
 int barPercent(float current, float maximum) {
-    return maximum <= 0.0F ? 0 : static_cast<int>(std::clamp(current / maximum, 0.0F, 1.0F) * 100.0F);
+    return static_cast<int>(barRatio(current, maximum) * 100.0F);
 }
 
 std::string resourceCost(const DefinitionRegistry& definitions,
@@ -338,6 +343,7 @@ void PlayState::updateGameplayHud(Renderer& renderer, const Player* player) cons
     } else if (selected && selected->resource) {
         hud = EntityHudModelBuilder::build(session_.world(), selectedEntity_, selectedUnits_, context_.definitions);
     }
+    hudShortcuts_.clear();
     if (hud) {
         std::ostringstream entityInfo;
         entityInfo << "<div class='entity-info'><div class='entity-title'>" << escapeRml(hud->title)
@@ -345,8 +351,9 @@ void PlayState::updateGameplayHud(Renderer& renderer, const Player* player) cons
                    << "'/><div class='bars-stats'>";
         for (const HudBarModel& bar : hud->bars) {
             const char* kind = bar.kind == HudBarKind::health ? "health" : bar.kind == HudBarKind::power ? "power" : "construction";
-            entityInfo << "<div class='hud-bar " << kind << "'><div class='hud-fill' style='width:"
-                       << barPercent(bar.current, bar.maximum) << "%;'></div><span>" << escapeRml(bar.label)
+            entityInfo << "<div class='hud-bar progress-track'><progress class='progress-fill " << kind
+                       << "' value='" << barRatio(bar.current, bar.maximum)
+                       << "' max='1' direction='right'/><span class='progress-label'>" << escapeRml(bar.label)
                        << " " << displayNumber(bar.current) << " / " << displayNumber(bar.maximum) << "</span></div>";
         }
         entityInfo << "</div></div><div class='stats-list'>";
@@ -378,23 +385,37 @@ void PlayState::updateGameplayHud(Renderer& renderer, const Player* player) cons
                    << hudIcon(group.icon) << "'/><span>" << group.count << "</span></button>";
             endAction();
         }
-        for (const HudActionModel& action : hud->actions) {
-            const std::string id = "action." + action.id;
-            if (action.enabled) { focus.push_back(id); actions.push_back(id); }
-            beginAction();
-            entity << "<button id='" << escapeRml(id) << "' class='action"
-                   << (action.active ? " active" : "") << "'" << (action.enabled ? "" : " disabled='disabled'")
-                   << "><img src='" << hudIcon(action.icon) << "'/><div class='tooltip'><b>"
-                   << escapeRml(action.name) << "</b><br/>" << escapeRml(action.description);
-            if (!action.cost.empty() && action.cost != Text::get("entity_hud.free")) entity << "<br/>COST: " << escapeRml(action.cost);
-            if (!action.power.empty()) entity << "<br/>" << escapeRml(action.power);
-            if (!action.requirements.empty()) entity << "<br/>" << escapeRml(action.requirements);
-            if (!action.disabledReason.empty()) entity << "<br/>" << escapeRml(action.disabledReason);
-            entity << "</div></button>";
-            endAction();
+        if (actionColumn != 0) { entity << "</div>"; actionColumn = 0; }
+        for (const bool construction : {false, true}) {
+            const bool hasGroup = std::any_of(hud->actions.begin(), hud->actions.end(), [&](const auto& action) {
+                return action.id.starts_with("construct.") == construction;
+            });
+            if (!hasGroup) continue;
+            entity << "<div class='action-heading'>" << Text::get(construction ? "entity_hud.group_construction" : "entity_hud.group_commands") << "</div>";
+            for (const HudActionModel& action : hud->actions) {
+                if (action.id.starts_with("construct.") != construction) continue;
+                const std::string id = "action." + action.id;
+                if (action.enabled) { focus.push_back(id); actions.push_back(id); }
+                beginAction();
+                entity << "<button id='" << escapeRml(id) << "' class='action"
+                       << (action.active ? " active" : "") << (action.enabled ? "" : " unavailable") << "'"
+                       << "><img src='" << hudIcon(action.icon) << "'/><span class='action-name'>" << escapeRml(action.name) << "</span>";
+                if (hudShortcuts_.size() < 12) {
+                    const auto index = hudShortcuts_.size();
+                    hudShortcuts_.push_back(action.enabled ? id : std::string{});
+                    entity << "<span class='action-hotkey'>Alt+" << "1234567890-="[index] << "</span>";
+                }
+                entity << "<div class='tooltip'><b>"
+                       << escapeRml(action.name) << "</b><br/>" << escapeRml(action.description);
+                if (!action.cost.empty() && action.cost != Text::get("entity_hud.free")) entity << "<br/>COST: " << escapeRml(action.cost);
+                if (!action.power.empty()) entity << "<br/>" << escapeRml(action.power);
+                if (!action.requirements.empty()) entity << "<br/>" << escapeRml(action.requirements);
+                if (!action.disabledReason.empty()) entity << "<br/>" << escapeRml(action.disabledReason);
+                entity << "</div></button>";
+                endAction();
+            }
+            if (actionColumn != 0) { entity << "</div>"; actionColumn = 0; }
         }
-        if (actionColumn != 0)
-            entity << "</div>";
         entity << "</div>";
         entity << entityInfo.str();
         if (!hud->queue.empty()) {
@@ -1007,6 +1028,17 @@ void PlayState::handleEvent(const SDL_Event& event) {
     if (event.type == SDL_EVENT_MOUSE_MOTION && draggingSelection_ &&
         viewMode_ == ViewMode::strategy) {
         selectionEnd_ = {event.motion.x, event.motion.y};
+        return;
+    }
+    if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
+        viewMode_ == ViewMode::strategy && (event.key.mod & SDL_KMOD_ALT) &&
+        ((event.key.key >= SDLK_0 && event.key.key <= SDLK_9) ||
+         event.key.key == SDLK_MINUS || event.key.key == SDLK_EQUALS)) {
+        updateGameplayHud(*context_.renderer, session_.players().find(localPlayer_));
+        const std::size_t index = event.key.key == SDLK_MINUS ? 10 : event.key.key == SDLK_EQUALS ? 11 :
+                                  event.key.key == SDLK_0 ? 9 : event.key.key - SDLK_1;
+        if (index < hudShortcuts_.size() && !hudShortcuts_[index].empty())
+            handleGameplayHudAction(hudShortcuts_[index]);
         return;
     }
     if (event.type == SDL_EVENT_MOUSE_MOTION && viewMode_ == ViewMode::strategy) {

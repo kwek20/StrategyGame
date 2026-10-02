@@ -3,6 +3,7 @@
         <link type="text/rcss" href="common_base.rcss"/>
         <link type="text/rcss" href="common_buttons.rcss"/>
         <link type="text/rcss" href="common_slots.rcss"/>
+        <link type="text/rcss" href="common_progress.rcss"/>
         <title>Gameplay HUD</title>
         <link type="text/rcss" href="gameplay_hud.rcss"/>
     </head>

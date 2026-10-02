@@ -71,6 +71,7 @@ class PlayState final : public GameState {
         float remaining{0.0F};
     };
     std::vector<HudAlert> hudAlerts_;
+    mutable std::vector<std::string> hudShortcuts_;
     StateRequest request_{StateRequest::none};
     GameConfig config_;
     mutable std::optional<std::uint32_t> pendingTerrainSeed_;

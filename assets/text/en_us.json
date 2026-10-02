@@ -1,4 +1,6 @@
 {
+  "entity_hud.group_commands": "COMMANDS",
+  "entity_hud.group_construction": "CONSTRUCTION",
   "entity_hud.tooltip_cost": "Cost: {0}",
   "entity_hud.tooltip_power": "Power consumption: {0} kW",
   "entity_hud.tooltip_requirements": "Required upgrades: {0}",

@@ -9,6 +9,7 @@
 #include <SDL3/SDL.h>
 #include <RmlUi/Core.h>
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -82,6 +83,37 @@ bool captureForm(strategy::Renderer& renderer, const char* name) {
     const bool saved = surface && SDL_SaveBMP(surface, (std::filesystem::path(directory) / name).string().c_str());
     SDL_DestroySurface(surface);
     return saved;
+}
+
+bool checkProgress(strategy::Renderer& renderer, const char* id, Rml::Colourb tint) {
+    auto* context = Rml::GetContext("strategy_ui");
+    Rml::Element* progress = nullptr;
+    for (int i = 0; context && i < context->GetNumDocuments(); ++i)
+        if (auto* element = context->GetDocument(i)->GetElementById(id))
+            progress = element;
+    if (!progress || progress->GetNumChildren(true) != 1)
+        return false;
+    const auto originalValue = progress->GetAttribute<Rml::String>("value", "0");
+    const auto originalMax = progress->GetAttribute<Rml::String>("max", "1");
+    const float trackWidth = progress->GetParentNode()->GetBox().GetSize().x;
+    progress->SetAttribute("max", 100);
+    bool valid = progress->GetProperty<Rml::Colourb>("image-color") == tint;
+    for (const auto& [value, ratio] : {std::pair{0.0F, 0.0F}, {0.25F, 0.0025F},
+             {25.0F, 0.25F}, {62.5F, 0.625F}, {100.0F, 1.0F}, {150.0F, 1.0F}, {-5.0F, 0.0F}}) {
+        progress->SetAttribute("value", value);
+        renderer.beginFrame(1280, 720);
+        renderer.drawRmlUi();
+        renderer.endFrame();
+        const float width = progress->GetBox().GetSize().x;
+        const float fillWidth = progress->GetChild(0)->GetBox().GetSize().x;
+        valid = width > 0.0F && std::abs(fillWidth - width * ratio) < 0.1F &&
+                std::abs(progress->GetParentNode()->GetBox().GetSize().x - trackWidth) < 0.1F && valid;
+    }
+    progress->SetAttribute("max", originalMax);
+    progress->SetAttribute("value", originalValue);
+    if (!valid)
+        std::cerr << "Progress bar fill, tint, or fixed track failed: " << id << '\n';
+    return valid;
 }
 } // namespace
 
@@ -264,6 +296,7 @@ out vec4 color;void main(){color=vec4(1);})";
         valid = noGlErrors("complete render") && valid;
         renderer.beginFrame(1280, 720);
         renderer.drawLoadingScreen(0.42F, "GENERATING TERRAIN FIELDS");
+        valid = checkProgress(renderer, "loading-fill", Rml::Colourb(84, 215, 242)) && valid;
         renderer.endFrame();
         glFinish();
         valid = noGlErrors("RmlUi loading screen") && valid;
@@ -356,11 +389,30 @@ out vec4 color;void main(){color=vec4(1);})";
         renderer.setUiText("resources-content",
                            "<div class='resource'><img src='../icons/source/resource_scrap.png'/><span>125</span></div>");
         renderer.setUiText("entity-content",
-                           "<div class='entity-info'><div class='entity-title'>CONSTRUCTION DRONE</div>"
-                           "<div class='hud-bar health'><div class='hud-fill' style='width:72%;'></div>"
-                           "<span>HEALTH 72 / 100</span></div></div>"
+                           "<div id='test.info' class='entity-info'><div class='entity-title'>CONSTRUCTION DRONE</div>"
+                           "<div class='hud-bar progress-track'><progress id='test.health' class='progress-fill health' value='0.72' max='1'/>"
+                           "<span class='progress-label'>HEALTH 72 / 100</span></div>"
+                           "<div class='hud-bar progress-track'><progress id='test.power' class='progress-fill power' value='0.35' max='1'/>"
+                           "<span class='progress-label'>ENERGY 35 / 100</span></div>"
+                           "<div class='hud-bar progress-track'><progress id='test.construction' class='progress-fill construction' value='0.5' max='1'/>"
+                           "<span class='progress-label'>BUILD 50 / 100</span></div>"
+                           "<div class='stats-list'><div class='stat'><span class='stat-label'>CARGO</span>"
+                           "<span id='test.stat' class='stat-value'>100 / 100</span></div></div></div>"
                            "<div class='entity-actions'><button id='action.preview' class='action'>"
                            "<img src='../icons/source/building_alloy_processor.png'/></button></div>");
+        auto* hudContext = Rml::GetContext("strategy_ui");
+        auto* hudDocument = hudContext->GetDocument(hudContext->GetNumDocuments() - 1);
+        auto* actionPanel = hudDocument->QuerySelector(".entity-actions");
+        std::string palette = "<div class='action-heading'>CONSTRUCTION</div>";
+        for (int i = 0; i < 11; ++i) {
+            if (i % 4 == 0) palette += "<div class='action-row'>";
+            palette += "<button id='" + std::string(i == 0 ? "action.preview" : "test.slot." + std::to_string(i)) +
+                       "' class='action'><img src='../icons/source/building_alloy_processor.png'/>"
+                       "<span class='action-name'>ALLOY PROCESSOR</span><span class='action-hotkey'>Alt+" +
+                       std::to_string((i + 1) % 10) + "</span></button>";
+            if (i % 4 == 3 || i == 10) palette += "</div>";
+        }
+        actionPanel->SetInnerRML(palette);
         renderer.setUiControls({"resources.power", "action.preview"},
                                {"resources.power", "action.preview"});
         renderer.beginFrame(1280, 720);
@@ -368,6 +420,19 @@ out vec4 color;void main(){color=vec4(1);})";
         renderer.endFrame();
         glFinish();
         valid = noGlErrors("RmlUi gameplay HUD") && valid;
+        const auto infoBounds = renderer.uiBounds("test.info");
+        const auto statBounds = renderer.uiBounds("test.stat");
+        const auto lastSlot = renderer.uiBounds("test.slot.10");
+        if (!infoBounds || !statBounds || !lastSlot || statBounds->right > infoBounds->right + 1 ||
+            lastSlot->right >= infoBounds->left || lastSlot->bottom > 720) {
+            std::cerr << "HUD panels overlap or clip their content\n";
+            valid = false;
+        }
+
+        valid = checkProgress(renderer, "test.health", Rml::Colourb(239, 100, 92)) && valid;
+        valid = checkProgress(renderer, "test.power", Rml::Colourb(84, 215, 242)) && valid;
+        valid = checkProgress(renderer, "test.construction", Rml::Colourb(239, 191, 86)) && valid;
+        valid = captureForm(renderer, "progress-bars.bmp") && valid;
         const auto unscaledActionBounds = renderer.uiBounds("action.preview");
         renderer.setUiScale(1.5F);
         renderer.beginFrame(1280, 720);
