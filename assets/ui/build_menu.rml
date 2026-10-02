@@ -1,12 +1,14 @@
 <rml>
     <head>
+        <link type="text/rcss" href="common_base.rcss"/>
         <link type="text/rcss" href="common_buttons.rcss"/>
+        <link type="text/rcss" href="common_slots.rcss"/>
         <title>Build Mode</title>
         <link type="text/rcss" href="build_menu.rcss"/>
     </head>
     <body>
         <div id="build-shell">
-            <img id="build-panel-art" src="../textures/ui/hud_panel.png"/>
+            <img id="build-panel-art" class="panel-art" src="../textures/ui/hud_panel.png"/>
             <div id="build-content">
                 <div id="build-header">
                     <div>
@@ -15,19 +17,19 @@
                     </div>
                     <span id="build-status"/>
                 </div>
-                <div id="build-rule"/>
+                <div id="build-rule" class="panel-rule"/>
                 <div id="build-palette"/>
                 <div id="build-footer">
-                    <button id="build.team" class="art-button">
+                    <button id="build.team" class="art-button build-footer-button">
                         <span id="team-label"/>
                     </button>
-                    <button id="build.undo" class="art-button">
+                    <button id="build.undo" class="art-button build-footer-button">
                         <span id="undo-label"/>
                     </button>
-                    <button id="build.save" class="art-button">
+                    <button id="build.save" class="art-button build-footer-button">
                         <span id="save-label"/>
                     </button>
-                    <button id="build.exit" class="art-button danger">
+                    <button id="build.exit" class="art-button build-footer-button danger">
                         <span id="exit-label"/>
                     </button>
                 </div>

@@ -1,17 +1,8 @@
 body {
-    width: 100%;
-    height: 100%;
-    margin: 0;
     color: #eef5dd;
-    font-family: "Segoe UI";
-    pointer-events: none;
 }
 .panel-art {
-    position: absolute;
-    width: 100%;
-    height: 100%;
     image-color: #e5ebec;
-    pointer-events: none;
 }
 button {
     border-width: 0;
@@ -177,19 +168,19 @@ button:hover, button:focus {
     left: 0;
     bottom: 0;
     width: 64%;
-    height: 32vh;
-    min-height: 350dp;
+    height: 25vh;
+    min-height: 280dp;
     pointer-events: auto;
 }
 .entity-actions-art {
     left: 0;
-    top: 0;
+    bottom: 0;
     width: 69%;
     height: 100%;
 }
 .entity-info-art {
     left: 70%;
-    top: 0;
+    bottom: 0;
     width: 30%;
     height: 100%;
 }
@@ -198,21 +189,22 @@ button:hover, button:focus {
 }
 #entity-content {
     position: absolute;
-    left: 2.5%;
-    right: 2.5%;
-    top: 9%;
-    bottom: 9%;
+    left: 1.5%;
+    right: 1.5%;
+    top: 6%;
+    bottom: 6%;
     display: flex;
-    gap: 2%;
+    gap: 1%;
     overflow: hidden;
 }
 .entity-info {
-    flex: 0 0 28%;
-    width: 28%;
+    flex: 0 0 29%;
+    width: 29%;
     min-width: 250dp;
-    padding-left: 1%;
+    padding: 1% 2% 2%;
     display: flex;
     flex-direction: column;
+    overflow: hidden;
 }
 .entity-title {
     height: 2.5vh;
@@ -226,17 +218,19 @@ button:hover, button:focus {
 }
 .entity-main {
     display: flex;
-    gap: 4%;
+    gap: 3%;
+    align-items: flex-start;
 }
 .portrait {
-    width: 7vh;
-    height: 7vh;
-    min-width: 72dp;
-    min-height: 72dp;
+    width: 5.5vh;
+    height: 5.5vh;
+    min-width: 58dp;
+    min-height: 58dp;
     object-fit: contain;
 }
 .bars-stats {
     flex: 1;
+    min-width: 0;
 }
 .hud-bar {
     position: relative;
@@ -272,13 +266,35 @@ button:hover, button:focus {
     font-weight: 700;
     text-shadow: 1dp 1dp #000;
 }
+.stats-list {
+    margin-top: .65vh;
+    border-top: 1dp #285765;
+    padding-top: .45vh;
+    overflow: hidden;
+}
 .stat {
+    width: 100%;
+    min-height: 1.55vh;
+    display: flex;
+    justify-content: space-between;
+    gap: 4%;
     font-size: 1.05vh;
     line-height: 1.55vh;
 }
+.stat-label {
+    color: #a9c4c9;
+    white-space: nowrap;
+}
+.stat-value {
+    color: #f2f6df;
+    text-align: right;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
 .entity-actions {
-    flex: 0 0 68%;
-    width: 68%;
+    flex: 0 0 69%;
+    width: 69%;
     min-width: 0;
     display: flex;
     flex-direction: column;
@@ -293,10 +309,8 @@ button:hover, button:focus {
     display: flex;
     gap: .5vh;
 }
-.action {
+.action, .selection-group {
     position: relative;
-    decorator: image("../textures/ui/action_slot_transparent.png" fill);
-    image-color: #d6dfe1;
     width: 6vh;
     height: 6vh;
     min-width: 64dp;
@@ -308,9 +322,7 @@ button:hover, button:focus {
     height: 72%;
     pointer-events: none;
 }
-.action:hover,.action:focus {
-    image-color: #e8ffff;
-}
+
 .action.active {
     outline: 3dp #ef8736;
     image-color: #ffe0bd;
@@ -336,37 +348,46 @@ button:hover, button:focus {
     visibility: visible;
     animation: .5s linear tooltip-in;
 }
+#entity-queue {
+    position: absolute;
+    left: 1.5%;
+    bottom: 100%;
+    width: 66%;
+    pointer-events: auto;
+}
 .queue {
-    width: 16%;
-    min-width: 160dp;
+    min-height: 5.2vh;
+    padding: .45vh .7vw;
+    display: flex;
+    align-items: center;
+    gap: .5vw;
+    background-color: #061117ee;
+    border: 1dp #3199ad;
     overflow: hidden;
 }
 .queue h3 {
-    margin: 0 0 7dp;
+    margin: 0 .35vw 0 0;
     color: #43c9e5;
+    font-size: 1.05vh;
 }
 .queue button {
-    width: 100%;
-    height: 42dp;
-    margin-bottom: 5dp;
+    width: 9vw;
+    min-width: 150dp;
+    height: 4.2vh;
+    min-height: 44dp;
     display: flex;
     align-items: center;
     text-align: left;
-    font-size: 10dp;
+    font-size: 1vh;
 }
 .queue img {
-    width: 34dp;
-    height: 34dp;
-    margin-right: 6dp;
+    width: 3.2vh;
+    height: 3.2vh;
+    min-width: 34dp;
+    min-height: 34dp;
+    margin-right: .35vw;
 }
 .selection-group {
-    decorator: image("../textures/ui/action_slot_transparent.png" fill);
-    image-color: #d6dfe1;
-    width: 6vh;
-    height: 6vh;
-    min-width: 64dp;
-    min-height: 64dp;
-    flex: 0 0 6vh;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -379,11 +400,13 @@ button:hover, button:focus {
     margin-left: 7dp;
 }
 .footer {
-    position: absolute;
-    left: 2.5%;
-    bottom: 4%;
+    margin-top: auto;
+    padding-top: .4vh;
     color: #9ec2ca;
     font-size: 1vh;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
 }
 #placement-reason {
     position: absolute;

@@ -1,0 +1,70 @@
+/* Shared previous/value/next selector used by Settings and Match Setup. */
+.selector {
+    width: 62%;
+    height: 3.2vh;
+    min-height: 32dp;
+    display: flex;
+    align-items: center;
+    gap: 1.2%;
+}
+.selector-button {
+    width: 3.2vh;
+    height: 3.2vh;
+    min-width: 32dp;
+    min-height: 32dp;
+    padding: 0;
+    color: #f8fce8;
+    font-size: 22dp;
+    font-weight: 700;
+    line-height: 3.2vh;
+    flex: 0 0 auto;
+    decorator: image("../textures/ui/compact_button.png" fill);
+    image-color: #dce7ea;
+}
+.selector-value {
+    height: 2.8vh;
+    min-height: 28dp;
+    line-height: 2.8vh;
+    flex: 1;
+    text-align: center;
+    background-color: #061016;
+    border: 1dp #173744;
+    color: #f3f8df;
+    font-size: 14dp;
+    font-weight: 700;
+}
+
+/* Selectors are focused as a row so left/right keys keep their meaning. */
+.selector { tab-index: auto; }
+.selector:focus .selector-value { outline: 2dp #28b6d2; }
+.form-panel {
+    position: absolute;
+    pointer-events: auto;
+}
+.form-panel .panel-art { image-color: #e2e8ea; }
+.form-content {
+    position: absolute;
+    left: 15%;
+    right: 15%;
+    top: 12%;
+    bottom: 10%;
+    display: flex;
+    flex-direction: column;
+}
+.columns { display: flex; gap: 5%; flex: 1; }
+.column { display: flex; flex-direction: column; }
+.form-actions {
+    height: 48dp;
+    display: flex;
+    justify-content: space-between;
+}
+.form-action {
+    width: 205dp;
+    height: 43dp;
+    color: #f2f8dd;
+    font-size: 15dp;
+    font-weight: 700;
+}
+.primary { color: #dfffca; }
+.danger { color: #ffd7cf; }
+.art-button:hover, .art-button:focus { outline: 2dp #28b6d2; }

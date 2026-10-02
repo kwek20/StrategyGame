@@ -1,0 +1,11 @@
+<template name="form-panel" content="content">
+    <head>
+        <link type="text/rcss" href="common_forms.rcss"/>
+    </head>
+    <body>
+        <div id="shell" class="form-panel">
+            <img class="panel-art" src="../textures/ui/menu_panel.png"/>
+            <div id="content" class="form-content"/>
+        </div>
+    </body>
+</template>

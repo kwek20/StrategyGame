@@ -1,10 +1,5 @@
 body {
-    width: 100%;
-    height: 100%;
-    margin: 0;
     color: #edf6da;
-    font-family: "Segoe UI";
-    pointer-events: none;
 }
 #build-shell {
     position: absolute;
@@ -13,14 +8,10 @@ body {
     bottom: 2%;
     height: 36%;
     pointer-events: auto;
-    animation: .28s quadratic-out enter;
+    animation: .28s quadratic-out build_menu-enter;
 }
 #build-panel-art {
-    position: absolute;
-    width: 100%;
-    height: 100%;
     image-color: #e0e7e9;
-    pointer-events: none;
 }
 #build-content {
     position: absolute;
@@ -60,8 +51,6 @@ body {
     text-align: right;
 }
 #build-rule {
-    height: 2dp;
-    background-color: #1da6c9;
     margin-bottom: 10dp;
 }
 #build-palette {
@@ -73,8 +62,6 @@ body {
 }
 .build-slot {
     position: relative;
-    decorator: image("../textures/ui/action_slot_transparent.png" fill);
-    image-color: #d6dfe1;
     width: 84dp;
     height: 84dp;
     border-width: 0;
@@ -105,7 +92,6 @@ body {
 }
 .build-slot:hover,.build-slot:focus {
     background-color: #12323b;
-    image-color: #e8ffff;
     outline: 2dp #2ac4df;
 }
 .build-slot.selected {
@@ -123,24 +109,20 @@ body {
     gap: 9dp;
     margin-top: 9dp;
 }
-#build-footer button {
+.build-footer-button {
     width: 135dp;
     height: 39dp;
-    border-width: 0;
-    background-color: #081116;
     color: #eff7dd;
     font-size: 13dp;
     font-weight: 700;
-    cursor: pointer;
 }
-#build-footer button:hover,#build-footer button:focus {
-    background-color: #12323b;
+.build-footer-button:hover,.build-footer-button:focus {
     outline: 2dp #2ac4df;
 }
-#build-footer .danger {
+.danger {
     color: #ffd5ce;
 }
-@keyframes enter {
+@keyframes build_menu-enter {
     from {
         opacity: 0;
         bottom: -4%;

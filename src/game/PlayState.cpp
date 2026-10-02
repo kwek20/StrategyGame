@@ -323,6 +323,7 @@ void PlayState::updateGameplayHud(Renderer& renderer, const Player* player) cons
     renderer.setUiAttribute("power-panel", "class", powerOverlayVisible_ ? "" : "hidden");
 
     std::ostringstream entity;
+    std::ostringstream entityQueue;
     std::optional<EntityHudModel> hud;
     const Entity* selected = session_.world().findEntity(possessedEntity_ ? possessedEntity_ : selectedEntity_);
     const bool sameType = selected && isHomogeneousSelection(session_.world(), selectedUnits_, selected->archetype.value);
@@ -348,9 +349,14 @@ void PlayState::updateGameplayHud(Renderer& renderer, const Player* player) cons
                        << barPercent(bar.current, bar.maximum) << "%;'></div><span>" << escapeRml(bar.label)
                        << " " << displayNumber(bar.current) << " / " << displayNumber(bar.maximum) << "</span></div>";
         }
+        entityInfo << "</div></div><div class='stats-list'>";
         for (const HudStatModel& stat : hud->stats)
-            entityInfo << "<div class='stat'>" << escapeRml(stat.label) << " " << escapeRml(stat.value) << "</div>";
-        entityInfo << "</div></div></div>";
+            entityInfo << "<div class='stat'><span class='stat-label'>" << escapeRml(stat.label)
+                       << "</span><span class='stat-value'>" << escapeRml(stat.value) << "</span></div>";
+        entityInfo << "</div>";
+        if (!hud->footer.empty())
+            entityInfo << "<div class='footer'>" << escapeRml(hud->footer) << "</div>";
+        entityInfo << "</div>";
         entity << "<div class='entity-actions'>";
         std::size_t actionColumn = 0;
         const auto beginAction = [&]() {
@@ -392,19 +398,20 @@ void PlayState::updateGameplayHud(Renderer& renderer, const Player* player) cons
         entity << "</div>";
         entity << entityInfo.str();
         if (!hud->queue.empty()) {
-            entity << "<div class='queue'><h3>QUEUE</h3>";
+            entityQueue << "<div class='queue'><h3>QUEUE</h3>";
             for (std::size_t i = 0; i < hud->queue.size(); ++i) {
                 const std::string id = "queue." + std::to_string(i);
                 if (hud->queue[i].cancellable) { focus.push_back(id); actions.push_back(id); }
-                entity << "<button id='" << id << "'" << (hud->queue[i].cancellable ? "" : " disabled='disabled'")
-                       << "><img src='" << hudIcon(hud->queue[i].icon) << "'/><span>"
-                       << escapeRml(hud->queue[i].name) << " " << barPercent(hud->queue[i].progress, 1.0F) << "%</span></button>";
+                entityQueue << "<button id='" << id << "'" << (hud->queue[i].cancellable ? "" : " disabled='disabled'")
+                            << "><img src='" << hudIcon(hud->queue[i].icon) << "'/><span>"
+                            << escapeRml(hud->queue[i].name) << " " << barPercent(hud->queue[i].progress, 1.0F)
+                            << "%</span></button>";
             }
-            entity << "</div>";
+            entityQueue << "</div>";
         }
-        if (!hud->footer.empty()) entity << "<div class='footer'>" << escapeRml(hud->footer) << "</div>";
     }
     renderer.setUiText("entity-content", entity.str());
+    renderer.setUiText("entity-queue", entityQueue.str());
     renderer.setUiAttribute("entity-shell", "class", hud ? "" : "hidden");
 
     std::ostringstream alerts;
@@ -1084,6 +1091,7 @@ void PlayState::handlePauseEvent(const SDL_Event& event) {
 }
 
 void PlayState::update(float deltaSeconds) {
+    entryFadeRemaining_ = std::max(0.0F, entryFadeRemaining_ - deltaSeconds);
     for (HudAlert& alert : hudAlerts_)
         alert.remaining -= deltaSeconds;
     std::erase_if(hudAlerts_, [](const HudAlert& alert) { return alert.remaining <= 0.0F; });
@@ -1593,6 +1601,8 @@ void PlayState::render(Renderer& renderer) const {
         if (pauseTransition_ >= 0.0F)
             renderer.drawScreenFade(std::clamp(pauseTransition_ / 0.24F, 0.0F, 1.0F));
     }
+    if (entryFadeRemaining_ > 0.0F)
+        renderer.drawScreenFade(std::clamp(entryFadeRemaining_ / 0.35F, 0.0F, 1.0F));
 }
 
 StateRequest PlayState::takeRequest() {

@@ -1,10 +1,5 @@
 body {
-    width: 100%;
-    height: 100%;
-    margin: 0;
     color: #f2f8dc;
-    font-family: "Segoe UI";
-    pointer-events: none;
 }
 #pause-dim {
     position: absolute;
@@ -16,29 +11,14 @@ body {
     opacity: .42;
 }
 #pause-shell {
-    position: absolute;
-    left: 2.5%;
-    top: 5%;
-    width: 40%;
-    height: 90%;
-    pointer-events: auto;
-    animation: .28s quadratic-out enter;
+    animation: .28s quadratic-out pause_menu-enter;
 }
 #pause-panel-art {
-    position: absolute;
-    width: 100%;
-    height: 100%;
     image-color: #e3e9eb;
-    pointer-events: none;
 }
 #pause-content {
-    position: absolute;
-    left: 13%;
-    right: 13%;
     top: 14%;
     bottom: 14%;
-    display: flex;
-    flex-direction: column;
 }
 #pause-title {
     height: 55dp;
@@ -47,47 +27,34 @@ body {
     font-size: 38dp;
 }
 #pause-rule {
-    height: 2dp;
     margin-bottom: 32dp;
-    background-color: #1da6c9;
 }
 #pause-buttons {
-    display: flex;
-    flex-direction: column;
     gap: 20dp;
-    flex: 1;
 }
 .pause-button {
-    position: relative;
     width: 100%;
     height: 68dp;
-    border-width: 0;
-    background-color: transparent;
     color: #eef7dc;
     font-size: 24dp;
-    font-weight: 700;
-    cursor: pointer;
-    left: 0;
     transition: left .12s quadratic-out;
 }
 .pause-button:hover,.pause-button:focus {
     left: 6dp;
-    color: #ffffff;
 }
 .primary {
     color: #ddffca;
 }
 .danger {
-    margin-top: auto;
     color: #ffd6ce;
 }
-@keyframes enter {
+@keyframes pause_menu-enter {
     from {
         opacity: 0;
         left: 1%;
     }
     to {
         opacity: 1;
-        left: 4%;
+        left: 2.5%;
     }
 }

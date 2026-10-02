@@ -250,6 +250,24 @@ int Application::run() {
         }
         return false;
     };
+    const auto fadeOutCompletedLoading = [this]() {
+        constexpr float durationSeconds = 0.28F;
+        const auto started = Clock::now();
+        float elapsed = 0.0F;
+        while (running_ && elapsed < durationSeconds) {
+            int width = 1, height = 1;
+            SDL_GetWindowSizeInPixels(window_, &width, &height);
+            renderer_->beginProfileFrame();
+            renderer_->beginFrame(width, height);
+            renderer_->drawLoadingScreen(1.0F, Text::get("loading.click_to_start"));
+            renderer_->drawScreenFade(std::clamp(elapsed / durationSeconds, 0.0F, 1.0F));
+            renderer_->endFrame();
+            SDL_GL_SwapWindow(window_);
+            SDL_PumpEvents();
+            std::this_thread::sleep_for(std::chrono::milliseconds(8));
+            elapsed = std::chrono::duration<float>(Clock::now() - started).count();
+        }
+    };
     const auto restoreMatchSetupAfterLoading = [this]() {
         renderer_->finishLoadingScreen();
         states_->replace<MatchSetupState>();
@@ -393,6 +411,7 @@ int Application::run() {
                     restoreMatchSetupAfterLoading();
                     continue;
                 }
+                fadeOutCompletedLoading();
                 states_->replace<PlayState>(std::move(setup), std::move(prepared));
                 stateContext_->audio.setAmbient(AudioCue::gameAmbient);
             } catch (const WorldGenerationCancelled&) {
@@ -423,6 +442,7 @@ int Application::run() {
                 restoreMainMenuAfterLoading();
                 continue;
             }
+            fadeOutCompletedLoading();
             states_->replace<BuildState>(seed);
             stateContext_->audio.setAmbient(AudioCue::buildAmbient);
         } else if (request == StateRequest::loadGame) {
@@ -443,6 +463,7 @@ int Application::run() {
                     restoreMainMenuAfterLoading();
                     continue;
                 }
+                fadeOutCompletedLoading();
                 states_->replace<PlayState>(std::move(data));
                 stateContext_->audio.setAmbient(AudioCue::gameAmbient);
             } catch (const std::exception& error) {

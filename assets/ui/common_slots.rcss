@@ -1,0 +1,8 @@
+/* Shared action-slot skin; dimensions and selection colors belong to each screen. */
+.build-slot, .action, .selection-group {
+    decorator: image("../textures/ui/action_slot_transparent.png" fill);
+    image-color: #d6dfe1;
+}
+.build-slot:hover, .build-slot:focus, .action:hover, .action:focus {
+    image-color: #e8ffff;
+}

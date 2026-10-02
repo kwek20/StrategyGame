@@ -1,26 +1,28 @@
 <rml>
     <head>
+        <link type="text/rcss" href="common_base.rcss"/>
         <link type="text/rcss" href="common_buttons.rcss"/>
+        <link type="text/rcss" href="common_menus.rcss"/>
         <title>Paused</title>
         <link type="text/rcss" href="pause_menu.rcss"/>
     </head>
     <body>
         <div id="pause-dim"/>
-        <div id="pause-shell">
-            <img id="pause-panel-art" src="../textures/ui/menu_panel.png"/>
-            <div id="pause-content">
+        <div id="pause-shell" class="menu-panel">
+            <img id="pause-panel-art" class="panel-art" src="../textures/ui/menu_panel.png"/>
+            <div id="pause-content" class="menu-content">
                 <h1 id="pause-title">PAUSED</h1>
-                <div id="pause-rule"/>
-                <div id="pause-buttons">
-                    <button id="pause.resume" class="art-button pause-button primary">
+                <div id="pause-rule" class="panel-rule"/>
+                <div id="pause-buttons" class="menu-stack">
+                    <button id="pause.resume" class="art-button menu-item pause-button primary">
                         <img class="button-icon" src="../icons/source/action_move.png"/>
                         <span id="resume-label">RESUME</span>
                     </button>
-                    <button id="pause.settings" class="art-button pause-button">
+                    <button id="pause.settings" class="art-button menu-item pause-button">
                         <img class="button-icon" src="../icons/source/action_power_priority.png"/>
                         <span id="settings-label">SETTINGS</span>
                     </button>
-                    <button id="pause.exit" class="art-button pause-button danger">
+                    <button id="pause.exit" class="art-button menu-item pause-button danger">
                         <img class="button-icon" src="../icons/source/action_stop.png"/>
                         <span id="exit-label">EXIT</span>
                     </button>

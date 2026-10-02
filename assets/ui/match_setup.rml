@@ -1,123 +1,120 @@
 <rml>
     <head>
+        <link type="text/rcss" href="common_base.rcss"/>
         <link type="text/rcss" href="common_buttons.rcss"/>
+        <link type="text/template" href="form_panel.rml"/>
         <title>Match Setup</title>
         <link type="text/rcss" href="match_setup.rcss"/>
     </head>
-    <body>
-        <div id="shell">
-            <img class="panel-art" src="../textures/ui/menu_panel.png"/>
-            <div id="content">
-                <h1 id="match-title"/>
-                <div id="match-mode"/>
-                <div class="rule"/>
-                <div class="columns">
-                    <div class="left-column">
-                        <h2 id="players-header"/>
-                        <div class="option">
-                            <span id="player-label" class="label"/>
-                            <div class="selector">
-                                <button id="match.player_country.left" class="art-button compact"><span>-</span></button>
-                                <span id="match.player_country.value" class="selector-value"/>
-                                <button id="match.player_country.right" class="art-button compact"><span>+</span></button>
-                            </div>
-                        </div>
-                        <div class="option">
-                            <span id="opponent-label" class="label"/>
-                            <div class="selector">
-                                <button id="match.opponent_country.left" class="art-button compact"><span>-</span></button>
-                                <span id="match.opponent_country.value" class="selector-value"/>
-                                <button id="match.opponent_country.right" class="art-button compact"><span>+</span></button>
-                            </div>
-                        </div>
-                        <h2 id="world-header"/>
-                        <div class="option">
-                            <span id="layout-label" class="label"/>
-                            <div class="selector">
-                                <button id="match.terrain_layout.left" class="art-button compact"><span>-</span></button>
-                                <span id="match.terrain_layout.value" class="selector-value"/>
-                                <button id="match.terrain_layout.right" class="art-button compact"><span>+</span></button>
-                            </div>
-                        </div>
-                        <div class="option">
-                            <span id="size-label" class="label"/>
-                            <div class="selector">
-                                <button id="match.map_size.left" class="art-button compact"><span>-</span></button>
-                                <span id="match.map_size.value" class="selector-value"/>
-                                <button id="match.map_size.right" class="art-button compact"><span>+</span></button>
-                            </div>
-                        </div>
-                        <h2 id="economy-header"/>
-                        <div class="option compact">
-                            <span id="resources-label" class="label"/>
-                            <div class="selector">
-                                <button id="match.starting_resources.left" class="art-button compact"><span>-</span></button>
-                                <span id="match.starting_resources.value" class="selector-value"/>
-                                <button id="match.starting_resources.right" class="art-button compact"><span>+</span></button>
-                            </div>
-                        </div>
-                        <div class="option compact">
-                            <span id="abundance-label" class="label"/>
-                            <div class="selector">
-                                <button id="match.abundance.left" class="art-button compact"><span>-</span></button>
-                                <span id="match.abundance.value" class="selector-value"/>
-                                <button id="match.abundance.right" class="art-button compact"><span>+</span></button>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="right-column">
-                        <h2 id="options-header"/>
-                        <span id="seed-label" class="label"/>
-                        <div class="seed-row">
-                            <button id="match.seed" class="art-button">
-                                <span id="match.seed.value"/>
-                            </button>
-                            <button id="match.random_seed" class="art-button">
-                                <span id="random-label"/>
-                            </button>
-                        </div>
-                        <div id="summary">
-                            <h2 id="summary-header"/>
-                            <div class="summary-body">
-                                <div class="summary-list">
-                                    <div class="summary-row">
-                                        <img id="player-emblem"/>
-                                        <span id="summary-player"/>
-                                    </div>
-                                    <div class="summary-row">
-                                        <img id="opponent-emblem"/>
-                                        <span id="summary-opponent"/>
-                                    </div>
-                                    <div class="summary-row">
-                                        <span class="dot">*</span>
-                                        <span id="summary-map"/>
-                                    </div>
-                                    <div class="summary-row">
-                                        <span class="dot">*</span>
-                                        <span id="summary-resources"/>
-                                    </div>
-                                    <div class="summary-row">
-                                        <span class="dot">*</span>
-                                        <span id="summary-deposits"/>
-                                    </div>
-                                </div>
-                                <div class="preview">
-                                    <img src="../textures/ui/match_preview_filler.png"/>
-                                    <span id="preview-caption"/>
-                                </div>
-                            </div>
-                        </div>
+    <body template="form-panel">
+        <h1 id="match-title"/>
+        <div id="match-mode"/>
+        <div class="panel-rule rule"/>
+        <div class="columns">
+            <div class="column left-column">
+                <h2 id="players-header"/>
+                <div class="option">
+                    <span id="player-label" class="label"/>
+                    <div id="match.player_country" class="selector">
+                        <button id="match.player_country.left" class="art-button selector-button"><span>-</span></button>
+                        <span id="match.player_country.value" class="selector-value"/>
+                        <button id="match.player_country.right" class="art-button selector-button"><span>+</span></button>
                     </div>
                 </div>
-                <div class="actions">
-                    <button id="match.back" class="art-button danger">
-                        <span id="back-label"/>
-                    </button>
-                    <button id="match.start" class="art-button start">
-                        <span id="start-label"/>
-                    </button>
+                <div class="option">
+                    <span id="opponent-label" class="label"/>
+                    <div id="match.opponent_country" class="selector">
+                        <button id="match.opponent_country.left" class="art-button selector-button"><span>-</span></button>
+                        <span id="match.opponent_country.value" class="selector-value"/>
+                        <button id="match.opponent_country.right" class="art-button selector-button"><span>+</span></button>
+                    </div>
+                </div>
+                <h2 id="world-header"/>
+                <div class="option">
+                    <span id="layout-label" class="label"/>
+                    <div id="match.terrain_layout" class="selector">
+                        <button id="match.terrain_layout.left" class="art-button selector-button"><span>-</span></button>
+                        <span id="match.terrain_layout.value" class="selector-value"/>
+                        <button id="match.terrain_layout.right" class="art-button selector-button"><span>+</span></button>
+                    </div>
+                </div>
+                <div class="option">
+                    <span id="size-label" class="label"/>
+                    <div id="match.map_size" class="selector">
+                        <button id="match.map_size.left" class="art-button selector-button"><span>-</span></button>
+                        <span id="match.map_size.value" class="selector-value"/>
+                        <button id="match.map_size.right" class="art-button selector-button"><span>+</span></button>
+                    </div>
+                </div>
+                <h2 id="economy-header"/>
+                <div class="option compact">
+                    <span id="resources-label" class="label"/>
+                    <div id="match.starting_resources" class="selector">
+                        <button id="match.starting_resources.left" class="art-button selector-button"><span>-</span></button>
+                        <span id="match.starting_resources.value" class="selector-value"/>
+                        <button id="match.starting_resources.right" class="art-button selector-button"><span>+</span></button>
+                    </div>
+                </div>
+                <div class="option compact">
+                    <span id="abundance-label" class="label"/>
+                    <div id="match.abundance" class="selector">
+                        <button id="match.abundance.left" class="art-button selector-button"><span>-</span></button>
+                        <span id="match.abundance.value" class="selector-value"/>
+                        <button id="match.abundance.right" class="art-button selector-button"><span>+</span></button>
+                    </div>
                 </div>
             </div>
+            <div class="column right-column">
+                <h2 id="options-header"/>
+                <span id="seed-label" class="label"/>
+                <div class="seed-row">
+                    <button id="match.seed" class="art-button">
+                        <span id="match.seed.value"/>
+                    </button>
+                    <button id="match.random_seed" class="art-button">
+                        <span id="random-label"/>
+                    </button>
+                </div>
+                <div id="summary">
+                    <h2 id="summary-header"/>
+                    <div class="summary-body">
+                        <div class="summary-list">
+                            <div class="summary-row">
+                                <img id="player-emblem"/>
+                                <span id="summary-player"/>
+                            </div>
+                            <div class="summary-row">
+                                <img id="opponent-emblem"/>
+                                <span id="summary-opponent"/>
+                            </div>
+                            <div class="summary-row">
+                                <span class="dot">*</span>
+                                <span id="summary-map"/>
+                            </div>
+                            <div class="summary-row">
+                                <span class="dot">*</span>
+                                <span id="summary-resources"/>
+                            </div>
+                            <div class="summary-row">
+                                <span class="dot">*</span>
+                                <span id="summary-deposits"/>
+                            </div>
+                        </div>
+                        <div class="preview">
+                            <img src="../textures/ui/match_preview_filler.png"/>
+                            <span id="preview-caption"/>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="form-actions actions">
+            <button id="match.back" class="art-button form-action danger">
+                <span id="back-label"/>
+            </button>
+            <button id="match.start" class="art-button form-action primary">
+                <span id="start-label"/>
+            </button>
         </div>
     </body>
 </rml>

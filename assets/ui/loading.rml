@@ -1,11 +1,12 @@
 <rml>
     <head>
+        <link type="text/rcss" href="common_base.rcss"/>
         <title>Loading</title>
         <link type="text/rcss" href="loading.rcss"/>
     </head>
     <body>
         <div id="loading-shell">
-            <img id="loading-panel-art" src="../textures/ui/loading_panel.png"/>
+            <img id="loading-panel-art" class="panel-art" src="../textures/ui/loading_panel.png"/>
             <div id="loading-content">
                 <div id="loading-header">
                     <h1 id="loading-title">LOADING</h1>

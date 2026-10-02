@@ -49,6 +49,7 @@ class PlayState final : public GameState {
     mutable std::optional<glm::vec3> pendingMoveDestination_;
     mutable EntityId pendingOrderTarget_{0};
     bool paused_{false};
+    float entryFadeRemaining_{0.35F};
     float pauseTransition_{-1.0F};
     StateRequest pausePendingRequest_{StateRequest::none};
     RmlUiScreenHandle pauseScreen_{};

@@ -7,6 +7,7 @@
 #include "world/WorldGeneration.hpp"
 
 #include <SDL3/SDL.h>
+#include <RmlUi/Core.h>
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
@@ -26,6 +27,62 @@ bool noGlErrors(const char* stage) {
     }
     return valid;
 }
+
+bool checkFormPanel(strategy::Renderer& renderer, const char* selectorId, const char* actionId) {
+    renderer.focusUi(0);
+    auto* context = Rml::GetContext("strategy_ui");
+    auto* focused = context ? context->GetFocusElement() : nullptr;
+    if (!focused || focused->GetId() != selectorId) {
+        std::cerr << "Form selector did not receive keyboard focus: " << selectorId << '\n';
+        return false;
+    }
+    for (const char* id : {"shell", "content", selectorId, actionId}) {
+        const auto bounds = renderer.uiBounds(id);
+        if (!bounds || bounds->right <= bounds->left || bounds->bottom <= bounds->top) {
+            std::cerr << "Templated form element has no layout: " << id << '\n';
+            return false;
+        }
+    }
+    auto* button = focused->GetElementById(std::string(selectorId) + ".left");
+    if (!button)
+        return false;
+    // Compact artwork must not mask the shared interaction tints.
+    for (const auto& [state, color] : {
+             std::pair{"hover", Rml::Colourb(223, 255, 255)},
+             std::pair{"active", Rml::Colourb(174, 191, 196)},
+             std::pair{"disabled", Rml::Colourb(104, 114, 119)}}) {
+        button->SetPseudoClass(state, true);
+        context->Update();
+        const bool matches = button->GetProperty<Rml::Colourb>("image-color") == color;
+        button->SetPseudoClass(state, false);
+        if (!matches) {
+            std::cerr << "Selector tint overridden for state: " << state << '\n';
+            return false;
+        }
+    }
+    return true;
+}
+
+bool captureForm(strategy::Renderer& renderer, const char* name) {
+    const char* directory = SDL_getenv("STRATEGY_FORM_SCREENSHOTS");
+    if (!directory)
+        return true;
+    renderer.setUiProperty("shell", "animation", "none");
+    renderer.beginFrame(1280, 720);
+    renderer.drawRmlUi();
+    renderer.endFrame();
+    glFinish();
+    std::filesystem::create_directories(directory);
+    std::vector<unsigned char> pixels(1280 * 720 * 4), flipped(pixels.size());
+    glReadPixels(0, 0, 1280, 720, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+    for (int row = 0; row < 720; ++row)
+        std::copy_n(pixels.data() + row * 1280 * 4, 1280 * 4,
+                    flipped.data() + (719 - row) * 1280 * 4);
+    SDL_Surface* surface = SDL_CreateSurfaceFrom(1280, 720, SDL_PIXELFORMAT_RGBA32, flipped.data(), 1280 * 4);
+    const bool saved = surface && SDL_SaveBMP(surface, (std::filesystem::path(directory) / name).string().c_str());
+    SDL_DestroySurface(surface);
+    return saved;
+}
 } // namespace
 
 int strategyTestMain() {
@@ -37,7 +94,7 @@ int strategyTestMain() {
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 5);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
     SDL_Window* window =
-        SDL_CreateWindow("renderer-test", 640, 360, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN);
+        SDL_CreateWindow("renderer-test", 1280, 720, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN);
     if (!window) {
         std::cout << "Renderer test skipped: " << SDL_GetError() << '\n';
         SDL_Quit();
@@ -243,7 +300,7 @@ out vec4 color;void main(){color=vec4(1);})";
         const strategy::RmlUiScreenHandle settingsScreen =
             renderer.pushUiScreen({"assets/ui/settings.rml",
                                    {},
-                                   {"settings.resolution.left", "settings.apply"},
+                                   {"settings.resolution", "settings.apply"},
                                    {"settings.resolution.left", "settings.apply"},
                                    1.0F});
         renderer.setUiText("resolution-label", "RESOLUTION");
@@ -257,7 +314,22 @@ out vec4 color;void main(){color=vec4(1);})";
         renderer.endFrame();
         glFinish();
         valid = noGlErrors("RmlUi settings menu") && valid;
+        valid = checkFormPanel(renderer, "settings.resolution", "settings.apply") && valid;
+        valid = captureForm(renderer, "settings.bmp") && valid;
         renderer.removeUiScreen(settingsScreen);
+        const auto matchScreen = renderer.pushUiScreen({"assets/ui/match_setup.rml",
+            {{"match-title", "MATCH SETUP"}, {"player-label", "PLAYER"},
+             {"match.player_country.value", "BRAZIL"}, {"start-label", "START"}},
+            {"match.player_country", "match.start"},
+            {"match.player_country.left", "match.player_country.right", "match.start"}, 1.0F});
+        renderer.beginFrame(1280, 720);
+        renderer.drawRmlUi();
+        renderer.endFrame();
+        glFinish();
+        valid = noGlErrors("RmlUi match setup") && valid;
+        valid = checkFormPanel(renderer, "match.player_country", "match.start") && valid;
+        valid = captureForm(renderer, "match-setup.bmp") && valid;
+        renderer.removeUiScreen(matchScreen);
         const strategy::RmlUiScreenHandle buildScreen =
             renderer.pushUiScreen({"assets/ui/build_menu.rml",
                                    {},

@@ -1,6 +1,8 @@
 <rml>
     <head>
+        <link type="text/rcss" href="common_base.rcss"/>
         <link type="text/rcss" href="common_buttons.rcss"/>
+        <link type="text/rcss" href="common_slots.rcss"/>
         <title>Gameplay HUD</title>
         <link type="text/rcss" href="gameplay_hud.rcss"/>
     </head>
@@ -30,8 +32,9 @@
             <img id="minimap-frame" src="../textures/ui/minimap_frame_overlay.png"/>
         </div>
         <div id="entity-shell">
-            <img class="panel-art entity-actions-art" src="../textures/ui/hud_panel.png"/>
-            <img class="panel-art entity-info-art" src="../textures/ui/hud_compact.png"/>
+            <img class="panel-art entity-actions-art" src="../textures/ui/hud_entity_actions.png"/>
+            <img class="panel-art entity-info-art" src="../textures/ui/hud_entity_info.png"/>
+            <div id="entity-queue"/>
             <div id="entity-content"/>
         </div>
         <div id="placement-reason"/>

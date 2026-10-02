@@ -1,10 +1,5 @@
 body {
-    width: 100%;
-    height: 100%;
-    margin: 0;
     color: #f2f8dc;
-    font-family: "Segoe UI";
-    pointer-events: none;
 }
 #loading-shell {
     position: absolute;
@@ -13,12 +8,9 @@ body {
     width: 84%;
     height: 30%;
     min-height: 230dp;
-    animation: .3s quadratic-out enter;
+    animation: .3s quadratic-out loading-enter;
 }
 #loading-panel-art {
-    position: absolute;
-    width: 100%;
-    height: 100%;
     image-color: #e6ecee;
 }
 #loading-content {
@@ -45,6 +37,8 @@ body {
     font-size: 31dp;
 }
 #loading-header.ready #loading-title {
+    position: relative;
+    top: 14dp;
     animation: 1.15s infinite click-attention;
 }
 #loading-percentage {
@@ -119,7 +113,7 @@ body {
     image-color: #d8fbff;
     pointer-events: none;
 }
-@keyframes enter {
+@keyframes loading-enter {
     from {
         opacity: 0;
         top: 35%;

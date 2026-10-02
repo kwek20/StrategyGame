@@ -1,36 +1,14 @@
 body {
-    width: 100%;
-    height: 100%;
-    margin: 0;
     color: #eef5db;
-    font-family: "Segoe UI";
-    pointer-events: none;
 }
 #shell {
-    position: absolute;
     left: 5%;
     top: 3%;
     width: 90%;
     height: 94%;
-    pointer-events: auto;
-    animation: .35s quadratic-out enter;
+    animation: .35s quadratic-out match_setup-enter;
 }
-.panel-art {
-    position: absolute;
-    width: 100%;
-    height: 100%;
-    image-color: #e2e8ea;
-    pointer-events: none;
-}
-#content {
-    position: absolute;
-    left: 15%;
-    right: 15%;
-    top: 12%;
-    bottom: 10%;
-    display: flex;
-    flex-direction: column;
-}
+
 h1 {
     margin: 0;
     height: 40dp;
@@ -43,24 +21,14 @@ h1 {
     font-size: 14dp;
 }
 .rule {
-    height: 2dp;
-    background-color: #1da6c9;
     margin-bottom: 12dp;
 }
-.columns {
-    display: flex;
-    gap: 5%;
-    flex: 1;
-}
+
 .left-column {
     width: 46%;
-    display: flex;
-    flex-direction: column;
 }
 .right-column {
     width: 49%;
-    display: flex;
-    flex-direction: column;
 }
 h2 {
     margin: 1dp 0 6dp;
@@ -91,16 +59,10 @@ h2 {
     flex: 1;
 }
 button {
-    border-width: 0;
-    background-color: #081116;
     color: #f2f8dd;
     font-weight: 700;
-    cursor: pointer;
 }
-button:hover, button:focus {
-    background-color: #12313a;
-    outline: 2dp #28b6d2;
-}
+
 #summary {
     height: 250dp;
     margin-top: 18dp;
@@ -147,24 +109,11 @@ button:hover, button:focus {
     margin-top: 4dp;
 }
 .actions {
-    height: 48dp;
-    display: flex;
     align-items: center;
-    justify-content: space-between;
     margin-top: auto;
 }
-.actions button {
-    width: 205dp;
-    height: 43dp;
-    font-size: 15dp;
-}
-.actions .start {
-    color: #dfffca;
-}
-.actions .danger {
-    color: #ffd7cf;
-}
-@keyframes enter {
+
+@keyframes match_setup-enter {
     from {
         opacity: 0;
         top: 6%;
