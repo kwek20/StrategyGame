@@ -49,6 +49,7 @@ class RmlUiManager final {
     [[nodiscard]] std::string value(const std::string& id) const;
     void setAttribute(const std::string& id, const std::string& name, const std::string& value);
     void setProperty(const std::string& id, const std::string& name, const std::string& value);
+    void resetScroll(const std::string& id);
     void render(int width, int height);
 
   private:

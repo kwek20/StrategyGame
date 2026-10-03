@@ -6,7 +6,8 @@ body {
     left: 2%;
     right: 2%;
     bottom: 2%;
-    height: 36%;
+    height: 320dp;
+    max-height: 55%;
     pointer-events: auto;
     animation: .28s quadratic-out build_menu-enter;
 }
@@ -23,7 +24,8 @@ body {
     flex-direction: column;
 }
 #build-header {
-    height: 48dp;
+    height: 32dp;
+    flex-shrink: 0;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -35,7 +37,7 @@ body {
 #build-title {
     margin: 0 18dp 0 0;
     color: #fff8cb;
-    font-size: 25dp;
+    font-size: 20dp;
 }
 #build-team {
     color: #54d7f2;
@@ -58,12 +60,15 @@ body {
     flex-wrap: wrap;
     gap: 8dp;
     flex: 1;
-    overflow: hidden;
+    overflow: auto;
+    min-height: 0;
+    align-content: flex-start;
 }
 .build-slot {
     position: relative;
-    width: 84dp;
-    height: 84dp;
+    width: 80dp;
+    height: 80dp;
+    flex: 0 0 80dp;
     border-width: 0;
     background-color: #071116;
     color: #eaf4dc;
@@ -71,10 +76,10 @@ body {
 }
 .build-slot img {
     position: absolute;
-    left: 17dp;
+    left: 20dp;
     top: 7dp;
-    width: 50dp;
-    height: 50dp;
+    width: 40dp;
+    height: 40dp;
     pointer-events: none;
 }
 .build-slot span {
@@ -82,10 +87,10 @@ body {
     left: 4dp;
     right: 4dp;
     bottom: 5dp;
-    height: 18dp;
+    height: 24dp;
+    line-height: 12dp;
     overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
+    white-space: normal;
     font-size: 10dp;
     text-align: center;
     pointer-events: none;
@@ -104,6 +109,7 @@ body {
 }
 #build-footer {
     height: 42dp;
+    flex-shrink: 0;
     display: flex;
     justify-content: flex-end;
     gap: 9dp;

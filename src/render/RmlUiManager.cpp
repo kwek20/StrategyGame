@@ -17,6 +17,7 @@
 #include <glad/glad.h>
 #include <stb_image.h>
 #include <stdexcept>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -352,6 +353,8 @@ class RmlUiManager::Impl final : public Rml::EventListener {
         else if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN ||
                  event.type == SDL_EVENT_MOUSE_BUTTON_UP)
             windowId = event.button.windowID;
+        else if (event.type == SDL_EVENT_MOUSE_WHEEL)
+            windowId = event.wheel.windowID;
         if (windowId)
             if (SDL_Window* window = SDL_GetWindowFromID(windowId))
                 density = SDL_GetWindowPixelDensity(window);
@@ -369,8 +372,12 @@ class RmlUiManager::Impl final : public Rml::EventListener {
             context_->ProcessMouseButtonDown(mouseButton(event.button.button), modifiers);
         } else if (event.type == SDL_EVENT_MOUSE_BUTTON_UP)
             context_->ProcessMouseButtonUp(mouseButton(event.button.button), modifiers);
-        else if (event.type == SDL_EVENT_MOUSE_WHEEL)
+        else if (event.type == SDL_EVENT_MOUSE_WHEEL) {
+            context_->ProcessMouseMove(static_cast<int>(event.wheel.mouse_x * density),
+                                       static_cast<int>(event.wheel.mouse_y * density),
+                                       modifiers);
             context_->ProcessMouseWheel({-event.wheel.x, -event.wheel.y}, modifiers);
+        }
     }
 
     void focus(int direction) {
@@ -429,8 +436,14 @@ class RmlUiManager::Impl final : public Rml::EventListener {
     }
 
     void setText(const std::string& id, const std::string& text) {
-        if (Rml::Element* element = elementById(id))
+        if (Rml::Element* element = elementById(id)) {
+            auto& cached = screens_.back().markupCache[id];
+            // Preserve hover/focus and scroll position when the presented model is unchanged.
+            if (cached.first == text && cached.second == element->GetInnerRML())
+                return;
             element->SetInnerRML(text);
+            cached = {text, element->GetInnerRML()};
+        }
     }
 
     void setValue(const std::string& id, const std::string& value) {
@@ -454,6 +467,13 @@ class RmlUiManager::Impl final : public Rml::EventListener {
     void setProperty(const std::string& id, const std::string& name, const std::string& value) {
         if (Rml::Element* element = elementById(id))
             element->SetProperty(name, value);
+    }
+
+    void resetScroll(const std::string& id) {
+        if (Rml::Element* element = elementById(id)) {
+            element->SetScrollTop(0);
+            element->SetScrollLeft(0);
+        }
     }
 
     void render(int width, int height) {
@@ -502,6 +522,7 @@ class RmlUiManager::Impl final : public Rml::EventListener {
         RmlUiScreenDefinition definition;
         Rml::ElementDocument* document{};
         int focusIndex{};
+        std::unordered_map<std::string, std::pair<std::string, std::string>> markupCache;
     };
 
     static int modifierState() {
@@ -589,6 +610,10 @@ std::optional<RmlUiRect> RmlUiManager::bounds(const std::string& id) const {
 }
 void RmlUiManager::setText(const std::string& id, const std::string& text) {
     impl_->setText(id, text);
+}
+
+void RmlUiManager::resetScroll(const std::string& id) {
+    impl_->resetScroll(id);
 }
 void RmlUiManager::setValue(const std::string& id, const std::string& value) {
     impl_->setValue(id, value);

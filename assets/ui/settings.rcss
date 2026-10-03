@@ -22,27 +22,27 @@ h1 {
     overflow: hidden;
 }
 .column {
-    width: 45%;
+    width: 48%;
 }
 .controls {
-    width: 45%;
+    width: 48%;
 }
 h2 {
-    height: 25dp;
+    height: 28dp;
     margin: 3dp 0 6dp;
     color: #63d8f4;
     font-size: 20dp;
 }
 .setting-row {
-    height: 5.2vh;
-    min-height: 48dp;
+    height: 56dp;
+    min-height: 56dp;
     margin-bottom: .35vh;
     display: flex;
     flex-direction: column;
 }
 .label {
-    height: 1.6vh;
-    min-height: 14dp;
+    height: 18dp;
+    min-height: 18dp;
     margin-left: .5%;
     color: #b6ced6;
     font-size: 11dp;
@@ -51,7 +51,7 @@ h2 {
 .wide {
     height: 3.2vh;
     min-height: 32dp;
-    width: 62%;
+    width: 100%;
     color: #f2f8dd;
     font-size: 14dp;
     font-weight: 700;
@@ -62,8 +62,8 @@ h2 {
     gap: .45vh;
 }
 .binding-row {
-    height: 3.8vh;
-    min-height: 36dp;
+    height: auto;
+    min-height: 40dp;
     display: flex;
     align-items: center;
     gap: 2%;
@@ -75,12 +75,12 @@ h2 {
     font-size: 12dp;
     font-weight: 700;
     overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
+    white-space: normal;
 }
 .binding {
-    width: 28%;
-    min-width: 96dp;
+    width: 76dp;
+    min-width: 76dp;
+    flex: 0 0 76dp;
     height: 3.2vh;
     min-height: 32dp;
     padding: 0 2%;
@@ -93,7 +93,7 @@ h2 {
     cursor: pointer;
 }
 .keycap {
-    width: 72dp;
+    width: 60dp;
     height: 22dp;
     line-height: 22dp;
     padding: 0 6dp;

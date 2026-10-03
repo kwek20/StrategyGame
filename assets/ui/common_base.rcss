@@ -1,3 +1,5 @@
+/* RmlUi has no browser user-agent stylesheet. Declare semantic block flow. */
+div, h1, h2, h3, p { display: block; }
 /* Document defaults and decorative primitives shared by every screen. */
 body {
     width: 100%;
@@ -16,3 +18,23 @@ body {
     height: 2dp;
     background-color: #1da6c9;
 }
+
+/* Keep scrollable panels discoverable at large interface scales. */
+scrollbarvertical { width: 10dp; margin-left: 3dp; }
+scrollbarvertical slidertrack { background-color: #07171e; }
+scrollbarvertical sliderbar { background-color: #34788b; min-height: 24dp; }
+scrollbarvertical sliderbar:hover { background-color: #54d7f2; }
+scrollbarvertical sliderarrowdec, scrollbarvertical sliderarrowinc { height: 0; }
+scrollbarhorizontal { height: 10dp; margin-top: 3dp; }
+scrollbarhorizontal slidertrack { background-color: #07171e; }
+scrollbarhorizontal sliderbar { background-color: #34788b; min-width: 24dp; }
+scrollbarhorizontal sliderbar:hover { background-color: #54d7f2; }
+scrollbarhorizontal sliderarrowdec, scrollbarhorizontal sliderarrowinc { width: 0; }
+
+/* Crop the transparent gutters without duplicating the source panel texture. */
+@spritesheet hud-panel-art {
+    src: "../textures/ui/hud_panel.png";
+    resolution: 1x;
+    hud-panel-face: 42px 138px 2088px 432px;
+}
+.hud-panel-art { decorator: image(hud-panel-face fill); }

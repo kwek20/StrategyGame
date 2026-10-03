@@ -1,7 +1,7 @@
 /* Shared previous/value/next selector used by Settings and Match Setup. */
 .selector {
-    width: 62%;
-    height: 3.2vh;
+    width: 100%;
+    height: 32dp;
     min-height: 32dp;
     display: flex;
     align-items: center;
@@ -9,23 +9,27 @@
 }
 .selector-button {
     width: 3.2vh;
-    height: 3.2vh;
+    height: 32dp;
     min-width: 32dp;
     min-height: 32dp;
     padding: 0;
     color: #f8fce8;
     font-size: 22dp;
     font-weight: 700;
-    line-height: 3.2vh;
+    line-height: 32dp;
     flex: 0 0 auto;
     decorator: image("../textures/ui/compact_button.png" fill);
     image-color: #dce7ea;
 }
 .selector-value {
-    height: 2.8vh;
+    height: 28dp;
     min-height: 28dp;
-    line-height: 2.8vh;
+    line-height: 28dp;
     flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
     text-align: center;
     background-color: #061016;
     border: 1dp #173744;
@@ -51,10 +55,12 @@
     display: flex;
     flex-direction: column;
 }
-.columns { display: flex; gap: 5%; flex: 1; }
-.column { display: flex; flex-direction: column; }
+.columns { display: flex; gap: 4%; flex: 1; min-height: 0; }
+.column { display: flex; flex-direction: column; min-width: 0; overflow: auto; }
+.column > * { flex-shrink: 0; }
 .form-actions {
     height: 48dp;
+    flex-shrink: 0;
     display: flex;
     justify-content: space-between;
 }
@@ -68,3 +74,5 @@
 .primary { color: #dfffca; }
 .danger { color: #ffd7cf; }
 .art-button:hover, .art-button:focus { outline: 2dp #28b6d2; }
+
+.form-content > h1, .form-content > .rule, #match-mode { flex-shrink: 0; }

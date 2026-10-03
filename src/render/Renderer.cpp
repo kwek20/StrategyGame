@@ -590,6 +590,10 @@ std::optional<RmlUiRect> Renderer::uiBounds(const std::string& id) const {
 void Renderer::setUiText(const std::string& id, const std::string& text) {
     rmlUi_->setText(id, text);
 }
+
+void Renderer::resetUiScroll(const std::string& id) {
+    rmlUi_->resetScroll(id);
+}
 void Renderer::setUiValue(const std::string& id, const std::string& value) {
     rmlUi_->setValue(id, value);
 }
@@ -815,6 +819,47 @@ void Renderer::finishLoadingScreen() {
 void Renderer::drawText(
     const std::string& text, float x, float y, float scale, const glm::vec3& color) const {
     pendingText_.push_back({text, x, y, std::max(scale * 8.0F, 13.0F), color});
+}
+
+void Renderer::drawDiagnosticPanel(const std::vector<std::string>& lines,
+                                   glm::vec3 accent, float preferredWidth) const {
+    const auto toolbar = uiBounds("top-shell");
+    const float top = toolbar ? toolbar->bottom + 8.0F : 12.0F;
+    const float width = std::min(preferredWidth, static_cast<float>(viewportWidth_) - 24.0F);
+    const float left = (static_cast<float>(viewportWidth_) - width) * 0.5F;
+    constexpr float lineHeight = 18.0F;
+    const int rows = std::max(1, static_cast<int>((viewportHeight_ - top - 36.0F) / lineHeight));
+    int columns = 1;
+    std::vector<std::string> wrapped;
+    for (; columns <= 3; ++columns) {
+        wrapped.clear();
+        const float textWidth = width / columns - 28.0F;
+        for (const std::string& line : lines) {
+            std::string remaining = line;
+            while (font_.measureWidth(remaining, 13.0F) > textWidth) {
+                std::size_t count = remaining.size();
+                while (count > 1 && font_.measureWidth(remaining.substr(0, count), 13.0F) > textWidth)
+                    --count;
+                if (const auto space = remaining.rfind(' ', count); space != std::string::npos && space > 0)
+                    count = space;
+                wrapped.push_back(remaining.substr(0, count));
+                remaining.erase(0, count);
+                while (!remaining.empty() && remaining.front() == ' ')
+                    remaining.erase(0, 1);
+            }
+            wrapped.push_back(std::move(remaining));
+        }
+        if (wrapped.size() <= static_cast<std::size_t>(rows * columns))
+            break;
+    }
+    columns = std::min(columns, 3);
+    const float height = 24.0F + std::min(rows, static_cast<int>(wrapped.size())) * lineHeight;
+    uiRenderer_->rectangle(left, top, left + width, top + height,
+                           {0.018F, 0.030F, 0.040F}, viewportWidth_, viewportHeight_, 0.98F);
+    for (std::size_t i = 0; i < wrapped.size() && i < static_cast<std::size_t>(rows * columns); ++i)
+        drawText(wrapped[i], left + 14.0F + (i / rows) * (width / columns),
+                 top + 12.0F + (i % rows) * lineHeight, 1.0F,
+                 i == 0 ? accent : glm::vec3{0.90F, 0.95F, 0.98F});
 }
 
 void Renderer::drawTerrain(const CameraView& camera,
@@ -1456,10 +1501,6 @@ void Renderer::drawTerrainDebugHud(glm::vec3 worldPosition, const ResourceLayout
         return "unknown";
     };
 
-    constexpr float width = 430.0F;
-    constexpr float height = 420.0F;
-    const float left = std::max(8.0F, (static_cast<float>(viewportWidth_) - width) * 0.5F);
-    const float top = 52.0F;
     const glm::vec2 cursor{worldPosition.x, worldPosition.z};
     std::vector<std::string> containingFields;
     const GeneratedResourceNode* nearestNode = nullptr;
@@ -1536,12 +1577,7 @@ void Renderer::drawTerrainDebugHud(glm::vec3 worldPosition, const ResourceLayout
         Text::format("terrain_debug.resource_node",
                      {nearestNode ? nearestNode->archetype.value : "none",
                       nearestNode ? number(nearestNodeDistance, 1) : "-"})};
-    uiRenderer_->rectangle(left, top, left + width, top + height,
-                           {0.025F, 0.035F, 0.045F}, viewportWidth_, viewportHeight_, 0.96F);
-    for (std::size_t index = 0; index < lines.size(); ++index)
-        drawText(lines[index], left + 14.0F, top + 13.0F + static_cast<float>(index) * 27.0F,
-                 index == 0 ? 1.25F : 1.05F,
-                 index == 0 ? glm::vec3{1.0F, 0.82F, 0.28F} : glm::vec3{0.92F, 0.95F, 0.98F});
+    drawDiagnosticPanel(lines, {1.0F, 0.82F, 0.28F}, 780.0F);
 }
 
 void Renderer::drawWaterDebugHud(glm::vec3 worldPosition, int mode) const {
@@ -1562,10 +1598,6 @@ void Renderer::drawWaterDebugHud(glm::vec3 worldPosition, int mode) const {
     const char* modeName = mode == 1   ? "RAW GENERATION"
                            : mode == 2 ? "SMOOTHED RESULT"
                                        : "SMOOTHING DIFFERENCE";
-    constexpr float width = 430.0F;
-    constexpr float height = 205.0F;
-    const float left = std::max(8.0F, (static_cast<float>(viewportWidth_) - width) * 0.5F);
-    const float top = 52.0F;
     const std::vector<std::string> lines{
         std::string{"WATER DEBUG - "} + modeName + "  F6 TO CYCLE",
         "CURSOR  X " + number(worldPosition.x, 2) + "  Z " + number(worldPosition.z, 2),
@@ -1577,12 +1609,7 @@ void Renderer::drawWaterDebugHud(glm::vec3 worldPosition, int mode) const {
             number(smoothedDepth - generatedDepth),
         "FLOW       X " + number(flow.x) + "  Z " + number(flow.y) + "  LENGTH " +
             number(glm::length(flow))};
-    uiRenderer_->rectangle(left, top, left + width, top + height,
-                           {0.018F, 0.030F, 0.045F}, viewportWidth_, viewportHeight_, 0.96F);
-    for (std::size_t index = 0; index < lines.size(); ++index)
-        drawText(lines[index], left + 14.0F, top + 13.0F + static_cast<float>(index) * 29.0F,
-                 index == 0 ? 1.15F : 1.0F,
-                 index == 0 ? glm::vec3{0.25F, 0.82F, 1.0F} : glm::vec3{0.90F, 0.95F, 0.98F});
+    drawDiagnosticPanel(lines, {0.25F, 0.82F, 1.0F}, 780.0F);
 }
 
 void Renderer::drawDetailedDebugHud(const CameraView& camera,
@@ -1591,7 +1618,7 @@ void Renderer::drawDetailedDebugHud(const CameraView& camera,
                                     std::uint32_t seed,
                                     std::uint64_t tick,
                                     std::size_t entityCount) const {
-    renderGraph_.enter(RenderPassKind::overlay);
+    renderGraph_.enter(RenderPassKind::userInterface);
     (void)player;
     const auto number = [](float value) {
         std::ostringstream stream;
@@ -1726,35 +1753,7 @@ void Renderer::drawDetailedDebugHud(const CameraView& camera,
                         number(effectiveSightRange(entity->vision.sightRange, elevation)));
         lines.push_back("  circles: cyan=unit range, yellow=height modified");
     }
-    const float left = 10.0F, top = 50.0F,
-                right = std::min(static_cast<float>(viewportWidth_) - 12.0F, 790.0F),
-                bottom = std::min(static_cast<float>(viewportHeight_) - 12.0F,
-                                  top + 18.0F + static_cast<float>(lines.size()) * 15.0F);
-    std::vector<glm::vec2> panel;
-    appendHudRectangle(panel, left, top, right, bottom, viewportWidth_, viewportHeight_);
-    glDisable(GL_DEPTH_TEST);
-    glDisable(GL_CULL_FACE);
-    shaders_.use(hudProgram_);
-    glUniform3f(shaders_.uniform(hudProgram_, "hudColor"), 0.018F, 0.028F, 0.038F);
-    glBindVertexArray(hudVao_);
-    glBindBuffer(GL_ARRAY_BUFFER, hudVbo_);
-    glBufferData(GL_ARRAY_BUFFER,
-                 static_cast<GLsizeiptr>(panel.size() * sizeof(glm::vec2)),
-                 panel.data(),
-                 GL_DYNAMIC_DRAW);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(glm::vec2), nullptr);
-    glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(panel.size()));
-    for (std::size_t index = 0; index < lines.size(); ++index)
-        if (top + 8.0F + index * 15.0F < bottom - 10.0F)
-            drawText(lines[index],
-                     left + 10.0F,
-                     top + 6.0F + index * 15.0F,
-                     1.15F,
-                     index == 0 ? glm::vec3{0.20F, 0.82F, 0.94F} : glm::vec3{0.88F, 0.94F, 0.86F});
-    glBindVertexArray(0);
-    glEnable(GL_CULL_FACE);
-    glEnable(GL_DEPTH_TEST);
+    drawDiagnosticPanel(lines, {0.20F, 0.82F, 0.94F}, 1160.0F);
 }
 
 void Renderer::drawPowerRanges(const World& world, const CameraView& camera, PlayerId owner) const {
@@ -2134,10 +2133,6 @@ void Renderer::drawPowerDebugHud(const World& world,
                : value == PowerPriority::low ? "LOW"
                                              : "MEDIUM";
     };
-    constexpr float width = 510.0F;
-    constexpr float height = 320.0F;
-    const float left = std::max(8.0F, (static_cast<float>(viewportWidth_) - width) * 0.5F);
-    const float top = 52.0F;
     std::vector<std::string> lines{
         "POWER DEBUG  F7 TO CLOSE",
         "DEVICES " + std::to_string(devices) + "  GRIDS " + std::to_string(grids.size()) +
@@ -2172,12 +2167,7 @@ void Renderer::drawPowerDebugHud(const World& world,
                         (nearest->power.consumptionEnabled ? "  USE ON" : "  USE OFF") +
                         (nearest->power.outputEnabled ? "  OUT ON" : "  OUT OFF"));
     }
-    uiRenderer_->rectangle(left, top, left + width, top + height,
-                           {0.018F, 0.030F, 0.040F}, viewportWidth_, viewportHeight_, 0.96F);
-    for (std::size_t index = 0; index < lines.size(); ++index)
-        drawText(lines[index], left + 14.0F, top + 12.0F + static_cast<float>(index) * 27.0F,
-                 index == 0 ? 1.2F : 0.98F,
-                 index == 0 ? glm::vec3{0.22F, 0.86F, 1.0F} : glm::vec3{0.90F, 0.95F, 0.98F});
+    drawDiagnosticPanel(lines, {0.22F, 0.86F, 1.0F}, 780.0F);
 }
 
 void Renderer::regenerateTerrain(std::uint32_t seed,

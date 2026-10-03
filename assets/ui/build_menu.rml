@@ -8,7 +8,7 @@
     </head>
     <body>
         <div id="build-shell">
-            <img id="build-panel-art" class="panel-art" src="../textures/ui/hud_panel.png"/>
+            <div id="build-panel-art" class="panel-art hud-panel-art"/>
             <div id="build-content">
                 <div id="build-header">
                     <div>

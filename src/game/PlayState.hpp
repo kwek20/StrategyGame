@@ -72,6 +72,8 @@ class PlayState final : public GameState {
     };
     std::vector<HudAlert> hudAlerts_;
     mutable std::vector<std::string> hudShortcuts_;
+    mutable EntityId hudSelectedEntity_{0};
+    mutable std::vector<EntityId> hudSelectedUnits_;
     StateRequest request_{StateRequest::none};
     GameConfig config_;
     mutable std::optional<std::uint32_t> pendingTerrainSeed_;

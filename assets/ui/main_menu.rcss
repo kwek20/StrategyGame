@@ -15,9 +15,12 @@ body {
 }
 #menu-title {
     margin: 0;
-    height: 58dp;
+    height: auto;
+    flex-shrink: 0;
+    line-height: 1.1;
+    margin-bottom: 12dp;
     color: #fff8c9;
-    font-size: 38dp;
+    font-size: 4.4vh;
     font-weight: 700;
     letter-spacing: 1dp;
 }
@@ -28,11 +31,11 @@ body {
     gap: 14dp;
 }
 .menu-button {
-    width: 90%;
-    height: 12%;
-    padding: 0 24dp;
+    width: 96%;
+    height: 16%;
+    padding: 0;
     color: #edf6da;
-    font-size: 25dp;
+    font-size: 3vh;
     letter-spacing: 0.5dp;
     transition: left color 0.12s quadratic-out;
 }

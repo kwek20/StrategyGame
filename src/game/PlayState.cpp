@@ -328,6 +328,7 @@ void PlayState::updateGameplayHud(Renderer& renderer, const Player* player) cons
     renderer.setUiAttribute("power-panel", "class", powerOverlayVisible_ ? "" : "hidden");
 
     std::ostringstream entity;
+    std::ostringstream entityInfo;
     std::ostringstream entityQueue;
     std::optional<EntityHudModel> hud;
     const Entity* selected = session_.world().findEntity(possessedEntity_ ? possessedEntity_ : selectedEntity_);
@@ -345,8 +346,7 @@ void PlayState::updateGameplayHud(Renderer& renderer, const Player* player) cons
     }
     hudShortcuts_.clear();
     if (hud) {
-        std::ostringstream entityInfo;
-        entityInfo << "<div class='entity-info'><div class='entity-title'>" << escapeRml(hud->title)
+        entityInfo << "<div class='entity-title'>" << escapeRml(hud->title)
                    << "</div><div class='entity-main'><img class='portrait' src='" << hudIcon(hud->portraitIcon)
                    << "'/><div class='bars-stats'>";
         for (const HudBarModel& bar : hud->bars) {
@@ -363,8 +363,6 @@ void PlayState::updateGameplayHud(Renderer& renderer, const Player* player) cons
         entityInfo << "</div>";
         if (!hud->footer.empty())
             entityInfo << "<div class='footer'>" << escapeRml(hud->footer) << "</div>";
-        entityInfo << "</div>";
-        entity << "<div class='entity-actions'>";
         std::size_t actionColumn = 0;
         const auto beginAction = [&]() {
             if (actionColumn == 0)
@@ -416,8 +414,6 @@ void PlayState::updateGameplayHud(Renderer& renderer, const Player* player) cons
             }
             if (actionColumn != 0) { entity << "</div>"; actionColumn = 0; }
         }
-        entity << "</div>";
-        entity << entityInfo.str();
         if (!hud->queue.empty()) {
             entityQueue << "<div class='queue'><h3>QUEUE</h3>";
             for (std::size_t i = 0; i < hud->queue.size(); ++i) {
@@ -431,9 +427,19 @@ void PlayState::updateGameplayHud(Renderer& renderer, const Player* player) cons
             entityQueue << "</div>";
         }
     }
-    renderer.setUiText("entity-content", entity.str());
+    renderer.setUiText("entity-actions", entity.str());
+    renderer.setUiText("entity-info", entityInfo.str());
+    const EntityId hudEntity = hud && selected ? selected->id : 0;
+    if (hudSelectedEntity_ != hudEntity || hudSelectedUnits_ != selectedUnits_) {
+        renderer.resetUiScroll("entity-actions");
+        renderer.resetUiScroll("entity-info");
+        hudSelectedEntity_ = hudEntity;
+        hudSelectedUnits_ = selectedUnits_;
+    }
     renderer.setUiText("entity-queue", entityQueue.str());
-    renderer.setUiAttribute("entity-shell", "class", hud ? "" : "hidden");
+    renderer.setUiAttribute("entity-shell", "class", !hud ? "hidden" :
+        hud->actions.empty() && hud->selectionGroups.empty() ? "info-only" : "");
+    renderer.setUiProperty("minimap-shell", "display", viewMode_ == ViewMode::unitControl ? "none" : "block");
 
     std::ostringstream alerts;
     for (const HudAlert& alert : hudAlerts_) alerts << "<div class='alert'>" << escapeRml(alert.text) << "</div>";
@@ -805,12 +811,18 @@ void PlayState::handleEvent(const SDL_Event& event) {
     if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
         event.key.key == bound("debug", SDLK_F3)) {
         detailedDebug_ = !detailedDebug_;
+        if (detailedDebug_) {
+            terrainDebug_ = false;
+            waterDebugMode_ = 0;
+            powerDebug_ = false;
+        }
         return;
     }
     if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
         event.key.key == bound("terrain_debug", SDLK_F4)) {
         terrainDebug_ = !terrainDebug_;
         if (terrainDebug_) {
+            detailedDebug_ = false;
             waterDebugMode_ = 0;
             powerDebug_ = false;
         }
@@ -820,6 +832,7 @@ void PlayState::handleEvent(const SDL_Event& event) {
         event.key.key == bound("water_debug", SDLK_F6)) {
         waterDebugMode_ = (waterDebugMode_ + 1) % 4;
         if (waterDebugMode_ != 0) {
+            detailedDebug_ = false;
             terrainDebug_ = false;
             powerDebug_ = false;
         }
@@ -829,6 +842,7 @@ void PlayState::handleEvent(const SDL_Event& event) {
         event.key.key == bound("power_debug", SDLK_F7)) {
         powerDebug_ = !powerDebug_;
         if (powerDebug_) {
+            detailedDebug_ = false;
             terrainDebug_ = false;
             waterDebugMode_ = 0;
         }
@@ -950,7 +964,8 @@ void PlayState::handleEvent(const SDL_Event& event) {
         context_.renderer->handleUiEvent(event);
         if (const auto action = context_.renderer->takeUiAction(); action && handleGameplayHudAction(*action))
             return;
-        if ((event.type == SDL_EVENT_MOUSE_BUTTON_DOWN || event.type == SDL_EVENT_MOUSE_BUTTON_UP) &&
+        if ((event.type == SDL_EVENT_MOUSE_BUTTON_DOWN || event.type == SDL_EVENT_MOUSE_BUTTON_UP ||
+             event.type == SDL_EVENT_MOUSE_WHEEL) &&
             context_.renderer->pointerOverUi())
             return;
     }
@@ -1598,12 +1613,6 @@ void PlayState::render(Renderer& renderer) const {
     if (detailedDebug_) {
         const EntityId detailEntity = possessedEntity_ ? possessedEntity_ : selectedEntity_;
         renderer.drawVisionRanges(view, session_.world().findEntity(detailEntity));
-        renderer.drawDetailedDebugHud(view,
-                                      session_.world().findEntity(detailEntity),
-                                      visibilityPlayer,
-                                      session_.terrainSeed(),
-                                      session_.tick(),
-                                      session_.world().size());
     }
     if (!paused_) {
         updateGameplayHud(renderer, local);
@@ -1616,15 +1625,19 @@ void PlayState::render(Renderer& renderer) const {
     // Terrain inspection is a UI pass and must remain after every world/overlay pass.
     // Keeping it at the top of the visual stack also prevents entity outlines from
     // showing through its opaque panel.
-    if (terrainDebug_) {
+    if (detailedDebug_ && !paused_)
+        renderer.drawDetailedDebugHud(view,
+            session_.world().findEntity(possessedEntity_ ? possessedEntity_ : selectedEntity_),
+            visibilityPlayer, session_.terrainSeed(), session_.tick(), session_.world().size());
+    if (terrainDebug_ && !paused_) {
         const glm::vec3 cursor = renderer.screenToTerrain(pointerScreen_.x, pointerScreen_.y, view);
         renderer.drawTerrainDebugHud(cursor, session_.resourceLayout());
     }
-    if (waterDebugMode_ != 0) {
+    if (waterDebugMode_ != 0 && !paused_) {
         const glm::vec3 cursor = renderer.screenToTerrain(pointerScreen_.x, pointerScreen_.y, view);
         renderer.drawWaterDebugHud(cursor, waterDebugMode_);
     }
-    if (powerDebug_) {
+    if (powerDebug_ && !paused_) {
         const glm::vec3 cursor = renderer.screenToTerrain(pointerScreen_.x, pointerScreen_.y, view);
         renderer.drawPowerDebugHud(session_.world(), localPlayer_, cursor);
     }

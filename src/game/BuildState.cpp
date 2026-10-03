@@ -217,6 +217,8 @@ void BuildState::handleEvent(const SDL_Event& event) {
         return;
     }
     if (event.type == SDL_EVENT_MOUSE_WHEEL) {
+        if (context_.renderer->pointerOverUi())
+            return;
         camera_.zoom(event.wheel.y);
         return;
     }

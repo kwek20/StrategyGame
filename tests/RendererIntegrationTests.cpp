@@ -390,12 +390,13 @@ out vec4 color;void main(){color=vec4(1);})";
                            "<div class='resource'><img src='../icons/source/resource_scrap.png'/><span>125</span></div>");
         renderer.setUiText("entity-content",
                            "<div id='test.info' class='entity-info'><div class='entity-title'>CONSTRUCTION DRONE</div>"
+                           "<div class='entity-main'><img class='portrait' src='../icons/source/building_alloy_processor.png'/><div class='bars-stats'>"
                            "<div class='hud-bar progress-track'><progress id='test.health' class='progress-fill health' value='0.72' max='1'/>"
                            "<span class='progress-label'>HEALTH 72 / 100</span></div>"
                            "<div class='hud-bar progress-track'><progress id='test.power' class='progress-fill power' value='0.35' max='1'/>"
                            "<span class='progress-label'>ENERGY 35 / 100</span></div>"
                            "<div class='hud-bar progress-track'><progress id='test.construction' class='progress-fill construction' value='0.5' max='1'/>"
-                           "<span class='progress-label'>BUILD 50 / 100</span></div>"
+                           "<span class='progress-label'>BUILD 50 / 100</span></div></div></div>"
                            "<div class='stats-list'><div class='stat'><span class='stat-label'>CARGO</span>"
                            "<span id='test.stat' class='stat-value'>100 / 100</span></div></div></div>"
                            "<div class='entity-actions'><button id='action.preview' class='action'>"
@@ -409,7 +410,9 @@ out vec4 color;void main(){color=vec4(1);})";
             palette += "<button id='" + std::string(i == 0 ? "action.preview" : "test.slot." + std::to_string(i)) +
                        "' class='action'><img src='../icons/source/building_alloy_processor.png'/>"
                        "<span class='action-name'>ALLOY PROCESSOR</span><span class='action-hotkey'>Alt+" +
-                       std::to_string((i + 1) % 10) + "</span></button>";
+                       std::string(1, "1234567890-="[i]) + "</span>"
+                       "<div class='tooltip'><b>ALLOY PROCESSOR</b><br/>Converts scrap into alloy."
+                       "<br/>COST: 150 SCRAP<br/>Requires power.</div></button>";
             if (i % 4 == 3 || i == 10) palette += "</div>";
         }
         actionPanel->SetInnerRML(palette);
@@ -434,12 +437,71 @@ out vec4 color;void main(){color=vec4(1);})";
         valid = checkProgress(renderer, "test.construction", Rml::Colourb(239, 191, 86)) && valid;
         valid = captureForm(renderer, "progress-bars.bmp") && valid;
         const auto unscaledActionBounds = renderer.uiBounds("action.preview");
+        hudDocument->GetElementById("action.preview")->SetPseudoClass("hover", true);
+        hudDocument->GetElementById("action.preview")->QuerySelector(".tooltip")->SetProperty("animation", "none");
+        valid = captureForm(renderer, "hud-tooltip.bmp") && valid;
+        hudDocument->GetElementById("action.preview")->SetPseudoClass("hover", false);
         renderer.setUiScale(1.5F);
         renderer.beginFrame(1280, 720);
         renderer.drawRmlUi();
         renderer.endFrame();
         glFinish();
         const auto scaledActionBounds = renderer.uiBounds("action.preview");
+        const std::string scrollMarkup =
+            "<div id='test.scroll' style='height:60px; overflow:auto;'>"
+            "<div style='height:500px;'>SCROLL RETENTION</div></div>";
+        renderer.setUiText("entity-queue", scrollMarkup);
+        hudContext->Update();
+        auto* scrollPanel = hudDocument->GetElementById("test.scroll");
+        scrollPanel->SetScrollTop(90);
+        renderer.setUiText("entity-queue", scrollMarkup);
+        hudContext->Update();
+        if (hudDocument->GetElementById("test.scroll") != scrollPanel || scrollPanel->GetScrollTop() < 89) {
+            std::cerr << "Identical HUD updates reset the scrolling subtree\n";
+            valid = false;
+        }
+        // The cache must detect changes made through another UI API.
+        renderer.resetUiScroll("test.scroll");
+        if (scrollPanel->GetScrollTop() != 0) {
+            std::cerr << "Explicit selection scroll reset failed\n";
+            valid = false;
+        }
+        scrollPanel->SetInnerRML("ALTERED");
+        renderer.setUiText("entity-queue", scrollMarkup);
+        hudContext->Update();
+        scrollPanel = hudDocument->GetElementById("test.scroll");
+        if (scrollPanel->GetInnerRML().find("SCROLL RETENTION") == std::string::npos) {
+            std::cerr << "Cached markup failed to restore externally changed content\n";
+            valid = false;
+        }
+        const auto scrollBounds = renderer.uiBounds("test.scroll");
+        SDL_Event wheel{};
+        wheel.type = SDL_EVENT_MOUSE_WHEEL;
+        wheel.wheel.mouse_x = (scrollBounds->left + scrollBounds->right) * 0.5F;
+        wheel.wheel.mouse_y = (scrollBounds->top + scrollBounds->bottom) * 0.5F;
+        wheel.wheel.y = -3;
+        renderer.handleUiEvent(wheel);
+        for (int i = 0; i < 12; ++i) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            hudContext->Update();
+        }
+        if (!renderer.pointerOverUi() || scrollPanel->GetScrollTop() < 1) {
+            std::cerr << "Wheel event did not target and scroll its UI panel\n";
+            valid = false;
+        }
+        renderer.setUiText("entity-queue", "");
+        valid = captureForm(renderer, "hud-large.bmp") && valid;
+        renderer.setUiAttribute("entity-shell", "class", "info-only");
+        hudContext->Update();
+        const auto compactInfo = renderer.uiBounds("test.info");
+        const auto compactShell = renderer.uiBounds("entity-shell");
+        if (!compactInfo || !compactShell || compactInfo->right > compactShell->right ||
+            compactInfo->left < compactShell->left || actionPanel->GetClientWidth() != 0) {
+            std::cerr << "Information-only HUD failed to compact its layout\n";
+            valid = false;
+        }
+        valid = captureForm(renderer, "hud-info-only.bmp") && valid;
+        renderer.setUiAttribute("entity-shell", "class", "");
         if (!unscaledActionBounds || !scaledActionBounds ||
             scaledActionBounds->right - scaledActionBounds->left <=
                 (unscaledActionBounds->right - unscaledActionBounds->left) * 1.25F) {

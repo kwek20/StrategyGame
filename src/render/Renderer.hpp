@@ -69,6 +69,7 @@ class Renderer final {
                        std::vector<std::string> actionIds);
     [[nodiscard]] std::optional<RmlUiRect> uiBounds(const std::string& id) const;
     void setUiText(const std::string& id, const std::string& text);
+    void resetUiScroll(const std::string& id);
     void setUiValue(const std::string& id, const std::string& value);
     [[nodiscard]] std::string uiValue(const std::string& id) const;
     void setUiAttribute(const std::string& id, const std::string& name, const std::string& value);
@@ -302,6 +303,8 @@ class Renderer final {
                   float y,
                   float scale,
                   const glm::vec3& color = {0.95F, 0.98F, 0.82F}) const;
+    void drawDiagnosticPanel(const std::vector<std::string>& lines,
+                             glm::vec3 accent, float preferredWidth) const;
 };
 
 } // namespace strategy

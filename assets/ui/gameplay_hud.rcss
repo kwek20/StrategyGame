@@ -28,7 +28,7 @@ button:hover, button:focus {
 #resources-content {
     position: absolute;
     left: 2.5%;
-    right: 11%;
+    right: 190dp;
     top: 10%;
     height: 80%;
     display: flex;
@@ -45,7 +45,7 @@ button:hover, button:focus {
     display: flex;
     align-items: center;
     gap: .35vw;
-    font-size: 1.15vh;
+    font-size: 12dp;
     font-weight: 700;
 }
 .resource img {
@@ -59,19 +59,19 @@ button:hover, button:focus {
     top: 8%;
     height: 84%;
     min-height: 36dp;
-    font-size: 1vh;
+    font-size: 12dp;
     font-weight: 700;
 }
 .top-menu-button {
     color: #f2f8dd;
 }
 #hud\.satellite {
-    right: 5.75%;
-    width: 4.5%;
+    right: 90dp;
+    width: 72dp;
 }
 #hud\.menu {
-    right: 1%;
-    width: 4.5%;
+    right: 12dp;
+    width: 72dp;
 }
 .power-resource {
     height: 100%;
@@ -79,7 +79,7 @@ button:hover, button:focus {
     background-color: #07171e;
     border: 1dp #249bb7;
     color: #dff8ff;
-    font-size: 1.15vh;
+    font-size: 12dp;
     font-weight: 700;
 }
 .power-resource:hover, .power-resource:focus {
@@ -90,34 +90,34 @@ button:hover, button:focus {
 #power-panel {
     position: absolute;
     left: 1%;
-    top: 5vh;
-    width: 36vw;
-    height: 12vw;
-    min-width: 560dp;
-    min-height: 185dp;
-    pointer-events: none;
+    top: 56dp;
+    width: 560dp;
+    max-width: 70%;
+    height: 220dp;
+    max-height: 38%;
+    pointer-events: auto;
 }
 #power-content {
     position: absolute;
     left: 6%;
     right: 6%;
-    top: 22%;
-    bottom: 20%;
-    overflow: hidden;
-    font-size: 1vh;
+    top: 12%;
+    bottom: 12%;
+    overflow: auto;
+    font-size: 12dp;
 }
 #power-content h2 {
     margin: 0 0 .7vh;
     color: #43c9e5;
-    font-size: 1.5vh;
+    font-size: 18dp;
 }
 .power-summary {
     margin-bottom: .4vh;
     color: #dce9e4;
 }
 .power-device {
-    height: 1.45vh;
-    min-height: 16dp;
+    height: 20dp;
+    min-height: 20dp;
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
@@ -142,11 +142,11 @@ button:hover, button:focus {
 #minimap-shell {
     position: absolute;
     right: 1%;
-    top: 5.5vh;
+    top: 56dp;
     width: 22vh;
     height: 22vh;
-    min-width: 220dp;
-    min-height: 220dp;
+    min-width: 160dp;
+    min-height: 160dp;
     pointer-events: auto;
 }
 #minimap-content {
@@ -186,6 +186,10 @@ button:hover, button:focus {
     height: 100%;
 }
 #entity-shell.hidden,#power-panel.hidden { display: none; }
+#entity-shell.info-only { width: 392dp; max-width: 49%; }
+.info-only .entity-actions-art, .info-only .entity-actions { display: none; }
+.info-only .entity-info-art { left: 0; width: 100%; }
+.info-only .entity-info { left: 8%; right: 8%; }
 #entity-content {
     position: absolute;
     left: 0;
@@ -205,6 +209,7 @@ button:hover, button:focus {
     overflow: auto;
 }
 .entity-title {
+    flex-shrink: 0;
     height: 2.5vh;
     min-height: 27dp;
     overflow: hidden;
@@ -240,6 +245,7 @@ button:hover, button:focus {
     font-size: 11dp;
 }
 .stats-list {
+    flex-shrink: 0;
     margin-top: .65vh;
     border-top: 1dp #285765;
     padding-top: .45vh;
@@ -338,10 +344,10 @@ button:hover, button:focus {
 .tooltip {
     clip: none;
     visibility: hidden;
-    position: fixed;
-    left: 12dp;
-    top: 35%;
-    width: 320dp;
+    position: absolute;
+    left: 0;
+    bottom: 100%;
+    width: 260dp;
     padding: 10dp;
     background-color: #050a0df5;
     border: 2dp #43c9e5;
@@ -354,7 +360,6 @@ button:hover, button:focus {
 .action:hover .tooltip {
     clip: none;
     visibility: visible;
-    animation: .5s linear tooltip-in;
 }
 #entity-queue {
     position: absolute;
@@ -371,14 +376,17 @@ button:hover, button:focus {
     gap: .5vw;
     background-color: #061117ee;
     border: 1dp #3199ad;
-    overflow: hidden;
+    overflow-x: auto;
+    overflow-y: hidden;
 }
 .queue h3 {
     margin: 0 .35vw 0 0;
     color: #43c9e5;
-    font-size: 1.05vh;
+    font-size: 12dp;
+    flex-shrink: 0;
 }
 .queue button {
+    flex-shrink: 0;
     width: 9vw;
     min-width: 150dp;
     height: 4.2vh;
@@ -386,7 +394,7 @@ button:hover, button:focus {
     display: flex;
     align-items: center;
     text-align: left;
-    font-size: 1vh;
+    font-size: 12dp;
 }
 .queue img {
     width: 3.2vh;
@@ -408,10 +416,11 @@ button:hover, button:focus {
     margin-left: 7dp;
 }
 .footer {
+    flex-shrink: 0;
     margin-top: auto;
     padding-top: .4vh;
     color: #9ec2ca;
-    font-size: 1vh;
+    font-size: 12dp;
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
@@ -424,12 +433,4 @@ button:hover, button:focus {
     border: 2dp #d95a38;
     color: #ffe4d7;
     font-size: 12dp;
-}
-@keyframes tooltip-in {
-    from {
-        opacity: 0;
-    }
-    to {
-        opacity: 1;
-    }
 }

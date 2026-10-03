@@ -24,7 +24,7 @@
             </button>
         </div>
         <div id="power-panel">
-            <img class="panel-art" src="../textures/ui/hud_panel.png"/>
+            <div class="panel-art hud-panel-art"/>
             <div id="power-content"/>
         </div>
         <div id="alerts"/>
@@ -36,7 +36,10 @@
             <img class="panel-art entity-actions-art" src="../textures/ui/hud_entity_actions.png"/>
             <img class="panel-art entity-info-art" src="../textures/ui/hud_entity_info.png"/>
             <div id="entity-queue"/>
-            <div id="entity-content"/>
+            <div id="entity-content">
+                <div id="entity-actions" class="entity-actions"/>
+                <div id="entity-info" class="entity-info"/>
+            </div>
         </div>
         <div id="placement-reason"/>
     </body>
