@@ -380,7 +380,8 @@ void PlayState::updateGameplayHud(Renderer& renderer, const Player* player) cons
             focus.push_back(id); actions.push_back(id);
             beginAction();
             entity << "<button id='" << escapeRml(id) << "' class='selection-group'><img src='"
-                   << hudIcon(group.icon) << "'/><span>" << group.count << "</span></button>";
+                   << hudIcon(group.icon) << "'/><span class='selection-count'>" << group.count
+                   << "</span><span class='action-name'>" << escapeRml(group.name) << "</span></button>";
             endAction();
         }
         if (actionColumn != 0) { entity << "</div>"; actionColumn = 0; }

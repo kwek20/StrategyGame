@@ -496,7 +496,8 @@ out vec4 color;void main(){color=vec4(1);})";
         const auto compactInfo = renderer.uiBounds("test.info");
         const auto compactShell = renderer.uiBounds("entity-shell");
         if (!compactInfo || !compactShell || compactInfo->right > compactShell->right ||
-            compactInfo->left < compactShell->left || actionPanel->GetClientWidth() != 0) {
+            compactInfo->left < compactShell->left ||
+            actionPanel->GetProperty<Rml::Style::Display>("display") != Rml::Style::Display::None) {
             std::cerr << "Information-only HUD failed to compact its layout\n";
             valid = false;
         }

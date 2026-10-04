@@ -23,6 +23,11 @@ int strategyTestMain() {
     valid = valid && multiple.totalEntities == 2 && multiple.cards.size() == 2 &&
             multiple.selectionGroups.size() == 1 && multiple.selectionGroups[0].count == 2 &&
             multiple.cards[0].bars.size() == 2 && multiple.cards[1].bars.size() == 2;
+    valid = valid && multiple.bars.size() == 1 && multiple.bars[0].kind == strategy::HudBarKind::health &&
+            multiple.bars[0].current == single.bars[0].current * 2 &&
+            multiple.bars[0].maximum == single.bars[0].maximum * 2 &&
+            multiple.stats.size() == 1 && multiple.stats[0].value == "2" &&
+            multiple.title == "2 ENTITIES SELECTED" && !multiple.footer.empty();
 
     auto& building = world.createEntity("Hub", "command_hub", 1);
     definitions.initializeEntity(building);

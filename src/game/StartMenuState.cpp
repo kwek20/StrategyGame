@@ -12,7 +12,7 @@
 
 namespace strategy {
 
-StartMenuState::StartMenuState(StateContext& context)
+StartMenuState::StartMenuState(StateContext& context, std::string status)
     : GameState(context)
     , config_(GameConfig::load(context.configPath)) {
     if (!context_.renderer)
@@ -27,6 +27,8 @@ StartMenuState::StartMenuState(StateContext& context)
                                                {"play", "build", "load", "settings", "exit"},
                                                {"play", "build", "load", "settings", "exit"},
                                                config_.uiScale});
+    context_.renderer->setUiText("menu-status", status);
+    context_.renderer->setUiProperty("menu-status", "display", status.empty() ? "none" : "block");
 }
 
 StartMenuState::~StartMenuState() {

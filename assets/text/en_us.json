@@ -1,4 +1,7 @@
 {
+  "entity_hud.selection_count": "{0} ENTITIES SELECTED",
+  "entity_hud.filter_group": "SELECT A GROUP TO FILTER",
+  "menu.load_failed": "COULD NOT LOAD SAVED GAME<br/>The save may be missing or incompatible. You can start a new match or try loading again.",
   "entity_hud.group_commands": "COMMANDS",
   "entity_hud.group_construction": "CONSTRUCTION",
   "entity_hud.tooltip_cost": "Cost: {0}",

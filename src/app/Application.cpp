@@ -469,7 +469,8 @@ int Application::run() {
             } catch (const std::exception& error) {
                 logger_->error("persistence",
                                std::string("Could not load from main menu: ") + error.what());
-                states_->replace<StartMenuState>();
+                renderer_->finishLoadingScreen();
+                states_->replace<StartMenuState>(Text::get("menu.load_failed"));
             }
         } else if (request == StateRequest::returnToMainMenu) {
             logger_->debug("state", "Returning to main menu");

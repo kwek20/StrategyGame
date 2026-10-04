@@ -234,8 +234,15 @@ EntityHudModel EntityHudModelBuilder::build(const World& world,
                 result.footer = Text::get("entity_hud.no_compatible_processor");
         }
     } else {
+        result.title = Text::format("entity_hud.selection_count", {std::to_string(entities.size())});
+        result.footer = Text::get("entity_hud.filter_group");
+        HudBarModel health{Text::get("entity_hud.health_label"), 0, 0, HudBarKind::health};
         result.cards.reserve(entities.size());
         for (const Entity* entity : entities) {
+            if (entity->health) {
+                health.current += entity->health.current;
+                health.maximum += entity->health.maximum;
+            }
             result.cards.push_back(card(*entity, definitions));
             const auto found = std::find_if(result.selectionGroups.begin(),
                 result.selectionGroups.end(), [&](const HudSelectionGroupModel& group) {
@@ -248,6 +255,10 @@ EntityHudModel EntityHudModelBuilder::build(const World& world,
                     definitions.presentationIcon(entity->presentation), 1});
             }
         }
+        if (health.maximum > 0)
+            result.bars.push_back(health);
+        for (const auto& group : result.selectionGroups)
+            result.stats.push_back({group.name, std::to_string(group.count), group.icon});
     }
     return result;
 }

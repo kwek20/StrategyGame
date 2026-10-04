@@ -11,7 +11,7 @@ namespace strategy {
 
 class StartMenuState final : public GameState {
   public:
-    explicit StartMenuState(StateContext& context);
+    explicit StartMenuState(StateContext& context, std::string status = {});
     ~StartMenuState() override;
     void handleEvent(const SDL_Event& event) override;
     void update(float deltaSeconds) override;

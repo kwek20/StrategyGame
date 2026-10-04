@@ -1,6 +1,17 @@
 body {
     color: #f2f8d8;
 }
+#menu-status {
+    position: absolute;
+    left: 46%;
+    right: 5%;
+    top: 35%;
+    padding: 18dp;
+    background-color: #160c09ee;
+    border: 2dp #d27239;
+    color: #ffe4c4;
+    font-size: 16dp;
+}
 #menu-shell {
     animation: 0.45s quadratic-out menu-enter;
 }

@@ -409,11 +409,22 @@ button:hover, button:focus {
     justify-content: center;
 }
 .selection-group img {
-    width: 70%;
-    height: 70%;
+    position: absolute;
+    left: 16dp;
+    top: 5dp;
+    width: 40dp;
+    height: 40dp;
+    pointer-events: none;
 }
-.selection-group span {
-    margin-left: 7dp;
+.selection-count {
+    position: absolute;
+    right: 5dp;
+    top: 4dp;
+    padding: 1dp 3dp;
+    background-color: #061016;
+    color: #fff4c2;
+    font-size: 11dp;
+    pointer-events: none;
 }
 .footer {
     flex-shrink: 0;

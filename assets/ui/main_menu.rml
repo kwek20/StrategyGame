@@ -36,6 +36,7 @@
                 </div>
             </div>
         </div>
+        <div id="menu-status"/>
         <div id="version">v0.1.0&nbsp;&nbsp;|&nbsp;&nbsp;DEVELOPMENT</div>
     </body>
 </rml>
