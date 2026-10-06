@@ -168,25 +168,20 @@ struct RepairDefinition {
 
 struct ResourceFieldGenerationDefinition {
     std::string stream;
-    std::vector<TerrainBiomeId> allowedBiomes;
+    std::vector<TerrainBiomeId> preferredBiomes;
     float minimumMoisture{0.0F}, maximumMoisture{1.0F};
-    float regionScale{90.0F}, regionThreshold{0.48F};
-    float minimumFieldsPerSquareChunk{0.02F}, maximumFieldsPerSquareChunk{0.06F};
+    float regionScale{90.0F};
+    float fieldsPerSquareChunk{0.05F};
     float minimumFieldRadius{3.0F}, maximumFieldRadius{9.0F};
-    std::uint32_t minimumNodesPerField{2}, maximumNodesPerField{6};
+    std::vector<ResourceArchetypeId> startingNodes, expansionNodes;
     std::uint32_t placementAttemptsPerField{80};
     float minimumNodeSpacing{2.5F};
-    float startingRequiredCapacity{0.0F};
-    float startingMinimumDistance{0.0F}, startingMaximumDistance{0.0F};
-    struct Fairness {
-        std::vector<float> travelCostBands;
-        float minimumCapacityRatio{0.6F};
-        float minimumComparedCapacity{0.0F};
-        float minimumReachableCapacity{0.0F};
-        std::uint32_t maximumLayoutAttempts{4};
-        std::uint32_t compensationNodesPerAttempt{1};
-    };
-    std::optional<Fairness> fairness;
+    float minimumFieldSeparation{10.0F};
+    float localCapacityRadius{18.0F}, maximumLocalCapacity{2000.0F};
+    float minimumExpansionTravelCost{65.0F};
+    float minimumAccessRatio{0.75F}, accessCostTolerance{12.0F};
+    std::uint32_t maximumLayoutAttempts{8};
+    bool contested{false};
     TerrainTagMask requiredTerrainTags{terrainTagBit(TerrainTag::land)};
     TerrainTagMask forbiddenTerrainTags{0};
     float minimumHeight{-1.0F}, maximumHeight{-1.0F}, maximumSlope{-1.0F};
@@ -269,7 +264,6 @@ using ResourceNodeDefinition = EntityArchetype;
 
 struct ResourceNodeVariant {
     ResourceArchetypeId node;
-    float weight{1.0F};
 };
 
 struct ResourceFieldDefinition {

@@ -7,7 +7,7 @@
             "width": 1280,
             "height": 720,
             "fullscreen": false,
-            "uiScale": 1.5
+            "uiScale": 1.0999999046325684
         },
         "audio": {
             "masterVolume": 1.0,

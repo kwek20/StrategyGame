@@ -426,7 +426,8 @@ int Application::run() {
                                std::string{error.what()} +
                                    (generationLogged ? std::string{}
                                                      : "\n" + generationProgress.diagnostics()));
-                states_->replace<MatchSetupState>();
+                renderer_->finishLoadingScreen();
+                states_->replace<MatchSetupState>(true);
             }
         } else if (request == StateRequest::buildMap) {
             logger_->info("state", "Opening map builder");

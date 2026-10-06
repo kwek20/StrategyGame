@@ -1,4 +1,5 @@
 #include "diagnostics/Logger.hpp"
+#include "localization/Text.hpp"
 #include "render/Renderer.hpp"
 #include "render/ShaderManager.hpp"
 #include "terrain/Terrain.hpp"
@@ -362,6 +363,11 @@ out vec4 color;void main(){color=vec4(1);})";
         valid = noGlErrors("RmlUi match setup") && valid;
         valid = checkFormPanel(renderer, "match.player_country", "match.start") && valid;
         valid = captureForm(renderer, "match-setup.bmp") && valid;
+        renderer.setUiScale(1.5F);
+        renderer.setUiText("match-mode", strategy::Text::get("match_setup.generation_failed"));
+        renderer.setUiProperty("match-mode", "color", "#ffbf75");
+        valid = captureForm(renderer, "match-generation-failed.bmp") && valid;
+        renderer.setUiScale(1.0F);
         renderer.removeUiScreen(matchScreen);
         const strategy::RmlUiScreenHandle buildScreen =
             renderer.pushUiScreen({"assets/ui/build_menu.rml",

@@ -12,29 +12,46 @@ Raw resources are not intended to become additional stockpiled currencies. They 
 
 ## Map-generation contract
 
-Player starts are accepted independently of resources. Ordinary fields are generated first for
-each resource family. Existing reachable Scrap within 55 units (and terrain travel cost 55)
-counts toward a 600-unit opening minimum. Only a shortfall causes additional nodes to be placed;
-there is no unconditional three-node starting field. Added nodes use normal terrain/collision
-rules and fixed capacities, so the minimum can be exceeded. Resource placement never moves starts.
+Player starts are accepted independently of resources. New maps allocate a fixed resource
+inventory before placement. Each player reserves exactly 600 Scrap (two medium nodes) and 400
+Oil (two small nodes), independent of map size and abundance. These are provisional opening
+balance values configured by `startingNodes` in `assets/gameplay/resource_fields.json`.
 
-Natural raw resources are generated as fields containing nodes:
+All starting families are placed before expansion fields. Search uses gatherer-domain terrain
+travel cost and prefers the closest safe locations; there is no maximum starting distance.
+Equivalent supplies must have comparable access (minimum cost ratio 0.75, or a difference of at
+most 12 travel-cost units). Each reserved node must be closer by travel cost to its intended
+player than to any opponent. The allocation is diagnostic only: nodes remain neutral and can
+be stolen or contested during play.
 
-- A generated resource position creates a resource field rather than one deposit.
-- Each field deterministically chooses a variable node count from its definition.
-- Every node stores its own remaining raw-resource amount.
-- Initial amounts are fixed by node archetype (resource type and size); there is no random capacity multiplier.
-- Small/medium/large nodes contain 200/300/500 Scrap or Oil, and 100/200/300 Uranium.
-- A field can mix small, medium, and large node archetypes. Those archetypes may use different
-  models, collision shapes, capacities, and weighted occurrence rates while yielding the same raw
-  resource type.
-- A field footprint may cross biome boundaries and may overlap another resource field.
-- Resource nodes themselves may not overlap any other resource node, including nodes belonging to
-  another field or resource family.
-- Node terrain suitability is evaluated at each node position. The abstract field is not clipped to
-  biome boundaries.
-- Named deterministic streams must make the same seed, rules, map size, and abundance settings
-  produce the same fields, variants, node positions, and capacities.
+Natural resources form irregular fields of individually selectable, exhaustible nodes:
+
+- Starting and expansion fields have explicit, fixed node inventories. No random node count,
+  weighted size selection, capacity multiplier, minimum-capacity top-up, or additive compensation.
+- Capacities remain 200/300/500 Scrap or Oil and 100/200/300 Uranium per node archetype.
+- Total field count is map area times definition density times abundance, rounded to a complete
+  player group with at least one field per player. Starting fields count toward that total.
+- For P players: `totalFields = max(P, round(chunks² * density * abundance / P) * P)`.
+  Budget = reserved starting capacity plus the remaining fields' expansion inventories.
+- Scrap expansion fields contain 1,000 units (small + medium + large), Oil 600 (two medium),
+  Uranium 200 (two small). Every map has Uranium, placed at sites with comparable access for all
+  players. Uranium has no reserved opening field.
+- Expansion fields are allocated in equal player groups; paired fields have comparable gathering
+  travel costs, while positions and node arrangements differ. Uranium instead uses contested sites.
+- Biome, moisture, normalized height, and regional potential affect placement preference.
+  Suitable dry land can supply a fallback. Required/forbidden tags, water rejection, slope,
+  boundaries, start clearance, node spacing, and entity collisions remain hard checks.
+- Field footprints can cross biome boundaries but maintain a configured clear gap between them.
+  Every node is independently checked. Full inventories commit together, so fields cannot shrink
+  silently when terrain or collisions reject some nodes.
+- Expansion placement keeps clear of each player's starting access area and obeys a minimum
+  expansion travel cost of 65. This is an expansion separation rule, not a starting-distance cap.
+- Sliding local capacity is conservatively bounded by whole-field neighborhoods: radius 18 and
+  limits 2,000 Scrap / 1,200 Oil / 400 Uranium. Neighbouring fields cannot evade these limits.
+- Failed expansion placement retries the family's positions deterministically, preserving the
+  complete inventory and previously accepted starting fields. It never creates more capacity.
+  A resource placement failure reports an error without regenerating accepted terrain.
+- The same seed, definitions, map size and abundance reproduce node positions and capacities.
 
 Fields are generation metadata and are not selectable, harvestable, saved as gameplay entities, or
 included separately in the match checksum. Their resulting nodes are authoritative entities and are

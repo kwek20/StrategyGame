@@ -595,96 +595,81 @@ void DefinitionRegistry::loadResourceFields(const std::filesystem::path& path) {
             throw std::runtime_error(context + " is incomplete");
         field.resourceType = ResourceId{value["resourceType"].GetString()};
         for (const auto& variant : value["variants"].GetArray()) {
-            if (!variant.IsObject() || !variant.HasMember("node") ||
-                !variant["node"].IsString() || !variant.HasMember("weight") ||
-                !variant["weight"].IsNumber() || variant["weight"].GetFloat() <= 0.0F)
-                throw std::runtime_error(context + " has an invalid node variant");
-            field.variants.push_back(
-                {ResourceArchetypeId{variant["node"].GetString()}, variant["weight"].GetFloat()});
+            if (!variant.IsString()) throw std::runtime_error(context + " has an invalid node variant");
+            field.variants.push_back({ResourceArchetypeId{variant.GetString()}});
         }
         const auto& generation = value["generation"];
-        const auto numberRange = [&](const char* key) {
+        auto& settings = field.generation;
+        if (!generation.HasMember("stream") || !generation["stream"].IsString())
+            throw std::runtime_error(context + " requires stream");
+        settings.stream = generation["stream"].GetString();
+        for (const std::string& biome : strings(generation, "preferredBiomes"))
+            settings.preferredBiomes.emplace_back(biome);
+        const auto range = [&](const char* key) {
             if (!generation.HasMember(key) || !generation[key].IsArray() ||
                 generation[key].Size() != 2 || !generation[key][0].IsNumber() ||
                 !generation[key][1].IsNumber())
                 throw std::runtime_error(context + " requires two-number range '" + key + "'");
             return std::pair{generation[key][0].GetFloat(), generation[key][1].GetFloat()};
         };
-        const auto unsignedRange = [&](const char* key) {
-            if (!generation.HasMember(key) || !generation[key].IsArray() ||
-                generation[key].Size() != 2 || !generation[key][0].IsUint() ||
-                !generation[key][1].IsUint())
-                throw std::runtime_error(context + " requires two-unsigned range '" + key + "'");
-            return std::pair{generation[key][0].GetUint(), generation[key][1].GetUint()};
+        std::tie(settings.minimumMoisture, settings.maximumMoisture) = range("preferredMoisture");
+        std::tie(settings.minimumHeight, settings.maximumHeight) = range("preferredHeight");
+        std::tie(settings.minimumFieldRadius, settings.maximumFieldRadius) = range("fieldRadius");
+        const auto inventory = [&](const char* key, auto& output) {
+            if (!generation.HasMember(key) || !generation[key].IsArray())
+                throw std::runtime_error(context + " requires node inventory '" + key + "'");
+            for (const auto& value : generation[key].GetArray()) {
+                if (!value.IsString()) throw std::runtime_error(context + " has invalid node inventory");
+                const ResourceArchetypeId node{value.GetString()};
+                if (std::none_of(field.variants.begin(), field.variants.end(),
+                    [&](const auto& variant) { return variant.node == node; }))
+                    throw std::runtime_error(context + " inventory references unknown variant");
+                output.push_back(node);
+            }
         };
-        auto& settings = field.generation;
-        if (!generation.HasMember("stream") || !generation["stream"].IsString())
-            throw std::runtime_error(context + " requires stream");
-        settings.stream = generation["stream"].GetString();
-        for (const std::string& biome : strings(generation, "allowedBiomes"))
-            settings.allowedBiomes.emplace_back(biome);
-        std::tie(settings.minimumMoisture, settings.maximumMoisture) = numberRange("moistureRange");
+        inventory("startingNodes", settings.startingNodes);
+        inventory("expansionNodes", settings.expansionNodes);
         settings.regionScale = requiredNumber(generation, "regionScale", context);
-        settings.regionThreshold = requiredNumber(generation, "regionThreshold", context);
-        std::tie(settings.minimumFieldsPerSquareChunk,
-                 settings.maximumFieldsPerSquareChunk) = numberRange("fieldsPerSquareChunk");
-        std::tie(settings.minimumFieldRadius,
-                 settings.maximumFieldRadius) = numberRange("fieldRadius");
-        std::tie(settings.minimumNodesPerField,
-                 settings.maximumNodesPerField) = unsignedRange("nodesPerField");
-        if (!generation.HasMember("placementAttemptsPerNode") ||
-            !generation["placementAttemptsPerNode"].IsUint())
-            throw std::runtime_error(context + " requires placementAttemptsPerNode");
-        settings.placementAttemptsPerField =
-            generation["placementAttemptsPerNode"].GetUint() * settings.maximumNodesPerField;
+        settings.fieldsPerSquareChunk = requiredNumber(generation, "fieldsPerSquareChunk", context);
         settings.minimumNodeSpacing = requiredNumber(generation, "minimumNodeSpacing", context);
-        settings.startingRequiredCapacity = generation.HasMember("startingRequiredCapacity")
-            ? requiredNumber(generation, "startingRequiredCapacity", context) : 0.0F;
-        settings.startingMinimumDistance = generation.HasMember("startingMinimumDistance")
-            ? generation["startingMinimumDistance"].GetFloat() : 0.0F;
-        settings.startingMaximumDistance = generation.HasMember("startingMaximumDistance")
-            ? generation["startingMaximumDistance"].GetFloat() : 0.0F;
-        settings.requiredTerrainTags = generation.HasMember("requiredTerrainTags")
-            ? terrainTags(generation, "requiredTerrainTags", context)
-            : terrainTagBit(TerrainTag::land);
+        settings.minimumFieldSeparation = requiredNumber(generation, "minimumFieldSeparation", context);
+        settings.localCapacityRadius = requiredNumber(generation, "localCapacityRadius", context);
+        settings.maximumLocalCapacity = requiredNumber(generation, "maximumLocalCapacity", context);
+        settings.minimumExpansionTravelCost = requiredNumber(generation, "minimumExpansionTravelCost", context);
+        settings.minimumAccessRatio = requiredNumber(generation, "minimumAccessRatio", context);
+        settings.accessCostTolerance = requiredNumber(generation, "accessCostTolerance", context);
+        settings.maximumSlope = requiredNumber(generation, "maximumSlopeDegrees", context);
+        for (const auto key : {"placementAttemptsPerField", "maximumLayoutAttempts"})
+            if (!generation.HasMember(key) || !generation[key].IsUint() || generation[key].GetUint() == 0)
+                throw std::runtime_error(context + " requires positive unsigned field '" + key + "'");
+        settings.placementAttemptsPerField = generation["placementAttemptsPerField"].GetUint();
+        settings.maximumLayoutAttempts = generation["maximumLayoutAttempts"].GetUint();
+        if (!generation.HasMember("contested") || !generation["contested"].IsBool())
+            throw std::runtime_error(context + " requires contested flag");
+        settings.contested = generation["contested"].GetBool();
+        settings.requiredTerrainTags = terrainTags(generation, "requiredTerrainTags", context);
         settings.forbiddenTerrainTags = terrainTags(generation, "forbiddenTerrainTags", context);
-        if (generation.HasMember("minimumHeight"))
-            settings.minimumHeight = requiredNumber(generation, "minimumHeight", context);
-        if (generation.HasMember("maximumHeight"))
-            settings.maximumHeight = requiredNumber(generation, "maximumHeight", context);
-        if (generation.HasMember("maximumSlopeDegrees"))
-            settings.maximumSlope = requiredNumber(generation, "maximumSlopeDegrees", context);
-        if (generation.HasMember("fairness")) {
-            const auto& fairness = generation["fairness"];
-            ResourceFieldGenerationDefinition::Fairness policy;
-            if (!fairness.IsObject() || !fairness.HasMember("travelCostBands") ||
-                !fairness["travelCostBands"].IsArray())
-                throw std::runtime_error(context + " has invalid fairness settings");
-            for (const auto& band : fairness["travelCostBands"].GetArray())
-                policy.travelCostBands.push_back(band.GetFloat());
-            policy.minimumCapacityRatio = requiredNumber(fairness, "minimumCapacityRatio", context);
-            policy.minimumComparedCapacity = requiredNumber(fairness, "minimumComparedCapacity", context);
-            policy.minimumReachableCapacity = requiredNumber(fairness, "minimumReachableCapacity", context);
-            policy.maximumLayoutAttempts = fairness["maximumLayoutAttempts"].GetUint();
-            policy.compensationNodesPerAttempt = fairness["compensationNodesPerAttempt"].GetUint();
-            settings.fairness = std::move(policy);
-        }
-        if (settings.allowedBiomes.empty() || settings.minimumMoisture < 0.0F ||
-            settings.maximumMoisture > 1.0F ||
+        const auto finite = [](float value) { return std::isfinite(value); };
+        if (settings.preferredBiomes.empty() || settings.expansionNodes.empty() ||
+            !finite(settings.fieldsPerSquareChunk) || settings.fieldsPerSquareChunk <= 0 ||
+            settings.fieldsPerSquareChunk > 1 || !finite(settings.regionScale) || settings.regionScale <= 0 ||
+            !finite(settings.minimumMoisture) || !finite(settings.maximumMoisture) ||
+            settings.minimumMoisture < 0 || settings.maximumMoisture > 1 ||
             settings.minimumMoisture > settings.maximumMoisture ||
-            settings.regionScale <= 0.0F || settings.regionThreshold < 0.0F ||
-            settings.regionThreshold > 1.0F ||
-            settings.minimumFieldsPerSquareChunk < 0.0F ||
-            settings.minimumFieldsPerSquareChunk > settings.maximumFieldsPerSquareChunk ||
-            settings.minimumFieldRadius <= 0.0F ||
-            settings.minimumFieldRadius > settings.maximumFieldRadius ||
-            settings.minimumNodesPerField == 0 ||
-            settings.minimumNodesPerField > settings.maximumNodesPerField ||
-            settings.placementAttemptsPerField == 0 || settings.minimumNodeSpacing <= 0.0F ||
-            settings.startingRequiredCapacity < 0.0F ||
-            (settings.startingRequiredCapacity > 0 &&
-             (settings.startingMinimumDistance <= 0.0F ||
-              settings.startingMaximumDistance < settings.startingMinimumDistance)))
+            !finite(settings.minimumHeight) || !finite(settings.maximumHeight) ||
+            settings.minimumHeight < 0 || settings.maximumHeight > 1 ||
+            settings.minimumHeight > settings.maximumHeight ||
+            !finite(settings.minimumFieldRadius) || !finite(settings.maximumFieldRadius) ||
+            settings.minimumFieldRadius <= 0 || settings.minimumFieldRadius > settings.maximumFieldRadius ||
+            !finite(settings.minimumNodeSpacing) || settings.minimumNodeSpacing <= 0 ||
+            !finite(settings.minimumFieldSeparation) || settings.minimumFieldSeparation < 0 ||
+            !finite(settings.localCapacityRadius) || settings.localCapacityRadius <= 0 ||
+            !finite(settings.maximumLocalCapacity) || settings.maximumLocalCapacity <= 0 ||
+            !finite(settings.minimumExpansionTravelCost) || settings.minimumExpansionTravelCost < 0 ||
+            !finite(settings.minimumAccessRatio) || settings.minimumAccessRatio <= 0 || settings.minimumAccessRatio > 1 ||
+            !finite(settings.accessCostTolerance) || settings.accessCostTolerance < 0 ||
+            !finite(settings.maximumSlope) || settings.maximumSlope <= 0 || settings.maximumSlope > 90 ||
+            (settings.contested && !settings.startingNodes.empty()))
             throw std::runtime_error(context + " has invalid generation settings");
         if (resourceFields_.contains(field.id))
             throw std::runtime_error("Duplicate resource field '" + field.id + "'");
@@ -983,6 +968,14 @@ void DefinitionRegistry::validateReferences() const {
                                          "' references an incompatible node variant '" +
                                          variant.node.value + "'");
         }
+        const auto& settings = found->second.generation;
+        for (const auto* inventory : {&settings.startingNodes, &settings.expansionNodes}) {
+            float capacity = 0;
+            for (const auto& node : *inventory) capacity += entities_.at(node.value).resourceCapacity;
+            if (!std::isfinite(capacity) || capacity > settings.maximumLocalCapacity)
+                throw std::runtime_error("Resource field '" + id + "' inventory exceeds local capacity limit");
+        }
+
     }
     for (const VegetationGenerationDefinition& vegetation : matchRules_.vegetation) {
         const auto found = entities_.find(vegetation.archetype);

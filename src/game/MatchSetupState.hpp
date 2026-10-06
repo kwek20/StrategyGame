@@ -10,7 +10,7 @@
 namespace strategy {
 class MatchSetupState final : public GameState {
   public:
-    explicit MatchSetupState(StateContext& context);
+    explicit MatchSetupState(StateContext& context, bool generationFailed = false);
     ~MatchSetupState() override;
     void handleEvent(const SDL_Event& event) override;
     void update(float deltaSeconds) override;

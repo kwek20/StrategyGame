@@ -15,6 +15,10 @@ struct GeneratedResourceField {
     glm::vec2 center{0.0F};
     float radius{0.0F};
     std::uint32_t desiredNodes{0};
+    // Diagnostic allocation only: resources remain neutral, and this is not simulation ownership.
+    std::uint32_t startingPlayer{0};
+    float capacity{0.0F};
+    float accessCost{0.0F};
 };
 
 struct GeneratedResourceNode {
@@ -22,6 +26,7 @@ struct GeneratedResourceNode {
     ResourceArchetypeId archetype;
     glm::vec2 position{0.0F};
     float rotationDegrees{0.0F};
+    std::size_t fieldIndex{0};
 };
 
 struct ResourceLayout {

@@ -57,17 +57,10 @@ float regionalPotential(float x, float z, float scale, std::uint32_t seed) {
                      std::lerp(value(x0, z0 + 1), value(x0 + 1, z0 + 1), tx), tz);
 }
 
-struct FairnessResult {
-    bool fair{true};
-    std::vector<std::size_t> deficientPlayers;
-    std::size_t failedBand{0};
-    std::vector<std::vector<float>> capacityByPlayerAndBand;
-};
-
 std::vector<float> terrainTravelCosts(const Terrain& terrain,
                                       std::uint32_t mapChunksPerSide,
                                       glm::vec2 origin,
-                                      MovementDomainMask domainMask) {
+                                      MovementDomainMask domainMask, WorldGenerationProgress* progress) {
     const MapArea map{mapChunksPerSide};
     const int side = static_cast<int>(mapChunksPerSide * Terrain::chunkCellCount *
                                       Terrain::spacing / Terrain::semanticCellSize);
@@ -81,7 +74,9 @@ std::vector<float> terrainTravelCosts(const Terrain& terrain,
     frontier.emplace(0.0F, index(source.x, source.y));
     constexpr std::array<glm::ivec2, 8> directions{{
         {-1, -1}, {0, -1}, {1, -1}, {-1, 0}, {1, 0}, {-1, 1}, {0, 1}, {1, 1}}};
+    std::uint32_t visited = 0;
     while (!frontier.empty()) {
+        if (progress && ++visited % 256 == 0) progress->throwIfCancellationRequested();
         const auto [cost, current] = frontier.top();
         frontier.pop();
         if (cost != costs[current]) continue;
@@ -93,6 +88,12 @@ std::vector<float> terrainTravelCosts(const Terrain& terrain,
             const float terrainCost = terrain.movementCostAt(
                 position.x, position.y, domainMask);
             if (terrainCost <= 0.0F || !std::isfinite(terrainCost)) continue;
+            if (direction.x != 0 && direction.y != 0) {
+                const auto a = map.gridCellCenter({nx, z}, side);
+                const auto b = map.gridCellCenter({x, nz}, side);
+                if (terrain.movementCostAt(a.x, a.y, domainMask) <= 0 ||
+                    terrain.movementCostAt(b.x, b.y, domainMask) <= 0) continue;
+            }
             const float distance = direction.x != 0 && direction.y != 0
                                        ? Terrain::semanticCellSize * 1.41421356F
                                        : Terrain::semanticCellSize;
@@ -104,69 +105,6 @@ std::vector<float> terrainTravelCosts(const Terrain& terrain,
         }
     }
     return costs;
-}
-
-FairnessResult evaluateFairness(const World& world,
-                                const DefinitionRegistry& definitions,
-                                const ResourceFieldDefinition& field,
-                                std::uint32_t mapChunksPerSide,
-                                const std::vector<glm::vec2>& startingAnchors,
-                                const std::vector<std::vector<float>>& travelCosts) {
-    FairnessResult result;
-    if (!field.generation.fairness || startingAnchors.size() < 2)
-        return result;
-    const auto& policy = *field.generation.fairness;
-    const MapArea map{mapChunksPerSide};
-    const int side = static_cast<int>(mapChunksPerSide * Terrain::chunkCellCount *
-                                      Terrain::spacing / Terrain::semanticCellSize);
-    result.capacityByPlayerAndBand.assign(
-        startingAnchors.size(), std::vector<float>(policy.travelCostBands.size(), 0.0F));
-    for (const Entity& entity : world.entities()) {
-        const bool belongsToField = std::any_of(
-            field.variants.begin(), field.variants.end(), [&](const ResourceNodeVariant& variant) {
-                return variant.node.value == entity.archetype.value;
-            });
-        if (!belongsToField || !entity.resource || entity.resource.remaining <= 0.0F)
-            continue;
-        const ResourceNodeDefinition* nodeType = definitions.resource(
-            ResourceArchetypeId{entity.archetype.value});
-        if (!nodeType) continue;
-        const glm::ivec2 cell = map.gridCell(
-            {entity.transform.position.x, entity.transform.position.z}, side);
-        const int edgeRadius = std::max(
-            1, static_cast<int>(std::ceil((nodeType->collisionRadius + 1.5F) /
-                                         Terrain::semanticCellSize)));
-        for (std::size_t player = 0; player < travelCosts.size(); ++player) {
-            float edgeCost = std::numeric_limits<float>::infinity();
-            for (int z = std::max(0, cell.y - edgeRadius);
-                 z <= std::min(side - 1, cell.y + edgeRadius); ++z)
-                for (int x = std::max(0, cell.x - edgeRadius);
-                     x <= std::min(side - 1, cell.x + edgeRadius); ++x)
-                    edgeCost = std::min(edgeCost, travelCosts[player][z * side + x]);
-            for (std::size_t band = 0; band < policy.travelCostBands.size(); ++band)
-                if (edgeCost <= policy.travelCostBands[band])
-                    result.capacityByPlayerAndBand[player][band] += entity.resource.remaining;
-        }
-    }
-    for (std::size_t band = 0; band < policy.travelCostBands.size(); ++band) {
-        float maximum = 0.0F;
-        for (const auto& player : result.capacityByPlayerAndBand)
-            maximum = std::max(maximum, player[band]);
-        const bool finalBand = band + 1 == policy.travelCostBands.size();
-        for (std::size_t player = 0; player < result.capacityByPlayerAndBand.size(); ++player) {
-            const float capacity = result.capacityByPlayerAndBand[player][band];
-            const bool ratioFailed = maximum >= policy.minimumComparedCapacity &&
-                                     capacity < maximum * policy.minimumCapacityRatio;
-            const bool minimumFailed = finalBand && capacity < policy.minimumReachableCapacity;
-            if (ratioFailed || minimumFailed) {
-                result.fair = false;
-                result.failedBand = band;
-                result.deficientPlayers.push_back(player);
-            }
-        }
-        if (!result.fair) break;
-    }
-    return result;
 }
 
 class VegetationSpacingGrid final {
@@ -322,33 +260,25 @@ class ResourceNodeGrid final {
 
 bool suitable(const Terrain& terrain, const MatchRulesDefinition& rules,
               const ResourceFieldGenerationDefinition& generation,
-              std::uint32_t mapChunksPerSide,
-              float x, float z) {
-    if (!MapArea{mapChunksPerSide}.contains({x, z}, rules.terrainEdgeMargin))
-        return false;
-    const TerrainSample& sample = terrain.sampleAt(x, z);
-    if ((sample.tags & generation.requiredTerrainTags) != generation.requiredTerrainTags ||
-        (sample.tags & generation.forbiddenTerrainTags) != 0)
-        return false;
-    if (std::find(generation.allowedBiomes.begin(), generation.allowedBiomes.end(),
-                  sample.biome) == generation.allowedBiomes.end() ||
-        sample.moisture < generation.minimumMoisture ||
-        sample.moisture > generation.maximumMoisture)
-        return false;
-    const float normalized = terrain.heightAt(x, z) / Terrain::heightScale;
-    const float minimumHeight = generation.minimumHeight >= 0.0F
-                                    ? generation.minimumHeight : rules.minimumResourceHeight;
-    const float maximumHeight = generation.maximumHeight >= 0.0F
-                                    ? generation.maximumHeight : rules.maximumResourceHeight;
-    if (normalized < minimumHeight || normalized > maximumHeight)
-        return false;
-    if (generation.maximumSlope >= 0.0F)
-        return sample.slopeDegrees <= generation.maximumSlope;
-    const float step = Terrain::spacing * 2.0F;
-    const float dx = terrain.heightAt(x + step, z) - terrain.heightAt(x - step, z);
-    const float dz = terrain.heightAt(x, z + step) - terrain.heightAt(x, z - step);
-    return std::sqrt(dx * dx + dz * dz) * Terrain::gameplaySlopeFactor <
-           rules.maximumResourceSlope;
+              std::uint32_t mapChunksPerSide, float x, float z) {
+    if (!MapArea{mapChunksPerSide}.contains({x, z}, rules.terrainEdgeMargin)) return false;
+    const auto& sample = terrain.sampleAt(x, z);
+    return !sample.submerged &&
+        (sample.tags & generation.requiredTerrainTags) == generation.requiredTerrainTags &&
+        (sample.tags & generation.forbiddenTerrainTags) == 0 &&
+        sample.slopeDegrees <= generation.maximumSlope;
+}
+
+float preferencePenalty(const Terrain& terrain, const ResourceFieldGenerationDefinition& settings,
+                        glm::vec2 position) {
+    const auto& sample = terrain.sampleAt(position.x, position.y);
+    const float height = terrain.heightAt(position.x, position.y) / Terrain::heightScale;
+    float penalty = std::find(settings.preferredBiomes.begin(), settings.preferredBiomes.end(),
+                             sample.biome) == settings.preferredBiomes.end() ? 1.0F : 0.0F;
+    if (sample.moisture < settings.minimumMoisture || sample.moisture > settings.maximumMoisture)
+        penalty += 1.0F;
+    if (height < settings.minimumHeight || height > settings.maximumHeight) penalty += 1.0F;
+    return penalty;
 }
 
 bool clearOfStarts(const MatchRulesDefinition& rules,
@@ -379,39 +309,6 @@ bool add(World& world,
     return true;
 }
 
-const ResourceNodeDefinition& selectVariant(const DefinitionRegistry& definitions,
-                                            const ResourceFieldDefinition& field,
-                                            DeterministicRandom& random) {
-    if (field.variants.size() == 1)
-        return *definitions.resource(field.variants.front().node);
-    float totalWeight = 0.0F;
-    for (const ResourceNodeVariant& variant : field.variants) totalWeight += variant.weight;
-    float selected = random.range(0.0F, totalWeight);
-    for (const ResourceNodeVariant& variant : field.variants) {
-        selected -= variant.weight;
-        if (selected <= 0.0F) return *definitions.resource(variant.node);
-    }
-    return *definitions.resource(field.variants.back().node);
-}
-
-bool appendNode(ResourceLayout& layout,
-                ResourceNodeGrid& nodeGrid,
-                const World& world,
-                const DefinitionRegistry& definitions,
-                const ResourceFieldDefinition& field,
-                const ResourceNodeDefinition& type,
-                glm::vec2 position,
-                float rotation) {
-    const auto& settings = field.generation;
-    if (!nodeGrid.canPlace(position, type.collisionRadius, settings.minimumNodeSpacing) ||
-        overlapsObject(world, definitions, position, type.collisionRadius))
-        return false;
-    layout.nodes.push_back({ResourceFieldId{field.id}, ResourceArchetypeId{type.id},
-                            position, rotation});
-    nodeGrid.insert(position, type.collisionRadius);
-    return true;
-}
-
 void instantiateLayout(World& world,
                        const DefinitionRegistry& definitions,
                        const ResourceLayout& layout) {
@@ -423,360 +320,268 @@ void instantiateLayout(World& world,
     }
 }
 
-void fields(ResourceLayout& layout,
-              ResourceNodeGrid& nodeGrid,
-              const World& world,
-              const Terrain& terrain,
-              const DefinitionRegistry& definitions,
-              std::uint32_t seed,
-              const ResourceFieldDefinition& field,
-              std::uint32_t mapChunksPerSide,
-              float abundanceScale,
-              const std::vector<glm::vec2>& startingAnchors) {
-    const auto& rules = definitions.matchRules();
-    const auto& settings = field.generation;
-    DeterministicRandom random(seed, settings.stream + ".regions");
-    const float squareChunks = static_cast<float>(mapChunksPerSide * mapChunksPerSide);
-    const float density = random.range(settings.minimumFieldsPerSquareChunk,
-                                       settings.maximumFieldsPerSquareChunk);
-    const std::uint32_t desiredClusters = std::max(
-        1U, static_cast<std::uint32_t>(std::round(squareChunks * density * abundanceScale)));
-    const std::uint32_t potentialSeed = resourceStreamSeed(seed, settings.stream + ".potential");
-    const MapArea map{mapChunksPerSide};
-    const float extent = map.halfExtent() - rules.terrainEdgeMargin;
-    std::vector<glm::vec2> centers;
-    const std::uint32_t centerAttempts = desiredClusters * 240U;
-    for (std::uint32_t attempt = 0;
-         attempt < centerAttempts && centers.size() < desiredClusters; ++attempt) {
-        const glm::vec2 center{random.range(-extent, extent), random.range(-extent, extent)};
-        if (!suitable(terrain, rules, settings, mapChunksPerSide, center.x, center.y) ||
-            !clearOfStarts(rules, startingAnchors, center.x, center.y) ||
-            regionalPotential(center.x, center.y, settings.regionScale, potentialSeed) <
-                settings.regionThreshold)
-            continue;
-        centers.push_back(center);
-    }
-
-    for (std::size_t cluster = 0; cluster < centers.size(); ++cluster) {
-        const float radius = random.range(settings.minimumFieldRadius,
-                                          settings.maximumFieldRadius);
-        const std::uint32_t nodeRange = settings.maximumNodesPerField -
-                                        settings.minimumNodesPerField + 1U;
-        const std::uint32_t desiredNodes = settings.minimumNodesPerField +
-                                           random.next() % nodeRange;
-        layout.fields.push_back({ResourceFieldId{field.id}, centers[cluster], radius,
-                                 desiredNodes});
-        std::uint32_t made = 0;
-        for (std::uint32_t attempt = 0;
-             attempt < settings.placementAttemptsPerField && made < desiredNodes; ++attempt) {
-            const float angle = random.range(0.0F, glm::two_pi<float>());
-            const float distance = radius * std::sqrt(random.range(0.0F, 1.0F));
-            const glm::vec2 candidate = centers[cluster] +
-                glm::vec2{std::cos(angle), std::sin(angle)} * distance;
-            const float potential = regionalPotential(candidate.x, candidate.y,
-                                                       settings.regionScale, potentialSeed);
-            const float irregularBoundary = settings.regionThreshold * 0.72F +
-                                            (distance / radius) * 0.12F;
-            if (potential < irregularBoundary ||
-                !suitable(terrain, rules, settings, mapChunksPerSide,
-                          candidate.x, candidate.y) ||
-                !clearOfStarts(rules, startingAnchors, candidate.x, candidate.y))
-                continue;
-            const ResourceNodeDefinition& variant = selectVariant(definitions, field, random);
-            // Every node is validated at its own sample. The field footprint itself is allowed to
-            // cross biome boundaries and overlap any other field footprint.
-            if (!suitable(terrain, rules, settings, mapChunksPerSide,
-                          candidate.x, candidate.y))
-                continue;
-            if (appendNode(layout, nodeGrid, world, definitions, field, variant, candidate,
-                           random.range(0.0F, 360.0F))) {
-                ++made;
-            }
-        }
-    }
+float inventoryCapacity(const DefinitionRegistry& definitions,
+                        const std::vector<ResourceArchetypeId>& inventory) {
+    float capacity = 0;
+    for (const auto& id : inventory) capacity += definitions.resource(id)->resourceCapacity;
+    return capacity;
 }
 
-void ensureStartingResources(ResourceLayout& layout,
-                             ResourceNodeGrid& nodeGrid,
-                             const World& world,
-                             const Terrain& terrain,
-                             const DefinitionRegistry& definitions,
-                             std::uint32_t seed,
-                             const ResourceFieldDefinition& field,
-                             std::uint32_t mapChunksPerSide,
-                             const std::vector<glm::vec2>& startingAnchors,
-                             const std::vector<std::vector<float>>& travelCosts,
-                             WorldGenerationProgress* progress) {
+struct ResourceCandidates {
+    std::vector<glm::vec2> positions;
+};
+
+float travelCost(const MapArea& map, const std::vector<float>& costs, glm::vec2 position) {
+    const int side = static_cast<int>(map.extent() / Terrain::semanticCellSize);
+    const auto cell = map.gridCell(position, side);
+    return costs[cell.y * side + cell.x];
+}
+
+bool comparableAccess(float a, float b, const ResourceFieldGenerationDefinition& settings) {
+    return std::isfinite(a) && std::isfinite(b) &&
+        (std::abs(a - b) <= settings.accessCostTolerance ||
+         std::min(a, b) >= std::max(a, b) * settings.minimumAccessRatio);
+}
+
+// Use whole-field capacity conservatively: any radius-R circle intersecting this field can
+// only intersect fields whose centers are within 2R plus both field radii. Checking each
+// neighborhood before insertion bounds even overlapping/sliding windows between node centers.
+bool fieldSpaceAvailable(const ResourceLayout& layout, const DefinitionRegistry& definitions,
+                         const ResourceFieldDefinition& field, glm::vec2 center,
+                         float radius, float capacity) {
     const auto& settings = field.generation;
-    if (settings.startingRequiredCapacity <= 0.0F) return;
-    const MapArea map{mapChunksPerSide};
-    const int side = static_cast<int>(mapChunksPerSide * Terrain::chunkCellCount *
-                                      Terrain::spacing / Terrain::semanticCellSize);
-    for (std::size_t player = 0; player < startingAnchors.size(); ++player) {
-        const auto nearby = [&](glm::vec2 position, float radius) {
-            if (glm::distance(position, startingAnchors[player]) > settings.startingMaximumDistance)
-                return false;
-            const glm::ivec2 cell = map.gridCell(position, side);
-            const int reach = std::max(1, static_cast<int>(std::ceil(
-                (radius + 1.5F) / Terrain::semanticCellSize)));
-            for (int z = std::max(0, cell.y - reach); z <= std::min(side - 1, cell.y + reach); ++z)
-                for (int x = std::max(0, cell.x - reach); x <= std::min(side - 1, cell.x + reach); ++x)
-                    if (travelCosts[player][z * side + x] <= settings.startingMaximumDistance)
-                        return true;
+    for (const auto& existing : layout.fields) {
+        const auto& other = definitions.resourceField(existing.definition)->generation;
+        if (glm::distance(center, existing.center) < radius + existing.radius +
+            std::max(settings.minimumFieldSeparation, other.minimumFieldSeparation)) return false;
+    }
+    const auto neighborhoodCapacity = [&](glm::vec2 origin, float originRadius) {
+        float total = glm::distance(origin, center) <=
+            2 * settings.localCapacityRadius + originRadius + radius ? capacity : 0.0F;
+        for (const auto& existing : layout.fields)
+            if (existing.definition.value == field.id && glm::distance(origin, existing.center) <=
+                2 * settings.localCapacityRadius + originRadius + existing.radius)
+                total += existing.capacity;
+        return total;
+    };
+    if (neighborhoodCapacity(center, radius) > settings.maximumLocalCapacity) return false;
+    for (const auto& existing : layout.fields)
+        if (existing.definition.value == field.id &&
+            neighborhoodCapacity(existing.center, existing.radius) > settings.maximumLocalCapacity)
             return false;
-        };
-        float capacity = 0.0F;
-        for (const auto& node : layout.nodes) {
-            const auto* type = definitions.resource(node.archetype);
-            if (type && type->resourceType == field.resourceType.value && nearby(node.position, type->collisionRadius))
-                capacity += type->resourceCapacity;
-        }
-        for (const auto& entity : world.entities()) {
-            const auto* type = definitions.resource(ResourceArchetypeId{entity.archetype.value});
-            if (type && type->resourceType == field.resourceType.value && entity.resource &&
-                nearby({entity.transform.position.x, entity.transform.position.z}, type->collisionRadius))
-                capacity += entity.resource.remaining;
-        }
-        DeterministicRandom random(seed, settings.stream + ".starting.player." + std::to_string(player + 1));
-        const float existingCapacity = capacity;
-        const auto beforeNodes = layout.nodes.size();
-        for (std::uint32_t attempt = 0; attempt < 4096 && capacity < settings.startingRequiredCapacity; ++attempt) {
-            const float angle = random.range(0.0F, glm::two_pi<float>());
-            const float distance = random.range(settings.startingMinimumDistance, settings.startingMaximumDistance);
-            const glm::vec2 position = startingAnchors[player] +
-                glm::vec2{std::cos(angle), std::sin(angle)} * distance;
-            const auto& variant = selectVariant(definitions, field, random);
-            if (!nearby(position, variant.collisionRadius) ||
-                !suitable(terrain, definitions.matchRules(), settings, mapChunksPerSide, position.x, position.y))
-                continue;
-            if (appendNode(layout, nodeGrid, world, definitions, field, variant, position,
-                           random.range(0.0F, 360.0F))) {
-                layout.fields.push_back({ResourceFieldId{field.id}, position, settings.minimumFieldRadius, 1U});
-                capacity += variant.resourceCapacity;
-            }
-        }
-        if (progress) progress->diagnostic("opening " + field.id + " player=" + std::to_string(player + 1) +
-            " existing=" + std::to_string(existingCapacity) + " final=" + std::to_string(capacity) +
-            " required=" + std::to_string(settings.startingRequiredCapacity) +
-            " radius/travel=" + std::to_string(settings.startingMaximumDistance) +
-            " addedNodes=" + std::to_string(layout.nodes.size() - beforeNodes));
-        if (capacity < settings.startingRequiredCapacity)
-            throw std::runtime_error("Unable to provide starting " + field.id +
-                                     " capacity near player " + std::to_string(player + 1));
-    }
+    return true;
 }
 
-ResourceLayout compensateFairness(ResourceNodeGrid& nodeGrid,
-                        const World& world,
-                        const Terrain& terrain,
-                        const DefinitionRegistry& definitions,
-                        std::uint32_t seed,
-                        const ResourceFieldDefinition& field,
-                        const ResourceNodeDefinition& type,
-                        std::uint32_t mapChunksPerSide,
-                        const std::vector<glm::vec2>& startingAnchors,
-                        const std::vector<std::vector<float>>& travelCosts,
-                        const FairnessResult& result,
-                        std::uint32_t attempt) {
-    ResourceLayout layout;
+bool placeField(ResourceLayout& layout, const World& world, const Terrain& terrain,
+                const DefinitionRegistry& definitions, const ResourceFieldDefinition& field,
+                const ResourceCandidates& candidates, std::uint32_t seed, std::uint32_t ordinal,
+                std::uint32_t mapSize, const std::vector<glm::vec2>& anchors,
+                const std::vector<std::vector<float>>& costs, std::size_t player,
+                bool starting, float matchedCost, WorldGenerationProgress* progress) {
     const auto& settings = field.generation;
-    const auto& policy = *settings.fairness;
-    const float band = policy.travelCostBands[result.failedBand];
-    const MapArea map{mapChunksPerSide};
-    const int side = static_cast<int>(mapChunksPerSide * Terrain::chunkCellCount *
-                                      Terrain::spacing / Terrain::semanticCellSize);
-    for (const std::size_t player : result.deficientPlayers) {
-        DeterministicRandom random(
-            seed, settings.stream + ".fairness.player." + std::to_string(player + 1) +
-                      ".attempt." + std::to_string(attempt + 1));
-        for (std::uint32_t node = 0; node < policy.compensationNodesPerAttempt; ++node) {
-            bool placed = false;
-            for (std::uint32_t candidateIndex = 0; candidateIndex < 4096 && !placed;
-                 ++candidateIndex) {
-                // Do not mirror compensation. Each deficient player gets an independent angular
-                // stream and a broad distance interval inside the failed travel-cost band.
-                glm::vec2 candidate;
-                if (candidateIndex < 768) {
-                    const float distance = random.range(std::max(10.0F, band * 0.20F),
-                                                        std::max(14.0F, band));
-                    const float angle = random.range(0.0F, glm::two_pi<float>());
-                    candidate = startingAnchors[player] +
-                        glm::vec2{std::cos(angle), std::sin(angle)} * distance;
-                } else {
-                    const float extent = map.halfExtent() -
-                                         definitions.matchRules().terrainEdgeMargin;
-                    candidate = {random.range(-extent, extent), random.range(-extent, extent)};
-                }
-                const glm::ivec2 cell = map.gridCell(candidate, side);
-                float edgeCost = std::numeric_limits<float>::infinity();
-                const int edgeRadius = std::max(
-                    1, static_cast<int>(std::ceil((type.collisionRadius + 1.5F) /
-                                                 Terrain::semanticCellSize)));
-                for (int z = std::max(0, cell.y - edgeRadius);
-                     z <= std::min(side - 1, cell.y + edgeRadius); ++z)
-                    for (int x = std::max(0, cell.x - edgeRadius);
-                         x <= std::min(side - 1, cell.x + edgeRadius); ++x)
-                        edgeCost = std::min(edgeCost, travelCosts[player][z * side + x]);
-                if (edgeCost > band) continue;
-                if (!suitable(terrain, definitions.matchRules(), settings,
-                              mapChunksPerSide,
-                              candidate.x, candidate.y))
-                    continue;
-                const ResourceNodeDefinition& variant = selectVariant(definitions, field, random);
-                placed = appendNode(layout, nodeGrid, world, definitions, field, variant,
-                                    candidate, random.range(0.0F, 360.0F));
-                if (placed)
-                    layout.fields.push_back({ResourceFieldId{field.id}, candidate,
-                                             settings.minimumFieldRadius, 1U});
+    const auto& inventory = starting ? settings.startingNodes : settings.expansionNodes;
+    const float capacity = inventoryCapacity(definitions, inventory);
+    const MapArea map{mapSize};
+    DeterministicRandom random(seed, settings.stream + ".field." + std::to_string(ordinal));
+    const float radius = random.range(settings.minimumFieldRadius, settings.maximumFieldRadius);
+    const auto noiseSeed = resourceStreamSeed(seed, settings.stream + ".potential");
+    struct Candidate { glm::vec2 position; float score; float access; };
+    std::vector<Candidate> ordered;
+    for (std::size_t index = 0; index < candidates.positions.size(); ++index) {
+        if (progress && index % 1024 == 0) progress->throwIfCancellationRequested();
+        const auto position = candidates.positions[index];
+        if (!clearOfStarts(definitions.matchRules(), anchors, position.x, position.y)) continue;
+        const float own = travelCost(map, costs[player], position);
+        if (!std::isfinite(own)) continue;
+        bool accessible = true;
+        float closest = own, farthest = own;
+        for (std::size_t other = 0; other < anchors.size(); ++other) {
+            const float cost = travelCost(map, costs[other], position);
+            closest = std::min(closest, cost); farthest = std::max(farthest, cost);
+            if (!std::isfinite(cost)) accessible = false;
+            if (!settings.contested && other != player && cost <= own + radius * 2) accessible = false;
+            if (!starting) {
+                float protectedCost = settings.minimumExpansionTravelCost;
+                for (const auto& existing : layout.fields)
+                    if (existing.startingPlayer == other + 1)
+                        protectedCost = std::max(protectedCost,
+                            existing.accessCost + existing.radius + settings.minimumFieldSeparation + radius);
+                if (cost < protectedCost) accessible = false;
             }
         }
+        if (!accessible || (settings.contested && !comparableAccess(closest, farthest, settings)) ||
+            (matchedCost >= 0 && !comparableAccess(own, matchedCost, settings))) continue;
+        const float preference = preferencePenalty(terrain, settings, position);
+        const float potential = regionalPotential(position.x, position.y, settings.regionScale, noiseSeed);
+        // Starting supply favors proximity. Expansion fields spread across biome-favored regions;
+        // the random score changes locations without changing their inventory or budget.
+        const float jitter = static_cast<float>(coordinateHash(
+            static_cast<int>(index), static_cast<int>(ordinal), seed) >> 8U) / 16777215.0F;
+        float score = starting ? own + preference * 3 + jitter * 3 :
+            preference * 12 + (1 - potential) * 18 + jitter * 65;
+        if (!starting && matchedCost >= 0) score += std::abs(own - matchedCost);
+        if (!starting && settings.contested) score += farthest - closest;
+        ordered.push_back({position, score, own});
     }
-    return layout;
+    std::stable_sort(ordered.begin(), ordered.end(), [](const auto& a, const auto& b) {
+        return a.score < b.score;
+    });
+    for (const auto& candidate : ordered) {
+        if (progress) progress->throwIfCancellationRequested();
+        if (!fieldSpaceAvailable(layout, definitions, field, candidate.position, radius, capacity)) continue;
+        ResourceNodeGrid grid{world, definitions};
+        for (const auto& node : layout.nodes)
+            grid.insert(node.position, definitions.resource(node.archetype)->collisionRadius);
+        std::vector<GeneratedResourceNode> nodes;
+        float maximumCost = 0;
+        bool valid = true;
+        for (const auto& id : inventory) {
+            const auto& type = *definitions.resource(id);
+            bool placed = false;
+            for (std::uint32_t attempt = 0; attempt < settings.placementAttemptsPerField; ++attempt) {
+                const float angle = random.range(0, glm::two_pi<float>());
+                const float distance = radius * std::sqrt(random.range(0, 1));
+                const auto position = candidate.position + glm::vec2{std::cos(angle), std::sin(angle)} * distance;
+                if (!suitable(terrain, definitions.matchRules(), settings, mapSize, position.x, position.y) ||
+                    !clearOfStarts(definitions.matchRules(), anchors, position.x, position.y) ||
+                    !grid.canPlace(position, type.collisionRadius, settings.minimumNodeSpacing) ||
+                    overlapsObject(world, definitions, position, type.collisionRadius)) continue;
+                const float access = travelCost(map, costs[player], position);
+                if (!std::isfinite(access)) continue;
+                bool safe = true;
+                for (std::size_t other = 0; other < anchors.size(); ++other) {
+                    const float otherCost = travelCost(map, costs[other], position);
+                    if (!std::isfinite(otherCost) || (!settings.contested && other != player && otherCost <= access))
+                        safe = false;
+                    if (!starting) {
+                        float protectedCost = settings.minimumExpansionTravelCost;
+                        for (const auto& existing : layout.fields)
+                            if (existing.startingPlayer == other + 1)
+                                protectedCost = std::max(protectedCost,
+                                    existing.accessCost + existing.radius + settings.minimumFieldSeparation);
+                        if (otherCost < protectedCost) safe = false;
+                    }
+                }
+                if (!safe) continue;
+                nodes.push_back({ResourceFieldId{field.id}, id, position, random.range(0, 360), layout.fields.size()});
+                grid.insert(position, type.collisionRadius);
+                maximumCost = std::max(maximumCost, access);
+                placed = true;
+                break;
+            }
+            if (!placed) { valid = false; break; }
+        }
+        if (!valid || (matchedCost >= 0 && !comparableAccess(maximumCost, matchedCost, settings))) continue;
+        layout.fields.push_back({ResourceFieldId{field.id}, candidate.position, radius,
+            static_cast<std::uint32_t>(inventory.size()), starting ? static_cast<std::uint32_t>(player + 1) : 0,
+            capacity, maximumCost});
+        layout.nodes.insert(layout.nodes.end(), nodes.begin(), nodes.end());
+        return true;
+    }
+    return false;
 }
 } // namespace
 
-ResourceLayout populateResources(World& world,
-                                 const Terrain& terrain,
-                                 const DefinitionRegistry& definitions,
-                                 std::uint32_t terrainSeed,
-                                 std::uint32_t mapChunksPerSide,
-                                 float abundanceScale,
+ResourceLayout populateResources(World& world, const Terrain& terrain,
+                                 const DefinitionRegistry& definitions, std::uint32_t terrainSeed,
+                                 std::uint32_t mapChunksPerSide, float abundanceScale,
                                  const std::vector<glm::vec2>& providedStartingAnchors,
                                  WorldGenerationProgress* progress) {
-    ResourceLayout acceptedLayout;
-    if (progress) progress->diagnostic("resources seed=" + std::to_string(terrainSeed) +
-        " chunks=" + std::to_string(mapChunksPerSide) + " abundance=" + std::to_string(abundanceScale));
-    if (progress) progress->report(WorldGenerationPhase::resources, 0.0F);
-    std::vector<glm::vec2> startingAnchors = providedStartingAnchors;
-    if (startingAnchors.empty())
-        for (const StartingRegion& region :
-             selectStartingRegions(terrain, definitions, mapChunksPerSide, 2,
-                                   terrainSeed))
-            startingAnchors.push_back(region.anchor);
-    const std::uint32_t validatedMapSize = std::clamp(
-        mapChunksPerSide, 10U, static_cast<std::uint32_t>(Terrain::chunksPerSide));
-    std::vector<std::vector<float>> fairnessTravelCosts;
-    fairnessTravelCosts.reserve(startingAnchors.size());
-    MovementDomainMask gatheringDomains = 0;
-    const auto includeGatheringDomains = [&](const auto& starts) {
-        for (const StartingEntityDefinition& start : starts) {
-            if (!start.gatheringEnabled) continue;
-            if (const EntityArchetype* gatherer = definitions.archetype(
-                    EntityArchetypeId{start.archetype}))
-                gatheringDomains |= gatherer->movement.domains;
-        }
-    };
-    includeGatheringDomains(definitions.matchRules().playerOne);
-    includeGatheringDomains(definitions.matchRules().playerTwo);
-    if (gatheringDomains == 0)
-        gatheringDomains = movementDomainBit(MovementDomain::land);
-    for (glm::vec2 anchor : startingAnchors)
-        fairnessTravelCosts.push_back(terrainTravelCosts(
-            terrain, validatedMapSize, anchor, gatheringDomains));
+    if (progress) progress->report(WorldGenerationPhase::resources, 0);
+    const auto mapSize = std::clamp(mapChunksPerSide, 10U, static_cast<std::uint32_t>(Terrain::chunksPerSide));
+    const MapArea map{mapSize};
+    auto anchors = providedStartingAnchors;
+    if (anchors.empty())
+        for (const auto& region : selectStartingRegions(terrain, definitions, mapSize, 2, terrainSeed, progress))
+            anchors.push_back(region.anchor);
+    MovementDomainMask domains = 0;
+    for (const auto* starts : {&definitions.matchRules().playerOne, &definitions.matchRules().playerTwo})
+        for (const auto& start : *starts)
+            if (start.gatheringEnabled)
+                if (const auto* type = definitions.archetype(EntityArchetypeId{start.archetype}))
+                    domains |= type->movement.domains;
+    if (domains == 0) domains = movementDomainBit(MovementDomain::land);
+    std::vector<std::vector<float>> costs;
+    for (auto anchor : anchors) costs.push_back(terrainTravelCosts(terrain, mapSize, anchor, domains, progress));
     const auto& generated = definitions.matchRules().generatedResourceFields;
-    for (std::size_t index = 0; index < generated.size(); ++index) {
-        if (progress)
-            progress->report(WorldGenerationPhase::resources,
-                             static_cast<float>(index) / std::max<std::size_t>(1, generated.size()));
-        const std::string& id = generated[index];
-        const ResourceFieldDefinition& field =
-            *definitions.resourceField(ResourceFieldId{id});
-        // The current terrain rules are field-wide. The selected node variant supplies entity
-        // presentation, collision, and capacity.
-        ResourceNodeDefinition type = *definitions.resource(field.variants.front().node);
-        const std::uint32_t mapSize = validatedMapSize;
-        const std::uint32_t maximumAttempts = field.generation.fairness
-                                                  ? field.generation.fairness->maximumLayoutAttempts
-                                                  : 1U;
-        std::unordered_set<EntityId> generatedIds;
-        FairnessResult fairness;
-        ResourceLayout acceptedFieldLayout;
-        for (std::uint32_t attempt = 0; attempt < maximumAttempts; ++attempt) {
-            for (EntityId entity : generatedIds) world.destroyEntity(entity);
-            generatedIds.clear();
-            const std::uint32_t layoutSeed = attempt == 0
-                ? terrainSeed
-                : resourceStreamSeed(terrainSeed, field.generation.stream +
-                    ".layout.attempt." + std::to_string(attempt + 1));
-            ResourceNodeGrid nodeGrid{world, definitions};
-            ResourceLayout layout;
-            fields(layout, nodeGrid, world, terrain, definitions, layoutSeed, field,
-                   mapSize, std::clamp(abundanceScale, 0.5F, 2.0F), startingAnchors);
-            ensureStartingResources(layout, nodeGrid, world, terrain, definitions, layoutSeed,
-                                    field, mapSize, startingAnchors, fairnessTravelCosts, progress);
-            instantiateLayout(world, definitions, layout);
-            for (const Entity& entity : world.entities())
-                if (std::any_of(field.variants.begin(), field.variants.end(),
-                                [&](const ResourceNodeVariant& variant) {
-                                    return variant.node.value == entity.archetype.value;
-                                }))
-                    generatedIds.insert(entity.id);
-            fairness = evaluateFairness(world, definitions, field, mapSize, startingAnchors,
-                                        fairnessTravelCosts);
-            if (progress) progress->diagnostic("layout " + field.id + " attempt=" + std::to_string(attempt + 1) +
-                " seed=" + std::to_string(layoutSeed) + " nodes=" + std::to_string(layout.nodes.size()) +
-                " fair=" + std::to_string(fairness.fair));
-            if (fairness.fair) {
-                acceptedFieldLayout = std::move(layout);
-                break;
+    std::vector<ResourceCandidates> candidates(generated.size());
+    const int side = static_cast<int>(map.extent() / Terrain::semanticCellSize);
+    for (std::size_t family = 0; family < generated.size(); ++family) {
+        const auto& field = *definitions.resourceField(ResourceFieldId{generated[family]});
+        for (int z = 0; z < side; ++z) {
+            if (progress) progress->throwIfCancellationRequested();
+            for (int x = 0; x < side; ++x) {
+                const auto position = map.gridCellCenter({x, z}, side);
+                if (suitable(terrain, definitions.matchRules(), field.generation, mapSize, position.x, position.y))
+                    candidates[family].positions.push_back(position);
             }
-            constexpr std::uint32_t maximumCompensationPasses = 32;
-            for (std::uint32_t compensationPass = 0;
-                 compensationPass < maximumCompensationPasses && !fairness.fair; ++compensationPass) {
-                ResourceLayout compensation = compensateFairness(
-                    nodeGrid, world, terrain, definitions, layoutSeed, field, type, mapSize,
-                    startingAnchors, fairnessTravelCosts, fairness,
-                    attempt * maximumCompensationPasses + compensationPass);
-                instantiateLayout(world, definitions, compensation);
-                if (progress) progress->diagnostic("compensation " + field.id +
-                    " pass=" + std::to_string(compensationPass + 1) +
-                    " failedBand=" + std::to_string(field.generation.fairness->travelCostBands[fairness.failedBand]) +
-                    " addedNodes=" + std::to_string(compensation.nodes.size()));
-                layout.fields.insert(layout.fields.end(), compensation.fields.begin(),
-                                     compensation.fields.end());
-                layout.nodes.insert(layout.nodes.end(), compensation.nodes.begin(),
-                                    compensation.nodes.end());
-                for (const Entity& entity : world.entities())
-                    if (std::any_of(field.variants.begin(), field.variants.end(),
-                                    [&](const ResourceNodeVariant& variant) {
-                                        return variant.node.value == entity.archetype.value;
-                                    }))
-                        generatedIds.insert(entity.id);
-                fairness = evaluateFairness(world, definitions, field, mapSize, startingAnchors,
-                                            fairnessTravelCosts);
-            }
-            if (fairness.fair) {
-                acceptedFieldLayout = std::move(layout);
-                break;
-            }
-        }
-        if (!fairness.fair) {
-            std::ostringstream message;
-            message << "Unable to generate a fair " << field.id << " layout after "
-                    << maximumAttempts << " deterministic attempts (seed " << terrainSeed
-                    << ", travel band " << field.generation.fairness->travelCostBands[fairness.failedBand]
-                    << "); deficient players:";
-            for (const std::size_t player : fairness.deficientPlayers)
-                message << ' ' << (player + 1);
-            throw std::runtime_error(message.str());
-        }
-        acceptedLayout.fields.insert(acceptedLayout.fields.end(),
-                                     acceptedFieldLayout.fields.begin(),
-                                     acceptedFieldLayout.fields.end());
-        acceptedLayout.nodes.insert(acceptedLayout.nodes.end(),
-                                    acceptedFieldLayout.nodes.begin(),
-                                    acceptedFieldLayout.nodes.end());
-        if (progress) {
-            progress->diagnostic("accepted " + field.id + " nodes=" + std::to_string(acceptedFieldLayout.nodes.size()));
-            for (std::size_t player = 0; player < fairness.capacityByPlayerAndBand.size(); ++player)
-                for (std::size_t band = 0; band < fairness.capacityByPlayerAndBand[player].size(); ++band)
-                    progress->diagnostic("accessible " + field.id + " player=" + std::to_string(player + 1) +
-                        " travel=" + std::to_string(field.generation.fairness->travelCostBands[band]) +
-                        " capacity=" + std::to_string(fairness.capacityByPlayerAndBand[player][band]));
         }
     }
-    if (progress) progress->report(WorldGenerationPhase::resources, 1.0F);
-    return acceptedLayout;
+    ResourceLayout layout;
+    // Place every family's reserved starting inventory before any expansion field.
+    for (std::size_t family = 0; family < generated.size(); ++family) {
+        const auto& field = *definitions.resourceField(ResourceFieldId{generated[family]});
+        if (field.generation.startingNodes.empty()) continue;
+        float matchedCost = -1;
+        for (std::size_t player = 0; player < anchors.size(); ++player) {
+            if (!placeField(layout, world, terrain, definitions, field, candidates[family], terrainSeed,
+                static_cast<std::uint32_t>(player), mapSize, anchors, costs, player, true, matchedCost, progress))
+                throw std::runtime_error("Unable to place reserved starting " + field.id + " for player " + std::to_string(player + 1));
+            matchedCost = layout.fields.back().accessCost;
+            if (progress) progress->diagnostic("opening " + field.id + " player=" + std::to_string(player + 1) +
+                " capacity=" + std::to_string(layout.fields.back().capacity) + " travel=" + std::to_string(matchedCost));
+        }
+    }
+    for (std::size_t family = 0; family < generated.size(); ++family) {
+        const auto& field = *definitions.resourceField(ResourceFieldId{generated[family]});
+        const auto& settings = field.generation;
+        const auto players = static_cast<std::uint32_t>(anchors.size());
+        const auto totalFields = std::max(players, static_cast<std::uint32_t>(std::round(
+            mapSize * mapSize * settings.fieldsPerSquareChunk * std::clamp(abundanceScale, 0.5F, 2.0F) / players)) * players);
+        const auto startingFields = settings.startingNodes.empty() ? 0U : players;
+        const auto expansionFields = totalFields - startingFields;
+        const float budget = startingFields * inventoryCapacity(definitions, settings.startingNodes) +
+            expansionFields * inventoryCapacity(definitions, settings.expansionNodes);
+        if (progress) progress->diagnostic("budget " + field.id + " capacity=" + std::to_string(budget) +
+            " startingFields=" + std::to_string(startingFields) + " expansionFields=" + std::to_string(expansionFields));
+        const auto base = layout;
+        bool placed = false;
+        for (std::uint32_t attempt = 0; attempt < settings.maximumLayoutAttempts && !placed; ++attempt) {
+            if (progress) progress->throwIfCancellationRequested();
+            layout = base;
+            placed = true;
+            const auto seed = resourceStreamSeed(terrainSeed, settings.stream + ".layout." + std::to_string(attempt));
+            for (std::uint32_t ordinal = 0; ordinal < expansionFields && placed; ++ordinal) {
+                const auto player = ordinal % players;
+                const float matched = player == 0 ? -1.0F : layout.fields.back().accessCost;
+                placed = placeField(layout, world, terrain, definitions, field, candidates[family], seed,
+                    players + ordinal, mapSize, anchors, costs, player, false,
+                    settings.contested ? -1.0F : matched, progress);
+            }
+            if (progress) progress->diagnostic("layout " + field.id + " attempt=" + std::to_string(attempt + 1) +
+                " complete=" + std::to_string(placed));
+        }
+        if (!placed) throw std::runtime_error("Unable to place budgeted " + field.id + " after " +
+            std::to_string(settings.maximumLayoutAttempts) + " deterministic attempts");
+        if (progress) progress->report(WorldGenerationPhase::resources,
+            static_cast<float>(family + 1) / std::max<std::size_t>(1, generated.size()));
+    }
+    // No entities are created until all budgets are successfully placed. A failed layout never
+    // leaks partial resources into the caller's world.
+    if (progress) progress->throwIfCancellationRequested();
+    instantiateLayout(world, definitions, layout);
+    if (progress)
+        for (const auto& id : generated) {
+            const auto count = std::count_if(layout.nodes.begin(), layout.nodes.end(),
+                [&](const auto& node) { return node.field.value == id; });
+            progress->diagnostic("accepted " + id + " nodes=" + std::to_string(count));
+            for (const auto& field : layout.fields)
+                if (field.definition.value == id)
+                    progress->diagnostic("field " + id + " x=" + std::to_string(field.center.x) +
+                        " z=" + std::to_string(field.center.y) + " capacity=" + std::to_string(field.capacity) +
+                        " startingPlayer=" + std::to_string(field.startingPlayer) + " travel=" + std::to_string(field.accessCost));
+        }
+    return layout;
 }
 
 VegetationField generateVegetation(const World& world,

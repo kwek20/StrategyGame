@@ -55,6 +55,7 @@
   "menu.play": "PLAY",
   "match_setup.title": "MATCH SETUP",
   "match_setup.mode_1v1": "1 VS 1 SKIRMISH",
+  "match_setup.generation_failed": "GENERATION FAILED. TRY ANOTHER SEED OR LAYOUT.",
   "match_setup.section_players": "PLAYERS",
   "match_setup.section_world": "WORLD",
   "match_setup.section_economy": "ECONOMY",

@@ -48,16 +48,6 @@ NavigationProfile navigationProfile(const DefinitionRegistry& definitions,
                      : NavigationProfile{};
 }
 
-std::uint32_t retryTerrainSeed(std::uint32_t requestedSeed, std::uint32_t attempt) {
-    if (attempt == 0) return requestedSeed;
-    std::uint32_t value = requestedSeed ^ (0x9E3779B9U * attempt);
-    value ^= value >> 16U;
-    value *= 0x7FEB352DU;
-    value ^= value >> 15U;
-    value *= 0x846CA68BU;
-    return value ^ (value >> 16U);
-}
-
 bool canReceiveCargo(const Entity& entity) {
     return entity.processor && entity.power && entity.power.enabled && isOperational(entity) &&
            entity.power.state == PowerOperationalState::powered;
@@ -238,7 +228,13 @@ GameSession::GameSession(const DefinitionRegistry& definitions,
     const std::uint32_t requestedSeed = terrainSeed_;
     const std::uint32_t maximumAttempts = terrain_.maximumGenerationAttempts();
     for (std::uint32_t attempt = 0; attempt < maximumAttempts; ++attempt) {
+        if (generationProgress) generationProgress->throwIfCancellationRequested();
         terrainSeed_ = retryTerrainSeed(requestedSeed, attempt);
+        if (generationProgress) generationProgress->diagnostic(
+            "terrain attempt=" + std::to_string(attempt + 1) +
+            " requestedSeed=" + std::to_string(requestedSeed) +
+            " terrainSeed=" + std::to_string(terrainSeed_) +
+            " layout=" + terrainLayout_.value + " chunks=" + std::to_string(mapChunksPerSide_));
         if (attempt > 0) {
             terrain_ = Terrain{terrainSeed_, terrainLayout_, generationProgress};
             navigation_.rebuildTerrain(terrain_, mapChunksPerSide_, generationProgress);
@@ -251,11 +247,13 @@ GameSession::GameSession(const DefinitionRegistry& definitions,
                 terrain_, gameplay_, mapChunksPerSide_, players_.players().size(),
                 terrainSeed_, generationProgress);
             break;
-        } catch (const std::runtime_error&) {
+        } catch (const StartingPlacementFailure& error) {
+            if (generationProgress) generationProgress->diagnostic(error.what());
             if (attempt + 1 == maximumAttempts)
                 throw std::runtime_error(
                     "Unable to generate a connected, playable terrain after " +
-                    std::to_string(maximumAttempts) + " deterministic attempts");
+                    std::to_string(maximumAttempts) + " deterministic attempts (requested seed " +
+                    std::to_string(requestedSeed) + "): " + error.what());
         }
     }
     if (generationProgress) generationProgress->report(WorldGenerationPhase::starts, 1.0F);
@@ -299,7 +297,7 @@ GameSession::GameSession(const DefinitionRegistry& definitions,
         world_.foundations().push_back(foundation);
         terrain_.applyFoundation(foundation);
     }
-    resourceLayout_ = populateResources(world_, terrain_, gameplay_, terrainSeed,
+    resourceLayout_ = populateResources(world_, terrain_, gameplay_, terrainSeed_,
                                         mapChunksPerSide_, resourceAbundanceScale_,
                                         startingAnchors_, generationProgress);
     if (generationProgress) generationProgress->report(WorldGenerationPhase::validation, 0.0F);

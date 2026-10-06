@@ -15,6 +15,21 @@
 
 namespace strategy {
 
+class StartingPlacementFailure final : public std::runtime_error {
+  public:
+    using std::runtime_error::runtime_error;
+};
+
+inline std::uint32_t retryTerrainSeed(std::uint32_t requestedSeed, std::uint32_t attempt) {
+    if (attempt == 0) return requestedSeed;
+    std::uint32_t value = requestedSeed ^ (0x9E3779B9U * attempt);
+    value ^= value >> 16U;
+    value *= 0x7FEB352DU;
+    value ^= value >> 15U;
+    value *= 0x846CA68BU;
+    return value ^ (value >> 16U);
+}
+
 struct StartingRegion {
     glm::vec2 anchor{0.0F};
     glm::ivec2 chunk{0};
@@ -30,8 +45,11 @@ inline std::vector<StartingRegion> selectStartingRegions(
     std::uint32_t selectionSeed = 0x5EED1234U,
     WorldGenerationProgress* progress = nullptr) {
     if (playerCount == 0) return {};
+    if (progress) progress->throwIfCancellationRequested();
     const MatchRulesDefinition& rules = definitions.matchRules();
     const MapArea map{mapChunksPerSide};
+    if (map.chunksPerSide() < 10 || playerCount > 4)
+        throw std::runtime_error("Corner starts require at least 10 chunks per side and at most four players");
     const float chunkWidth = static_cast<float>(Terrain::chunkCellCount) * Terrain::spacing;
 
     const int connectivitySide = std::max(
@@ -51,7 +69,8 @@ inline std::vector<StartingRegion> selectStartingRegions(
     constexpr std::array<glm::ivec2, 8> neighbors{
         glm::ivec2{1, 0}, glm::ivec2{-1, 0}, glm::ivec2{0, 1}, glm::ivec2{0, -1},
         glm::ivec2{1, 1}, glm::ivec2{1, -1}, glm::ivec2{-1, 1}, glm::ivec2{-1, -1}};
-    for (int z = 0; z < connectivitySide; ++z)
+    for (int z = 0; z < connectivitySide; ++z) {
+        if (progress) progress->throwIfCancellationRequested();
         for (int x = 0; x < connectivitySide; ++x) {
             const int startIndex = connectivityIndex(x, z);
             const glm::vec2 startPosition = connectivityPosition(x, z);
@@ -65,6 +84,8 @@ inline std::vector<StartingRegion> selectStartingRegions(
             open.push_back({x, z});
             landComponents[startIndex] = component;
             while (!open.empty()) {
+                if (progress && componentSizes[static_cast<std::size_t>(component)] % 256 == 0)
+                    progress->throwIfCancellationRequested();
                 const glm::ivec2 cell = open.front();
                 open.pop_front();
                 ++componentSizes[static_cast<std::size_t>(component)];
@@ -93,6 +114,7 @@ inline std::vector<StartingRegion> selectStartingRegions(
                 }
             }
         }
+    }
     const std::uint32_t minimumConnectedLand = static_cast<std::uint32_t>(std::ceil(
         static_cast<float>(connectivitySide * connectivitySide) *
         terrain.minimumStartingLandFraction()));
@@ -117,13 +139,12 @@ inline std::vector<StartingRegion> selectStartingRegions(
     if (!foundHeadquarters)
         throw std::runtime_error("Starting-region selection requires a headquarters definition");
 
-    if (map.chunksPerSide() < 10 || playerCount > 4)
-        throw std::runtime_error("Corner starts require at least 10 chunks per side and at most four players");
     constexpr std::array<glm::ivec2, 4> corners{{{0, 0}, {1, 1}, {1, 0}, {0, 1}}};
     std::vector<StartingRegion> selected;
     for (std::size_t player = 0; player < playerCount; ++player) {
         bool placed = false;
         for (std::uint32_t attempt = 0; attempt < 256 && !placed; ++attempt) {
+            if (progress) progress->throwIfCancellationRequested();
             DeterministicRandom random(selectionSeed + attempt, "starting.positions");
             const int offsetX = 2 + random.next() % 4;
             const int offsetZ = 2 + random.next() % 4;
@@ -181,7 +202,7 @@ inline std::vector<StartingRegion> selectStartingRegions(
             placed = true;
         }
         if (!placed)
-            throw std::runtime_error("Unable to place player " + std::to_string(player + 1) +
+            throw StartingPlacementFailure("Unable to place player " + std::to_string(player + 1) +
                                      " in its assigned corner after 256 attempts (selection seed " +
                                      std::to_string(selectionSeed) + ")");
     }

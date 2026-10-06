@@ -41,12 +41,13 @@ The current `Terrain` implementation:
 
 The current resource generator:
 
-- Generates non-mirrored fields using resource-specific biome, height, moisture and slope rules.
-- Scales ordinary field frequency with playable map area and resource abundance.
-- Samples variable node counts and weighted size variants within field radii; capacities are fixed
-  by node archetype, and nodes cannot overlap.
-- Counts existing nearby reachable Scrap before adding enough nodes to meet the opening minimum.
-- Applies travel-cost fairness compensation and bounded resource-layout retries after placement.
+- Reserves exact starting inventories: 600 Scrap and 400 Oil per player.
+- Allocates a total field budget before placement; starting fields count toward it.
+- Uses fixed node inventories inside irregular, separated fields with local capacity limits.
+- Treats biome, normalized height and moisture as preferences, with safe dry-land fallbacks.
+- Places starting supplies by gatherer travel cost without a hard maximum starting distance.
+- Gives expansion allocations comparable access and places guaranteed Uranium at contested sites.
+- Repairs placement by deterministic relocation/retry, preserving resource capacity.
 
 The current vegetation generator is definition-backed and deterministic, but it is a separate
 height filter rather than a consumer of biome and surface data. Dry, aged, and fresh short grass
@@ -397,138 +398,56 @@ least half a map side of separation from every accepted start. Resource suitabil
 Terrain quality is diagnostic only; there is no pair ranking or backtracking. If placement fails,
 the existing bounded terrain retry may restart selection on a new terrain.
 
-Resource generation then checks opening supply independently. For each resource family, ordinary
-fields are generated first. Scrap requires at least 600 raw units within 55 world units and a
-terrain travel cost of at most 55 from each start. Existing nearby reachable nodes count first.
-If insufficient, add fixed-capacity nodes 16–55 units from the anchor, respecting normal terrain,
-spacing and collision rules, up to 4096 candidate attempts per player. Whole nodes may overshoot
-the minimum. Existing starts are never moved to improve resources. Broader fairness compensation
-and resource-layout retries follow. Exhausted opening-resource placement reports a resource error;
-it does not regenerate terrain. Oil and Uranium have no separate opening minimum.
-Fairness compensation searches the full failed travel band and allows up to 32 passes per layout
-attempt, so asymmetric corner starts can receive additional deposits without relocating players.
+The accepted terrain seed drives subsequent resource and vegetation generation. Starting a new
+match directly with that accepted seed must reproduce the generated authoritative world. Generation
+diagnostics record the requested seed, each attempted terrain seed, layout, map size, and rejection
+reason. Only exhausted starting-placement searches are terrain-retry failures; cancellation and
+invalid configuration errors propagate immediately. Connectivity searches periodically check for
+cancellation.
 
-### 8. Generate resource regions and fields
+Resource availability is validated after starts. Every player receives an exact, reserved Scrap and
+Oil field inventory using nearby accessible dry land. Search expands by gatherer travel cost without
+a hard radius cutoff. Starts remain fixed; biome and normalized-height preferences cannot deny a
+resource category. Failure reports a resource-placement error, not a terrain retry.
 
-Resources should be driven by biome suitability, independent potential fields, and local resource-
-field rules. The result should contain rich areas, sparse areas, and occasional absence where
-permitted.
+### 8. Generate budgeted resource fields
 
-The authoritative generation hierarchy is:
+The authoritative contract and provisional balance values are in `docs/Resource system.md`.
+`assets/gameplay/resource_fields.json` owns explicit `startingNodes` and `expansionNodes` inventories,
+field density/radius, preferred biome/moisture/height, hard terrain/slope restrictions, field and node
+spacing, local capacity limits, and access tolerances. The obsolete weighted variants, random node
+counts, starting distance cap, minimum-capacity top-up and compensation settings are removed.
 
-```text
-resource-family potential
-  -> generated resource-field position and footprint
-    -> deterministic node count
-      -> individually placed resource nodes
-```
+1. Allocate the field count and capacity from map area, abundance and fixed inventories. Round
+   counts to complete player groups. Reserved opening fields count toward the map total.
+2. Build reusable gatherer-domain travel-cost fields from accepted player anchors. Ground travel
+   does not cross diagonal barriers. Cancellation remains responsive during searches.
+3. Place every family's starting inventory first, searching nearby suitable land with biome
+   preferences. Require comparable costs and distinct player access.
+4. Place equal expansion allocations with irregular node arrangements and comparable paired
+   access. Guaranteed Uranium uses contested positions with comparable access from every start.
+5. Check hard terrain restrictions and geometry for each node. Commit a field only if every
+   allocated node fits. Fields are separated by a clear gap and obey conservative sliding local
+   capacity limits, including neighbouring fields.
+6. On failure, relocate the current expansion family with its independent deterministic retry
+   stream. Inventory, accepted starting fields, terrain and unrelated random streams stay fixed.
+7. Instantiate authoritative node entities only after all resource families succeed.
 
-A resource field is generation metadata, not a harvestable entity. It owns a center, radius/shape,
-resource family, deterministic stream identity, and desired node count. Every node is a normal
-resource entity with its own presentation variant and remaining capacity.
+Field center, radius, inventory capacity, starting-player allocation, access cost and node membership
+are transient `ResourceLayout` diagnostics, not simulation ownership or save/checksum fields.
+Generated nodes use the normal entity persistence and checksum systems. The save format remains 1.
 
-Field footprints are deliberately allowed to cross biome and surface boundaries. Fields may also
-overlap other fields, including fields belonging to another resource family. A field center may be
-chosen from the resource's regional potential and broad placement rules, but the field footprint is
-not clipped at a biome boundary. Every node candidate is validated independently against the node
-variant's terrain requirements.
+### 9. Validate resource access and budgets
 
-Nodes may never overlap another authoritative resource node, regardless of which fields or resource
-families produced them. Ordinary entity collision, map boundaries, terrain suitability, and access
-validation still apply. Field overlap therefore creates natural mixed-resource areas without
-allowing intersecting harvestable geometry.
+Check exact opening inventories, total family budgets, complete field inventories, per-node terrain
+and geometry, field gaps, sliding local capacity, and actual gatherer navigation to reserved nodes.
+Pairwise expansion access uses a minimum cost ratio of 0.75 or an absolute difference no greater
+than 12, configured per family. Contested sites compare all players. Visible geometry is not mirrored.
 
-Resource placement now has a typed terrain-tag boundary. Existing Scrap, Oil, and Uranium nodes
-explicitly require `land`, so ordinary resources cannot be generated under water. Definitions may
-require or forbid any combination of `land`, `water`, `shallow-water`, `deep-water`, `shoreline`,
-`submerged`, `dry`, `vegetated`, `rocky`, `buildable`, and `no-build`. Shoreline is derived on both
-sides of a land/water boundary rather than tied to one biome. This prepares later coastal and
-water-specific resources without special-casing their IDs in world generation. Per-resource
-height and slope limits may override the global fallback rules.
-
-Vegetation generation always rejects submerged samples independently of its biome and surface
-allowlists. Grass and trees therefore remain land-only even if a future data edit accidentally
-adds a water biome to one of those lists.
-
-Each resource-field definition should support field distribution separately from node variants:
-
-```json
-{
-  "generation": {
-    "stream": "resources.scrap",
-    "requiredTerrainTags": ["land"],
-    "forbiddenTerrainTags": ["deep-water"],
-    "allowedBiomes": ["dry_lowland", "temperate_plain"],
-    "minimumHeight": 0.16,
-    "maximumHeight": 0.62,
-    "maximumSlopeDegrees": 12,
-    "regionThreshold": 0.48,
-    "regionScale": 90,
-    "fieldsPerSquareChunk": [0.04, 0.11],
-    "fieldRadius": [3, 10],
-    "nodesPerField": [2, 9],
-    "placementAttemptsPerNode": 20,
-    "minimumNodeSpacing": 2.5,
-    "variants": [
-      { "node": "scrap_small", "weight": 5 },
-      { "node": "scrap_medium", "weight": 3 },
-      { "node": "scrap_large", "weight": 1 }
-    ],
-    "startingRequiredCapacity": 600,
-    "startingMinimumDistance": 16,
-    "startingMaximumDistance": 55
-  }
-}
-```
-
-Resource-field generation should:
-
-1. Build a resource suitability field from biome, height, slope, moisture, and the resource's named
-   potential noise.
-2. Identify contiguous high-suitability regions.
-3. Choose a variable number of field centers proportional to map area and abundance settings.
-   Do not reject a field because its footprint overlaps another field or crosses a biome boundary.
-4. Give each field a deterministic radius/shape and node count.
-5. Sample each node independently inside the field using deterministic blue-noise/Poisson-like
-   spacing, validating terrain at the sampled node rather than clipping the field itself.
-6. Select a weighted node archetype such as small, medium, or large. The selected archetype owns
-   its model/presentation, collision shape, base capacity, and optional terrain restrictions.
-7. Vary rotation; initial capacity is always the selected node archetype's fixed amount.
-8. Reject node-to-node overlap globally, including nodes generated by other overlapping fields.
-9. Reject inaccessible nodes and validate global and per-player access after placement.
-
-Suggested initial tendencies:
-
-- **Scrap:** common in dry lowlands and plains; broad fields with many mixed-size nodes.
-- **Oil:** uncommon in low basins, wetlands, and selected plains; compact fields with high local
-  value.
-- **Uranium:** rare in uplands and rocky highlands; small fields with a few distinct crystal sizes.
-- **Synthetic:** remains produced/generated by its intended gameplay systems rather than becoming a
-  universally scattered raw node unless the resource design document changes.
-
-The abundance match setting should affect field frequency, nodes per field, and/or total regional capacity, not
-simply multiply a fixed mirrored pair count.
-
-### 9. Validate resource fairness without visible symmetry
-
-Opening guarantees remain explicit, but generated deposits should not be mirrored. Fairness should
-be evaluated using path cost and available capacity:
-
-- Opening Scrap capacity reachable per player
-- Distance/path cost to the nearest common and rare resource
-- Total resource capacity within expanding travel-time bands
-- Number of viable expansion regions
-- Whether water or mountains deny one player a resource category
-
-Use bounded tolerance bands rather than exact equality. If validation fails, first add or relocate a
-small compensating cluster in the deficient player's eligible region. If that cannot produce a valid
-map, retry the resource-layout stream with a deterministic attempt index. Do not regenerate terrain
-unless terrain itself fails starting-region validation.
-
-Implemented: land travel-cost fields are calculated once per player and reused across every
-resource category and retry. Each resource definition owns its bands, comparison threshold,
-minimum reachable capacity, tolerance ratio, compensation count, and retry limit. Compensation is
-independently randomized per player and attempt; fairness therefore does not imply visual symmetry.
+Run `map_generation_audit` across every layout, 10/15/20-chunk sizes and low/normal/high abundance
+seed cases. Audit accepted-seed replay and deterministic repeated matches. The audit exports field,
+node and start CSVs plus terrain rasters for layout inspection. These finite samples establish
+regression coverage, not a claim that every possible seed or economic balance has been validated.
 
 ### 10. Scatter non-gameplay surface detail
 
@@ -791,53 +710,13 @@ connected channels. Do not treat extra blur as the durable fix.
 10. ~~Replace fixed start coordinates with candidate scoring and pair selection.~~ Complete.
     Headquarters require a dry, slope-valid footprint, sufficient connected local land, and viable
     nearby opening-resource sites. Guaranteed resources consume the selected anchors directly.
-11. ~~Extend the original resource-node definitions with biome, regional-potential, variable
-    cluster, density, and capacity rules.~~ Complete for the current single-archetype generator.
-    This is the legacy foundation for the planned explicit resource-field/node-variant split.
-12. ~~Replace mirrored pair generation with resource regions and irregular clusters.~~ Complete for
-    single-archetype nodes. The next revision renames clusters to explicit fields, permits field
-    overlap and biome crossing, and selects weighted small/medium/large node archetypes per field.
-    Cluster counts scale with playable map area and abundance, centers require high resource-specific
-    potential and deterministic spacing, and nodes use irregular radial masks with minimum spacing.
-    No generated node receives an automatic mirrored counterpart.
-13. **Complete:** path-cost fairness validation and deterministic compensation/retry.
-    - Measure path cost and reachable capacity from every starting anchor to each generated
-      resource category, including Scrap, Oil, and Uranium.
-    - Compare capacity inside expanding definition-backed travel-cost bands rather than using
-      straight-line distance or exact mirrored equality.
-    - Detect denial caused by water, mountains, disconnected land regions, or insufficient valid
-      harvesting edges.
-    - First add or relocate a small compensating cluster in the deficient player's eligible region.
-    - If compensation cannot satisfy the bounded tolerance, retry only resource layout with a
-      deterministic attempt index. Do not regenerate accepted terrain for a resource-only failure.
-14. ~~Preserve explicit opening Scrap guarantees without mirroring the rest of the map.~~ Complete.
-    Opening Scrap is placed independently around each selected starting anchor using its own named
-    per-player stream; regional Scrap, Oil, and Uranium remain asymmetric.
+11. **Complete:** typed resource fields and individually harvestable node archetypes.
+12. **Complete:** exact starting Scrap/Oil inventories and preallocated expansion budgets.
+13. **Complete:** gatherer travel-cost comparisons and deterministic capacity-preserving retries.
+14. **Complete:** irregular fields, node non-overlap, field gaps and local concentration limits.
 
-#### Planned resource-field realignment
-
-The existing cluster generator is the migration source, not the final field implementation:
-
-1. ~~Introduce typed `ResourceFieldDefinition` and weighted `ResourceNodeVariant` references.~~
-   Complete.
-2. ~~Keep harvestable node archetypes in `resource_nodes.json`; move distribution, potential,
-   fairness, opening guarantees, and field-shape rules to `resource_fields.json`.~~ Complete.
-3. ~~Replace `generatedResourceNodes` in match rules with `generatedResourceFields`.~~ Complete.
-4. ~~Generate a plain `ResourceLayout` containing deterministic field descriptors and node spawn
-   records before mutating `World`. Fields are not entities; node spawn records become entities.~~
-   Complete, including opening and compensation layouts.
-5. ~~Remove minimum field-to-field spacing. Validate only the field center's broad regional rules,
-   then validate every node against its selected variant and terrain sample.~~ Complete. Field
-   footprints can cross biome boundaries and overlap; every resulting node is sampled separately.
-6. ~~Use one global spatial index for generated resource nodes so variants and resource families
-   cannot overlap even where their fields do.~~ Complete. The grid is rebuilt deterministically on
-   a layout retry and includes previously accepted resource families.
-7. ~~Make opening guarantees and fairness compensation create small fields rather than isolated
-   hard-coded node archetypes. Continue evaluating actual resulting capacity by travel-cost band.~~
-   Complete. Opening fields use provisional placement and commit only when their complete node set
-   fits; compensation records one small field at each accepted correction site.
-8. Add deterministic tests for variable node counts, weighted variants, overlapping/cross-biome
-   fields, global node non-overlap, per-node capacity, retry isolation, and equal-seed layouts.
+Economic depletion timing and expansion incentives still require opening playtests. See
+`docs/Resource system.md` for current values and the generation audit report for tested seeds.
 
 ### Phase D: environmental detail
 
@@ -873,7 +752,7 @@ The existing cluster generator is the migration source, not the final field impl
 21. **Active:** add deterministic, connectivity, fairness, statistical, and chunk-seam tests. Exact multi-seed
     resource-layout determinism, field membership, variant validity, and global node non-overlap are
     covered. Next add statistical distribution tolerances and confirmation that resource
-    compensation changes neither accepted terrain nor unrelated named random streams.
+    resource-layout retries change neither accepted terrain nor unrelated named random streams.
 22. **Next:** profile 10x10, 15x15, and 20x20 maps and establish generation-time, simulation-time, memory,
     terrain-upload, and rendering budgets. Record repeatable test seeds and machine configuration.
 

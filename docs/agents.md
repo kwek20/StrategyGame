@@ -245,9 +245,11 @@ quality tests. Vegetation expansion and tuning remain deferred as well.
 - Player starts use assigned opposite corners, independently drawing 2–5 inward chunk offsets
   from the same initial seed, then seed + 1 on failure (256 attempts/player). First valid starts
   remain fixed; terrain, usable land, connectivity and half-map-side separation are checked.
-  Resource suitability is a separate pass: ordinary fields first, then top up nearby reachable
-  Scrap to 600 within radius/travel cost 55, adding nodes at distances 16–55 if needed.
-  See docs/TERRAIN_GENERATION.md section 7 for limits and failure behavior.
+  Resource placement reserves exactly 600 Scrap and 400 Oil per player before expansion fields.
+  Starting fields count toward the map budget. Nearby placement uses gatherer travel cost without
+  a fixed maximum distance; biome/height/moisture are preferences with safe dry-land fallback.
+  Fields have explicit node inventories, gaps and local capacity caps. Resource retries relocate
+  inventories without additive compensation. See docs/Resource system.md and terrain section 8.
 - Terrain is seeded and chunked, with LOD and blended materials.
 - Resources and presentation-only vegetation use named deterministic streams.
 - Decorative grass, flowers, weeds, reeds, and stones are configured in
@@ -261,11 +263,9 @@ quality tests. Vegetation expansion and tuning remain deferred as well.
 Do not begin additional vegetation work unless the user explicitly resumes it. Before Milestone 6,
 work through this order:
 
-Resource path-cost fairness, deterministic compensation, and resource-stream retry are complete.
-The next resource-generation revision uses explicit non-entity resource fields. Fields may overlap
-one another and cross biome boundaries; their deterministically generated resource-node entities
-may not overlap. Node variants own presentation, collision, and capacity, while fairness continues
-to measure reachable resulting capacity rather than field count.
+Resource generation uses fixed starting/expansion inventories, balanced travel-cost access,
+field separation, local capacity limits, and deterministic retries that preserve budgets.
+Biome boundaries may cross field footprints; fields and their nodes maintain configured spacing.
 Accepted `ResourceLayout` data is retained by `GameSession` only as transient diagnostics: it is not
 saved or checksummed. F4 renders accepted field/node geometry and reports cursor field membership.
 Focused multi-seed tests cover exact repeatability, field membership, variant validity, and global
@@ -492,8 +492,8 @@ Then proceed to Milestone 6, the first combat slice.
 - Generation diagnostics are buffered on the generation worker and emitted as one
   `world_generation` log entry when the generation future finishes (success, cancellation or
   failure), in `gamedata/logs/strategy-game.log`. They include candidate chunks/seeds and rejection
-  reasons, accepted starts, opening capacity before/after top-ups, resource-layout attempts,
-  compensation additions, and final per-player travel-band capacities. No per-tick logging.
+  reasons, accepted starts, exact opening capacity/travel cost, allocated budgets, resource-layout
+  attempts, and accepted field capacity/location/allocation. No per-tick logging.
 - For opening-generation changes, start with `cmake --build build/debug --config Debug --target
   opening_generation_tests -j 8`, then `ctest --test-dir build/debug -C Debug -R
   '^opening_generation$' --output-on-failure`. The focused target reuses one terrain, constructs

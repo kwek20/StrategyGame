@@ -2,58 +2,170 @@
   "version": 1,
   "resourceFields": {
     "scrap_field": {
-      "resourceType": "scrap", "variants": [
-        { "node": "scrap_node_small", "weight": 4.0 },
-        { "node": "scrap_node_medium", "weight": 3.0 },
-        { "node": "scrap_node_large", "weight": 1.0 }
+      "resourceType": "scrap",
+      "variants": [
+        "scrap_node_small",
+        "scrap_node_medium",
+        "scrap_node_large"
       ],
       "generation": {
-        "stream": "resources.scrap", "allowedBiomes": ["dry_lowland", "temperate_plain", "upland"],
-        "requiredTerrainTags": ["land"], "moistureRange": [0.0, 0.78],
-        "minimumHeight": 0.24, "maximumHeight": 0.70, "maximumSlopeDegrees": 18,
-        "regionScale": 82, "regionThreshold": 0.43,
-        "fieldsPerSquareChunk": [0.055, 0.085], "fieldRadius": [4.0, 10.0],
-        "nodesPerField": [2, 7], "placementAttemptsPerNode": 13, "minimumNodeSpacing": 2.7,
-        "startingRequiredCapacity": 600, "startingMinimumDistance": 16, "startingMaximumDistance": 55,
-        "fairness": { "travelCostBands": [55, 120, 420], "minimumCapacityRatio": 0.68,
-          "minimumComparedCapacity": 160, "minimumReachableCapacity": 480,
-          "maximumLayoutAttempts": 5, "compensationNodesPerAttempt": 1 }
+        "stream": "resources.scrap",
+        "preferredBiomes": [
+          "dry_lowland",
+          "temperate_plain",
+          "upland"
+        ],
+        "requiredTerrainTags": [
+          "land"
+        ],
+        "forbiddenTerrainTags": [
+          "water",
+          "submerged",
+          "universal-barrier"
+        ],
+        "preferredMoisture": [
+          0.0,
+          0.78
+        ],
+        "preferredHeight": [
+          0.24,
+          0.7
+        ],
+        "maximumSlopeDegrees": 18,
+        "regionScale": 82,
+        "fieldsPerSquareChunk": 0.06,
+        "fieldRadius": [
+          5,
+          8
+        ],
+        "startingNodes": [
+          "scrap_node_medium",
+          "scrap_node_medium"
+        ],
+        "expansionNodes": [
+          "scrap_node_small",
+          "scrap_node_medium",
+          "scrap_node_large"
+        ],
+        "placementAttemptsPerField": 160,
+        "minimumNodeSpacing": 2.7,
+        "minimumFieldSeparation": 10,
+        "localCapacityRadius": 18,
+        "maximumLocalCapacity": 2000,
+        "minimumExpansionTravelCost": 65,
+        "minimumAccessRatio": 0.75,
+        "accessCostTolerance": 12,
+        "maximumLayoutAttempts": 8,
+        "contested": false
       }
     },
     "oil_field": {
-      "resourceType": "oil", "variants": [
-        { "node": "oil_node_small", "weight": 3.0 },
-        { "node": "oil_node_medium", "weight": 3.0 },
-        { "node": "oil_node_large", "weight": 1.0 }
+      "resourceType": "oil",
+      "variants": [
+        "oil_node_small",
+        "oil_node_medium",
+        "oil_node_large"
       ],
       "generation": {
-        "stream": "resources.oil", "allowedBiomes": ["dry_lowland", "temperate_plain"],
-        "requiredTerrainTags": ["land"], "moistureRange": [0.18, 1.0],
-        "minimumHeight": 0.22, "maximumHeight": 0.56, "maximumSlopeDegrees": 12,
-        "regionScale": 118, "regionThreshold": 0.56,
-        "fieldsPerSquareChunk": [0.018, 0.032], "fieldRadius": [3.0, 7.0],
-        "nodesPerField": [2, 5], "placementAttemptsPerNode": 20, "minimumNodeSpacing": 3.0,
-        "fairness": { "travelCostBands": [220, 720], "minimumCapacityRatio": 0.55,
-          "minimumComparedCapacity": 220, "minimumReachableCapacity": 220,
-          "maximumLayoutAttempts": 5, "compensationNodesPerAttempt": 1 }
+        "stream": "resources.oil",
+        "preferredBiomes": [
+          "dry_lowland",
+          "temperate_plain"
+        ],
+        "requiredTerrainTags": [
+          "land"
+        ],
+        "forbiddenTerrainTags": [
+          "water",
+          "submerged",
+          "universal-barrier"
+        ],
+        "preferredMoisture": [
+          0.18,
+          1.0
+        ],
+        "preferredHeight": [
+          0.22,
+          0.56
+        ],
+        "maximumSlopeDegrees": 12,
+        "regionScale": 118,
+        "fieldsPerSquareChunk": 0.024,
+        "fieldRadius": [
+          4,
+          7
+        ],
+        "startingNodes": [
+          "oil_node_small",
+          "oil_node_small"
+        ],
+        "expansionNodes": [
+          "oil_node_medium",
+          "oil_node_medium"
+        ],
+        "placementAttemptsPerField": 160,
+        "minimumNodeSpacing": 3.0,
+        "minimumFieldSeparation": 10,
+        "localCapacityRadius": 18,
+        "maximumLocalCapacity": 1200,
+        "minimumExpansionTravelCost": 65,
+        "minimumAccessRatio": 0.75,
+        "accessCostTolerance": 12,
+        "maximumLayoutAttempts": 8,
+        "contested": false
       }
     },
     "uranium_field": {
-      "resourceType": "uranium", "variants": [
-        { "node": "uranium_node_small", "weight": 4.0 },
-        { "node": "uranium_node_medium", "weight": 2.0 },
-        { "node": "uranium_node_large", "weight": 1.0 }
+      "resourceType": "uranium",
+      "variants": [
+        "uranium_node_small",
+        "uranium_node_medium",
+        "uranium_node_large"
       ],
       "generation": {
-        "stream": "resources.uranium", "allowedBiomes": ["upland", "rocky_highland"],
-        "requiredTerrainTags": ["land", "rocky"], "moistureRange": [0.0, 0.72],
-        "minimumHeight": 0.48, "maximumHeight": 0.82, "maximumSlopeDegrees": 24,
-        "regionScale": 145, "regionThreshold": 0.64,
-        "fieldsPerSquareChunk": [0.008, 0.018], "fieldRadius": [2.5, 6.0],
-        "nodesPerField": [1, 4], "placementAttemptsPerNode": 30, "minimumNodeSpacing": 3.2,
-        "fairness": { "travelCostBands": [1050], "minimumCapacityRatio": 0.45,
-          "minimumComparedCapacity": 120, "minimumReachableCapacity": 0,
-          "maximumLayoutAttempts": 6, "compensationNodesPerAttempt": 1 }
+        "stream": "resources.uranium",
+        "preferredBiomes": [
+          "upland",
+          "rocky_highland"
+        ],
+        "requiredTerrainTags": [
+          "land"
+        ],
+        "forbiddenTerrainTags": [
+          "water",
+          "submerged",
+          "universal-barrier"
+        ],
+        "preferredMoisture": [
+          0.0,
+          0.72
+        ],
+        "preferredHeight": [
+          0.48,
+          0.82
+        ],
+        "maximumSlopeDegrees": 24,
+        "regionScale": 145,
+        "fieldsPerSquareChunk": 0.012,
+        "fieldRadius": [
+          3,
+          6
+        ],
+        "startingNodes": [],
+        "expansionNodes": [
+          "uranium_node_small",
+          "uranium_node_small"
+        ],
+        "placementAttemptsPerField": 160,
+        "minimumNodeSpacing": 3.2,
+        "minimumFieldSeparation": 10,
+        "localCapacityRadius": 18,
+        "maximumLocalCapacity": 400,
+        "minimumExpansionTravelCost": 65,
+        "minimumAccessRatio": 0.75,
+        "accessCostTolerance": 12,
+        "maximumLayoutAttempts": 8,
+        "contested": true
       }
     }
   }

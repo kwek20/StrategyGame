@@ -293,6 +293,12 @@ if(STRATEGY_BUILD_TESTS)
     add_test(NAME opening_generation COMMAND opening_generation_tests)
     set_tests_properties(opening_generation PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "fast;generation" TIMEOUT 30)
 
+    add_executable(map_generation_audit_tests tests/MapGenerationAuditTests.cpp)
+    strategy_target(map_generation_audit_tests)
+    target_link_libraries(map_generation_audit_tests PRIVATE strategy_gameplay strategy_simulation strategy_world)
+    add_test(NAME map_generation_audit COMMAND map_generation_audit_tests)
+    set_tests_properties(map_generation_audit PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "generation;audit" TIMEOUT 1800)
+
     add_executable(entity_hud_model_tests tests/EntityHudModelTests.cpp)
     strategy_target(entity_hud_model_tests)
     target_link_libraries(entity_hud_model_tests PRIVATE strategy_ui_model)
@@ -360,6 +366,7 @@ if(STRATEGY_BUILD_TESTS)
         vegetation_tests
         resource_field_generation_tests
         opening_generation_tests
+        map_generation_audit_tests
         entity_hud_model_tests
         definition_registry_tests
         persistence_tests

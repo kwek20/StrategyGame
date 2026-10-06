@@ -110,14 +110,33 @@ int strategyTestMain() {
             valid = valid && belongsToField;
         }
         signatures.insert(std::move(signature));
-        for (const auto start : starts) {
-            float nearbyScrap = 0.0F;
-            for (const auto& node : first.nodes) {
-                const auto* type = definitions.resource(node.archetype);
-                if (type && type->resourceType == "scrap" && glm::distance(start, node.position) <= 55.0F)
-                    nearbyScrap += type->resourceCapacity;
+        for (std::size_t player = 0; player < starts.size(); ++player) {
+            float startingScrap = 0, startingOil = 0;
+            for (const auto& field : first.fields) {
+                if (field.startingPlayer != player + 1) continue;
+                if (field.definition.value == "scrap_field") startingScrap += field.capacity;
+                if (field.definition.value == "oil_field") startingOil += field.capacity;
             }
-            valid = valid && nearbyScrap >= 600.0F;
+            valid = valid && startingScrap == 600 && startingOil == 400;
+        }
+        for (std::size_t a = 0; a < first.fields.size(); ++a) {
+            const auto& field = first.fields[a];
+            float capacity = 0;
+            std::size_t count = 0;
+            for (const auto& node : first.nodes) {
+                if (node.fieldIndex != a) continue;
+                capacity += definitions.resource(node.archetype)->resourceCapacity;
+                ++count;
+                valid = valid && glm::distance(field.center, node.position) <= field.radius;
+            }
+            valid = valid && capacity == field.capacity && count == field.desiredNodes;
+            for (std::size_t b = a + 1; b < first.fields.size(); ++b) {
+                const auto& other = first.fields[b];
+                const auto& ga = definitions.resourceField(field.definition)->generation;
+                const auto& gb = definitions.resourceField(other.definition)->generation;
+                valid = valid && glm::distance(field.center, other.center) + 0.001F >=
+                    field.radius + other.radius + std::max(ga.minimumFieldSeparation, gb.minimumFieldSeparation);
+            }
         }
         for (const auto& entity : firstWorld.entities()) {
             const auto* type = definitions.resource(

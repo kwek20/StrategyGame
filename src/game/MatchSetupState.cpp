@@ -17,7 +17,7 @@
 #include <utility>
 
 namespace strategy {
-MatchSetupState::MatchSetupState(StateContext& context)
+MatchSetupState::MatchSetupState(StateContext& context, bool generationFailed)
     : GameState(context)
     , config_(GameConfig::load(context.configPath))
     , terrainDefinitions_(TerrainGenerationDefinitions::load()) {
@@ -95,6 +95,10 @@ MatchSetupState::MatchSetupState(StateContext& context)
          std::move(actions),
          config_.uiScale});
     refreshUi();
+    if (generationFailed) {
+        context_.renderer->setUiText("match-mode", Text::get("match_setup.generation_failed"));
+        context_.renderer->setUiProperty("match-mode", "color", "#ffbf75");
+    }
 }
 MatchSetupState::~MatchSetupState() {
     context_.renderer->removeUiScreen(screen_);

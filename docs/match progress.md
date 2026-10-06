@@ -24,8 +24,9 @@ minute scenario and recorded playtests. Measure:
 
 Run the scenario on 10x10, 15x15, and 20x20 maps. Resource fairness uses bounded path-cost and
 reachable-capacity tolerances, not mirrored layouts or straight-line distance. Failed fairness
-first triggers deterministic resource compensation or resource-stream retry without changing
-accepted terrain.
+uses deterministic resource relocation/retry while preserving the allocated inventory and
+accepted terrain. Starting supplies are exactly 600 Scrap and 400 Oil per player; these provisional
+values need depletion and opening-economy playtests.
 
 ---
 

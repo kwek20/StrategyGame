@@ -43,10 +43,10 @@ int strategyTestMain() {
     const auto* oilField = gameplay.resourceField(strategy::ResourceFieldId{"oil_field"});
     const auto* uraniumField = gameplay.resourceField(strategy::ResourceFieldId{"uranium_field"});
     for (const auto* field : {scrapField, oilField, uraniumField})
-        valid = valid && field && field->generation.fairness && !field->variants.empty() &&
-                !field->generation.fairness->travelCostBands.empty() &&
-                field->generation.fairness->minimumCapacityRatio < 1.0F &&
-                field->generation.fairness->maximumLayoutAttempts > 1 &&
+        valid = valid && field && !field->variants.empty() &&
+                !field->generation.expansionNodes.empty() &&
+                field->generation.minimumAccessRatio <= 1.0F &&
+                field->generation.maximumLayoutAttempts > 1 &&
                 (field->generation.requiredTerrainTags &
                  strategy::terrainTagBit(strategy::TerrainTag::land)) != 0 &&
                 (field->generation.requiredTerrainTags &
@@ -356,8 +356,26 @@ int strategyTestMain() {
     const strategy::Terrain waterTerrain{
         0x5EED1234U, terrainDefinitions.activeGenerator(), true};
     strategy::Navigation waterNavigation{waterTerrain, gameplay, 20};
-    const auto fourPlayerRegions = strategy::selectStartingRegions(
-        waterTerrain, gameplay, 20, 4);
+    // A fixed water-enabled terrain can legitimately have no legal corner starts.
+    // Exercise the production retry sequence without weakening placement constraints.
+    strategy::Terrain fourPlayerTerrain = waterTerrain;
+    strategy::WorldGenerationProgress startDiagnostics;
+    std::vector<strategy::StartingRegion> fourPlayerRegions;
+    for (std::uint32_t attempt = 0; attempt < waterTerrain.maximumGenerationAttempts(); ++attempt) {
+        const auto seed = strategy::retryTerrainSeed(0x5EED1234U, attempt);
+        if (attempt > 0)
+            fourPlayerTerrain = strategy::Terrain{seed, terrainDefinitions.activeGenerator(), true};
+        try {
+            fourPlayerRegions = strategy::selectStartingRegions(
+                fourPlayerTerrain, gameplay, 20, 4, seed, &startDiagnostics);
+            break;
+        } catch (const strategy::StartingPlacementFailure&) {
+            if (attempt + 1 == waterTerrain.maximumGenerationAttempts()) {
+                std::cerr << startDiagnostics.diagnostics();
+                throw;
+            }
+        }
+    }
     valid = valid && fourPlayerRegions.size() == 4;
     const float startChunkWidth = static_cast<float>(strategy::Terrain::chunkCellCount) *
                                   strategy::Terrain::spacing;
@@ -377,10 +395,11 @@ int strategyTestMain() {
                     static_cast<std::uint32_t>(std::ceil(
                         std::pow(fourPlayerMap.extent() / strategy::Terrain::semanticCellSize,
                                  2.0F) *
-                        waterTerrain.minimumStartingLandFraction()));
+                        fourPlayerTerrain.minimumStartingLandFraction()));
         for (std::size_t right = left + 1; right < fourPlayerRegions.size(); ++right)
             valid = valid && glm::distance(fourPlayerRegions[left].anchor,
-                                           fourPlayerRegions[right].anchor) >= startChunkWidth * 3.0F;
+                                           fourPlayerRegions[right].anchor) >=
+                fourPlayerMap.extent() * gameplay.matchRules().minimumOpponentSeparationNormalized;
     }
     glm::vec3 shoreLand{0.0F}, shoreWater{0.0F};
     bool foundShore = false;
@@ -670,10 +689,7 @@ int strategyTestMain() {
         valid = valid && (sample.tags & generation.requiredTerrainTags) ==
                     generation.requiredTerrainTags &&
                 (sample.tags & generation.forbiddenTerrainTags) == 0 &&
-                std::find(generation.allowedBiomes.begin(), generation.allowedBiomes.end(),
-                          sample.biome) != generation.allowedBiomes.end() &&
-                sample.moisture >= generation.minimumMoisture &&
-                sample.moisture <= generation.maximumMoisture;
+                !sample.submerged && sample.slopeDegrees <= generation.maximumSlope;
         minimumGeneratedCapacity = std::min(minimumGeneratedCapacity,
                                              resource.resource.remaining);
         maximumGeneratedCapacity = std::max(maximumGeneratedCapacity,
@@ -712,17 +728,15 @@ int strategyTestMain() {
         // Starting anchors reserve two complete border chunks on both axes.
         valid = valid && std::abs(base.x) <= sessionMap.halfExtent() - chunkWidth * 2.0F &&
                 std::abs(base.y) <= sessionMap.halfExtent() - chunkWidth * 2.0F;
-        std::size_t nearbyScrap = 0;
-        float nearbyCapacity = 0.0F;
-        for (const strategy::Entity& resource : session.world().entities()) {
-            if (!resource.resource || resource.resource.type != "scrap") continue;
-            const glm::vec2 position{resource.transform.position.x, resource.transform.position.z};
-            if (glm::distance(position, base) <= 55.0F) {
-                ++nearbyScrap;
-                nearbyCapacity += resource.resource.remaining;
-            }
+        float startingScrap = 0, startingOil = 0;
+        const auto anchorIndex = static_cast<std::uint32_t>(std::find(session.startingAnchors().begin(),
+            session.startingAnchors().end(), base) - session.startingAnchors().begin()) + 1;
+        for (const auto& field : session.resourceLayout().fields) {
+            if (field.startingPlayer != anchorIndex) continue;
+            if (field.definition.value == "scrap_field") startingScrap += field.capacity;
+            if (field.definition.value == "oil_field") startingOil += field.capacity;
         }
-        valid = valid && nearbyScrap >= 2 && nearbyCapacity >= 600.0F;
+        valid = valid && startingScrap == 600 && startingOil == 400;
     }
     const glm::vec2 anchorDelta = session.startingAnchors()[0] - session.startingAnchors()[1];
     valid = valid && glm::length(anchorDelta) >= sessionMap.extent() * gameplay.matchRules().minimumOpponentSeparationNormalized;
