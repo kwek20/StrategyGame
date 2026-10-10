@@ -29,14 +29,31 @@ std::uint64_t authoritativeStateChecksum(const World& world,
                                          std::uint32_t terrainSeed,
                                          std::uint64_t tick,
                                          std::uint32_t mapChunksPerSide,
-                                         std::string_view terrainLayout) {
+                                         std::string_view terrainLayout,
+                                         TerrainMode terrainMode,
+                                         std::uint32_t terrainRepairLevel,
+                                         std::uint64_t terrainFingerprint) {
     Hash hash; hash.value(terrainSeed); hash.value(tick); hash.value(mapChunksPerSide);
     hash.text(terrainLayout);
+    hash.text(terrainModeName(terrainMode));
+    hash.value(terrainRepairLevel);
+    hash.value(terrainFingerprint);
     hash.value(static_cast<std::uint64_t>(world.foundations().size()));
     for (const TerrainFoundation& foundation : world.foundations()) {
         hash.vector(foundation.center);
         hash.value(foundation.innerRadius);
         hash.value(foundation.outerRadius);
+        hash.value(foundation.sourceEntity);
+        hash.value(static_cast<std::uint32_t>(foundation.shape));
+        hash.value(foundation.halfExtents.x);
+        hash.value(foundation.halfExtents.y);
+        hash.value(foundation.gradient.x);
+        hash.value(foundation.gradient.y);
+        hash.value(foundation.rotationDegrees);
+        hash.value(foundation.edgeFalloff);
+        hash.value(foundation.influence);
+        hash.value(foundation.sourceSlopeDegrees);
+        hash.value(foundation.requiresSlab);
     }
     std::vector<const Player*> orderedPlayers;
     for (const Player& player : players.players()) orderedPlayers.push_back(&player);

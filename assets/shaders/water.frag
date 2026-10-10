@@ -14,6 +14,7 @@ uniform vec2 fogRange;
 uniform sampler2D explorationMap;
 uniform float explorationExtent;
 uniform bool useExploration;
+uniform bool exactWaterSurface;
 uniform int waterDebugMode;
 
 out vec4 outColor;
@@ -69,6 +70,12 @@ void main() {
     vec3 shorelineColor = vec3(0.18, 0.56, 0.58);
     vec3 shallowColor = vec3(0.075, 0.34, 0.46);
     vec3 deepColor = vec3(0.018, 0.105, 0.235);
+    if (exactWaterSurface) {
+        shorelineColor = vec3(0.33, 0.69, 0.64);
+        shallowColor = vec3(0.13, 0.52, 0.61);
+        deepColor = vec3(0.055, 0.29, 0.43);
+        depthFactor = smoothstep(0.15, 5.0, visualDepth);
+    }
     vec3 water = mix(shallowColor, deepColor, depthFactor);
     water += vec3(0.015, 0.038, 0.048) * shimmer * (1.0 - depthFactor * 0.65);
 

@@ -70,6 +70,12 @@ strategy_target(strategy_players)
 target_link_libraries(strategy_players PUBLIC strategy_core)
 
 add_library(strategy_terrain STATIC
+    src/terrain/TerrainTerraces.cpp
+    src/terrain/TerrainV2Recipe.cpp
+    src/terrain/TerrainV2Plan.cpp
+    src/terrain/TerrainV2Generator.cpp
+    src/terrain/TerrainSupport.cpp
+    src/terrain/SurfaceGeometry.cpp
     src/terrain/Terrain.cpp
     src/terrain/TerrainBiomeGenerator.cpp
     src/terrain/TerrainGeneration.cpp
@@ -226,6 +232,38 @@ set_target_properties(strategy_game PROPERTIES
 if(STRATEGY_BUILD_TESTS)
     enable_testing()
 
+    add_executable(terrain_v2_session_tests tests/TerrainV2SessionTests.cpp)
+    strategy_target(terrain_v2_session_tests)
+    target_link_libraries(terrain_v2_session_tests PRIVATE strategy_simulation strategy_persistence)
+    foreach(layout open_plains central_water rolling_hills central_hill continental)
+        add_test(NAME terrain_v2_sessions_${layout} COMMAND terrain_v2_session_tests)
+        set_tests_properties(terrain_v2_sessions_${layout} PROPERTIES
+            WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "generation" TIMEOUT 600
+            ENVIRONMENT "STRATEGY_V2_AUDIT_LAYOUT=${layout}")
+    endforeach()
+
+    add_executable(terrain_v2_opening_tests tests/TerrainV2OpeningTests.cpp)
+    strategy_target(terrain_v2_opening_tests)
+    target_link_libraries(terrain_v2_opening_tests PRIVATE strategy_simulation)
+    add_test(NAME terrain_v2_openings COMMAND terrain_v2_opening_tests)
+    set_tests_properties(terrain_v2_openings PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "generation" TIMEOUT 90)
+    add_executable(terrain_v2_tests tests/TerrainV2Tests.cpp)
+    strategy_target(terrain_v2_tests)
+    target_link_libraries(terrain_v2_tests PRIVATE strategy_simulation strategy_persistence)
+    add_test(NAME terrain_v2_generation COMMAND terrain_v2_tests)
+    set_tests_properties(terrain_v2_generation PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "generation" TIMEOUT 120)
+
+    foreach(layout open_plains central_water rolling_hills central_hill continental)
+        add_executable(terrain_v2_field_${layout}_tests tests/TerrainV2FieldTests.cpp)
+        strategy_target(terrain_v2_field_${layout}_tests)
+        target_sources(terrain_v2_field_${layout}_tests PRIVATE tests/TestMain.cpp)
+        target_link_libraries(terrain_v2_field_${layout}_tests PRIVATE strategy_terrain)
+        target_compile_definitions(terrain_v2_field_${layout}_tests PRIVATE STRATEGY_V2_AUDIT_LAYOUT="${layout}")
+        add_test(NAME terrain_v2_fields_${layout} COMMAND terrain_v2_field_${layout}_tests)
+        set_tests_properties(terrain_v2_fields_${layout} PROPERTIES
+            WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "generation" TIMEOUT 300)
+    endforeach()
+
     add_executable(terrain_tests tests/TerrainTests.cpp)
     strategy_target(terrain_tests)
     target_link_libraries(terrain_tests PRIVATE strategy_terrain)
@@ -346,7 +384,7 @@ if(STRATEGY_BUILD_TESTS)
 
     add_executable(renderer_integration_tests tests/RendererIntegrationTests.cpp)
     strategy_target(renderer_integration_tests)
-    target_link_libraries(renderer_integration_tests PRIVATE strategy_render)
+    target_link_libraries(renderer_integration_tests PRIVATE strategy_render strategy_simulation)
     add_test(NAME renderer_integration COMMAND renderer_integration_tests)
     set_tests_properties(renderer_integration PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
@@ -356,6 +394,9 @@ if(STRATEGY_BUILD_TESTS)
     add_test(NAME render_architecture COMMAND render_architecture_tests)
 
     set(STRATEGY_TEST_TARGETS
+        terrain_v2_tests
+        terrain_v2_session_tests
+        terrain_v2_opening_tests
         terrain_tests
         game_system_tests
         camera_tests

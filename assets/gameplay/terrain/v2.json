@@ -1,0 +1,199 @@
+{
+  "version": 1,
+  "cells": {
+    "side": 1.5,
+    "elevationStep": 0.5,
+    "cliffRun": 0.375,
+    "rampRun": 1.5,
+    "sourceWeight": 1,
+    "boundaryWeight": 0.04,
+    "isolatedWeight": 0.6,
+    "sweeps": 8
+  },
+  "profiles": {
+    "temperate": {
+      "relief": [
+        2,
+        12
+      ],
+      "lowlandBiome": "temperate_plain",
+      "hillBiome": "upland",
+      "cliffBiome": "rocky_highland"
+    },
+    "upland": {
+      "relief": [
+        6,
+        16
+      ],
+      "lowlandBiome": "temperate_plain",
+      "hillBiome": "upland",
+      "cliffBiome": "rocky_highland"
+    }
+  },
+  "layouts": {
+    "continental": {
+      "profile": "temperate",
+      "relief": [
+        4,
+        12
+      ],
+      "baseHeight": 16,
+      "openingRadius": 24,
+      "openingInset": 54,
+      "routeWidth": 12,
+      "waterPolicy": "forbidden",
+      "competitive": true,
+      "peakCount": 5,
+      "peakRadius": 18,
+      "peakHeight": 14,
+      "forestDensity": 2,
+      "forestScale": 1.4,
+      "forestSpacing": 3,
+      "forestClusterSize": 3,
+      "forestCoverage": 0.8,
+      "forestDensityScale": 65,
+      "openingBlendWidth": 12
+    },
+    "open_plains": {
+      "profile": "temperate",
+      "relief": [
+        2,
+        4
+      ],
+      "baseHeight": 16,
+      "openingRadius": 24,
+      "openingInset": 54,
+      "routeWidth": 12,
+      "waterPolicy": "forbidden",
+      "competitive": true,
+      "peakCount": 1,
+      "peakRadius": 18,
+      "peakHeight": 8,
+      "forestDensity": 2,
+      "forestScale": 1.4,
+      "forestSpacing": 3,
+      "forestClusterSize": 3,
+      "forestCoverage": 0.8,
+      "forestDensityScale": 65,
+      "openingBlendWidth": 12
+    },
+    "central_hill": {
+      "profile": "upland",
+      "relief": [
+        8,
+        16
+      ],
+      "baseHeight": 16,
+      "openingRadius": 24,
+      "openingInset": 54,
+      "routeWidth": 12,
+      "waterPolicy": "forbidden",
+      "competitive": true,
+      "peakCount": 5,
+      "peakRadius": 18,
+      "peakHeight": 14,
+      "forestDensity": 2,
+      "forestScale": 1.4,
+      "forestSpacing": 3,
+      "forestClusterSize": 3,
+      "forestCoverage": 0.8,
+      "forestDensityScale": 65,
+      "openingBlendWidth": 12
+    },
+    "rolling_hills": {
+      "profile": "upland",
+      "relief": [
+        6,
+        14
+      ],
+      "baseHeight": 16,
+      "openingRadius": 24,
+      "openingInset": 54,
+      "routeWidth": 12,
+      "waterPolicy": "forbidden",
+      "competitive": true,
+      "peakCount": 5,
+      "peakRadius": 18,
+      "peakHeight": 14,
+      "forestDensity": 2,
+      "forestScale": 1.4,
+      "forestSpacing": 3,
+      "forestClusterSize": 3,
+      "forestCoverage": 0.8,
+      "forestDensityScale": 65,
+      "openingBlendWidth": 12
+    },
+    "central_water": {
+      "profile": "temperate",
+      "relief": [
+        4,
+        8
+      ],
+      "baseHeight": 16,
+      "openingRadius": 24,
+      "openingInset": 54,
+      "routeWidth": 12,
+      "waterPolicy": "required",
+      "competitive": true,
+      "water": {
+        "feature": "central_lake",
+        "coverage": [
+          0.17,
+          0.23
+        ],
+        "level": 15,
+        "depth": 4,
+        "bankWidth": 12,
+        "isletCount": 2,
+        "isletRadius": 6,
+        "isletHeight": 2
+      },
+      "peakCount": 5,
+      "peakRadius": 18,
+      "peakHeight": 14,
+      "forestDensity": 2,
+      "forestScale": 1.4,
+      "forestSpacing": 3,
+      "forestClusterSize": 3,
+      "forestCoverage": 0.8,
+      "forestDensityScale": 65,
+      "openingBlendWidth": 12
+    },
+    "archipelago": {
+      "profile": "temperate",
+      "relief": [
+        4,
+        8
+      ],
+      "baseHeight": 16,
+      "openingRadius": 24,
+      "openingInset": 54,
+      "routeWidth": 12,
+      "waterPolicy": "required",
+      "competitive": false,
+      "water": {
+        "feature": "ocean",
+        "coverage": [
+          0.35,
+          0.45
+        ],
+        "level": 15,
+        "depth": 4,
+        "bankWidth": 12,
+        "isletCount": 2,
+        "isletRadius": 6,
+        "isletHeight": 2
+      },
+      "peakCount": 5,
+      "peakRadius": 18,
+      "peakHeight": 14,
+      "forestDensity": 2,
+      "forestScale": 1.4,
+      "forestSpacing": 3,
+      "forestClusterSize": 3,
+      "forestCoverage": 0.8,
+      "forestDensityScale": 65,
+      "openingBlendWidth": 12
+    }
+  }
+}

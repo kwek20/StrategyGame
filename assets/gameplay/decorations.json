@@ -1,6 +1,8 @@
 {
   "version": 1,
   "decorations": {
+    "foliage_conifer_1": {"presentation": "foliage_conifer_1", "nameKey": "entity.foliage_conifer", "collisionRadius": 0, "components": [], "tags": ["decoration", "vegetation", "tree", "v2-only", "clear-on-build"], "stats": {}},
+    "foliage_conifer_2": {"presentation": "foliage_conifer_2", "nameKey": "entity.foliage_conifer", "collisionRadius": 0, "components": [], "tags": ["decoration", "vegetation", "tree", "v2-only", "clear-on-build"], "stats": {}},
     "grass_dry": {
       "presentation": "grass_dry",
       "nameKey": "entity.grass_dry",

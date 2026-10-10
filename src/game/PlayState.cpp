@@ -205,7 +205,9 @@ PlayState::PlayState(StateContext& context, MatchSetupOptions setup)
                setup.mapChunksPerSide,
                setup.startingResourcesScale,
                setup.resourceAbundanceScale,
-               TerrainLayoutId{std::move(setup.terrainLayout)})
+               TerrainLayoutId{std::move(setup.terrainLayout)},
+               nullptr,
+               setup.terrainMode)
     , config_(GameConfig::load(context.configPath)) {
     initializeStartingView();
 }
@@ -240,13 +242,17 @@ PlayState::PlayState(StateContext& context, SaveData data)
                data.mapChunksPerSide,
                1.0F,
                1.0F,
-               TerrainLayoutId{data.terrainLayout})
+               TerrainLayoutId{data.terrainLayout},
+               nullptr,
+               data.terrainMode)
     , config_(GameConfig::load(context.configPath)) {
     session_.replaceWorld(std::move(data.entities),
                           data.terrainSeed,
                           std::move(data.foundations),
                           data.mapChunksPerSide,
-                          TerrainLayoutId{data.terrainLayout});
+                          TerrainLayoutId{data.terrainLayout},
+                          data.terrainMode,
+                          data.terrainRepairLevel);
     session_.restorePlayerProgress(1,
                                    std::move(data.resources[0]),
                                    std::move(data.discovered[0]),
@@ -856,7 +862,9 @@ void PlayState::handleEvent(const SDL_Event& event) {
                             session_.world(),
                             &session_.players(),
                             session_.mapChunksPerSide(),
-                            session_.terrainLayout().value);
+                            session_.terrainLayout().value,
+                            session_.terrain().mode(),
+                            session_.terrain().repairLevel());
             context_.logger.info("persistence", "Saved game to " + config_.savePath().string());
             context_.events.enqueue(AudioEvent{AudioCue::saveGame});
         } catch (const std::exception& error) {
@@ -874,7 +882,9 @@ void PlayState::handleEvent(const SDL_Event& event) {
                                   data.terrainSeed,
                                   std::move(data.foundations),
                                   data.mapChunksPerSide,
-                                  TerrainLayoutId{data.terrainLayout});
+                                  TerrainLayoutId{data.terrainLayout},
+                                  data.terrainMode,
+                                  data.terrainRepairLevel);
             possessedEntity_ = 0;
             viewMode_ = ViewMode::strategy;
             setMouseCaptured(false);
@@ -1441,9 +1451,10 @@ void PlayState::sanitizeEntityReferences() {
 
 void PlayState::render(Renderer& renderer) const {
     if (pendingTerrainSeed_) {
-        renderer.regenerateTerrain(*pendingTerrainSeed_,
-                                   pendingTerrainChunksPerSide_.value_or(Terrain::chunksPerSide),
-                                   pendingTerrainLayout_.value_or(TerrainLayoutId{"continental"}));
+        renderer.stageGeneratedTerrain(session_.terrain(),
+                                       session_.terrainSeed(),
+                                       session_.mapChunksPerSide(),
+                                       session_.world().foundations());
         pendingTerrainSeed_.reset();
         pendingTerrainChunksPerSide_.reset();
         pendingTerrainLayout_.reset();
@@ -1587,6 +1598,12 @@ void PlayState::render(Renderer& renderer) const {
         Entity& ghost = preview.createEntity(buildingId, buildingId, localPlayer_);
         context_.definitions.initializeEntity(ghost);
         ghost.transform.position = {position.x, 0.0F, position.z};
+        // drawWorld supplies the same immutable base surface. Offset the transient model to
+        // its evaluated support plane, including a coincident occupied building's plane.
+        if (session_.terrain().mode() == TerrainMode::v2 && terrainPlacement.footprintArea > 0)
+            ghost.transform.position.y =
+                terrainPlacement.fit.height -
+                session_.terrain().entityBaseHeight(ghost.id, position.x, position.z);
         ghost.construction.emplace();
         ghost.construction.state = BuildingLifecycleState::planned;
         ghost.construction.placementValid = constructionPreviewValid_;

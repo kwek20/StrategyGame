@@ -55,7 +55,11 @@ int strategyTestMain() {
         imports("assets/models/gen/resources/oil_barrel_medium.glb", false) &&
         imports("assets/models/gen/resources/uranium_crystal_small.glb", false) &&
         imports("assets/models/gen/resources/uranium_crystal_large.glb", false);
-    return importerConfiguration && townCenter && electricityPole && worker && resourceVariants
+    const bool terrainScenery =
+        imports("assets/models/environment/terrain_v2/conifer_1.glb", false) &&
+        imports("assets/models/environment/terrain_v2/conifer_2.glb", false);
+    return importerConfiguration && townCenter && electricityPole && worker && resourceVariants &&
+                   terrainScenery
                ? 0
                : 1;
 }

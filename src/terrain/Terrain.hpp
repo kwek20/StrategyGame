@@ -1,16 +1,19 @@
 #pragma once
 
 #include "terrain/TerrainGeneration.hpp"
+#include "terrain/TerrainMode.hpp"
+#include "terrain/TerrainV2Generator.hpp"
 
 #include <cstdint>
+#include <glm/geometric.hpp>
+#include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 #include <glm/vec4.hpp>
-#include <glm/vec2.hpp>
-#include <glm/geometric.hpp>
+#include <optional>
 #include <span>
-#include <vector>
-#include <utility>
 #include <string_view>
+#include <utility>
+#include <vector>
 
 namespace strategy {
 
@@ -58,11 +61,34 @@ using TerrainPlacementDomainMask = std::uint8_t;
 constexpr TerrainPlacementDomainMask terrainPlacementBit(TerrainPlacementDomain domain) {
     return static_cast<TerrainPlacementDomainMask>(1U << static_cast<unsigned>(domain));
 }
+enum class TerrainBuildingSupport { land, floating, bed, shore };
+struct TerrainShoreSupport {
+    float minimumWetFraction{};
+    float maximumWetFraction{};
+    float minimumConnectedDrySupportFraction{};
+    [[nodiscard]] bool valid() const;
+};
 struct TerrainPlacementProfile {
     TerrainPlacementDomainMask domains{terrainPlacementBit(TerrainPlacementDomain::land)};
     bool requiresShore{false};
+    TerrainBuildingSupport support{TerrainBuildingSupport::land};
+    std::optional<TerrainShoreSupport> shore;
+    float maximumFoundationDepth{6.0F};
+    float waterClearance{0.25F};
+    float minimumWaterDepth{1.0F};
+    float interactionRadius{0.65F};
+    float interactionRange{0.9F};
+    MovementDomainMask interactionDomains{movementDomainBit(MovementDomain::land)};
 };
-enum class TerrainPlacementFailure { none, excessiveSlope, forbiddenTerrain, shoreRequired };
+enum class TerrainPlacementFailure {
+    none,
+    excessiveSlope,
+    forbiddenTerrain,
+    shoreRequired,
+    insufficientSupport,
+    foundationTooDeep,
+    interactionUnavailable
+};
 
 struct TerrainSample {
     float baseHeight{0.0F};
@@ -153,6 +179,9 @@ struct FootprintFit {
 
 struct TerrainPlacementResult {
     FootprintFit fit;
+    double footprintArea{};
+    double supportedArea{};
+    float foundationDepth{};
     TerrainPlacementFailure failure{TerrainPlacementFailure::none};
     [[nodiscard]] bool valid() const { return failure == TerrainPlacementFailure::none; }
 };
@@ -205,9 +234,37 @@ class Terrain final {
     Terrain(std::uint32_t seed, TerrainLayoutId layout,
             WorldGenerationProgress* progress = nullptr);
 
+    Terrain(std::uint32_t seed,
+            TerrainLayoutId layout,
+            TerrainMode mode,
+            std::uint32_t mapChunksPerSide,
+            WorldGenerationProgress* progress = nullptr);
+    void repairV2Resources(std::uint32_t seed,
+                           TerrainLayoutId layout,
+                           std::uint32_t level,
+                           WorldGenerationProgress* progress = nullptr);
+    [[nodiscard]] std::uint64_t fingerprint() const {
+        return fingerprint_;
+    }
+    [[nodiscard]] std::uint32_t repairLevel() const {
+        return repairLevel_;
+    }
+    [[nodiscard]] TerrainMode mode() const {
+        return mode_;
+    }
+    [[nodiscard]] const std::optional<TerrainV2Landscape>& v2Landscape() const {
+        return v2_;
+    }
+    [[nodiscard]] bool permitsLandSegment(glm::vec2 start, glm::vec2 end) const;
+    [[nodiscard]] bool permitsMovementSegment(glm::vec2 start,
+                                              glm::vec2 end,
+                                              float radius,
+                                              MovementDomainMask domains) const;
+
     [[nodiscard]] float normalizedHeight(int x, int z) const;
     [[nodiscard]] float vertexHeight(int x, int z) const;
     [[nodiscard]] float heightAt(float worldX, float worldZ) const;
+    [[nodiscard]] float entityBaseHeight(std::uint64_t entity, float worldX, float worldZ) const;
     [[nodiscard]] const TerrainSample& sampleAt(float worldX, float worldZ) const;
     [[nodiscard]] TerrainBiomeId biomeAt(float worldX, float worldZ) const;
     [[nodiscard]] TerrainTraversalClass traversalAt(float worldX, float worldZ) const;
@@ -243,10 +300,15 @@ class Terrain final {
         float worldX, float worldZ, const TerrainFootprint& footprint,
         TerrainPlacementProfile profile) const;
     [[nodiscard]] TerrainFoundation evaluateFoundation(std::uint64_t sourceEntity,
-                                                       float worldX, float worldZ,
-                                                       const TerrainFootprint& footprint) const;
+                                                       float worldX,
+                                                       float worldZ,
+                                                       const TerrainFootprint& footprint,
+                                                       TerrainPlacementProfile profile = {}) const;
     [[nodiscard]] static float signedDistanceToFootprint(const TerrainFoundation& foundation,
                                                          glm::vec2 worldPosition);
+    [[nodiscard]] const std::vector<TerrainFoundation>& foundations() const {
+        return appliedFoundations_;
+    }
     void applyFoundation(const TerrainFoundation& foundation);
     void rebuildFoundations(const std::vector<TerrainFoundation>& foundations);
     [[nodiscard]] const FoundationUpdateDiagnostics& foundationDiagnostics() const {
@@ -258,6 +320,10 @@ class Terrain final {
   private:
     friend class TerrainGenerationPipeline;
     friend class TerrainWaterGenerator;
+    std::uint64_t fingerprint_{};
+    std::uint32_t repairLevel_{};
+    TerrainMode mode_{TerrainMode::v1};
+    std::optional<TerrainV2Landscape> v2_;
     std::vector<float> heights_;
     std::vector<float> baseHeights_;
     std::vector<float> waterSurfaceHeights_;

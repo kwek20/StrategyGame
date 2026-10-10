@@ -18,6 +18,7 @@ uniform sampler2D foundationTexture;
 uniform bool useExploration;
 uniform bool useFoundationTexture;
 uniform bool terrainDebug;
+uniform bool regionalStyle;
 uniform int waterDebugMode;
 out vec4 outColor;
 
@@ -48,7 +49,7 @@ void main() {
     // texel and stretches a revealed edge cell into a long strip. Clip against the
     // authoritative match extent independently of fog/debug state. Debug modes may bypass
     // exploration, but they must not expose the unused maximum-size terrain outside the match.
-    if (any(greaterThan(abs(worldPosition.xz), vec2(explorationExtent * 0.5)))) {
+    if (any(greaterThan(abs(worldPosition.xz), vec2(explorationExtent * 0.5 + 0.001)))) {
         discard;
     }
 
@@ -79,7 +80,12 @@ void main() {
     if (weightTotal > 0.0001)
         weights /= weightTotal;
 
-    vec2 tiledUv = worldPosition.xz * 0.16;
+    // Steep ramp faces also need a vertical projection: a top projection stretches
+    // rock into thin grey streaks on cliffs. Walkable slopes keep the ground projection.
+    vec2 surfacePosition = worldPosition.xz;
+    if (!useFoundationTexture && abs(vertexNormal.y) < 0.5)
+        surfacePosition = abs(vertexNormal.x) > abs(vertexNormal.z) ? worldPosition.zy : worldPosition.xy;
+    vec2 tiledUv = surfacePosition * 0.16;
     vec3 grass = tiledSample(grassTexture, tiledUv, variation);
     vec3 dirt = tiledSample(dirtTexture, tiledUv * 0.91, variation);
     vec3 rock = tiledSample(rockTexture, tiledUv * 0.76, variation);
@@ -103,7 +109,16 @@ void main() {
                                     textured * mix(vec3(1.0), vertexColor, 0.18),
                                     textureStrength)
                               : vertexColor);
-    vec3 lit = surface * (0.46 + diffuse * 0.64);
+    if (regionalStyle && !useFoundationTexture && weightTotal > 0.0001) {
+        // Keep small texture detail, while exposing a readable stylized meadow palette.
+        float detail = mix(0.88, 1.12, clamp(dot(textured, vec3(0.299, 0.587, 0.114)) * 2.0, 0.0, 1.0));
+        vec3 meadow = mix(vec3(0.40, 0.55, 0.17), vec3(0.60, 0.69, 0.28), variation);
+        vec3 soil = vec3(0.57, 0.46, 0.28);
+        vec3 stone = vec3(0.49, 0.47, 0.40);
+        surface = (meadow * weights.x + soil * weights.y + stone * weights.z +
+                   vec3(0.62, 0.52, 0.32) * weights.w) * detail;
+    }
+    vec3 lit = surface * (regionalStyle ? (0.72 + diffuse * 0.40) : (0.46 + diffuse * 0.64));
     float fog = smoothstep(fogRange.x, fogRange.y, cameraDistance);
     vec3 atmospheric = mix(lit, vec3(0.32, 0.36, 0.38), fog * 0.72);
     float waterDepth = max(localWaterSurfaceHeight - worldPosition.y, 0.0);

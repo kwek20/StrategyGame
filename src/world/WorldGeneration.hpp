@@ -1,9 +1,15 @@
 #pragma once
 #include "gameplay/DefinitionRegistry.hpp"
+
 #include <cstdint>
 #include <glm/vec2.hpp>
+#include <stdexcept>
 #include <vector>
 namespace strategy {
+class ResourcePlacementFailure final : public std::runtime_error {
+  public:
+    using std::runtime_error::runtime_error;
+};
 class DefinitionRegistry;
 class Terrain;
 class World;

@@ -36,10 +36,10 @@ h2 {
     font-size: 18dp;
 }
 .option {
-    height: 70dp;
+    height: 58dp;
 }
 .option.compact {
-    height: 63dp;
+    height: 54dp;
 }
 .label {
     display: block;
@@ -133,3 +133,5 @@ button {
 
 .seed-row button { min-width: 0; }
 .seed-row button span { white-space: nowrap; font-size: 11dp; }
+
+#generation-description { min-height: 32dp; font-size: 11dp; color: #92bdc8; margin-bottom: 8dp; }

@@ -6,6 +6,7 @@
 #include "gameplay/DefinitionRegistry.hpp"
 #include "localization/Text.hpp"
 #include "render/Renderer.hpp"
+#include "terrain/TerrainV2Recipe.hpp"
 
 #include <SDL3/SDL.h>
 #include <algorithm>
@@ -33,6 +34,7 @@ MatchSetupState::MatchSetupState(StateContext& context, bool generationFailed)
     try {
         const MatchSetupProfile saved = MatchSetupProfileStore::load(config_.matchSetupPath());
         seedText_ = std::to_string(saved.terrainSeed);
+        terrainMode_ = saved.terrainMode;
         for (std::size_t i = 0; i < countries.size(); ++i) {
             if (countries[i].id == saved.playerOneCountry)
                 playerOneCountry_ = i;
@@ -61,6 +63,7 @@ MatchSetupState::MatchSetupState(StateContext& context, bool generationFailed)
     const std::vector<std::string> controls{"match.player_country",
                                             "match.opponent_country",
                                             "match.terrain_layout",
+                                            "match.terrain_generation",
                                             "match.map_size",
                                             "match.starting_resources",
                                             "match.abundance"};
@@ -81,6 +84,7 @@ MatchSetupState::MatchSetupState(StateContext& context, bool generationFailed)
           {"options-header", Text::get("match_setup.section_options")},
           {"player-label", Text::get("match_setup.player_country")},
           {"opponent-label", Text::get("match_setup.opponent_country")},
+          {"generation-label", Text::get("match_setup.terrain_generation")},
           {"layout-label", Text::get("match_setup.terrain_layout")},
           {"size-label", Text::get("match_setup.map_size")},
           {"resources-label", Text::get("match_setup.starting_resources")},
@@ -112,6 +116,19 @@ void MatchSetupState::refreshUi() {
     text("match.player_country.value", Text::get(c[playerOneCountry_].nameKey));
     text("match.opponent_country.value", Text::get(c[playerTwoCountry_].nameKey));
     text("match.terrain_layout.value", Text::get(l[terrainLayout_].nameKey));
+    text("match.terrain_generation.value",
+         Text::get(terrainMode_ == TerrainMode::v2 ? "match_setup.terrain_v2"
+                                                   : "match_setup.terrain_v1"));
+    text("generation-description",
+         Text::get(terrainMode_ == TerrainMode::v2 ? "match_setup.terrain_v2_description"
+                                                   : "match_setup.terrain_v1_description"));
+    static const auto v2Recipes = TerrainV2Recipes::load();
+    const bool layoutAvailable =
+        terrainMode_ == TerrainMode::v1 || v2Recipes.resolve(l[terrainLayout_]).competitive;
+    text("start-label",
+         Text::get(terrainModeAvailable(terrainMode_) && layoutAvailable
+                       ? "match_setup.start"
+                       : "match_setup.terrain_v2_unavailable"));
     text("match.map_size.value", Text::get(mapSizes[mapSize_].nameKey));
     text("match.starting_resources.value", Text::get(resourceStarts[startingResources_].nameKey));
     text("match.abundance.value", Text::get(resourceAbundance[abundance_].nameKey));
@@ -164,6 +181,8 @@ void MatchSetupState::activate(std::string_view id, int direction) {
         cycle(playerTwoCountry_, count, direction);
     else if (id == "match.terrain_layout")
         cycle(terrainLayout_, terrainDefinitions_.layouts().size(), direction);
+    else if (id == "match.terrain_generation")
+        terrainMode_ = terrainMode_ == TerrainMode::v1 ? TerrainMode::v2 : TerrainMode::v1;
     else if (id == "match.map_size")
         cycle(mapSize_, mapSizes.size(), direction);
     else if (id == "match.starting_resources")
@@ -176,6 +195,11 @@ void MatchSetupState::activate(std::string_view id, int direction) {
                                    static_cast<std::uint32_t>(r()));
     } else if (id == "match.start") {
         persist();
+        static const auto v2Recipes = TerrainV2Recipes::load();
+        if (!terrainModeAvailable(terrainMode_) ||
+            (terrainMode_ == TerrainMode::v2 &&
+             !v2Recipes.resolve(terrainDefinitions_.layouts()[terrainLayout_]).competitive))
+            return;
         beginTransition(StateRequest::startGame);
         return;
     } else if (id == "match.back") {
@@ -271,7 +295,8 @@ MatchSetupOptions MatchSetupState::currentSetup() const {
             static_cast<std::uint32_t>(mapSizes[mapSize_].value),
             resourceStarts[startingResources_].value,
             resourceAbundance[abundance_].value,
-            l[terrainLayout_].id.value};
+            l[terrainLayout_].id.value,
+            terrainMode_};
 }
 MatchSetupOptions MatchSetupState::matchSetup() const {
     return currentSetup();

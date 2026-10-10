@@ -66,6 +66,15 @@
             </div>
             <div class="column right-column">
                 <h2 id="options-header"/>
+                <div class="option compact">
+                    <span id="generation-label" class="label"/>
+                    <div id="match.terrain_generation" class="selector">
+                        <button id="match.terrain_generation.left" class="art-button selector-button"><span>-</span></button>
+                        <span id="match.terrain_generation.value" class="selector-value"/>
+                        <button id="match.terrain_generation.right" class="art-button selector-button"><span>+</span></button>
+                    </div>
+                </div>
+                <div id="generation-description"/>
                 <span id="seed-label" class="label"/>
                 <div class="seed-row">
                     <button id="match.seed" class="art-button">

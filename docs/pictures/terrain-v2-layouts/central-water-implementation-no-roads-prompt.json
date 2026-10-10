@@ -1,0 +1,5 @@
+{
+  "generator": "built-in image_gen",
+  "source": "central-water-implementation.png",
+  "prompt": "Edit the provided Central Water RTS terrain implementation concept. Remove EVERY visible road and path: the continuous pale tan looping network around the lake, every tan branch between the bases, and all dirt track strips leading to resource clusters. Replace those strips with uninterrupted natural green grassy ground matching neighboring terrain, with irregular subtle natural soil patches only, no continuous lines or road-shaped discoloration. Traversal is conveyed only by open grassy space and gaps between trees and obstacles. Keep the lake, stepped square cell terrain, shore geometry, hills, ramps, cliffs, four headquarters, shoreline foundation building, resource clusters, trees, lighting, camera and framing unchanged. Do not add roads, paths, tracks, paving, tyre marks, borders, arrows, labels, HUD or any new objects. Preserve the subtle cell grid and useful clearings; remove only the artificial road network."
+}

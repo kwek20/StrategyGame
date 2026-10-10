@@ -36,7 +36,8 @@ class GameSession final {
                          float startingResourcesScale = 1.0F,
                          float resourceAbundanceScale = 1.0F,
                          TerrainLayoutId terrainLayout = TerrainLayoutId{"continental"},
-                         WorldGenerationProgress* generationProgress = nullptr);
+                         WorldGenerationProgress* generationProgress = nullptr,
+                         TerrainMode terrainMode = TerrainMode::v1);
 
     GameSession(const GameSession&) = delete;
     GameSession& operator=(const GameSession&) = delete;
@@ -45,10 +46,13 @@ class GameSession final {
     void update(double elapsedSeconds);
     void advanceTicks(std::uint32_t count = 1);
     bool submit(PlayerCommand command);
-    void replaceWorld(std::vector<Entity> entities, std::uint32_t terrainSeed,
+    void replaceWorld(std::vector<Entity> entities,
+                      std::uint32_t terrainSeed,
                       std::vector<TerrainFoundation> foundations = {},
                       std::uint32_t mapChunksPerSide = Terrain::chunksPerSide,
-                      TerrainLayoutId terrainLayout = TerrainLayoutId{"continental"});
+                      TerrainLayoutId terrainLayout = TerrainLayoutId{"continental"},
+                      TerrainMode terrainMode = TerrainMode::v1,
+                      std::uint32_t repairLevel = 0);
     void restorePlayerProgress(PlayerId player,
                                std::map<std::string, float> resources,
                                std::vector<std::uint8_t> discovered,

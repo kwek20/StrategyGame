@@ -85,6 +85,11 @@ std::vector<float> terrainTravelCosts(const Terrain& terrain,
             const int nx = x + direction.x, nz = z + direction.y;
             if (nx < 0 || nz < 0 || nx >= side || nz >= side) continue;
             const glm::vec2 position = map.gridCellCenter({nx, nz}, side);
+            if (terrain.mode() == TerrainMode::v2 &&
+                !hasMovementDomain(domainMask, MovementDomain::air) &&
+                hasMovementDomain(domainMask, MovementDomain::land) &&
+                !terrain.permitsLandSegment(map.gridCellCenter({x, z}, side), position))
+                continue;
             const float terrainCost = terrain.movementCostAt(
                 position.x, position.y, domainMask);
             if (terrainCost <= 0.0F || !std::isfinite(terrainCost)) continue;
@@ -284,10 +289,11 @@ float preferencePenalty(const Terrain& terrain, const ResourceFieldGenerationDef
 bool clearOfStarts(const MatchRulesDefinition& rules,
                    const std::vector<glm::vec2>& startingAnchors,
                    float x,
-                   float z) {
+                   float z,
+                   float reservedRadius = 0) {
     const glm::vec2 point{x, z};
     for (const glm::vec2 anchor : startingAnchors)
-        if (glm::distance(point, anchor) <= rules.baseExclusionRadius)
+        if (glm::distance(point, anchor) <= std::max(rules.baseExclusionRadius, reservedRadius))
             return false;
     return true;
 }
@@ -383,14 +389,24 @@ bool placeField(ResourceLayout& layout, const World& world, const Terrain& terra
     const float capacity = inventoryCapacity(definitions, inventory);
     const MapArea map{mapSize};
     DeterministicRandom random(seed, settings.stream + ".field." + std::to_string(ordinal));
-    const float radius = random.range(settings.minimumFieldRadius, settings.maximumFieldRadius);
+    const bool constructive = terrain.mode() == TerrainMode::v2 && terrain.repairLevel() == 2;
+    const float radius =
+        constructive ? settings.minimumFieldRadius
+                     : random.range(settings.minimumFieldRadius, settings.maximumFieldRadius);
+    const float openingRadius =
+        terrain.v2Landscape() ? terrain.v2Landscape()->plan.recipe().openingRadius : 0;
     const auto noiseSeed = resourceStreamSeed(seed, settings.stream + ".potential");
     struct Candidate { glm::vec2 position; float score; float access; };
     std::vector<Candidate> ordered;
     for (std::size_t index = 0; index < candidates.positions.size(); ++index) {
         if (progress && index % 1024 == 0) progress->throwIfCancellationRequested();
         const auto position = candidates.positions[index];
-        if (!clearOfStarts(definitions.matchRules(), anchors, position.x, position.y)) continue;
+        if (!clearOfStarts(definitions.matchRules(),
+                           anchors,
+                           position.x,
+                           position.y,
+                           openingRadius > 0 ? openingRadius + radius : 0))
+            continue;
         const float own = travelCost(map, costs[player], position);
         if (!std::isfinite(own)) continue;
         bool accessible = true;
@@ -421,6 +437,9 @@ bool placeField(ResourceLayout& layout, const World& world, const Terrain& terra
             preference * 12 + (1 - potential) * 18 + jitter * 65;
         if (!starting && matchedCost >= 0) score += std::abs(own - matchedCost);
         if (!starting && settings.contested) score += farthest - closest;
+        if (constructive)
+            score =
+                starting ? own : jitter * 65 + (matchedCost >= 0 ? std::abs(own - matchedCost) : 0);
         ordered.push_back({position, score, own});
     }
     std::stable_sort(ordered.begin(), ordered.end(), [](const auto& a, const auto& b) {
@@ -438,14 +457,31 @@ bool placeField(ResourceLayout& layout, const World& world, const Terrain& terra
         for (const auto& id : inventory) {
             const auto& type = *definitions.resource(id);
             bool placed = false;
-            for (std::uint32_t attempt = 0; attempt < settings.placementAttemptsPerField; ++attempt) {
-                const float angle = random.range(0, glm::two_pi<float>());
-                const float distance = radius * std::sqrt(random.range(0, 1));
+            for (std::uint32_t attempt = 0;
+                 attempt < (constructive ? 32U : settings.placementAttemptsPerField);
+                 ++attempt) {
+                const float angle = constructive ? glm::two_pi<float>() *
+                                                       (static_cast<float>(nodes.size()) /
+                                                            static_cast<float>(inventory.size()) +
+                                                        static_cast<float>(attempt) / 32.0F)
+                                                 : random.range(0, glm::two_pi<float>());
+                const float distance =
+                    constructive ? radius * 0.65F : radius * std::sqrt(random.range(0, 1));
                 const auto position = candidate.position + glm::vec2{std::cos(angle), std::sin(angle)} * distance;
-                if (!suitable(terrain, definitions.matchRules(), settings, mapSize, position.x, position.y) ||
-                    !clearOfStarts(definitions.matchRules(), anchors, position.x, position.y) ||
+                if (!suitable(terrain,
+                              definitions.matchRules(),
+                              settings,
+                              mapSize,
+                              position.x,
+                              position.y) ||
+                    !clearOfStarts(definitions.matchRules(),
+                                   anchors,
+                                   position.x,
+                                   position.y,
+                                   openingRadius > 0 ? openingRadius + type.collisionRadius : 0) ||
                     !grid.canPlace(position, type.collisionRadius, settings.minimumNodeSpacing) ||
-                    overlapsObject(world, definitions, position, type.collisionRadius)) continue;
+                    overlapsObject(world, definitions, position, type.collisionRadius))
+                    continue;
                 const float access = travelCost(map, costs[player], position);
                 if (!std::isfinite(access)) continue;
                 bool safe = true;
@@ -526,7 +562,8 @@ ResourceLayout populateResources(World& world, const Terrain& terrain,
         for (std::size_t player = 0; player < anchors.size(); ++player) {
             if (!placeField(layout, world, terrain, definitions, field, candidates[family], terrainSeed,
                 static_cast<std::uint32_t>(player), mapSize, anchors, costs, player, true, matchedCost, progress))
-                throw std::runtime_error("Unable to place reserved starting " + field.id + " for player " + std::to_string(player + 1));
+                throw ResourcePlacementFailure("Unable to place reserved starting " + field.id +
+                                               " for player " + std::to_string(player + 1));
             matchedCost = layout.fields.back().accessCost;
             if (progress) progress->diagnostic("opening " + field.id + " player=" + std::to_string(player + 1) +
                 " capacity=" + std::to_string(layout.fields.back().capacity) + " travel=" + std::to_string(matchedCost));
@@ -536,10 +573,16 @@ ResourceLayout populateResources(World& world, const Terrain& terrain,
         const auto& field = *definitions.resourceField(ResourceFieldId{generated[family]});
         const auto& settings = field.generation;
         const auto players = static_cast<std::uint32_t>(anchors.size());
-        const auto totalFields = std::max(players, static_cast<std::uint32_t>(std::round(
-            mapSize * mapSize * settings.fieldsPerSquareChunk * std::clamp(abundanceScale, 0.5F, 2.0F) / players)) * players);
+        const auto roundedFields = static_cast<std::uint32_t>(std::round(
+                                       mapSize * mapSize * settings.fieldsPerSquareChunk *
+                                       std::clamp(abundanceScale, 0.5F, 2.0F) / players)) *
+                                   players;
+        // V2 allocation can resolve to zero. Repairs must never invent extra expansion supply.
+        const auto totalFields =
+            terrain.mode() == TerrainMode::v2 ? roundedFields : std::max(players, roundedFields);
         const auto startingFields = settings.startingNodes.empty() ? 0U : players;
-        const auto expansionFields = totalFields - startingFields;
+        const auto expansionFields =
+            terrain.mode() == TerrainMode::v2 ? totalFields : totalFields - startingFields;
         const float budget = startingFields * inventoryCapacity(definitions, settings.startingNodes) +
             expansionFields * inventoryCapacity(definitions, settings.expansionNodes);
         if (progress) progress->diagnostic("budget " + field.id + " capacity=" + std::to_string(budget) +
@@ -550,7 +593,9 @@ ResourceLayout populateResources(World& world, const Terrain& terrain,
             if (progress) progress->throwIfCancellationRequested();
             layout = base;
             placed = true;
-            const auto seed = resourceStreamSeed(terrainSeed, settings.stream + ".layout." + std::to_string(attempt));
+            const auto seed = resourceStreamSeed(
+                terrain.mode() == TerrainMode::v2 && terrain.repairLevel() == 2 ? 0U : terrainSeed,
+                settings.stream + ".layout." + std::to_string(attempt));
             for (std::uint32_t ordinal = 0; ordinal < expansionFields && placed; ++ordinal) {
                 const auto player = ordinal % players;
                 const float matched = player == 0 ? -1.0F : layout.fields.back().accessCost;
@@ -561,8 +606,10 @@ ResourceLayout populateResources(World& world, const Terrain& terrain,
             if (progress) progress->diagnostic("layout " + field.id + " attempt=" + std::to_string(attempt + 1) +
                 " complete=" + std::to_string(placed));
         }
-        if (!placed) throw std::runtime_error("Unable to place budgeted " + field.id + " after " +
-            std::to_string(settings.maximumLayoutAttempts) + " deterministic attempts");
+        if (!placed)
+            throw ResourcePlacementFailure("Unable to place budgeted " + field.id + " after " +
+                                           std::to_string(settings.maximumLayoutAttempts) +
+                                           " deterministic attempts");
         if (progress) progress->report(WorldGenerationPhase::resources,
             static_cast<float>(family + 1) / std::max<std::size_t>(1, generated.size()));
     }
@@ -612,9 +659,24 @@ VegetationField generateVegetation(const World& world,
             progress->report(WorldGenerationPhase::decoration,
                              static_cast<float>(ruleIndex) /
                                  std::max<std::size_t>(1, vegetationRules.size()));
-        const VegetationGenerationDefinition& settings = vegetationRules[ruleIndex];
+        VegetationGenerationDefinition settings = vegetationRules[ruleIndex];
         const EntityArchetype* type = definitions.archetype(settings.archetype);
         if (!type) continue;
+        if (type->tags.contains("v2-only") && !terrain.v2Landscape())
+            continue;
+        if (terrain.v2Landscape() && type->tags.contains("tree")) {
+            const auto& recipe = terrain.v2Landscape()->plan.recipe();
+            settings.clustersPerChunk *= recipe.forestDensity;
+            settings.minimumInstancesPerCluster = static_cast<std::uint32_t>(
+                std::ceil(settings.minimumInstancesPerCluster * recipe.forestClusterSize));
+            settings.maximumInstancesPerCluster = static_cast<std::uint32_t>(
+                std::ceil(settings.maximumInstancesPerCluster * recipe.forestClusterSize));
+            settings.densityScale = recipe.forestDensityScale;
+            settings.coverage = recipe.forestCoverage;
+            settings.minimumSpacing = recipe.forestSpacing;
+            settings.minimumScale *= recipe.forestScale;
+            settings.maximumScale *= recipe.forestScale;
+        }
         const bool isPlantFoliage = type->tags.contains("grass") ||
                                     type->tags.contains("weed") ||
                                     type->tags.contains("flower") ||
@@ -657,6 +719,10 @@ VegetationField generateVegetation(const World& world,
                     const float x = center.x + std::cos(angle) * distance;
                     const float z = center.y + std::sin(angle) * distance;
                     if (!map.contains({x, z}, definitions.matchRules().terrainEdgeMargin)) continue;
+                    if (terrain.v2Landscape() &&
+                        (terrain.v2Landscape()->plan.reservedRoute({x, z}) ||
+                         terrain.v2Landscape()->plan.openingInfluence({x, z}) > 0.0F))
+                        continue;
                     const TerrainSample& terrainSample = terrain.sampleAt(x, z);
                     const float normalizedHeight = terrainSample.baseHeight / Terrain::heightScale;
                     if (terrainSample.submerged ||

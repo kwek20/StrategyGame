@@ -4,14 +4,15 @@
 #include "players/PlayerRegistry.hpp"
 #include "world/World.hpp"
 
-#include <fstream>
 #include <cmath>
+#include <fstream>
 #include <rapidjson/document.h>
 #include <rapidjson/istreamwrapper.h>
 #include <rapidjson/ostreamwrapper.h>
 #include <rapidjson/prettywriter.h>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
 
 namespace strategy {
@@ -59,7 +60,11 @@ void SaveGame::write(const std::filesystem::path& path,
                      const World& world,
                      const PlayerRegistry* players,
                      std::uint32_t mapChunksPerSide,
-                     std::string terrainLayout) {
+                     std::string terrainLayout,
+                     TerrainMode terrainMode,
+                     std::uint32_t terrainRepairLevel) {
+    if (terrainRepairLevel > 2 || (terrainMode == TerrainMode::v1 && terrainRepairLevel != 0))
+        throw std::runtime_error("Invalid terrain repair metadata");
     std::filesystem::create_directories(path.parent_path());
     std::ofstream stream(path, std::ios::trunc);
     if (!stream) {
@@ -76,6 +81,14 @@ void SaveGame::write(const std::filesystem::path& path,
     writer.Uint(mapChunksPerSide);
     writer.Key("terrainLayout");
     writer.String(terrainLayout.c_str());
+    writer.Key("terrainGeneration");
+    writer.String(terrainModeName(terrainMode).data());
+    if (terrainMode == TerrainMode::v2) {
+        writer.Key("terrainV2Revision");
+        writer.Uint(2);
+        writer.Key("terrainRepairLevel");
+        writer.Uint(terrainRepairLevel);
+    }
     writer.Key("foundations");
     writer.StartArray();
     for (const TerrainFoundation& foundation : world.foundations()) {
@@ -85,6 +98,22 @@ void SaveGame::write(const std::filesystem::path& path,
         writer.Double(foundation.innerRadius);
         writer.Key("outerRadius");
         writer.Double(foundation.outerRadius);
+        writer.Key("sourceEntity");
+        writer.Uint64(foundation.sourceEntity);
+        writer.Key("shape");
+        writer.String(foundation.shape == FootprintShape::rectangle ? "rectangle" : "circle");
+        writeVector(writer, "halfExtents", {foundation.halfExtents.x, 0, foundation.halfExtents.y});
+        writeVector(writer, "gradient", {foundation.gradient.x, 0, foundation.gradient.y});
+        writer.Key("rotationDegrees");
+        writer.Double(foundation.rotationDegrees);
+        writer.Key("edgeFalloff");
+        writer.Double(foundation.edgeFalloff);
+        writer.Key("influence");
+        writer.Double(foundation.influence);
+        writer.Key("sourceSlopeDegrees");
+        writer.Double(foundation.sourceSlopeDegrees);
+        writer.Key("requiresSlab");
+        writer.Bool(foundation.requiresSlab);
         writer.EndObject();
     }
     writer.EndArray();
@@ -379,6 +408,22 @@ SaveData SaveGame::read(const std::filesystem::path& path) {
     }
 
     SaveData result;
+    if (document.HasMember("terrainGeneration")) {
+        if (!document["terrainGeneration"].IsString())
+            throw std::runtime_error("Invalid saved terrain generation mode");
+        result.terrainMode = terrainModeFromName(document["terrainGeneration"].GetString());
+    }
+    if (result.terrainMode == TerrainMode::v2) {
+        if (!document.HasMember("terrainV2Revision") || !document["terrainV2Revision"].IsUint() ||
+            document["terrainV2Revision"].GetUint() != 2)
+            throw std::runtime_error(
+                "This save uses an obsolete V2 terrain recipe; start a new match");
+        if (!document.HasMember("terrainRepairLevel") || !document["terrainRepairLevel"].IsUint() ||
+            document["terrainRepairLevel"].GetUint() > 2)
+            throw std::runtime_error("Invalid V2 terrain repair level");
+        result.terrainRepairLevel = document["terrainRepairLevel"].GetUint();
+    }
+
     result.terrainSeed = document["terrainSeed"].GetUint();
     result.mapChunksPerSide = document["mapChunksPerSide"].GetUint();
     result.terrainLayout = document["terrainLayout"].GetString();
@@ -395,8 +440,36 @@ SaveData SaveGame::read(const std::filesystem::path& path) {
         foundation.center = readVector(item, "center");
         foundation.innerRadius = item["innerRadius"].GetFloat();
         foundation.outerRadius = item["outerRadius"].GetFloat();
-        if (foundation.innerRadius <= 0.0F || foundation.outerRadius < foundation.innerRadius)
-            throw std::runtime_error("Invalid terrain foundation radii");
+        if (!item.HasMember("sourceEntity") || !item["sourceEntity"].IsUint64() ||
+            !item.HasMember("shape") || !item["shape"].IsString() ||
+            !item.HasMember("requiresSlab") || !item["requiresSlab"].IsBool())
+            throw std::runtime_error("Invalid terrain foundation shape/identity");
+        foundation.sourceEntity = item["sourceEntity"].GetUint64();
+        const std::string_view shape = item["shape"].GetString();
+        if (shape == "rectangle")
+            foundation.shape = FootprintShape::rectangle;
+        else if (shape != "circle")
+            throw std::runtime_error("Unknown foundation shape");
+        const auto extents = readVector(item, "halfExtents"),
+                   gradient = readVector(item, "gradient");
+        foundation.halfExtents = {extents.x, extents.z};
+        foundation.gradient = {gradient.x, gradient.z};
+        const auto number = [&](const char* key) {
+            if (!item.HasMember(key) || !item[key].IsNumber() ||
+                !std::isfinite(item[key].GetFloat()))
+                throw std::runtime_error(std::string{"Invalid foundation field: "} + key);
+            return item[key].GetFloat();
+        };
+        foundation.rotationDegrees = number("rotationDegrees");
+        foundation.edgeFalloff = number("edgeFalloff");
+        foundation.influence = number("influence");
+        foundation.sourceSlopeDegrees = number("sourceSlopeDegrees");
+        foundation.requiresSlab = item["requiresSlab"].GetBool();
+        if (foundation.innerRadius < 0 || foundation.outerRadius <= 0 ||
+            foundation.outerRadius < foundation.innerRadius || foundation.edgeFalloff < 0 ||
+            foundation.influence < 0 || foundation.influence > 1 ||
+            (foundation.shape == FootprintShape::rectangle && (extents.x <= 0 || extents.z <= 0)))
+            throw std::runtime_error("Invalid terrain foundation dimensions");
         result.foundations.push_back(foundation);
     }
     if (document["players"].Size() != 2)

@@ -1,12 +1,14 @@
 #include "terrain/Terrain.hpp"
+
 #include "terrain/TerrainBiomeGenerator.hpp"
 #include "terrain/TerrainGeneration.hpp"
 #include "terrain/TerrainGenerationPipeline.hpp"
+#include "terrain/TerrainSupport.hpp"
 #include "world/GenerationProgress.hpp"
 
 #include <algorithm>
-#include <chrono>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <glm/common.hpp>
 #include <glm/geometric.hpp>
@@ -155,6 +157,109 @@ Terrain::Terrain(std::uint32_t seed, TerrainLayoutId layout,
     const TerrainGenerationDefinitions& definitions = defaultGenerationDefinitions();
     TerrainGenerationPipeline::generate(*this, seed, definitions.layout(layout), definitions,
                                         progress);
+}
+
+Terrain::Terrain(std::uint32_t seed,
+                 TerrainLayoutId layout,
+                 TerrainMode mode,
+                 std::uint32_t mapChunksPerSide,
+                 WorldGenerationProgress* progress) {
+    const auto& definitions = defaultGenerationDefinitions();
+    if (mode == TerrainMode::v2) {
+        if (mapChunksPerSide < 10 || mapChunksPerSide > chunksPerSide)
+            throw std::runtime_error("Unsupported V2 map size");
+        TerrainGenerationPipeline::generateV2(
+            *this, seed, definitions.layout(layout), definitions, mapChunksPerSide, progress);
+    } else
+        TerrainGenerationPipeline::generate(
+            *this, seed, definitions.layout(layout), definitions, progress);
+}
+
+void Terrain::repairV2Resources(std::uint32_t seed,
+                                TerrainLayoutId layout,
+                                std::uint32_t level,
+                                WorldGenerationProgress* progress) {
+    if (!v2_ || level < 1 || level > 2)
+        throw std::runtime_error("Invalid V2 resource repair level");
+    const auto& definitions = defaultGenerationDefinitions();
+    auto landscape =
+        TerrainV2Generator::generate(seed,
+                                     v2_->plan.recipe(),
+                                     definitions.generator(definitions.layout(layout).generator),
+                                     v2_->plan.extent(),
+                                     2,
+                                     progress);
+    if (level == 2)
+        landscape.plan = landscape.plan.constructiveFallback();
+    std::vector<TerrainCellSource> repaired;
+    const auto& cells = landscape.terraces.cells();
+    const int side = landscape.terraces.side();
+    for (std::size_t i = 0; i < cells.size(); ++i) {
+        auto source = cells[i].source;
+        const glm::vec2 center =
+            -glm::vec2{landscape.plan.extent() * 0.5F} +
+            (glm::vec2{static_cast<int>(i) % side, static_cast<int>(i) / side} + glm::vec2{0.5F}) *
+                landscape.plan.recipe().cells.side;
+        const bool dry = !landscape.plan.hasWater() || landscape.plan.waterDistance(center) >
+                                                           landscape.plan.recipe().bankWidth * 2;
+        if (level == 2 && !dry) {
+            const auto& recipe = landscape.plan.recipe();
+            const float bed = recipe.lakeBedHeight(landscape.plan.waterDistance(center));
+            source.mean = source.minimum = source.maximum = std::min(recipe.baseHeight, bed);
+            source.gradient = {0, 0};
+            source.role = TerrainCellRole::basin;
+        }
+        if (dry && (level == 2 || source.role == TerrainCellRole::peak)) {
+            source.mean = source.minimum = source.maximum = landscape.plan.recipe().baseHeight;
+            source.gradient = {0, 0};
+            source.role = TerrainCellRole::opening;
+        }
+        repaired.push_back(source);
+    }
+    landscape.terraces = TerrainTerraces::resolve(
+        repaired, side, landscape.plan.extent(), landscape.plan.recipe().cells, progress);
+    // The final capacity template includes eligibility, not just elevation. Seed-dependent
+    // moisture/material classification must not change access or resource exclusions in it.
+    const auto semanticSeed = level == 2 ? 0U : seed;
+    TerrainGenerationPipeline::assembleV2(*this,
+                                          semanticSeed,
+                                          definitions.layout(layout),
+                                          definitions,
+                                          std::move(landscape),
+                                          progress);
+    repairLevel_ = level;
+    if (progress)
+        progress->diagnostic("v2 resource terrain repair=" + std::to_string(level) +
+                             " originalSeed=" + std::to_string(seed));
+}
+
+bool Terrain::permitsLandSegment(glm::vec2 start, glm::vec2 end) const {
+    return !v2_ || !v2_->terraces.crossesCliff(start, end);
+}
+
+bool Terrain::permitsMovementSegment(glm::vec2 start,
+                                     glm::vec2 end,
+                                     float radius,
+                                     MovementDomainMask domains) const {
+    if (!v2_ || hasMovementDomain(domains, MovementDomain::air))
+        return true;
+    const int steps =
+        std::max(1, static_cast<int>(std::ceil(glm::length(end - start) / (spacing * 0.5F))));
+    for (auto offset : {glm::vec2{0, 0},
+                        glm::vec2{radius, radius},
+                        glm::vec2{radius, -radius},
+                        glm::vec2{-radius, radius},
+                        glm::vec2{-radius, -radius}}) {
+        if (hasMovementDomain(domains, MovementDomain::land) &&
+            !permitsLandSegment(start + offset, end + offset))
+            return false;
+        for (int step = 0; step <= steps; ++step) {
+            const auto point = glm::mix(start, end, static_cast<float>(step) / steps) + offset;
+            if (movementCostAt(point.x, point.y, domains) <= 0)
+                return false;
+        }
+    }
+    return true;
 }
 
 void Terrain::generateHeightfield(std::uint32_t seed,
@@ -972,6 +1077,20 @@ void Terrain::generateSemantics(std::uint32_t seed,
             sample.basin = fields.basin;
             const TerrainBiomeDefinition* biome = &biomeGenerator.classify(
                 fields, sample.baseHeight / heightScale, sample.slopeDegrees);
+            if (v2_ && !sample.submerged) {
+                const auto& recipe = v2_->plan.recipe();
+                const auto id =
+                    v2_->plan.peakInfluence({worldX, worldZ}) > 0.2F || sample.slopeDegrees > 25.0F
+                        ? recipe.cliffBiome
+                    : sample.slopeDegrees > 8.0F ? recipe.hillBiome
+                                                 : recipe.lowlandBiome;
+                const auto selected = std::find_if(definitions.biomes().begin(),
+                                                   definitions.biomes().end(),
+                                                   [&](const auto& item) { return item.id == id; });
+                if (selected == definitions.biomes().end())
+                    throw std::runtime_error("Unknown V2 profile biome: " + id.value);
+                biome = &*selected;
+            }
             if (sample.submerged) {
                 const std::string waterBiome =
                     sample.waterKind == WaterKind::ocean && sample.waterDepth > 1.2F
@@ -1189,6 +1308,15 @@ float Terrain::heightAt(float worldX, float worldZ) const {
     return h11 + (1.0F - u) * (h01 - h11) + (1.0F - v) * (h10 - h11);
 }
 
+float Terrain::entityBaseHeight(std::uint64_t entity, float worldX, float worldZ) const {
+    if (v2_)
+        for (const auto& foundation : appliedFoundations_)
+            if (foundation.sourceEntity == entity && foundation.center.x == worldX &&
+                foundation.center.z == worldZ)
+                return foundation.center.y;
+    return heightAt(worldX, worldZ);
+}
+
 float Terrain::waterSurfaceAt(float worldX, float worldZ) const {
     const float halfExtent = worldExtent() * 0.5F;
     const float gridX = (worldX + halfExtent) / spacing;
@@ -1343,6 +1471,21 @@ TerrainTraversalClass Terrain::traversalAt(float worldX, float worldZ) const {
 
 float Terrain::movementCostAt(float worldX, float worldZ, MovementDomainMask domains) const {
     const TerrainSample& sample = sampleAt(worldX, worldZ);
+    if (v2_) {
+        if (hasMovementDomain(domains, MovementDomain::air))
+            return 1.0F;
+        const bool wet = waterCoverageAt(worldX, worldZ) > 0.0F &&
+                         waterSurfaceAt(worldX, worldZ) > heightAt(worldX, worldZ);
+        if (wet)
+            return hasMovementDomain(domains, MovementDomain::water) ? 1.0F : 0.0F;
+        if (!hasMovementDomain(domains, MovementDomain::land))
+            return 0.0F;
+        const glm::vec2 point{worldX, worldZ};
+        if (!permitsLandSegment(point - glm::vec2{spacing, 0}, point + glm::vec2{spacing, 0}) ||
+            !permitsLandSegment(point - glm::vec2{0, spacing}, point + glm::vec2{0, spacing}))
+            return 0.0F;
+        return sample.movementCosts[0];
+    }
     float result = std::numeric_limits<float>::max();
     for (const MovementDomain domain : movementDomains) {
         if (!hasMovementDomain(domains, domain)) continue;
@@ -1475,6 +1618,8 @@ FootprintFit Terrain::fitFootprint(float worldX, float worldZ,
 TerrainPlacementResult Terrain::evaluatePlacement(
     float worldX, float worldZ, const TerrainFootprint& footprint,
     TerrainPlacementProfile profile) const {
+    if (v2_)
+        return TerrainSupport::evaluate(*this, {worldX, worldZ}, footprint, profile);
     TerrainPlacementResult result;
     result.fit = fitFootprint(worldX, worldZ, footprint);
     if (!result.fit.valid) {
@@ -1523,9 +1668,19 @@ TerrainPlacementResult Terrain::evaluatePlacement(
     return result;
 }
 
-TerrainFoundation Terrain::evaluateFoundation(std::uint64_t sourceEntity, float worldX,
-                                               float worldZ,
-                                               const TerrainFootprint& footprint) const {
+TerrainFoundation Terrain::evaluateFoundation(std::uint64_t sourceEntity,
+                                              float worldX,
+                                              float worldZ,
+                                              const TerrainFootprint& footprint,
+                                              TerrainPlacementProfile profile) const {
+    if (v2_) {
+        const auto support = TerrainSupport::evaluate(*this, {worldX, worldZ}, footprint, profile);
+        TerrainFoundation foundation{
+            sourceEntity, {worldX, support.fit.height, worldZ}, footprint, {0, 0}};
+        foundation.requiresSlab = profile.support != TerrainBuildingSupport::floating &&
+                                  support.supportedArea < support.footprintArea - 1e-6;
+        return foundation;
+    }
     FootprintFit fit = fitFootprint(worldX, worldZ, footprint);
     glm::vec2 gradient = fit.gradient;
     // Buildings follow gentle terrain directly. On moderate slopes a recessed slab
@@ -1605,6 +1760,17 @@ void Terrain::applyFoundationPixels(const TerrainFoundation& foundation) {
 }
 
 void Terrain::applyFoundation(const TerrainFoundation& foundation) {
+    if (v2_) {
+        const auto found = std::find_if(
+            appliedFoundations_.begin(), appliedFoundations_.end(), [&](const auto& item) {
+                return item.sourceEntity == foundation.sourceEntity;
+            });
+        if (found == appliedFoundations_.end())
+            appliedFoundations_.push_back(foundation);
+        else
+            *found = foundation;
+        return;
+    }
     applyFoundationPixels(foundation);
     const auto existing = std::find_if(
         appliedFoundations_.begin(), appliedFoundations_.end(),
@@ -1618,6 +1784,11 @@ void Terrain::applyFoundation(const TerrainFoundation& foundation) {
 }
 
 void Terrain::rebuildFoundations(const std::vector<TerrainFoundation>& foundations) {
+    if (v2_) {
+        appliedFoundations_ = foundations;
+        dirtyChunks_.clear();
+        return;
+    }
     const auto started = std::chrono::steady_clock::now();
     std::uint64_t resetVertices = 0;
     const float halfExtent = worldExtent() * 0.5F;

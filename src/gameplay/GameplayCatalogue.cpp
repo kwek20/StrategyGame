@@ -133,6 +133,53 @@ void DefinitionRegistry::loadArchetypes(const std::filesystem::path& path,
                 throw std::runtime_error(context + " requires boolean requiresShore");
             result.requiresShore = value["requiresShore"].GetBool();
         }
+        if (value.HasMember("v2")) {
+            const auto& support = value["v2"];
+            if (!support.IsObject() || !support.HasMember("type") || !support["type"].IsString())
+                throw std::runtime_error(context + " requires a V2 support type");
+            const std::string_view type = support["type"].GetString();
+            if (type == "land")
+                result.support = TerrainBuildingSupport::land;
+            else if (type == "floating")
+                result.support = TerrainBuildingSupport::floating;
+            else if (type == "bed")
+                result.support = TerrainBuildingSupport::bed;
+            else if (type == "shore")
+                result.support = TerrainBuildingSupport::shore;
+            else
+                throw std::runtime_error(context + " has an unknown V2 support type");
+            for (const char* key :
+                 {"maximumFoundationDepth", "waterClearance", "minimumWaterDepth"})
+                if (!support.HasMember(key) || !support[key].IsNumber() ||
+                    !std::isfinite(support[key].GetFloat()) || support[key].GetFloat() < 0)
+                    throw std::runtime_error(context +
+                                             " requires nonnegative V2 support dimensions");
+            result.maximumFoundationDepth = support["maximumFoundationDepth"].GetFloat();
+            result.waterClearance = support["waterClearance"].GetFloat();
+            result.minimumWaterDepth = support["minimumWaterDepth"].GetFloat();
+            if (result.support == TerrainBuildingSupport::shore) {
+                if (!support.HasMember("wetFraction") || !support["wetFraction"].IsArray() ||
+                    support["wetFraction"].Size() != 2 || !support["wetFraction"][0].IsNumber() ||
+                    !support["wetFraction"][1].IsNumber() ||
+                    !support.HasMember("minimumConnectedDrySupportFraction") ||
+                    !support["minimumConnectedDrySupportFraction"].IsNumber())
+                    throw std::runtime_error(context + " requires an explicit Shore area contract");
+                result.shore =
+                    TerrainShoreSupport{support["wetFraction"][0].GetFloat(),
+                                        support["wetFraction"][1].GetFloat(),
+                                        support["minimumConnectedDrySupportFraction"].GetFloat()};
+                if (!result.shore->valid())
+                    throw std::runtime_error(context + " has incompatible Shore area fractions");
+            }
+            if (!support.HasMember("interactionUnit") || !support["interactionUnit"].IsString())
+                throw std::runtime_error(context + " requires a V2 interaction unit");
+            const auto* unit = archetype(EntityArchetypeId{support["interactionUnit"].GetString()});
+            if (!unit || unit->kind != EntityKind::unit)
+                throw std::runtime_error(context + " references an unknown V2 interacting unit");
+            result.interactionRadius = unit->collisionRadius;
+            result.interactionRange = unit->interactionMargin;
+            result.interactionDomains = unit->movement.domains;
+        }
         return result;
     };
     TerrainPlacementProfile defaultPlacement;

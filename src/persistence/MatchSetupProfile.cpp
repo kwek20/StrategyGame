@@ -77,6 +77,11 @@ MatchSetupProfile MatchSetupProfileStore::load(const std::filesystem::path& path
             std::clamp(setup["resourceAbundanceScale"].GetFloat(), 0.5F, 2.0F);
     if (setup.HasMember("terrainLayout") && setup["terrainLayout"].IsString())
         result.terrainLayout = setup["terrainLayout"].GetString();
+    if (setup.HasMember("terrainGeneration")) {
+        if (!setup["terrainGeneration"].IsString())
+            throw std::runtime_error("Invalid terrain generation option");
+        result.terrainMode = terrainModeFromName(setup["terrainGeneration"].GetString());
+    }
     return result;
 }
 
@@ -95,6 +100,8 @@ void MatchSetupProfileStore::write(const std::filesystem::path& path,
     setMember(setup, "startingResourcesScale", profile.startingResourcesScale, allocator);
     setMember(setup, "resourceAbundanceScale", profile.resourceAbundanceScale, allocator);
     setString(setup, "terrainLayout", profile.terrainLayout, allocator);
+    setString(
+        setup, "terrainGeneration", std::string(terrainModeName(profile.terrainMode)), allocator);
     // Deliberately do not recreate the object: unknown options (for example future biome
     // overrides) remain untouched.
     std::filesystem::create_directories(path.parent_path());

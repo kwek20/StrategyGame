@@ -10,6 +10,7 @@ uniform mat4 viewProjection;
 uniform float waterLevel;
 uniform float timeSeconds;
 uniform int waterDebugMode;
+uniform bool exactWaterSurface;
 
 out vec3 worldPosition;
 out float terrainHeight;
@@ -27,7 +28,7 @@ void main() {
                                           : inWaterSurfaceHeight;
     if (showDifference)
         selectedSurface = max(inGeneratedWaterSurfaceHeight, inWaterSurfaceHeight);
-    localWaterLevel = max(selectedSurface, inPosition.y);
+    localWaterLevel = exactWaterSurface ? selectedSurface : max(selectedSurface, inPosition.y);
     waterCoverage = showGenerated ? inGeneratedWaterCoverage : inWaterCoverage;
     if (showDifference)
         waterCoverage = max(inGeneratedWaterCoverage, inWaterCoverage);

@@ -90,8 +90,15 @@ void clearGatherLoop(Entity& entity) {
 } // namespace
 
 std::uint64_t GameSession::stateChecksum() const {
-    return authoritativeStateChecksum(world_, players_, terrainSeed_, tick_, mapChunksPerSide_,
-                                      terrainLayout_.value);
+    return authoritativeStateChecksum(world_,
+                                      players_,
+                                      terrainSeed_,
+                                      tick_,
+                                      mapChunksPerSide_,
+                                      terrainLayout_.value,
+                                      terrain_.mode(),
+                                      terrain_.repairLevel(),
+                                      terrain_.fingerprint());
 }
 
 void GameSession::beginRecharge(Entity& entity) {
@@ -206,7 +213,8 @@ GameSession::GameSession(const DefinitionRegistry& definitions,
                          float startingResourcesScale,
                          float resourceAbundanceScale,
                          TerrainLayoutId terrainLayout,
-                         WorldGenerationProgress* generationProgress)
+                         WorldGenerationProgress* generationProgress,
+                         TerrainMode terrainMode)
     : players_(std::move(playerOneCountry),
                std::move(playerTwoCountry),
                std::move(playerOneSpecialization),
@@ -214,9 +222,9 @@ GameSession::GameSession(const DefinitionRegistry& definitions,
     , gameplay_(definitions)
     , terrainSeed_(terrainSeed)
     , terrainLayout_(std::move(terrainLayout))
-    , terrain_(terrainSeed, terrainLayout_, generationProgress)
-    , mapChunksPerSide_(std::clamp(mapChunksPerSide, 10U,
-                                  static_cast<std::uint32_t>(Terrain::chunksPerSide)))
+    , terrain_(terrainSeed, terrainLayout_, terrainMode, mapChunksPerSide, generationProgress)
+    , mapChunksPerSide_(
+          std::clamp(mapChunksPerSide, 10U, static_cast<std::uint32_t>(Terrain::chunksPerSide)))
     , navigation_(terrain_, gameplay_, mapChunksPerSide_, generationProgress)
     , resourceAbundanceScale_(std::clamp(resourceAbundanceScale, 0.5F, 2.0F)) {
     for (Player& player : players_.players())
@@ -226,8 +234,14 @@ GameSession::GameSession(const DefinitionRegistry& definitions,
     std::vector<StartingRegion> startingRegions;
     if (generationProgress) generationProgress->report(WorldGenerationPhase::starts, 0.0F);
     const std::uint32_t requestedSeed = terrainSeed_;
-    const std::uint32_t maximumAttempts = terrain_.maximumGenerationAttempts();
-    for (std::uint32_t attempt = 0; attempt < maximumAttempts; ++attempt) {
+    const std::uint32_t maximumAttempts =
+        terrainMode == TerrainMode::v2 ? 1 : terrain_.maximumGenerationAttempts();
+    if (terrainMode == TerrainMode::v2) {
+        for (auto opening : terrain_.v2Landscape()->plan.openings())
+            startingRegions.push_back({opening});
+    }
+    for (std::uint32_t attempt = 0; terrainMode == TerrainMode::v1 && attempt < maximumAttempts;
+         ++attempt) {
         if (generationProgress) generationProgress->throwIfCancellationRequested();
         terrainSeed_ = retryTerrainSeed(requestedSeed, attempt);
         if (generationProgress) generationProgress->diagnostic(
@@ -291,15 +305,37 @@ GameSession::GameSession(const DefinitionRegistry& definitions,
                                      : TerrainFootprint{FootprintShape::circle, radius, {radius, radius}};
         shape.rotationDegrees = entity.transform.rotationDegrees.y;
         const TerrainFoundation foundation = terrain_.evaluateFoundation(
-            entity.id, entity.transform.position.x, entity.transform.position.z, shape);
+            entity.id,
+            entity.transform.position.x,
+            entity.transform.position.z,
+            shape,
+            definition ? definition->placement : TerrainPlacementProfile{});
         entity.transform.rotationDegrees.x = -glm::degrees(std::atan(foundation.gradient.y));
         entity.transform.rotationDegrees.z = glm::degrees(std::atan(foundation.gradient.x));
         world_.foundations().push_back(foundation);
         terrain_.applyFoundation(foundation);
     }
-    resourceLayout_ = populateResources(world_, terrain_, gameplay_, terrainSeed_,
-                                        mapChunksPerSide_, resourceAbundanceScale_,
-                                        startingAnchors_, generationProgress);
+    for (std::uint32_t repair = 0;; ++repair) {
+        try {
+            resourceLayout_ = populateResources(world_,
+                                                terrain_,
+                                                gameplay_,
+                                                terrainSeed_,
+                                                mapChunksPerSide_,
+                                                resourceAbundanceScale_,
+                                                startingAnchors_,
+                                                generationProgress);
+            break;
+        } catch (const ResourcePlacementFailure& error) {
+            if (terrainMode == TerrainMode::v1 || repair == 2)
+                throw;
+            if (generationProgress)
+                generationProgress->diagnostic(error.what());
+            terrain_.repairV2Resources(
+                terrainSeed_, terrainLayout_, repair + 1, generationProgress);
+            navigation_.rebuildTerrain(terrain_, mapChunksPerSide_, generationProgress);
+        }
+    }
     if (generationProgress) generationProgress->report(WorldGenerationPhase::validation, 0.0F);
     // Start selection validates usable land and reachability; resource generation validates each
     // guaranteed opening deposit before this phase is reported complete.
@@ -764,7 +800,11 @@ void GameSession::apply(const PlayerCommand& command) {
                 gameplay_.initializeEntity(building);
                 building.transform.position = {payload.position.x, 0.0F, payload.position.z};
                 TerrainFoundation foundation = terrain_.evaluateFoundation(
-                    building.id, payload.position.x, payload.position.z, shape);
+                    building.id,
+                    payload.position.x,
+                    payload.position.z,
+                    shape,
+                    buildingDefinition ? buildingDefinition->placement : TerrainPlacementProfile{});
                 foundation.influence = 0.0F;
                 building.transform.rotationDegrees.x = -glm::degrees(std::atan(foundation.gradient.y));
                 building.transform.rotationDegrees.z = glm::degrees(std::atan(foundation.gradient.x));
@@ -1494,13 +1534,16 @@ void GameSession::simulateTick() {
         const NavigationProfile movementProfile = navigationProfile(gameplay_, entity);
         const MapArea map{mapChunksPerSide_};
         const float edgeMargin = gameplay_.matchRules().terrainEdgeMargin;
-        const auto validPosition = [this, &entity, radius, map, edgeMargin, flying,
-                                    movementProfile](glm::vec2 candidate) {
-            return map.contains(candidate, radius + edgeMargin) &&
-                   terrain_.movementCostAt(candidate.x, candidate.y,
-                                           movementProfile.domains) > 0.0F &&
-                   (flying || !overlapsObject(world_, gameplay_, candidate, radius, entity.id));
-        };
+        const auto validPosition =
+            [this, &entity, radius, map, edgeMargin, flying, current, movementProfile](
+                glm::vec2 candidate) {
+                return map.contains(candidate, radius + edgeMargin) &&
+                       terrain_.permitsMovementSegment(
+                           current, candidate, radius, movementProfile.domains) &&
+                       terrain_.movementCostAt(candidate.x, candidate.y, movementProfile.domains) >
+                           0.0F &&
+                       (flying || !overlapsObject(world_, gameplay_, candidate, radius, entity.id));
+            };
         if (validPosition(current + delta)) {
             entity.transform.position.x = current.x + delta.x;
             entity.transform.position.z = current.y + delta.y;
@@ -1721,17 +1764,22 @@ void GameSession::updateExploration() {
     }
 }
 
-void GameSession::replaceWorld(std::vector<Entity> entities, std::uint32_t terrainSeed,
+void GameSession::replaceWorld(std::vector<Entity> entities,
+                               std::uint32_t terrainSeed,
                                std::vector<TerrainFoundation> foundations,
                                std::uint32_t mapChunksPerSide,
-                               TerrainLayoutId terrainLayout) {
+                               TerrainLayoutId terrainLayout,
+                               TerrainMode terrainMode,
+                               std::uint32_t repairLevel) {
     world_.replaceEntities(std::move(entities));
     world_.replaceFoundations(std::move(foundations));
     terrainSeed_ = terrainSeed;
     terrainLayout_ = std::move(terrainLayout);
     mapChunksPerSide_ = std::clamp(mapChunksPerSide, 10U,
                                    static_cast<std::uint32_t>(Terrain::chunksPerSide));
-    terrain_ = Terrain{terrainSeed, terrainLayout_};
+    terrain_ = Terrain{terrainSeed, terrainLayout_, terrainMode, mapChunksPerSide_};
+    if (repairLevel)
+        terrain_.repairV2Resources(terrainSeed, terrainLayout_, repairLevel);
     terrain_.rebuildFoundations(world_.foundations());
     resourceLayout_ = {};
     navigation_.rebuildTerrain(terrain_, mapChunksPerSide_);

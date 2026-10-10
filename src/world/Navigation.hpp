@@ -45,6 +45,10 @@ class Navigation final {
   private:
     MapArea map_;
     int side_{1};
+    std::optional<TerrainTerraces> v2Terraces_;
+    std::vector<std::uint8_t> v2LandClearanceMask_;
+    bool terrainPassable(std::size_t index, float radius, NavigationProfile profile) const;
+    bool canStep(int x, int z, int nx, int nz, float radius, NavigationProfile profile) const;
     std::vector<float> heights_;
     std::vector<std::array<float, 3>> terrainMovementCosts_;
     struct OccupancyKey {

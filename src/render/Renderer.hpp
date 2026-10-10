@@ -163,7 +163,9 @@ class Renderer final {
     }
     void regenerateTerrain(std::uint32_t seed,
                            std::uint32_t chunksPerSide = Terrain::chunksPerSide,
-                           TerrainLayoutId layout = TerrainLayoutId{"continental"});
+                           TerrainLayoutId layout = TerrainLayoutId{"continental"},
+                           TerrainMode mode = TerrainMode::v1,
+                           std::uint32_t repairLevel = 0);
     // Copies CPU-generated terrain and schedules bounded render-thread uploads.
     void stageGeneratedTerrain(const Terrain& terrain,
                                std::uint32_t seed,

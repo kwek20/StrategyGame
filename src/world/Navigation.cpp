@@ -48,6 +48,9 @@ glm::vec3 Navigation::positionOf(int x, int z) const {
 void Navigation::rebuildTerrain(const Terrain& terrain, std::uint32_t mapChunksPerSide,
                                 WorldGenerationProgress* progress) {
     if (progress) progress->report(WorldGenerationPhase::navigation, 0.0F);
+    v2Terraces_.reset();
+    if (terrain.v2Landscape())
+        v2Terraces_ = terrain.v2Landscape()->terraces;
     map_ = MapArea{mapChunksPerSide};
     side_ = std::max(1, static_cast<int>(std::ceil(map_.extent() / cellSize)));
     heights_.resize(static_cast<std::size_t>(side_ * side_));
@@ -67,10 +70,41 @@ void Navigation::rebuildTerrain(const Terrain& terrain, std::uint32_t mapChunksP
                 // like the physical edge of a 20x20 map.
                 terrainMovementCosts_[indexOf(x, z)].fill(0.0F);
             } else {
-                terrainMovementCosts_[indexOf(x, z)] =
-                    terrain.sampleAt(position.x, position.z).movementCosts;
+                for (const auto domain : movementDomains)
+                    terrainMovementCosts_[indexOf(x, z)][static_cast<std::size_t>(domain)] =
+                        terrain.movementCostAt(position.x, position.z, movementDomainBit(domain));
             }
         }
+    }
+    v2LandClearanceMask_.clear();
+    if (v2Terraces_) {
+        v2LandClearanceMask_.resize(static_cast<std::size_t>(Terrain::cellCount) *
+                                    Terrain::cellCount);
+        const float half = terrain.worldExtent() * 0.5F;
+        const int first = std::max(
+            0, static_cast<int>(std::floor((half - map_.halfExtent()) / Terrain::spacing)));
+        const int end =
+            std::min(Terrain::cellCount,
+                     static_cast<int>(std::ceil((half + map_.halfExtent()) / Terrain::spacing)));
+        const int width = end - first + 1;
+        std::vector<std::uint8_t> vertices(static_cast<std::size_t>(width) * width);
+        for (int z = first; z <= end; ++z) {
+            if (progress && z % 16 == 0)
+                progress->throwIfCancellationRequested();
+            for (int x = first; x <= end; ++x) {
+                const auto point = glm::vec2{x, z} * Terrain::spacing - glm::vec2{half};
+                vertices[static_cast<std::size_t>((z - first) * width + x - first)] =
+                    terrain.movementCostAt(
+                        point.x, point.y, movementDomainBit(MovementDomain::land)) > 0;
+            }
+        }
+        for (int z = first; z < end; ++z)
+            for (int x = first; x < end; ++x) {
+                const auto local = static_cast<std::size_t>((z - first) * width + x - first);
+                v2LandClearanceMask_[static_cast<std::size_t>(z * Terrain::cellCount + x)] =
+                    vertices[local] && vertices[local + 1] && vertices[local + width] &&
+                    vertices[local + width + 1];
+            }
     }
     obstacleShapes_.clear();
     occupancyByProfile_.clear();
@@ -115,7 +149,9 @@ void Navigation::synchronizeObstacles(const World& world) {
         }
         for (std::size_t index = 0; index < dirty.size(); ++index)
             if (dirty[index])
-                occupancyGrid[index] = movementCost(index, key.domains) > 0.0F ? 1 : 0;
+                occupancyGrid[index] =
+                    terrainPassable(index, radius, {key.domains, key.ignoresEntityObstacles}) ? 1
+                                                                                              : 0;
         for (const auto& [id, obstacle] : current) {
             (void)id;
             const SpatialShape blocked = expanded(obstacle, radius);
@@ -147,7 +183,7 @@ const std::vector<std::uint8_t>& Navigation::occupancy(const World& world, float
         return found->second;
     std::vector<std::uint8_t> result(terrainMovementCosts_.size(), 0);
     for (std::size_t index = 0; index < result.size(); ++index)
-        result[index] = movementCost(index, profile.domains) > 0.0F ? 1 : 0;
+        result[index] = terrainPassable(index, radius, profile) ? 1 : 0;
     if (profile.ignoresEntityObstacles)
         return occupancyByProfile_.emplace(key, std::move(result)).first->second;
     for (const Entity& entity : world.entities()) {
@@ -167,6 +203,45 @@ const std::vector<std::uint8_t>& Navigation::occupancy(const World& world, float
             }
     }
     return occupancyByProfile_.emplace(key, std::move(result)).first->second;
+}
+
+bool Navigation::terrainPassable(std::size_t index, float radius, NavigationProfile profile) const {
+    if (movementCost(index, profile.domains) <= 0)
+        return false;
+    if (!v2Terraces_ || hasMovementDomain(profile.domains, MovementDomain::air) ||
+        !hasMovementDomain(profile.domains, MovementDomain::land))
+        return true;
+    const auto point = positionOf(static_cast<int>(index) % side_, static_cast<int>(index) / side_);
+    const float half = Terrain::cellCount * Terrain::spacing * 0.5F;
+    const auto grid = [&](float value) {
+        return static_cast<int>(std::floor((value + half) / Terrain::spacing));
+    };
+    const int x0 = grid(point.x - radius), x1 = grid(point.x + radius), z0 = grid(point.z - radius),
+              z1 = grid(point.z + radius);
+    for (int z = z0; z <= z1; ++z)
+        for (int x = x0; x <= x1; ++x) {
+            if (x < 0 || z < 0 || x >= Terrain::cellCount || z >= Terrain::cellCount ||
+                !v2LandClearanceMask_[static_cast<std::size_t>(z * Terrain::cellCount + x)])
+                return false;
+        }
+    return true;
+}
+
+bool Navigation::canStep(
+    int x, int z, int nx, int nz, float radius, NavigationProfile profile) const {
+    if (!v2Terraces_ || hasMovementDomain(profile.domains, MovementDomain::air) ||
+        !hasMovementDomain(profile.domains, MovementDomain::land))
+        return true;
+    const auto a = positionOf(x, z), b = positionOf(nx, nz);
+    const glm::vec2 start{a.x, a.z}, end{b.x, b.z};
+    for (auto offset : {glm::vec2{0, 0},
+                        glm::vec2{radius, 0},
+                        glm::vec2{-radius, 0},
+                        glm::vec2{0, radius},
+                        glm::vec2{0, -radius}})
+        if (v2Terraces_->crossesCliff(start + offset, end + offset))
+            return false;
+    return true;
 }
 
 float Navigation::movementCost(std::size_t index, MovementDomainMask domains) const {
@@ -229,7 +304,9 @@ std::vector<glm::vec3> Navigation::findPath(
         const int x = current % side_, z = current / side_;
         for (const auto& direction : directions) {
             const int nx = x + direction[0], nz = z + direction[1];
-            if (nx < 0 || nz < 0 || nx >= side_ || nz >= side_) continue;
+            if (nx < 0 || nz < 0 || nx >= side_ || nz >= side_ ||
+                !canStep(x, z, nx, nz, radius, profile))
+                continue;
             const int next = indexOf(nx, nz);
             if (visited[next] || !passable[next]) continue;
             if (direction[0] && direction[1] &&
@@ -340,7 +417,9 @@ std::vector<glm::vec3> Navigation::pathFromGoals(
             const int x = item.node % side_, z = item.node / side_;
             for (const auto& direction : directions) {
                 const int nx = x + direction[0], nz = z + direction[1];
-                if (nx < 0 || nz < 0 || nx >= side_ || nz >= side_ || !passable[indexOf(nx, nz)]) continue;
+                if (nx < 0 || nz < 0 || nx >= side_ || nz >= side_ || !passable[indexOf(nx, nz)] ||
+                    !canStep(x, z, nx, nz, radius, profile))
+                    continue;
                 if (direction[0] && direction[1] &&
                     (!passable[indexOf(x + direction[0], z)] || !passable[indexOf(x, z + direction[1])])) continue;
                 const int next = indexOf(nx, nz);
@@ -367,7 +446,9 @@ std::vector<glm::vec3> Navigation::pathFromGoals(
         int best = current; float bestCost = flow->second[current];
         for (const auto& direction : directions) {
             const int nx = x + direction[0], nz = z + direction[1];
-            if (nx < 0 || nz < 0 || nx >= side_ || nz >= side_ || !passable[indexOf(nx, nz)]) continue;
+            if (nx < 0 || nz < 0 || nx >= side_ || nz >= side_ || !passable[indexOf(nx, nz)] ||
+                !canStep(x, z, nx, nz, radius, profile))
+                continue;
             if (direction[0] && direction[1] &&
                 (!passable[indexOf(x + direction[0], z)] || !passable[indexOf(x, z + direction[1])])) continue;
             const int candidate = indexOf(nx, nz);

@@ -1,6 +1,8 @@
 {
   "version": 1,
   "entities": {
+    "foliage_conifer_1": {"icon": "status_asset_ready", "model": "environment/terrain_v2/conifer_1", "scale": 1.0, "grounding": {"groundOffset": -0.08, "alignToTerrain": false, "maximumTilt": 0.0, "foundationRadius": 0.0}, "selection": {"radius": 0.0, "height": 4.0}, "animations": {}},
+    "foliage_conifer_2": {"icon": "status_asset_ready", "model": "environment/terrain_v2/conifer_2", "scale": 1.0, "grounding": {"groundOffset": -0.08, "alignToTerrain": false, "maximumTilt": 0.0, "foundationRadius": 0.0}, "selection": {"radius": 0.0, "height": 4.0}, "animations": {}},
     "town_center": {
       "icon": "building_town_center",
       "model": "buildings/TownCenter_FirstAge_Level1",

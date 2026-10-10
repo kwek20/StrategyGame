@@ -303,6 +303,8 @@ int Application::run() {
             renderer_->preloadAssetGroup("match");
             auto generation =
                 std::async(std::launch::async, [this, setup, &generationProgress]() mutable {
+                    if (!terrainModeAvailable(setup.terrainMode))
+                        throw std::runtime_error("V2 terrain generation is not implemented");
                     return GameSession(*definitions_,
                                        setup.terrainSeed,
                                        std::move(setup.playerOneCountry),
@@ -313,7 +315,8 @@ int Application::run() {
                                        setup.startingResourcesScale,
                                        setup.resourceAbundanceScale,
                                        TerrainLayoutId{std::move(setup.terrainLayout)},
-                                       &generationProgress);
+                                       &generationProgress,
+                                       setup.terrainMode);
                 });
             const auto phaseText = [](WorldGenerationPhase phase) -> std::string {
                 switch (phase) {
@@ -453,8 +456,11 @@ int Application::run() {
                 const GameConfig config = GameConfig::load(stateContext_->configPath);
                 SaveData data = SaveGame::read(config.savePath());
                 showLoading(0.30F, Text::get("loading.terrain"));
-                renderer_->regenerateTerrain(
-                    data.terrainSeed, data.mapChunksPerSide, TerrainLayoutId{data.terrainLayout});
+                renderer_->regenerateTerrain(data.terrainSeed,
+                                             data.mapChunksPerSide,
+                                             TerrainLayoutId{data.terrainLayout},
+                                             data.terrainMode,
+                                             data.terrainRepairLevel);
                 showLoading(0.36F, Text::get("loading.world"));
                 preloadAssets("match", 0.40F, 0.52F);
                 showLoading(0.94F, Text::get("loading.finalize"));

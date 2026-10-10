@@ -34,6 +34,7 @@ class MatchSetupState final : public GameState {
     std::size_t playerOneCountry_{0}, playerTwoCountry_{0}, mapSize_{1}, startingResources_{1},
         abundance_{1}, terrainLayout_{0};
     GameConfig config_;
+    TerrainMode terrainMode_{TerrainMode::v1};
     TerrainGenerationDefinitions terrainDefinitions_;
     float menuTime_{0.F}, transitionOut_{-1.F};
     RmlUiScreenHandle screen_{};

@@ -1,14 +1,16 @@
 #include "diagnostics/Logger.hpp"
+#include "gameplay/DefinitionRegistry.hpp"
 #include "localization/Text.hpp"
 #include "render/Renderer.hpp"
 #include "render/ShaderManager.hpp"
+#include "simulation/GameSession.hpp"
 #include "terrain/Terrain.hpp"
 #include "world/Vegetation.hpp"
 #include "world/World.hpp"
 #include "world/WorldGeneration.hpp"
 
-#include <SDL3/SDL.h>
 #include <RmlUi/Core.h>
+#include <SDL3/SDL.h>
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
@@ -63,6 +65,25 @@ bool checkFormPanel(strategy::Renderer& renderer, const char* selectorId, const 
         }
     }
     return true;
+}
+
+bool captureTerrain(const char* name) {
+    const char* directory = SDL_getenv("STRATEGY_TERRAIN_SCREENSHOTS");
+    if (!directory)
+        return true;
+    std::filesystem::create_directories(directory);
+    std::vector<unsigned char> pixels(1280 * 720 * 4), flipped(pixels.size());
+    glFinish();
+    glReadPixels(0, 0, 1280, 720, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+    for (int row = 0; row < 720; ++row)
+        std::copy_n(
+            pixels.data() + row * 1280 * 4, 1280 * 4, flipped.data() + (719 - row) * 1280 * 4);
+    SDL_Surface* surface =
+        SDL_CreateSurfaceFrom(1280, 720, SDL_PIXELFORMAT_RGBA32, flipped.data(), 1280 * 4);
+    const bool saved =
+        surface && SDL_SaveBMP(surface, (std::filesystem::path(directory) / name).string().c_str());
+    SDL_DestroySurface(surface);
+    return saved;
 }
 
 bool captureForm(strategy::Renderer& renderer, const char* name) {
@@ -262,6 +283,104 @@ out vec4 color;void main(){color=vec4(1);})";
             loadProgress = renderer.assetProgress("match");
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
         }
+        if (SDL_getenv("STRATEGY_TERRAIN_SCREENSHOTS")) {
+            for (const char* layout :
+                 {"open_plains", "rolling_hills", "central_hill", "central_water", "continental"}) {
+                strategy::Terrain terrainV2{
+                    7, strategy::TerrainLayoutId{layout}, strategy::TerrainMode::v2, 10};
+                renderer.stageGeneratedTerrain(terrainV2, 7, 10);
+                auto terrainCamera = camera;
+                terrainCamera.position = {150, 205, 185};
+                terrainCamera.target = {0, 12, 0};
+                terrainCamera.view =
+                    glm::lookAt(terrainCamera.position, terrainCamera.target, glm::vec3{0, 1, 0});
+                terrainCamera.projection =
+                    glm::perspective(glm::radians(55.0F), 1280.0F / 720.0F, 0.1F, 1000.0F);
+                for (int frame = 0; frame < 200 && !renderer.terrainUploadFinished(); ++frame) {
+                    renderer.beginProfileFrame();
+                    renderer.beginFrame(1280, 720);
+                    renderer.drawTerrain(terrainCamera);
+                    renderer.endFrame();
+                }
+                renderer.beginProfileFrame();
+                renderer.beginFrame(1280, 720);
+                renderer.drawTerrain(terrainCamera);
+                renderer.endFrame();
+                valid = captureTerrain((std::string{layout} + ".bmp").c_str()) &&
+                        noGlErrors("V2 terrain") && valid;
+            }
+            const strategy::DefinitionRegistry gameplay;
+            strategy::GameSession v2Session{gameplay,
+                                            7,
+                                            "spain",
+                                            "japan",
+                                            "unassigned",
+                                            "unassigned",
+                                            10,
+                                            1,
+                                            1,
+                                            strategy::TerrainLayoutId{"central_water"},
+                                            nullptr,
+                                            strategy::TerrainMode::v2};
+            renderer.stageGeneratedTerrain(
+                v2Session.terrain(), 7, 10, v2Session.world().foundations());
+            auto reviewCamera = camera;
+            reviewCamera.projection =
+                glm::perspective(glm::radians(55.0F), 1280.0F / 720.0F, 0.1F, 600.0F);
+            for (int view = 0; view < 6; ++view) {
+                const glm::vec3 focus = view == 0 ? glm::vec3{0, 12, 0}
+                                                  : glm::vec3{view == 1   ? -85.0F
+                                                              : view == 2 ? 85.0F
+                                                                          : 0.0F,
+                                                              12,
+                                                              view == 3   ? -85.0F
+                                                              : view == 4 ? 85.0F
+                                                                          : 0.0F};
+                reviewCamera.target = focus;
+                reviewCamera.position =
+                    focus + (view == 5 ? glm::vec3{150, 205, 185} : glm::vec3{0, 80, 75});
+                reviewCamera.view =
+                    glm::lookAt(reviewCamera.position, reviewCamera.target, glm::vec3{0, 1, 0});
+                for (int frame = 0; frame < 200 && !renderer.terrainUploadFinished(); ++frame) {
+                    renderer.beginProfileFrame();
+                    renderer.beginFrame(1280, 720);
+                    renderer.drawTerrain(reviewCamera);
+                    renderer.endFrame();
+                }
+                renderer.beginProfileFrame();
+                renderer.beginFrame(1280, 720);
+                renderer.drawTerrain(reviewCamera);
+                renderer.drawVegetation(v2Session.vegetation(), reviewCamera);
+                renderer.drawWorld(v2Session.world(), reviewCamera);
+                renderer.endFrame();
+                valid = captureTerrain(
+                            ("central-water-play-" + std::to_string(view) + ".bmp").c_str()) &&
+                        noGlErrors("V2 movement review") && valid;
+            }
+            // Exercise continuous motion across shores, cliffs and active-map boundaries.
+            for (int frame = 0; frame < 80; ++frame) {
+                const float angle = glm::two_pi<float>() * frame / 80;
+                reviewCamera.target = {85 * std::cos(angle), 12, 85 * std::sin(angle)};
+                reviewCamera.position =
+                    reviewCamera.target + glm::vec3{0, 65 + 25 * std::sin(angle), 75};
+                reviewCamera.view =
+                    glm::lookAt(reviewCamera.position, reviewCamera.target, glm::vec3{0, 1, 0});
+                renderer.beginProfileFrame();
+                renderer.beginFrame(1280, 720);
+                renderer.drawTerrain(reviewCamera);
+                renderer.drawVegetation(v2Session.vegetation(), reviewCamera);
+                renderer.drawWorld(v2Session.world(), reviewCamera);
+                renderer.endFrame();
+            }
+            valid = noGlErrors("V2 continuous camera motion") && valid;
+            renderer.stageGeneratedTerrain(generatedTerrain, 12345, 10);
+            for (int frame = 0; frame < 200 && !renderer.terrainUploadFinished(); ++frame) {
+                renderer.beginProfileFrame();
+                renderer.beginFrame(640, 360);
+                renderer.drawTerrain(camera);
+                renderer.endFrame();
+            }
+        }
         const strategy::TextureHandle texture = renderer.requestTexture("ui/placeholder");
         renderer.bindTexture(texture, 0);
         // Asset groups can grow without requiring this renderer behavior test to duplicate the
@@ -351,17 +470,57 @@ out vec4 color;void main(){color=vec4(1);})";
         valid = checkFormPanel(renderer, "settings.resolution", "settings.apply") && valid;
         valid = captureForm(renderer, "settings.bmp") && valid;
         renderer.removeUiScreen(settingsScreen);
-        const auto matchScreen = renderer.pushUiScreen({"assets/ui/match_setup.rml",
-            {{"match-title", "MATCH SETUP"}, {"player-label", "PLAYER"},
-             {"match.player_country.value", "BRAZIL"}, {"start-label", "START"}},
-            {"match.player_country", "match.start"},
-            {"match.player_country.left", "match.player_country.right", "match.start"}, 1.0F});
+        const auto matchScreen = renderer.pushUiScreen(
+            {"assets/ui/match_setup.rml",
+             {{"match-title", "MATCH SETUP"},
+              {"player-label", "PLAYER"},
+              {"match.player_country.value", "BRAZIL"},
+              {"start-label", "START MATCH"},
+              {"generation-label", "TERRAIN GENERATION"},
+              {"match.terrain_generation.value", "V2 - REGIONAL TERRAIN"},
+              {"generation-description",
+               "Stepped natural terrain, broad ramps, supported foundations and layout-controlled "
+               "water. Archipelago requires future transport support."}},
+             {"match.player_country", "match.start"},
+             {"match.player_country.left", "match.player_country.right", "match.start"},
+             1.0F});
         renderer.beginFrame(1280, 720);
         renderer.drawRmlUi();
         renderer.endFrame();
         glFinish();
         valid = noGlErrors("RmlUi match setup") && valid;
         valid = checkFormPanel(renderer, "match.player_country", "match.start") && valid;
+        for (const auto& [id, value] : std::vector<std::pair<std::string, std::string>>{
+                 {"match-mode", "1 VS 1 SKIRMISH"},
+                 {"players-header", "PLAYERS"},
+                 {"world-header", "WORLD"},
+                 {"economy-header", "ECONOMY"},
+                 {"options-header", "MATCH OPTIONS"},
+                 {"opponent-label", "OPPONENT COUNTRY"},
+                 {"layout-label", "MAP LAYOUT"},
+                 {"size-label", "MAP SIZE"},
+                 {"resources-label", "STARTING RESOURCES"},
+                 {"abundance-label", "RESOURCE ABUNDANCE"},
+                 {"seed-label", "MAP SEED"},
+                 {"random-label", "RANDOM SEED"},
+                 {"match.opponent_country.value", "JAPAN"},
+                 {"match.terrain_layout.value", "ROLLING HILLS"},
+                 {"match.map_size.value", "MEDIUM"},
+                 {"match.starting_resources.value", "NORMAL"},
+                 {"match.abundance.value", "NORMAL"},
+                 {"match.seed.value", "123"},
+                 {"summary-header", "MATCH SUMMARY"},
+                 {"summary-player", "YOU: BRAZIL"},
+                 {"summary-opponent", "OPPONENT: JAPAN"},
+                 {"summary-map", "MAP: MEDIUM"},
+                 {"summary-resources", "START: NORMAL"},
+                 {"summary-deposits", "DEPOSITS: NORMAL"},
+                 {"preview-caption", "TACTICAL OVERVIEW"},
+                 {"back-label", "BACK"}})
+            renderer.setUiText(id, value);
+        renderer.setUiAttribute("player-emblem", "src", "../textures/ui/country_emblem_brazil.png");
+        renderer.setUiAttribute(
+            "opponent-emblem", "src", "../textures/ui/country_emblem_japan.png");
         valid = captureForm(renderer, "match-setup.bmp") && valid;
         renderer.setUiScale(1.5F);
         renderer.setUiText("match-mode", strategy::Text::get("match_setup.generation_failed"));
@@ -393,20 +552,27 @@ out vec4 color;void main(){color=vec4(1);})";
                                    {"resources.power", "hud.satellite", "hud.menu"},
                                    1.0F});
         renderer.setUiText("resources-content",
-                           "<div class='resource'><img src='../icons/source/resource_scrap.png'/><span>125</span></div>");
-        renderer.setUiText("entity-content",
-                           "<div id='test.info' class='entity-info'><div class='entity-title'>CONSTRUCTION DRONE</div>"
-                           "<div class='entity-main'><img class='portrait' src='../icons/source/building_alloy_processor.png'/><div class='bars-stats'>"
-                           "<div class='hud-bar progress-track'><progress id='test.health' class='progress-fill health' value='0.72' max='1'/>"
-                           "<span class='progress-label'>HEALTH 72 / 100</span></div>"
-                           "<div class='hud-bar progress-track'><progress id='test.power' class='progress-fill power' value='0.35' max='1'/>"
-                           "<span class='progress-label'>ENERGY 35 / 100</span></div>"
-                           "<div class='hud-bar progress-track'><progress id='test.construction' class='progress-fill construction' value='0.5' max='1'/>"
-                           "<span class='progress-label'>BUILD 50 / 100</span></div></div></div>"
-                           "<div class='stats-list'><div class='stat'><span class='stat-label'>CARGO</span>"
-                           "<span id='test.stat' class='stat-value'>100 / 100</span></div></div></div>"
-                           "<div class='entity-actions'><button id='action.preview' class='action'>"
-                           "<img src='../icons/source/building_alloy_processor.png'/></button></div>");
+                           "<div class='resource'><img "
+                           "src='../icons/source/resource_scrap.png'/><span>125</span></div>");
+        renderer.setUiText(
+            "entity-content",
+            "<div id='test.info' class='entity-info'><div class='entity-title'>CONSTRUCTION "
+            "DRONE</div>"
+            "<div class='entity-main'><img class='portrait' "
+            "src='../icons/source/building_alloy_processor.png'/><div class='bars-stats'>"
+            "<div class='hud-bar progress-track'><progress id='test.health' class='progress-fill "
+            "health' value='0.72' max='1'/>"
+            "<span class='progress-label'>HEALTH 72 / 100</span></div>"
+            "<div class='hud-bar progress-track'><progress id='test.power' class='progress-fill "
+            "power' value='0.35' max='1'/>"
+            "<span class='progress-label'>ENERGY 35 / 100</span></div>"
+            "<div class='hud-bar progress-track'><progress id='test.construction' "
+            "class='progress-fill construction' value='0.5' max='1'/>"
+            "<span class='progress-label'>BUILD 50 / 100</span></div></div></div>"
+            "<div class='stats-list'><div class='stat'><span class='stat-label'>CARGO</span>"
+            "<span id='test.stat' class='stat-value'>100 / 100</span></div></div></div>"
+            "<div class='entity-actions'><button id='action.preview' class='action'>"
+            "<img src='../icons/source/building_alloy_processor.png'/></button></div>");
         auto* hudContext = Rml::GetContext("strategy_ui");
         auto* hudDocument = hudContext->GetDocument(hudContext->GetNumDocuments() - 1);
         auto* actionPanel = hudDocument->QuerySelector(".entity-actions");

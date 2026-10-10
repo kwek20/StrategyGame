@@ -48,6 +48,17 @@ struct TerrainVertex {
     float generatedWaterCoverage{0.0F};
 };
 
+bool visibleSphere(const glm::mat4& viewProjection, glm::vec3 center, float radius) {
+    const auto rows = glm::transpose(viewProjection);
+    for (int axis = 0; axis < 3; ++axis)
+        for (float sign : {-1.0F, 1.0F}) {
+            const glm::vec4 plane = rows[3] + sign * rows[axis];
+            if (glm::dot(plane, glm::vec4(center, 1)) < -radius * glm::length(glm::vec3(plane)))
+                return false;
+        }
+    return true;
+}
+
 void GLAPIENTRY openGlDebugMessage(GLenum,
                                    GLenum type,
                                    GLuint id,
@@ -216,11 +227,11 @@ glm::mat4 groundedEntityTransform(const Terrain& terrain,
                                   float modelBaseY,
                                   float scaleMultiplier = 1.0F) {
     glm::mat4 transform{1.0F};
+    const float ground = terrain.entityBaseHeight(entityId, shown.position.x, shown.position.z);
     transform =
         glm::translate(transform,
                        {shown.position.x,
-                        terrain.heightAt(shown.position.x, shown.position.z) + shown.position.y +
-                            presentationGroundOffset(definition, entityId),
+                        ground + shown.position.y + presentationGroundOffset(definition, entityId),
                         shown.position.z});
     if (definition && definition->alignToTerrain && definition->maximumTilt > 0.0F) {
         const float sample = Terrain::spacing * 2.0F;
@@ -869,11 +880,12 @@ void Renderer::drawTerrain(const CameraView& camera,
     renderGraph_.enter(RenderPassKind::terrain);
     ProfileScope profile(profiler_, "render.terrain");
     RenderPass pass(RenderPassKind::terrain);
-    const glm::vec3 focus = camera.target;
     const glm::mat4 viewProjection = camera.viewProjection();
 
     shaders_.use(program_);
     bindTerrainTextures();
+    glUniform1i(shaders_.uniform(program_, "regionalStyle"),
+                terrain_.mode() == TerrainMode::v2 ? 1 : 0);
     glUniform1i(shaders_.uniform(program_, "grassTexture"), 0);
     glUniform1i(shaders_.uniform(program_, "dirtTexture"), 1);
     glUniform1i(shaders_.uniform(program_, "rockTexture"), 2);
@@ -908,20 +920,19 @@ void Renderer::drawTerrain(const CameraView& camera,
         glUniform1i(shaders_.uniform(program_, "explorationMap"), 7);
         glActiveTexture(GL_TEXTURE0);
     }
-    constexpr float closeViewRenderDistance = 190.0F;
     for (const TerrainChunk& chunk : terrainChunks_) {
-        const float dx = chunk.center.x - focus.x;
-        const float dz = chunk.center.z - focus.z;
-        const float maximumDistance = closeViewRenderDistance + chunk.radius;
-        // Strategy view must retain the complete active map. Distance-culling whole chunks here
-        // exposed a hard grid-aligned boundary while water and fog continued rendering beyond it,
-        // especially after taller landforms made the missing geometry easier to see. Close view
-        // keeps the bounded distance because distant terrain is outside its useful horizon.
-        if (closeView && dx * dx + dz * dz > maximumDistance * maximumDistance) {
+        const float half = activeWorldExtent() * 0.5F;
+        constexpr float halfChunk = Terrain::chunkCellCount * Terrain::spacing * 0.5F;
+        if (std::abs(chunk.center.x) >= half + halfChunk ||
+            std::abs(chunk.center.z) >= half + halfChunk)
+            continue; // Inactive chunks can still hold meshes from the previous map/mode.
+        // Visibility follows the actual camera, including its far plane. A fixed distance
+        // from the focus can remove still-visible horizon chunks as the camera moves.
+        if (!visibleSphere(viewProjection, chunk.center, chunk.radius)) {
             continue;
         }
         std::size_t lodLevel;
-        if (closeView) {
+        if (closeView || terrain_.mode() == TerrainMode::v2) {
             // Third-person terrain uses one topology. Independent per-chunk LODs create
             // T-junctions where a deformed fine edge meets a coarser neighboring edge.
             lodLevel = 0U;
@@ -972,6 +983,8 @@ void Renderer::drawWater(const CameraView& camera, const Player* player, int deb
     glUniform3fv(
         shaders_.uniform(waterProgram_, "cameraPosition"), 1, glm::value_ptr(camera.position));
     glUniform1f(shaders_.uniform(waterProgram_, "waterLevel"), terrain_.waterLevel());
+    glUniform1i(shaders_.uniform(waterProgram_, "exactWaterSurface"),
+                terrain_.mode() == TerrainMode::v2 ? 1 : 0);
     glUniform1f(shaders_.uniform(waterProgram_, "timeSeconds"),
                 static_cast<float>(SDL_GetTicks()) * 0.001F);
     glUniform2f(shaders_.uniform(waterProgram_, "fogRange"), 140.0F, 280.0F);
@@ -981,16 +994,17 @@ void Renderer::drawWater(const CameraView& camera, const Player* player, int deb
                 player && debugMode == 0 ? 1 : 0);
     glUniform1i(shaders_.uniform(waterProgram_, "waterDebugMode"), debugMode);
 
-    const glm::vec3 focus = camera.target;
-    constexpr float renderDistance = 190.0F;
+    const auto viewProjection = camera.viewProjection();
     // Water always uses the fine terrain topology. Switching coastline topology by camera
     // distance makes shores crawl and exposes cracks where neighboring LODs disagree.
     constexpr std::size_t lodLevel = 0U;
     for (const TerrainChunk& chunk : terrainChunks_) {
-        const float dx = chunk.center.x - focus.x;
-        const float dz = chunk.center.z - focus.z;
-        const float maximumDistance = renderDistance + chunk.radius;
-        if (dx * dx + dz * dz > maximumDistance * maximumDistance)
+        const float half = activeWorldExtent() * 0.5F;
+        constexpr float halfChunk = Terrain::chunkCellCount * Terrain::spacing * 0.5F;
+        if (std::abs(chunk.center.x) >= half + halfChunk ||
+            std::abs(chunk.center.z) >= half + halfChunk)
+            continue;
+        if (!visibleSphere(viewProjection, chunk.center, chunk.radius))
             continue;
         glBindVertexArray(chunk.vao);
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, chunk.ebos[lodLevel]);
@@ -1132,9 +1146,10 @@ void Renderer::drawWorld(const World& world,
         }
         const EntityDefinition* definition = resources_.entityDefinition(entity.renderId());
         const float height = definition ? definition->selectionHeight : 2.0F;
-        const float ground =
-            terrain_.heightAt(entity.transform.position.x, entity.transform.position.z) +
-            (entity.flight ? entity.transform.position.y : 0.0F);
+        const float ground = terrain_.entityBaseHeight(entity.id,
+                                                       entity.transform.position.x,
+                                                       entity.transform.position.z) +
+                             (entity.flight ? entity.transform.position.y : 0.0F);
         const glm::vec4 clip =
             viewProjection * glm::vec4{entity.transform.position.x,
                                        ground + entity.transform.position.y + height + 0.65F,
@@ -1313,8 +1328,8 @@ void Renderer::drawVisionRanges(const CameraView& camera, const Entity* entity) 
     renderGraph_.enter(RenderPassKind::overlay);
     if (!entity || !entity->unitControl || !entity->vision)
         return;
-    const float elevation =
-        terrain_.heightAt(entity->transform.position.x, entity->transform.position.z);
+    const float elevation = terrain_.entityBaseHeight(
+        entity->id, entity->transform.position.x, entity->transform.position.z);
     const float base = entity->vision.sightRange;
     const float effective = effectiveSightRange(base, elevation);
     constexpr int segments = 128;
@@ -1746,8 +1761,8 @@ void Renderer::drawDetailedDebugHud(const CameraView& camera,
     } else
         lines.push_back(Text::get("debug.no_entity"));
     if (entity && entity->vision) {
-        const float elevation =
-            terrain_.heightAt(entity->transform.position.x, entity->transform.position.z);
+        const float elevation = terrain_.entityBaseHeight(
+            entity->id, entity->transform.position.x, entity->transform.position.z);
         lines.push_back("  terrainHeight: " + number(elevation));
         lines.push_back("  effectiveRange [height modified]: " +
                         number(effectiveSightRange(entity->vision.sightRange, elevation)));
@@ -1937,8 +1952,8 @@ void Renderer::drawPowerConnections(const World& world,
     std::vector<glm::vec2> powered, flowing, underpowered, failed;
     std::vector<glm::vec2> highNodes, mediumNodes, lowNodes;
     const auto screen = [this, &camera](const Entity& entity) -> std::optional<glm::vec2> {
-        const float ground =
-            terrain_.heightAt(entity.transform.position.x, entity.transform.position.z);
+        const float ground = terrain_.entityBaseHeight(
+            entity.id, entity.transform.position.x, entity.transform.position.z);
         const glm::vec4 clip = camera.viewProjection() * glm::vec4{entity.transform.position.x,
                                                                    ground + 2.0F,
                                                                    entity.transform.position.z,
@@ -2172,57 +2187,23 @@ void Renderer::drawPowerDebugHud(const World& world,
 
 void Renderer::regenerateTerrain(std::uint32_t seed,
                                  std::uint32_t chunksPerSide,
-                                 TerrainLayoutId layout) {
+                                 TerrainLayoutId layout,
+                                 TerrainMode mode,
+                                 std::uint32_t repairLevel) {
     clearParticles();
     terrainSeed_ = seed;
     activeTerrainChunksPerSide_ =
         std::clamp(chunksPerSide, 10U, static_cast<std::uint32_t>(Terrain::chunksPerSide));
-    terrain_ = Terrain(seed, std::move(layout));
+    terrain_ = Terrain(seed, layout, mode, activeTerrainChunksPerSide_);
+    if (repairLevel)
+        terrain_.repairV2Resources(seed, layout, repairLevel);
+    terrainFoundations_.clear();
+    syncFoundationMeshes();
     ensureTerrainChunks();
     terrain_.rebuildFoundations(terrainFoundations_);
-    constexpr int chunkSide = Terrain::chunkCellCount + 1;
-    constexpr float halfExtent = static_cast<float>(Terrain::cellCount) * Terrain::spacing * 0.5F;
-
-    for (int chunkZ = 0; chunkZ < Terrain::chunksPerSide; ++chunkZ) {
-        for (int chunkX = 0; chunkX < Terrain::chunksPerSide; ++chunkX) {
-            std::vector<TerrainVertex> vertices;
-            vertices.reserve(chunkSide * chunkSide);
-            const int startX = chunkX * Terrain::chunkCellCount;
-            const int startZ = chunkZ * Terrain::chunkCellCount;
-            for (int localZ = 0; localZ < chunkSide; ++localZ) {
-                for (int localX = 0; localX < chunkSide; ++localX) {
-                    const int gridX = startX + localX;
-                    const int gridZ = startZ + localZ;
-                    const float worldX = static_cast<float>(gridX) * Terrain::spacing - halfExtent;
-                    const float worldZ = static_cast<float>(gridZ) * Terrain::spacing - halfExtent;
-                    vertices.push_back(
-                        {{worldX, terrain_.vertexHeight(gridX, gridZ), worldZ},
-                         terrain_.normalAt(gridX, gridZ),
-                         terrain_.colorAt(worldX, worldZ),
-                         terrain_.materialWeightsAt(worldX, worldZ),
-                         terrain_.traversalAt(worldX, worldZ) == TerrainTraversalClass::impassable
-                             ? 1.0F
-                             : (terrain_.traversalAt(worldX, worldZ) ==
-                                        TerrainTraversalClass::difficult
-                                    ? 0.5F
-                                    : 0.0F),
-                         terrain_.waterSurfaceAt(worldX, worldZ),
-                         terrain_.waterCoverageAt(worldX, worldZ),
-                         terrain_.riverFlowAt(worldX, worldZ),
-                         terrain_.generatedWaterSurfaceAt(worldX, worldZ),
-                         terrain_.generatedWaterCoverageAt(worldX, worldZ)});
-                }
-            }
-            const std::size_t chunkIndex =
-                static_cast<std::size_t>(chunkZ * Terrain::chunksPerSide + chunkX);
-            glBindBuffer(GL_ARRAY_BUFFER, terrainChunks_[chunkIndex].vbo);
-            glBufferData(GL_ARRAY_BUFFER,
-                         static_cast<GLsizeiptr>(vertices.size() * sizeof(TerrainVertex)),
-                         vertices.data(),
-                         GL_STATIC_DRAW);
-        }
-    }
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    for (int z = 0; z < Terrain::chunksPerSide; ++z)
+        for (int x = 0; x < Terrain::chunksPerSide; ++x)
+            uploadTerrainChunk(x, z);
 }
 
 void Renderer::stageGeneratedTerrain(const Terrain& terrain,
@@ -2233,6 +2214,8 @@ void Renderer::stageGeneratedTerrain(const Terrain& terrain,
     terrainSeed_ = seed;
     activeTerrainChunksPerSide_ =
         std::clamp(chunksPerSide, 10U, static_cast<std::uint32_t>(Terrain::chunksPerSide));
+    terrainFoundations_.clear();
+    syncFoundationMeshes();
     terrain_ = terrain;
     ensureTerrainChunks();
     terrainFoundations_ = foundations;
@@ -2320,7 +2303,53 @@ void Renderer::syncFoundationMeshes() {
             const glm::vec2 offset = point - glm::vec2{foundation.center.x, foundation.center.z};
             return foundation.center.y + glm::dot(foundation.gradient, offset);
         };
-        if (foundation.shape == FootprintShape::circle) {
+        if (terrain_.mode() == TerrainMode::v2) {
+            std::vector<glm::vec2> perimeter;
+            if (foundation.shape == FootprintShape::circle) {
+                const int segments = std::max(
+                    24,
+                    static_cast<int>(std::ceil(glm::two_pi<float>() * foundation.outerRadius /
+                                               Terrain::spacing)));
+                for (int i = 0; i < segments; ++i) {
+                    const float angle = glm::two_pi<float>() * i / segments;
+                    perimeter.push_back(
+                        {foundation.center.x + std::cos(angle) * foundation.outerRadius,
+                         foundation.center.z + std::sin(angle) * foundation.outerRadius});
+                }
+            } else {
+                const std::array<glm::vec2, 4> corners{
+                    {{-foundation.halfExtents.x, -foundation.halfExtents.y},
+                     {foundation.halfExtents.x, -foundation.halfExtents.y},
+                     {foundation.halfExtents.x, foundation.halfExtents.y},
+                     {-foundation.halfExtents.x, foundation.halfExtents.y}}};
+                const float angle = glm::radians(foundation.rotationDegrees), c = std::cos(angle),
+                            s = std::sin(angle);
+                for (std::size_t edge = 0; edge < 4; ++edge) {
+                    const auto a = corners[edge], b = corners[(edge + 1) % 4];
+                    const int segments = std::max(
+                        1, static_cast<int>(std::ceil(glm::length(b - a) / Terrain::spacing)));
+                    for (int i = 0; i < segments; ++i) {
+                        const auto p = glm::mix(a, b, static_cast<float>(i) / segments);
+                        perimeter.push_back({foundation.center.x + c * p.x - s * p.y,
+                                             foundation.center.z + s * p.x + c * p.y});
+                    }
+                }
+            }
+            for (auto point : perimeter) {
+                const float top = height(point) - 0.06F;
+                const float bottom = std::min(terrain_.heightAt(point.x, point.y), top - 0.15F);
+                const auto outward =
+                    glm::normalize(point - glm::vec2{foundation.center.x, foundation.center.z});
+                const glm::vec3 sideNormal{outward.x, 0, outward.y};
+                vertices.push_back({{point.x, top, point.y}, sideNormal, sideColor});
+                vertices.push_back({{point.x, bottom, point.y}, sideNormal, sideColor});
+            }
+            for (std::uint32_t i = 0; i < perimeter.size(); ++i) {
+                const auto next = (i + 1) % static_cast<std::uint32_t>(perimeter.size());
+                indices.insert(indices.end(),
+                               {i * 2, i * 2 + 1, next * 2 + 1, i * 2, next * 2 + 1, next * 2});
+            }
+        } else if (foundation.shape == FootprintShape::circle) {
             constexpr std::uint32_t segments = 24;
             for (std::uint32_t i = 0; i < segments; ++i) {
                 const float angle = glm::two_pi<float>() * static_cast<float>(i) / segments;
@@ -2328,9 +2357,13 @@ void Renderer::syncFoundationMeshes() {
                     foundation.center.x + std::cos(angle) * foundation.outerRadius,
                     foundation.center.z + std::sin(angle) * foundation.outerRadius};
                 vertices.push_back({{point.x, height(point) - 0.06F, point.y}, normal, sideColor});
-                vertices.push_back({{point.x, height(point) - thickness, point.y},
-                                    {std::cos(angle), 0.0F, std::sin(angle)},
-                                    sideColor});
+                vertices.push_back(
+                    {{point.x,
+                      terrain_.mode() == TerrainMode::v2 ? terrain_.heightAt(point.x, point.y)
+                                                         : height(point) - thickness,
+                      point.y},
+                     {std::cos(angle), 0.0F, std::sin(angle)},
+                     sideColor});
             }
             for (std::uint32_t i = 0; i < segments; ++i) {
                 const std::uint32_t next = (i + 1) % segments;
@@ -2350,7 +2383,12 @@ void Renderer::syncFoundationMeshes() {
                                       foundation.center.z + s * p.x + c * p.y};
                 vertices.push_back({{point.x, height(point) - 0.06F, point.y}, normal, sideColor});
                 vertices.push_back(
-                    {{point.x, height(point) - thickness, point.y}, normal, sideColor});
+                    {{point.x,
+                      terrain_.mode() == TerrainMode::v2 ? terrain_.heightAt(point.x, point.y)
+                                                         : height(point) - thickness,
+                      point.y},
+                     normal,
+                     sideColor});
             }
             for (std::uint32_t i = 0; i < 4; ++i) {
                 const std::uint32_t next = (i + 1) % 4;
@@ -2648,9 +2686,10 @@ std::vector<EntityId> Renderer::unitsInScreenRectangle(const glm::vec2& start,
         const EntityDefinition* definition = resources_.entityDefinition(entity.renderId());
         const float height = definition ? definition->selectionHeight : 1.8F;
         const float radius = definition ? definition->selectionRadius : 0.6F;
-        const float ground =
-            terrain_.heightAt(entity.transform.position.x, entity.transform.position.z) +
-            (entity.flight ? entity.transform.position.y : 0.0F);
+        const float ground = terrain_.entityBaseHeight(entity.id,
+                                                       entity.transform.position.x,
+                                                       entity.transform.position.z) +
+                             (entity.flight ? entity.transform.position.y : 0.0F);
         const glm::vec3 center{
             entity.transform.position.x, ground + height * 0.5F, entity.transform.position.z};
         const std::array<glm::vec3, 6> points{center + glm::vec3{-radius, 0, 0},
@@ -2975,9 +3014,10 @@ CameraView Renderer::constrainThirdPersonCamera(const CameraView& desired,
         const EntityDefinition* definition = resources_.entityDefinition(entity.renderId());
         if (!definition || definition->selectionRadius < 1.0F)
             continue;
-        const float ground =
-            terrain_.heightAt(entity.transform.position.x, entity.transform.position.z) +
-            (entity.flight ? entity.transform.position.y : 0.0F);
+        const float ground = terrain_.entityBaseHeight(entity.id,
+                                                       entity.transform.position.x,
+                                                       entity.transform.position.z) +
+                             (entity.flight ? entity.transform.position.y : 0.0F);
         const glm::vec3 center{entity.transform.position.x,
                                ground + definition->selectionHeight * 0.5F,
                                entity.transform.position.z};

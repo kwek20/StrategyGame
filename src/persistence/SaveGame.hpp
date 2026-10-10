@@ -18,6 +18,8 @@ struct SaveData {
     std::uint32_t terrainSeed{0};
     std::uint32_t mapChunksPerSide{20};
     std::string terrainLayout{"continental"};
+    TerrainMode terrainMode{TerrainMode::v1};
+    std::uint32_t terrainRepairLevel{};
     std::vector<Entity> entities;
     std::vector<TerrainFoundation> foundations;
     std::string playerOneCountry{"spain"};
@@ -39,7 +41,9 @@ class SaveGame final {
                       const World& world,
                       const PlayerRegistry* players = nullptr,
                       std::uint32_t mapChunksPerSide = 20,
-                      std::string terrainLayout = "continental");
+                      std::string terrainLayout = "continental",
+                      TerrainMode terrainMode = TerrainMode::v1,
+                      std::uint32_t terrainRepairLevel = 0);
     [[nodiscard]] static SaveData read(const std::filesystem::path& path);
 };
 

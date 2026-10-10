@@ -1,5 +1,7 @@
 #pragma once
 
+#include "terrain/TerrainMode.hpp"
+
 #include <cstdint>
 #include <filesystem>
 #include <string>
@@ -17,6 +19,7 @@ struct MatchSetupProfile {
     float startingResourcesScale{1.0F};
     float resourceAbundanceScale{1.0F};
     std::string terrainLayout{"continental"};
+    TerrainMode terrainMode{TerrainMode::v1};
 };
 
 class MatchSetupProfileStore final {
