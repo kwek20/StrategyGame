@@ -14,6 +14,7 @@
 #include "render/RenderGraph.hpp"
 #include "render/RmlUiManager.hpp"
 #include "render/ShaderManager.hpp"
+#include "render/VegetationRenderCache.hpp"
 #include "terrain/Terrain.hpp"
 #include "world/Entity.hpp"
 #include "world/MapArea.hpp"
@@ -90,6 +91,9 @@ class Renderer final {
     void drawVegetation(const VegetationField& vegetation,
                         const CameraView& camera,
                         const Player* player = nullptr) const;
+    [[nodiscard]] const VegetationCacheStats& vegetationCacheStats() const {
+        return vegetationCache_.stats();
+    }
     [[nodiscard]] ParticleEmitterHandle emitParticle(const ParticleEmitterDesc& description);
     [[nodiscard]] ParticleEffectHandle particleEffect(ParticleEffectId id) const {
         return particleEffects_.handle(std::move(id));
@@ -271,6 +275,7 @@ class Renderer final {
     mutable FrameProfiler profiler_;
     mutable RenderCommandQueue commandQueue_;
     mutable RenderGraph renderGraph_;
+    mutable VegetationRenderCache vegetationCache_;
     std::chrono::steady_clock::time_point lastSlowFrameLog_{};
     mutable std::unordered_map<std::string, ModelHandle> modelHandles_;
     mutable std::array<TextureHandle, 4> terrainTextures_{};

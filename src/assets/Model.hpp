@@ -1,10 +1,12 @@
 #pragma once
 #include "assets/ModelAsset.hpp"
+
 #include <array>
 #include <cstdint>
 #include <glm/gtc/quaternion.hpp>
 #include <glm/mat4x4.hpp>
 #include <glm/vec3.hpp>
+#include <span>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -19,6 +21,10 @@ struct ModelShaderBindings {
     std::int32_t viewProjection{-1}, model{-1}, useSkinning{-1}, useInstancing{-1}, bones{-1};
     std::int32_t baseColorTexture{-1}, materialDiffuse{-1}, materialOpacity{-1};
     std::int32_t hasBaseColorTexture{-1};
+};
+struct ModelInstanceRange {
+    std::uint32_t first{0};
+    std::uint32_t count{0};
 };
 class Model final {
   public:
@@ -36,6 +42,17 @@ class Model final {
                        const glm::mat4& viewProjection,
                        const std::vector<glm::mat4>& transforms,
                        std::uint32_t overrideTexture = 0) const;
+    // Caller-owned persistent instance data shared by every mesh in this model.
+    void drawInstancedBuffer(const ModelShaderBindings& shader,
+                             const glm::mat4& viewProjection,
+                             std::uint32_t instanceBuffer,
+                             std::size_t instanceCount,
+                             std::uint32_t overrideTexture = 0) const;
+    void drawInstancedRanges(const ModelShaderBindings& shader,
+                             const glm::mat4& viewProjection,
+                             std::uint32_t instanceBuffer,
+                             std::span<const ModelInstanceRange> ranges,
+                             std::uint32_t overrideTexture = 0) const;
     [[nodiscard]] std::size_t meshCount() const {
         return meshes_.size();
     }
@@ -46,10 +63,10 @@ class Model final {
     static constexpr std::size_t maxBones = ModelAsset::maxBones;
     struct Mesh {
         std::uint32_t vao{0}, vbo{0}, ebo{0}, indexCount{0};
-        mutable std::uint32_t instanceVbo{0};
         glm::mat4 nodeTransform{1};
         Material material;
         bool skinned{false};
+        mutable bool instanceAttributesEnabled{false};
     };
 
   public:
@@ -61,6 +78,8 @@ class Model final {
 
   private:
     std::vector<Mesh> meshes_;
+    mutable std::uint32_t transientInstanceVbo_{0};
+    mutable std::uint32_t indirectVbo_{0};
     std::vector<std::uint32_t> textures_;
     std::unordered_map<std::string, std::size_t> boneIndices_;
     std::vector<glm::mat4> boneOffsets_;

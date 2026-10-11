@@ -131,6 +131,12 @@ Model::Model(std::shared_ptr<ModelAsset> asset) {
         glEnableVertexAttribArray(4);
         glVertexAttribPointer(
             4, 4, GL_FLOAT, GL_FALSE, sizeof(ModelVertex), (void*)offsetof(ModelVertex, weights));
+        for (std::uint32_t column = 0; column < 4; ++column) {
+            glVertexAttribFormat(
+                5 + column, 4, GL_FLOAT, GL_FALSE, static_cast<GLuint>(sizeof(glm::vec4) * column));
+            glVertexAttribBinding(5 + column, 5);
+        }
+        glVertexBindingDivisor(5, 1);
         glBindVertexArray(0);
         meshes_.push_back(mesh);
     }
@@ -138,8 +144,9 @@ Model::Model(std::shared_ptr<ModelAsset> asset) {
 }
 
 Model::~Model() {
+    glDeleteBuffers(1, &transientInstanceVbo_);
+    glDeleteBuffers(1, &indirectVbo_);
     for (const auto& m : meshes_) {
-        glDeleteBuffers(1, &m.instanceVbo);
         glDeleteBuffers(1, &m.ebo);
         glDeleteBuffers(1, &m.vbo);
         glDeleteVertexArrays(1, &m.vao);
@@ -227,6 +234,49 @@ void Model::drawInstanced(const ModelShaderBindings& shader,
                           const std::vector<glm::mat4>& transforms,
                           std::uint32_t overrideTexture) const {
     if (transforms.empty()) return;
+    if (transientInstanceVbo_ == 0)
+        glGenBuffers(1, &transientInstanceVbo_);
+    glBindBuffer(GL_ARRAY_BUFFER, transientInstanceVbo_);
+    glBufferData(GL_ARRAY_BUFFER,
+                 static_cast<GLsizeiptr>(transforms.size() * sizeof(glm::mat4)),
+                 transforms.data(),
+                 GL_STREAM_DRAW);
+    drawInstancedBuffer(shader, vp, transientInstanceVbo_, transforms.size(), overrideTexture);
+}
+
+void Model::drawInstancedBuffer(const ModelShaderBindings& shader,
+                                const glm::mat4& vp,
+                                std::uint32_t instanceBuffer,
+                                std::size_t instanceCount,
+                                std::uint32_t overrideTexture) const {
+    if (!instanceBuffer || instanceCount == 0)
+        return;
+    const ModelInstanceRange range{0, static_cast<std::uint32_t>(instanceCount)};
+    drawInstancedRanges(shader, vp, instanceBuffer, std::span{&range, 1}, overrideTexture);
+}
+
+void Model::drawInstancedRanges(const ModelShaderBindings& shader,
+                                const glm::mat4& vp,
+                                std::uint32_t instanceBuffer,
+                                std::span<const ModelInstanceRange> ranges,
+                                std::uint32_t overrideTexture) const {
+    if (!instanceBuffer || ranges.empty())
+        return;
+    struct DrawCommand {
+        std::uint32_t count, instanceCount, firstIndex;
+        std::int32_t baseVertex;
+        std::uint32_t baseInstance;
+    };
+    static_assert(sizeof(DrawCommand) == 5 * sizeof(std::uint32_t));
+    std::vector<DrawCommand> commands;
+    if (ranges.size() > 1) {
+        commands.reserve(ranges.size());
+        for (const auto& range : ranges)
+            commands.push_back({0, range.count, 0, 0, range.first});
+        if (!indirectVbo_)
+            glGenBuffers(1, &indirectVbo_);
+        glBindBuffer(GL_DRAW_INDIRECT_BUFFER, indirectVbo_);
+    }
     glUseProgram(shader.program);
     glUniformMatrix4fv(shader.viewProjection, 1, GL_FALSE, glm::value_ptr(vp));
     glUniform1i(shader.useSkinning, GL_FALSE);
@@ -241,26 +291,33 @@ void Model::drawInstanced(const ModelShaderBindings& shader,
         glUniform1i(shader.hasBaseColorTexture, texture != 0);
         glBindTexture(GL_TEXTURE_2D, texture);
         glBindVertexArray(mesh.vao);
-        if (mesh.instanceVbo == 0) {
-            glGenBuffers(1, &mesh.instanceVbo);
-            glBindBuffer(GL_ARRAY_BUFFER, mesh.instanceVbo);
-            for (std::uint32_t column = 0; column < 4; ++column) {
-                const std::uint32_t location = 5 + column;
-                glEnableVertexAttribArray(location);
-                glVertexAttribPointer(location, 4, GL_FLOAT, GL_FALSE, sizeof(glm::mat4),
-                                      reinterpret_cast<void*>(sizeof(glm::vec4) * column));
-                glVertexAttribDivisor(location, 1);
-            }
+        if (!mesh.instanceAttributesEnabled) {
+            for (std::uint32_t column = 0; column < 4; ++column)
+                glEnableVertexAttribArray(5 + column);
+            mesh.instanceAttributesEnabled = true;
         }
-        glBindBuffer(GL_ARRAY_BUFFER, mesh.instanceVbo);
-        glBufferData(GL_ARRAY_BUFFER,
-                     static_cast<GLsizeiptr>(transforms.size() * sizeof(glm::mat4)),
-                     transforms.data(), GL_STREAM_DRAW);
-        glDrawElementsInstanced(GL_TRIANGLES, static_cast<GLsizei>(mesh.indexCount),
-                                GL_UNSIGNED_INT, nullptr,
-                                static_cast<GLsizei>(transforms.size()));
+        glBindVertexBuffer(5, instanceBuffer, 0, sizeof(glm::mat4));
+        if (ranges.size() == 1) {
+            glDrawElementsInstancedBaseInstance(GL_TRIANGLES,
+                                                static_cast<GLsizei>(mesh.indexCount),
+                                                GL_UNSIGNED_INT,
+                                                nullptr,
+                                                static_cast<GLsizei>(ranges.front().count),
+                                                ranges.front().first);
+        } else {
+            for (auto& command : commands)
+                command.count = mesh.indexCount;
+            glBufferData(GL_DRAW_INDIRECT_BUFFER,
+                         static_cast<GLsizeiptr>(commands.size() * sizeof(DrawCommand)),
+                         commands.data(),
+                         GL_STREAM_DRAW);
+            glMultiDrawElementsIndirect(
+                GL_TRIANGLES, GL_UNSIGNED_INT, nullptr, static_cast<GLsizei>(commands.size()), 0);
+        }
     }
     glBindVertexArray(0);
+    if (ranges.size() > 1)
+        glBindBuffer(GL_DRAW_INDIRECT_BUFFER, 0);
     glBindTexture(GL_TEXTURE_2D, 0);
     glUniform1i(shader.useInstancing, GL_FALSE);
 }

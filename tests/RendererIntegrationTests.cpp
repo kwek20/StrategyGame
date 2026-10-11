@@ -86,6 +86,77 @@ bool captureTerrain(const char* name) {
     return saved;
 }
 
+bool checkVegetationCacheBuffers() {
+    strategy::ResourceManager resources{"assets"};
+    strategy::VegetationInstance instance;
+    instance.presentation = strategy::PresentationId{"grass_fresh"};
+    instance.transform.position = {2, 0, 3};
+    strategy::VegetationChunk first, second;
+    first.center = {2, 3};
+    first.radius = 1;
+    first.instances.push_back(instance);
+    second.center = {40, 3};
+    second.radius = 1;
+    instance.transform.position.x = 40;
+    second.instances.push_back(instance);
+    strategy::VegetationField field{{first, second}};
+    strategy::VegetationRenderCache cache;
+    const strategy::VegetationRenderCache::PrepareTransform prepare =
+        [](const auto& item, const auto*, float baseY) {
+            return glm::translate(glm::mat4{1}, item.transform.position + glm::vec3{0, baseY, 0});
+        };
+    cache.beginFrame(field);
+    const auto& markerBatch =
+        cache.prepareChunk(0, field.chunks()[0], resources, prepare).at("grass_fresh");
+    const auto handle = markerBatch.handle;
+    const auto* markerModel = markerBatch.model;
+    for (int attempt = 0;
+         attempt < 400 && resources.state(handle) != strategy::ResourceState::ready;
+         ++attempt) {
+        resources.update();
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    if (resources.state(handle) != strategy::ResourceState::ready)
+        return false;
+    cache.beginFrame(field);
+    const auto& loadedBatch =
+        cache.prepareChunk(0, field.chunks()[0], resources, prepare).at("grass_fresh");
+    bool valid = loadedBatch.model != markerModel && cache.stats().rebuiltChunks == 1;
+    glm::mat4 matrix;
+    glBindBuffer(GL_ARRAY_BUFFER, loadedBatch.buffer);
+    glGetBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(matrix), &matrix);
+    valid &= matrix[3].x == 2 && matrix[3].z == 3 && matrix[3].y == loadedBatch.model->baseY();
+    const auto firstBuffer = loadedBatch.buffer;
+    const auto secondBuffer =
+        cache.prepareChunk(1, field.chunks()[1], resources, prepare).at("grass_fresh").buffer;
+    cache.beginFrame(field);
+    cache.prepareChunk(0, field.chunks()[0], resources, prepare);
+    cache.prepareChunk(1, field.chunks()[1], resources, prepare);
+    valid &= cache.stats().rebuiltChunks == 0 && cache.stats().uploadedBatches == 0 &&
+             glIsBuffer(firstBuffer) && glIsBuffer(secondBuffer);
+    cache.invalidateTerrainRegion({0, 0}, {4, 5});
+    cache.beginFrame(field);
+    cache.prepareChunk(0, field.chunks()[0], resources, prepare);
+    const auto& untouched = cache.prepareChunk(1, field.chunks()[1], resources, prepare);
+    valid &= cache.stats().rebuiltChunks == 1 && untouched.at("grass_fresh").buffer == secondBuffer;
+    field.removeInstance(field.chunks()[0].instances[0].id);
+    cache.beginFrame(field);
+    valid &=
+        cache.prepareChunk(0, field.chunks()[0], resources, prepare).at("grass_fresh").count == 0;
+    cache.prepareChunk(1, field.chunks()[1], resources, prepare);
+    valid &= cache.stats().rebuiltChunks == 1 && cache.stats().uploadedBatches == 0;
+    const auto& survivor =
+        cache.prepareChunk(1, field.chunks()[1], resources, prepare).at("grass_fresh");
+    glBindBuffer(GL_ARRAY_BUFFER, survivor.buffer);
+    glGetBufferSubData(GL_ARRAY_BUFFER, survivor.first * sizeof(matrix), sizeof(matrix), &matrix);
+    valid &= matrix[3].x == 40 && matrix[3].z == 3;
+    cache.clear();
+    valid &= !glIsBuffer(secondBuffer);
+    if (!valid)
+        std::cerr << "Vegetation cache buffer/readiness/invalidation test failed\n";
+    return noGlErrors("vegetation cache buffers") && valid;
+}
+
 bool captureForm(strategy::Renderer& renderer, const char* name) {
     const char* directory = SDL_getenv("STRATEGY_FORM_SCREENSHOTS");
     if (!directory)
@@ -164,7 +235,7 @@ int strategyTestMain() {
         return 0;
     }
 
-    bool valid = noGlErrors("context creation");
+    bool valid = noGlErrors("context creation") && checkVegetationCacheBuffers();
     {
         strategy::ShaderManager shaders;
         constexpr std::string_view vertex = R"(#version 450 core
@@ -265,7 +336,14 @@ out vec4 color;void main(){color=vec4(1);})";
         vegetationInstance.presentation = strategy::PresentationId{"grass_fresh"};
         vegetationInstance.transform.position = {2.0F, 0.0F, -2.0F};
         vegetationChunk.instances.push_back(vegetationInstance);
-        vegetation.chunks().push_back(std::move(vegetationChunk));
+        vegetationInstance.transform.position.x = 8;
+        vegetationChunk.instances.push_back(vegetationInstance);
+        strategy::VegetationChunk otherChunk;
+        otherChunk.center = {40, 0};
+        otherChunk.radius = 16;
+        vegetationInstance.transform.position.x = 40;
+        otherChunk.instances.push_back(vegetationInstance);
+        vegetation = strategy::VegetationField{{std::move(vegetationChunk), std::move(otherChunk)}};
 
         renderer.preloadAssetGroup("match");
         strategy::AssetLoadProgress loadProgress = renderer.assetProgress("match");
@@ -283,6 +361,39 @@ out vec4 color;void main(){color=vec4(1);})";
             loadProgress = renderer.assetProgress("match");
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
         }
+        const auto vegetationFrame = [&] {
+            renderer.beginProfileFrame();
+            renderer.beginFrame(1280, 720);
+            renderer.drawTerrain(camera);
+            renderer.drawVegetation(vegetation, camera);
+            renderer.endFrame();
+            glFinish();
+            return renderer.vegetationCacheStats();
+        };
+        vegetationFrame(); // Settle the last async asset completion before cache assertions.
+        auto cacheStats = vegetationFrame();
+        valid = cacheStats.rebuiltChunks == 0 && cacheStats.uploadedBatches == 0 &&
+                cacheStats.submittedInstances == 3 && valid;
+        valid = vegetation.removeInstance(vegetation.chunks()[0].instances[0].id) && valid;
+        cacheStats = vegetationFrame();
+        valid = cacheStats.rebuiltChunks == 1 && cacheStats.uploadedBatches == 1 &&
+                cacheStats.submittedInstances == 2 && valid;
+        cacheStats = vegetationFrame();
+        valid = cacheStats.rebuiltChunks == 0 && cacheStats.uploadedBatches == 0 && valid;
+        valid =
+            vegetation.clearWithin({strategy::FootprintShape::circle, {8, -2}, 1}) == 1 && valid;
+        cacheStats = vegetationFrame();
+        valid = cacheStats.rebuiltChunks == 1 && cacheStats.uploadedBatches == 0 &&
+                cacheStats.submittedInstances == 1 && valid;
+        vegetation = strategy::VegetationField{vegetation};
+        cacheStats = vegetationFrame();
+        valid = cacheStats.rebuiltChunks == 2 && cacheStats.submittedInstances == 1 && valid;
+        renderer.stageGeneratedTerrain(generatedTerrain, 12345, 10);
+        cacheStats = vegetationFrame();
+        valid = cacheStats.rebuiltChunks == 2 && cacheStats.submittedInstances == 1 &&
+                noGlErrors("vegetation cache destruction and replacement") && valid;
+        while (!renderer.terrainUploadFinished())
+            vegetationFrame();
         if (SDL_getenv("STRATEGY_TERRAIN_SCREENSHOTS")) {
             for (const char* layout :
                  {"open_plains", "rolling_hills", "central_hill", "central_water", "continental"}) {

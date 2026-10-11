@@ -22,6 +22,31 @@ std::vector<glm::vec3> positions(const strategy::VegetationField& vegetation) {
 }
 
 int strategyTestMain() {
+    strategy::VegetationInstance item;
+    item.transform.position = {0, 0, 0};
+    strategy::VegetationChunk a, b;
+    a.instances.push_back(item);
+    item.transform.position = {1, 0, 0};
+    a.instances.push_back(item);
+    item.transform.position = {30, 0, 0};
+    b.instances.push_back(item);
+    strategy::VegetationField removals{{a, b}};
+    const auto firstId = removals.chunks()[0].instances[0].id;
+    const auto survivorId = removals.chunks()[0].instances[1].id;
+    bool removalValid = firstId != 0 && firstId != survivorId && removals.removeInstance(firstId) &&
+                        removals.chunks()[0].revision == 1 && removals.chunks()[1].revision == 0 &&
+                        removals.chunks()[0].instances[0].id == survivorId;
+    removalValid &= !removals.removeInstance(firstId) && removals.chunks()[0].revision == 1;
+    removalValid &= removals.clearWithin({strategy::FootprintShape::circle, {0, 0}, 2}) == 1 &&
+                    removals.chunks()[0].revision == 2 && removals.chunks()[1].revision == 0;
+    removalValid &= removals.clearWithin({strategy::FootprintShape::circle, {0, 0}, 2}) == 0 &&
+                    removals.chunks()[0].revision == 2;
+    const auto copy = removals;
+    removalValid &= copy.identity() != removals.identity();
+    const auto previousIdentity = removals.identity();
+    removals = strategy::VegetationField{{a, b}};
+    removalValid &=
+        removals.identity() != previousIdentity && removals.chunks()[0].instances[0].id == firstId;
     const strategy::DefinitionRegistry definitions;
     const strategy::Terrain terrain{0x13572468U};
     strategy::World world;
@@ -30,8 +55,8 @@ int strategyTestMain() {
     strategy::VegetationField second =
         strategy::generateVegetation(world, terrain, definitions, 0x13572468U, 15);
 
-    bool valid = first.instanceCount() > 0 && positions(first) == positions(second) &&
-                 world.entities().empty();
+    bool valid = removalValid && first.instanceCount() > 0 &&
+                 positions(first) == positions(second) && world.entities().empty();
     std::map<std::string, std::size_t> grassVariants;
     struct SpacedInstance {
         glm::vec2 position;

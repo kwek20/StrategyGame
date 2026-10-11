@@ -184,6 +184,7 @@ add_library(strategy_render STATIC
     src/render/RmlUiManager.cpp
     src/render/ShaderManager.cpp
     src/render/UiRenderer.cpp
+    src/render/VegetationRenderCache.cpp
 )
 strategy_target(strategy_render)
 target_compile_definitions(strategy_render PRIVATE

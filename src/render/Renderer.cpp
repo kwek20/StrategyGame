@@ -1224,28 +1224,7 @@ void Renderer::drawVegetation(const VegetationField& vegetation,
     renderGraph_.enter(RenderPassKind::world);
     ProfileScope profile(profiler_, "render.vegetation");
     const glm::mat4 viewProjection = camera.viewProjection();
-    std::map<std::string, std::vector<glm::mat4>> batches;
-    constexpr float renderDistance = 300.0F;
-    for (const VegetationChunk& chunk : vegetation.chunks()) {
-        const glm::vec2 delta = chunk.center - glm::vec2{camera.position.x, camera.position.z};
-        const float maximumDistance = renderDistance + chunk.radius;
-        if (glm::dot(delta, delta) > maximumDistance * maximumDistance)
-            continue;
-        for (const VegetationInstance& instance : chunk.instances) {
-            const std::string& renderId = instance.presentation.value;
-            const Model* model = resources_.modelOrMarker(modelHandle(renderId));
-            if (!model)
-                continue;
-            batches[renderId].push_back(
-                groundedEntityTransform(terrain_,
-                                        instance.transform,
-                                        resources_.entityDefinition(renderId),
-                                        0,
-                                        model->baseY()));
-        }
-    }
-    if (batches.empty())
-        return;
+    vegetationCache_.beginFrame(vegetation);
 
     shaders_.use(modelProgram_);
     glUniform3fv(
@@ -1260,9 +1239,34 @@ void Renderer::drawVegetation(const VegetationField& vegetation,
     glDisable(GL_CULL_FACE);
     glUniform4fv(shaders_.uniform(modelProgram_, "materialTint"), 1, glm::value_ptr(material.tint));
     glUniform1f(shaders_.uniform(modelProgram_, "materialRoughness"), material.roughness);
-    for (const auto& [renderId, transforms] : batches)
-        if (const Model* model = resources_.modelOrMarker(modelHandle(renderId)))
-            model->drawInstanced(modelBindings_, viewProjection, transforms);
+    constexpr float renderDistance = 300.0F;
+    struct DrawGroup {
+        const Model* model{nullptr};
+        std::vector<ModelInstanceRange> ranges;
+    };
+    std::map<std::uint32_t, DrawGroup> groups;
+    const VegetationRenderCache::PrepareTransform prepare =
+        [&](const VegetationInstance& instance, const EntityDefinition* definition, float baseY) {
+            return groundedEntityTransform(terrain_, instance.transform, definition, 0, baseY);
+        };
+    for (std::size_t index = 0; index < vegetation.chunks().size(); ++index) {
+        const VegetationChunk& chunk = vegetation.chunks()[index];
+        const glm::vec2 delta = chunk.center - glm::vec2{camera.position.x, camera.position.z};
+        const float maximumDistance = renderDistance + chunk.radius;
+        if (glm::dot(delta, delta) > maximumDistance * maximumDistance)
+            continue;
+        for (const auto& [key, batch] :
+             vegetationCache_.prepareChunk(index, chunk, resources_, prepare)) {
+            if (!batch.model || !batch.count)
+                continue;
+            auto& group = groups[batch.buffer];
+            group.model = batch.model;
+            group.ranges.push_back({batch.first, static_cast<std::uint32_t>(batch.count)});
+            vegetationCache_.recordSubmitted(batch.count);
+        }
+    }
+    for (const auto& [buffer, group] : groups)
+        group.model->drawInstancedRanges(modelBindings_, viewProjection, buffer, group.ranges);
     glEnable(GL_CULL_FACE);
 }
 
@@ -2191,6 +2195,7 @@ void Renderer::regenerateTerrain(std::uint32_t seed,
                                  TerrainMode mode,
                                  std::uint32_t repairLevel) {
     clearParticles();
+    vegetationCache_.clear();
     terrainSeed_ = seed;
     activeTerrainChunksPerSide_ =
         std::clamp(chunksPerSide, 10U, static_cast<std::uint32_t>(Terrain::chunksPerSide));
@@ -2211,6 +2216,7 @@ void Renderer::stageGeneratedTerrain(const Terrain& terrain,
                                      std::uint32_t chunksPerSide,
                                      const std::vector<TerrainFoundation>& foundations) {
     clearParticles();
+    vegetationCache_.clear();
     terrainSeed_ = seed;
     activeTerrainChunksPerSide_ =
         std::clamp(chunksPerSide, 10U, static_cast<std::uint32_t>(Terrain::chunksPerSide));
@@ -2257,11 +2263,19 @@ void Renderer::setTerrainFoundations(const std::vector<TerrainFoundation>& found
     terrainFoundations_ = foundations;
     terrain_.rebuildFoundations(terrainFoundations_);
     syncFoundationMeshes();
-    for (const auto chunk : terrain_.dirtyChunks())
+    for (const auto chunk : terrain_.dirtyChunks()) {
+        const float chunkSize = Terrain::chunkCellCount * Terrain::spacing;
+        const glm::vec2 minimum =
+            glm::vec2{chunk.first, chunk.second} * chunkSize - terrain_.worldExtent() * 0.5F;
+        // Include neighboring samples used by terrain-aligned decoration.
+        const glm::vec2 margin{Terrain::spacing * 2.0F};
+        vegetationCache_.invalidateTerrainRegion(minimum - margin,
+                                                 minimum + glm::vec2{chunkSize} + margin);
         if (std::find(pendingTerrainChunkUploads_.begin(),
                       pendingTerrainChunkUploads_.end(),
                       chunk) == pendingTerrainChunkUploads_.end())
             pendingTerrainChunkUploads_.push_back(chunk);
+    }
     terrain_.clearDirtyChunks();
 }
 

@@ -639,17 +639,16 @@ VegetationField generateVegetation(const World& world,
                                    WorldGenerationProgress* progress) {
     if (progress) progress->report(WorldGenerationPhase::decoration, 0.0F);
     const MapArea map{mapChunksPerSide};
-    VegetationField result;
+    std::vector<VegetationChunk> chunks;
     const float chunkSize = static_cast<float>(Terrain::chunkCellCount) * Terrain::spacing;
     const float origin = -map.halfExtent();
-    result.chunks().reserve(mapChunksPerSide * mapChunksPerSide);
+    chunks.reserve(mapChunksPerSide * mapChunksPerSide);
     for (std::uint32_t z = 0; z < mapChunksPerSide; ++z)
         for (std::uint32_t x = 0; x < mapChunksPerSide; ++x)
-            result.chunks().push_back({{static_cast<int>(x), static_cast<int>(z)},
-                                       {origin + (x + 0.5F) * chunkSize,
-                                        origin + (z + 0.5F) * chunkSize},
-                                       chunkSize * 0.72F,
-                                       {}});
+            chunks.push_back({{static_cast<int>(x), static_cast<int>(z)},
+                              {origin + (x + 0.5F) * chunkSize, origin + (z + 0.5F) * chunkSize},
+                              chunkSize * 0.72F,
+                              {}});
 
     VegetationSpacingGrid spacingGrid;
     const VegetationObstacleGrid obstacleGrid{world, definitions};
@@ -685,7 +684,7 @@ VegetationField generateVegetation(const World& world,
             (isPlantFoliage ? definitions.matchRules().foliageDensityMultiplier : 1.0F);
         const std::uint32_t densitySeed =
             resourceStreamSeed(terrainSeed, settings.stream + ".density");
-        for (VegetationChunk& chunk : result.chunks()) {
+        for (VegetationChunk& chunk : chunks) {
             const std::string stream = settings.stream + "." +
                 std::to_string(chunk.coordinate.x) + "." + std::to_string(chunk.coordinate.y);
             DeterministicRandom random(terrainSeed, stream);
@@ -765,6 +764,6 @@ VegetationField generateVegetation(const World& world,
         }
     }
     if (progress) progress->report(WorldGenerationPhase::decoration, 1.0F);
-    return result;
+    return VegetationField{std::move(chunks)};
 }
 } // namespace strategy
