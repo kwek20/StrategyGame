@@ -703,7 +703,11 @@ void Renderer::beginFrame(int width, int height) {
             uploadTerrainChunk(chunkX, chunkZ);
     }
     glViewport(0, 0, width, height);
-    glClearColor(0.42F, 0.66F, 0.88F, 1.0F);
+    const bool naturalTerrain = terrain_.mode() == TerrainMode::v2;
+    glClearColor(naturalTerrain ? 0.32F : 0.42F,
+                 naturalTerrain ? 0.36F : 0.66F,
+                 naturalTerrain ? 0.38F : 0.88F,
+                 1.0F);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 }
 
@@ -884,6 +888,7 @@ void Renderer::drawTerrain(const CameraView& camera,
 
     shaders_.use(program_);
     bindTerrainTextures();
+    glUniform1i(shaders_.uniform(program_, "boundaryPresentation"), 0);
     glUniform1i(shaders_.uniform(program_, "regionalStyle"),
                 terrain_.mode() == TerrainMode::v2 ? 1 : 0);
     glUniform1i(shaders_.uniform(program_, "grassTexture"), 0);
@@ -947,6 +952,11 @@ void Renderer::drawTerrain(const CameraView& camera,
                        static_cast<GLsizei>(chunk.indexCounts[lodLevel]),
                        GL_UNSIGNED_INT,
                        nullptr);
+    }
+    if (!terrainDebug && waterDebugMode == 0) {
+        glUniform1i(shaders_.uniform(program_, "boundaryPresentation"), 1);
+        terrainBackdrop_.draw();
+        glUniform1i(shaders_.uniform(program_, "boundaryPresentation"), 0);
     }
     for (const FoundationMesh& mesh : foundationMeshes_) {
         if (!foundationTexture_)
@@ -2206,6 +2216,7 @@ void Renderer::regenerateTerrain(std::uint32_t seed,
     syncFoundationMeshes();
     ensureTerrainChunks();
     terrain_.rebuildFoundations(terrainFoundations_);
+    terrainBackdrop_.rebuild(terrain_, activeWorldExtent());
     for (int z = 0; z < Terrain::chunksPerSide; ++z)
         for (int x = 0; x < Terrain::chunksPerSide; ++x)
             uploadTerrainChunk(x, z);
@@ -2227,6 +2238,7 @@ void Renderer::stageGeneratedTerrain(const Terrain& terrain,
     terrainFoundations_ = foundations;
     terrain_.rebuildFoundations(terrainFoundations_);
     syncFoundationMeshes();
+    terrainBackdrop_.rebuild(terrain_, activeWorldExtent());
     const MapArea map = activeMapArea();
     const int firstChunk = map.firstTerrainChunk();
     const int chunkEnd = map.terrainChunkEnd();

@@ -19,6 +19,7 @@ uniform bool useExploration;
 uniform bool useFoundationTexture;
 uniform bool terrainDebug;
 uniform bool regionalStyle;
+uniform bool boundaryPresentation;
 uniform int waterDebugMode;
 out vec4 outColor;
 
@@ -49,7 +50,7 @@ void main() {
     // texel and stretches a revealed edge cell into a long strip. Clip against the
     // authoritative match extent independently of fog/debug state. Debug modes may bypass
     // exploration, but they must not expose the unused maximum-size terrain outside the match.
-    if (any(greaterThan(abs(worldPosition.xz), vec2(explorationExtent * 0.5 + 0.001)))) {
+    if (!boundaryPresentation && any(greaterThan(abs(worldPosition.xz), vec2(explorationExtent * 0.5 + 0.001)))) {
         discard;
     }
 
@@ -80,12 +81,22 @@ void main() {
     if (weightTotal > 0.0001)
         weights /= weightTotal;
 
+    if (regionalStyle && !useFoundationTexture) {
+        // Exposed faces show stone rather than a vertically stretched grass carpet.
+        float exposed = 1.0 - smoothstep(0.15, 0.55, abs(normalize(vertexNormal).y));
+        weights = mix(weights, vec4(0.0, 0.12, 0.88, 0.0), exposed);
+        float soilPatch = smoothstep(0.53, 0.78, terrainNoise(worldPosition.xz * 0.42));
+        float soilExposure = soilPatch * weights.x * 0.22;
+        weights.x -= soilExposure;
+        weights.y += soilExposure;
+    }
+
     // Steep ramp faces also need a vertical projection: a top projection stretches
     // rock into thin grey streaks on cliffs. Walkable slopes keep the ground projection.
     vec2 surfacePosition = worldPosition.xz;
     if (!useFoundationTexture && abs(vertexNormal.y) < 0.5)
         surfacePosition = abs(vertexNormal.x) > abs(vertexNormal.z) ? worldPosition.zy : worldPosition.xy;
-    vec2 tiledUv = surfacePosition * 0.16;
+    vec2 tiledUv = surfacePosition * (regionalStyle ? 0.18 : 0.16);
     vec3 grass = tiledSample(grassTexture, tiledUv, variation);
     vec3 dirt = tiledSample(dirtTexture, tiledUv * 0.91, variation);
     vec3 rock = tiledSample(rockTexture, tiledUv * 0.76, variation);
@@ -110,15 +121,20 @@ void main() {
                                     textureStrength)
                               : vertexColor);
     if (regionalStyle && !useFoundationTexture && weightTotal > 0.0001) {
-        // Keep small texture detail, while exposing a readable stylized meadow palette.
-        float detail = mix(0.88, 1.12, clamp(dot(textured, vec3(0.299, 0.587, 0.114)) * 2.0, 0.0, 1.0));
-        vec3 meadow = mix(vec3(0.40, 0.55, 0.17), vec3(0.60, 0.69, 0.28), variation);
-        vec3 soil = vec3(0.57, 0.46, 0.28);
-        vec3 stone = vec3(0.49, 0.47, 0.40);
-        surface = (meadow * weights.x + soil * weights.y + stone * weights.z +
-                   vec3(0.62, 0.52, 0.32) * weights.w) * detail;
+        // Preserve the photographed material detail and soften the yellow-green cast.
+        vec3 meadow = mix(grass, vec3(dot(grass, vec3(0.299, 0.587, 0.114))), 0.20)
+                      * vec3(0.91, 1.04, 1.05);
+        vec3 soil = dirt * vec3(0.94, 0.97, 1.03);
+        surface = meadow * weights.x + soil * weights.y +
+                  rock * vec3(0.91, 0.94, 0.96) * weights.z + dryGround * weights.w;
+        float broadVariation = terrainNoise(worldPosition.xz * 0.16);
+        surface *= mix(0.88, 1.12, broadVariation) * mix(0.96, 1.04, variation);
     }
-    vec3 lit = surface * (regionalStyle ? (0.72 + diffuse * 0.40) : (0.46 + diffuse * 0.64));
+    vec3 lit = surface * (regionalStyle ? (0.48 + diffuse * 0.66) : (0.46 + diffuse * 0.64));
+    // Material textures decode from sRGB on sampling. The world framebuffer is
+    // display-encoded (UI and older passes share it), so encode V2 lighting here.
+    if (regionalStyle && !useFoundationTexture)
+        lit = pow(max(lit, vec3(0.0)), vec3(1.0 / 2.2));
     float fog = smoothstep(fogRange.x, fogRange.y, cameraDistance);
     vec3 atmospheric = mix(lit, vec3(0.32, 0.36, 0.38), fog * 0.72);
     float waterDepth = max(localWaterSurfaceHeight - worldPosition.y, 0.0);
@@ -134,5 +150,10 @@ void main() {
         : 1.0;
     vec3 hidden = vec3(0.008, 0.012, 0.018);
     vec3 remembered = atmospheric * 0.42;
-    outColor = vec4(explored < 0.12 ? hidden : (explored < 0.75 ? remembered : atmospheric), 1.0);
+    vec3 result = explored < 0.12 ? hidden : (explored < 0.75 ? remembered : atmospheric);
+    if (boundaryPresentation) {
+        float outside = max(max(abs(worldPosition.x), abs(worldPosition.z)) - explorationExtent * 0.5, 0.0);
+        result = mix(result, vec3(0.32, 0.36, 0.38), smoothstep(8.0, 72.0, outside));
+    }
+    outColor = vec4(result, 1.0);
 }

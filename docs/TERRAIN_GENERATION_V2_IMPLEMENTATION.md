@@ -183,3 +183,10 @@ Detailed logs remain in ignored `build/debug/audits/`: `v2-visual-validation.log
 `v2-visual-session-final.log`, `v2-visual-fields-final.log`, `v2-visual-last.log` and
 `v2-visual-build-verified.log`. Audit times are Debug test-matrix runtimes, not individual map-load
 benchmarks. The before/after engine capture gallery is the visual evidence for this refinement.
+
+## Natural-material presentation (2026-10-11)
+
+V2 now retains its material texture colours, uses subdued ground and water palettes,
+and renders a cached terrain backdrop beyond the active map into matching atmospheric
+haze. Terrain generation and playable boundaries are unchanged. See
+[presentation details, captures and verification](TERRAIN_V2_PRESENTATION.md).

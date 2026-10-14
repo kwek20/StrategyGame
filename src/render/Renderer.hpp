@@ -14,6 +14,7 @@
 #include "render/RenderGraph.hpp"
 #include "render/RmlUiManager.hpp"
 #include "render/ShaderManager.hpp"
+#include "render/TerrainBackdrop.hpp"
 #include "render/VegetationRenderCache.hpp"
 #include "terrain/Terrain.hpp"
 #include "world/Entity.hpp"
@@ -261,6 +262,7 @@ class Renderer final {
     IconAtlas iconAtlas_;
     FontRenderer font_;
     std::vector<TerrainChunk> terrainChunks_;
+    TerrainBackdrop terrainBackdrop_;
     std::vector<FoundationMesh> foundationMeshes_;
     std::vector<std::pair<int, int>> pendingTerrainChunkUploads_;
     std::vector<std::pair<int, int>> pendingInitialTerrainUploads_;

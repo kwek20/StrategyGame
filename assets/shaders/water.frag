@@ -71,9 +71,9 @@ void main() {
     vec3 shallowColor = vec3(0.075, 0.34, 0.46);
     vec3 deepColor = vec3(0.018, 0.105, 0.235);
     if (exactWaterSurface) {
-        shorelineColor = vec3(0.33, 0.69, 0.64);
-        shallowColor = vec3(0.13, 0.52, 0.61);
-        deepColor = vec3(0.055, 0.29, 0.43);
+        shorelineColor = vec3(0.30, 0.43, 0.36);
+        shallowColor = vec3(0.12, 0.33, 0.35);
+        deepColor = vec3(0.045, 0.17, 0.23);
         depthFactor = smoothstep(0.15, 5.0, visualDepth);
     }
     vec3 water = mix(shallowColor, deepColor, depthFactor);

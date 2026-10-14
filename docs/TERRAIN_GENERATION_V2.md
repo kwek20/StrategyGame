@@ -1,6 +1,6 @@
 # Terrain Generation V2 — Playable Regions, Water, Cliffs, Peaks and Resource Clusters
 
-Revised 2026-10-10. **The first replacement implementation is independently selectable beside V1.**
+Revised 2026-10-11. **The first replacement implementation is independently selectable beside V1.**
 The sections below remain the target specification, not a claim that every planned capability is
 finished. See [implementation and verification notes](TERRAIN_GENERATION_V2_IMPLEMENTATION.md)
 for the recipe scope, checks, limitations and remaining work.
@@ -34,6 +34,34 @@ look like repeated square platforms or a staircase covering every metre.
 A good map offers choices: a safer expansion with a longer route, a more exposed resource field,
 a hill overlooking an approach, and a route around a cliff. New height combat bonuses, resource
 multipliers and construction costs are outside this proposal.
+
+### Accepted seed variation and gameplay contract
+
+The seed changes the large-scale landscape composition within the selected layout's identity:
+landform arrangements, basin proportions, ridge directions, valleys, clearings and start locations.
+It must not merely move small features within the same rectangular route ring or outer peak ring.
+Central Water retains one principal central lake; other layouts retain their own defining features.
+
+Starts may occur anywhere suitable within the active map, not only at corners or opposite sectors.
+Respect the layout's supported separation and opening-space requirements without imposing a fixed
+corner template. Fixed starting resources mean fixed per-player Scrap/Oil allocations and nearby
+practical access, not fixed coordinates for starts or deposits.
+
+Starting-resource guarantees are the fairness requirement. Do not require equal construction area,
+travel times, route counts, defensibility, elevation or expansion opportunities between players.
+Every start must independently pass minimum usability checks. Seeded asymmetry beyond starting
+resources is intentional and can produce stronger or weaker strategic positions.
+
+There is no universal number of approaches or prescribed corridor width. Connected-land maps must
+not isolate starts or required destinations behind impassable terrain. Actual unit clearance remains
+a movement-validity requirement. Removable scenery may shape routes; future removal cannot excuse
+blocked essential access before that mechanic is implemented. Prefer natural bends, open movement
+spaces and clearings over compulsory zigzags, excessive detours or generated roads.
+
+Larger maps add landform groups and strategic spaces rather than uniformly enlarging hills, cliffs
+and gaps. Resource repairs retain final say; prefer local repairs and record substantial departures
+from the layout's visual targets. These decisions revise the target proposal, not the implemented
+V2 planner or its current validation tests.
 
 ## 2. What we take from Age of Empires
 
@@ -132,11 +160,13 @@ constraints, together with active feature types, resource exclusions and definit
 
 ### Layer A — regional landscape and strategic layout
 
-Select a layout recipe. Reserve approximate player sectors, opening envelopes, expansion areas and
-route corridors jointly. Add coastline, catchment, basin and crossing reservations only for active
-water features in the resolved recipe. Define the intended connectivity before exact player positions. Use irregular seeded
-regions rather than identical circular clearings or mirrored bases. Later features must respect
-these reservations.
+Select a layout recipe and resolve resource allocations first. Jointly plan candidate opening
+envelopes, sufficient eligible map-field capacity, natural landforms and their required connectivity.
+Choose start locations from suitable terrain across the map; player sectors are optional layout
+tools, not compulsory corner placements. Additional resource destinations are seeded, not paired
+player expansion reservations. Reserve their placement capacity without predetermining symmetrical
+field locations. Add coastline, catchment, basin and crossing reservations only for active water.
+Use irregular regions rather than identical circular clearings or mirrored bases.
 
 Generate a low-frequency natural landscape within that plan: broad lowlands, connected hills,
 valleys and ridge directions. Noise supplies irregular boundaries and local character. Feature masks
@@ -148,6 +178,34 @@ Dry recipes generate their ordinary plains, hills and valleys without hydrology-
 The source field remains the contour guide. Planning controls where relief develops; it does not
 replace regions with rectangular shelves. Retain source heights and masks for diagnostics and biome
 preferences.
+
+### Seeded landforms and terrain-aware connections
+
+Resolve stable named streams for layout composition, landforms, opening candidates and active water.
+Within layout-authored ranges, vary feature count, centre, direction, length, width, height, branching
+and curvature. Compose broad lowlands, hill groups, rocky shoulders and valleys before adding small
+boundary noise. A global rotation of an otherwise identical landscape is not sufficient variation.
+Keep cosmetic scatter independent of authoritative feature placement and resource budgets.
+
+Use reusable feature masks with local orientation, anisotropy and bounded bending rather than a
+fixed-angle mountain field plus equal-radius peaks in an outer ring. Preserve broad open ground;
+not every layout needs long ridges. Jointly evaluate feature placement and connected lowlands so
+route repair does not repeatedly erase the intended landscape. Find valid passages around features
+and through natural saddles, then locally ease terrain only where required access fails.
+
+Treat routes as connections through usable regions, not a painted or flattened network of path
+centre-lines. Do not force the current four-sided route ring or a minimum number of alternative
+approaches. Curves follow terrain opportunities; straight travel through open ground is also valid.
+Any route smoothing must remain inside its traversable region and preserve corner and unit-clearance
+checks. Reject zigzag repairs and unnecessarily long mandatory detours as quality problems, without
+introducing an unapproved universal distance cap.
+
+For Central Water, vary lake proportions, bay placement, shoreline irregularity and optional small
+islands while keeping one principal central basin and broad surrounding land. Resolve feasible water
+coverage together with opening and connectivity needs instead of sampling a range whose every value
+clamps to the same basin radius. Dry layouts omit all such water-driven decisions. Scale larger maps
+by adding feature groups, valleys and open spaces; use plausible per-feature sizes rather than
+multiplying every feature dimension by map extent.
 
 ### Layer B — coherent square elevations and explicit transitions
 
@@ -245,7 +303,7 @@ seed + selected layout (internal biome/features) + players + supported settings
 |---|---|---|---|
 | Plain/lowland | Connected level areas with irregular outlines | Bases, factories, movement and fighting | Dominant around openings and main routes |
 | Hill | Coherent elevation bands and broad ramps | Route choices and varied expansion terrain | Multiple approachable sides, outside opening cores |
-| Cliff | Deliberate escarpment along part of a ridge | Meaningful barrier and flank | Limited extent, with a route around or planned pass |
+| Cliff/ridge | Connected rocky spine, shoulders and deliberate escarpments | Landmark, barrier and flank | May be substantial; preserve required access around ends or through saddles/passes |
 | Peak/outcrop | Compact stepped rocky mass with shoulders | Landmark and local obstruction | Sparse; clear of starts and essential approaches |
 | Valley/pass | Connected lower ground between landforms | Alternative route or expansion access | Real unit and traffic clearance |
 | Resource region | Irregular clearing or sheltered pocket | Recognizable economic destination | Budget, approach space and access determine eligibility |
@@ -330,28 +388,57 @@ narrow landings, chunk seams and map-edge closures. Check diagonal movement atte
 footprints across junctions against the authoritative surface. Inspect pan/orbit/zoom clips for cracks,
 sky leaks, grey flashes and shading seams. Replan failed geometry and repeat the affected checks.
 
-### Layout-specific route requirements
+### Connectivity without prescribed route counts
 
-Each layout declares its required opening route count and minimum clearance. Two distinct ground
-approaches are the default for ordinary connected-land layouts, including across separating rivers
-where applicable. A narrow-pass layout may explicitly require one approach, applied fairly to all
-players. Island layouts declare local exit requirements and separately validate routes for the
-movement domains intended to connect islands.
+Connected-land layouts require ground access between starts and the destinations required by their
+resource/progression contract. There is no default of two approaches, no fixed number of generated
+paths and no universal strategic corridor width. Local impassable cliffs, water and peaks are valid
+provided they do not sever required connectivity. Broad fields can provide access without any
+identifiable corridor at all; do not carve lanes merely to make them countable.
 
-Count corridors of real width and different routes through the strategic graph, not adjacent cells
-in one bottleneck. Width derives from relevant unit footprints and formation clearance. Narrow-pass
-recipes must declare and fairly distribute that restriction. Aircraft retain their existing domains;
-their access cannot excuse stranded ground workers.
+Validate clearance using the actual relevant unit footprints and movement domains, including ramp
+entry, exit, turns and every crossed edge. A visually open gap narrower than the unit is not a valid
+connection. Record bottlenecks and travel costs for quality review rather than enforcing equal
+approach widths or counts between players. Island layouts validate local access and separately
+require supported transport for their declared inter-island progression. Aircraft cannot excuse
+stranded ground workers.
+
+Scenery clearing can open additional connections when its removal mechanics are supported and
+reachable. Distinguish immediate access, access requiring implemented clearing and access requiring
+future capabilities. Do not count the latter toward essential access in the current playable recipe.
 
 ## 7. Openings, buildings and foundations
 
-Reserve a usable opening envelope during generation, then choose the exact headquarters inside it
-after provisional terrain and water classification. Prefer naturally level dry ground; starting on cliff foundations is not the default repair
-for an unsuitable map.
+Reserve a usable opening envelope during generation, then choose the exact command hub location
+inside it after provisional terrain and water classification. Starts are not restricted to corners.
+Prefer naturally level dry ground; starting on cliff foundations is not the default repair for an
+unsuitable map. Enforce the same minimum usability contract independently for each player, without
+requiring equal-sized envelopes or equally defensible positions.
 
-Validate a concrete early build plan: the 21-by-21 headquarters, worker exits, representative processing
-and charging buildings, approach clearance and future expansion space. Place test footprints jointly
-without overlap or blocked access, using actual definitions rather than a count of flat points.
+Validate this representative early build plan jointly, using current building definitions:
+
+| Building | Current footprint used by the proposed opening check |
+|---|---|
+| Command hub | 20 by 20 units; half-extents 10 by 10 |
+| Alloy processor | 10 by 8 units |
+| Fuel processor | 10 by 8 units |
+| Charging pad | Circle, diameter 7 units |
+| Basic generator | Circle, diameter 9 units |
+| Storage silo | Circle, diameter 8 units |
+| Drone factory | 14 by 11 units |
+
+These are test placements, not automatically spawned buildings or a mandated player build order.
+They must coexist without overlap, retain usable worker exits, spawn clearance and reachable
+interaction space, and permit a feasible power arrangement using actual device definitions.
+Starting resources must leave usable construction and gathering/delivery space. Keep room for
+further development without guaranteeing matching expansion opportunities between players.
+
+Begin tuning with an irregular opening neighbourhood about 55-65 units across. This is a proposed
+visual/search scale, not a fixed minimum diameter, mandatory radius or a claim about current JSON.
+Acceptance comes from joint legal placements and access checks, not the envelope's bounding box.
+Several connected buildable patches, gentle slopes and small outcrops may compose the opening;
+do not flatten the whole neighbourhood into one large circular or rectangular platform. Refine the
+scale through opening playtests. All dimensions above remain definition-backed when buildings change.
 
 ### Definition-backed placement types
 
@@ -419,8 +506,9 @@ An overhanging floor does not create a navigable bridge unless an explicit build
 it. Report tile eligibility, support ratio, foundation depth and interaction access as distinct
 placement failure reasons.
 
-Compare early building capacity across players while varying outlines, scenery and approach
-directions. Generation-time shaping is allowed; construction-time terraforming is not.
+Validate the minimum early building plan independently at every start while varying outlines,
+scenery and approach directions. Record extra capacity without requiring equal capacity across
+players. Generation-time shaping is allowed; construction-time terraforming is not.
 
 ## 8. Resource distribution and cluster flair
 
@@ -441,7 +529,8 @@ an acceptance constraint for this terrain proposal:
   Authoritative collision and gathering clearance still require validation.
 
 - Nearby starting access measured by real gatherer travel cost, without a mandatory maximum
-  Euclidean radius. Retain intended-player opening access and paired access ratio/tolerance checks.
+  Euclidean radius. Guarantee intended-player practical access; do not require matched travel
+  times or paired access ratios. Assess flying gatherer delivery and ground-worker movement separately.
 
 ### Fixed openings and abundance-controlled map fields
 
@@ -459,28 +548,32 @@ fields, as the current implementation does. Starting fields count in final inven
 and local concentration checks, but do not consume the abundance-controlled map-field allocation.
 Once field inventories are defined, the final budget per family is fixed opening inventory plus
 additional field count times its configured field inventory. Record these two contributions separately.
+Fixed allocations do not fix field coordinates; seeded placement chooses legal sites.
 
 Define the density basis, abundance multipliers and deterministic rounding per layout/resource
 family. Resolve counts before shaping terrain; candidate availability must not determine supply.
-Use equal player batches where the layout promises paired expansion allocations, and separately
-account for shared contested fields. Explicit resource exclusions determine eligible families and
-sites. Additional counts may be zero when the declared settings resolve that way; there is no
+Additional fields are seeded across eligible map regions, not allocated as equal or paired player
+expansion batches. Account for starting fields separately from the remaining map allocation.
+Explicit resource exclusions determine eligible families and sites. Additional counts may be zero when the declared settings resolve that way; there is no
 implicit minimum of two economic expansions per player. Validate any progression-critical supply
 in the authored layout contract rather than adding fields during repair.
 
-Reserve accessible, buildable expansion destinations for the allocated fields and distribute them
-fairly according to the layout's contract. Do not count the same contested field as separate
-guaranteed allocations for multiple players. Extra buildable destinations may exist without
-resources. Every resolved field must be placed, including at low abundance; repair may reshape
+Reserve enough eligible placement capacity for the allocated fields, then choose additional field
+locations through seeded terrain-aware placement. Their travel distance, exposure and ownership
+opportunities may differ between players; expansion placement is random rather than matched.
+Validate field access and usable infrastructure space without treating any shared field as a second
+starting guarantee. Extra buildable destinations may exist without resources. Every resolved field must be placed, including at low abundance; repair may reshape
 terrain or move fields but cannot change their resolved counts or inventories.
 
 This changes the current field-count semantics and may increase non-starting supply with unchanged
 density values. Recalibrate density and abundance mappings explicitly against current map budgets
 and playtests before adopting them; do not silently claim economy equivalence.
 
-Equal bad routes are not a good opening. Rank candidates by short practical travel and route
-simplicity, report long-route outliers and repair poor opening access after bounded placement attempts. Treat new quality scores
-as preferences until supported by playtest timing; do not silently introduce a fixed distance limit.
+Starting quantities alone do not make an inaccessible opening usable. Rank candidates by practical
+starting-resource travel and route simplicity, report long-route outliers and repair unusable
+opening access after bounded placement attempts. Do not enforce cross-player travel equality.
+Treat new quality scores as preferences until supported by playtest timing; do not silently introduce
+a fixed distance limit.
 Use the movement domains and costs of the actual relevant units. Check ground-worker access
 independently of flying gatherers.
 
@@ -580,8 +673,10 @@ Biomes influence placement and appearance, never remove guaranteed resource fami
 
 Place nodes against provisional terrain and hydrology, on accessible dry plains, clearings or shelves.
 Finalize these surfaces only after the required-resource placement and repair procedure succeeds.
-Keep opening supplies and any allocated early expansion fields in the player's reachable land
-component when water transport is unavailable. Flying-gatherer access alone cannot validate a
+Keep opening supplies in their intended player's reachable land component. Place random map
+fields where the recipe's available movement/transport can reach them; do not strand required
+fields on unoccupied islands or turn this access rule into paired expansion guarantees.
+Flying-gatherer access alone cannot validate a
 ground economy or military route. Offshore resources, fishing and new water economies are separate
 features and do not replace guaranteed Scrap/Oil. Validate gathering,
 landing where relevant, and delivery approaches rather than node-center slope alone. Cluster scenery
@@ -661,8 +756,9 @@ units, when available, need minimum depth, channel width, valid junctions and us
 Cliff bevels cannot connect water bodies at different levels into a fake navigable passage.
 
 Connected-land recipes preserve planned ground routes around lakes/coasts or through implemented
-crossings. Central-water needs comparable routes around its basin, rather than a blocked start on
-one side. Archipelago deliberately has separate land components: every starting island needs its
+crossings. Central Water preserves connected surrounding land and must not strand a start behind
+its basin; there is no paired-route or equal-width requirement. Archipelago deliberately has separate
+land components: every starting island needs its
 complete opening economy and viable local infrastructure. Allocate accessible early expansion
 fields from the abundance-controlled map allocation according to the layout's declared progression
 contract; do not impose an additional universal expansion quota. Cross-island progression requires supported movement/transport and a
@@ -699,7 +795,7 @@ internal profiles and reusable features remain authoring tools.
 | Area | Shared capability or invariant | Authored per-layout choice |
 |---|---|---|
 | Usable terrain | Validate actual openings, allocated resource access and supported movement | Plains/hills/cliff proportions, opening envelopes and strategic terrain pattern |
-| Routes | Reserve geometric clearance and validate declared connectivity; reservations do not paint roads | Route count, width, bottlenecks and land/island connectivity |
+| Routes | Validate required connectivity and actual unit clearance; no default approach count or prescribed corridor width; no roads | Natural passage arrangement, bottlenecks and supported land/island topology |
 | Water composition | Resolve active water against the final bed; dry recipes skip hydrology | Forbidden/optional/required water, feature types, count, shape, coverage and connectivity |
 | Shorelines | Reusable shallow-bank, beach, rocky-bank and cliff-shore profiles with consistent wet geometry | Profile mixture, location, transition width and depth character |
 | Terrain appearance | Cells determine geometry; equal-height surfaces do not require visible grid lines | Materials, climate, vegetation and feature appearance through internal profiles |
@@ -731,13 +827,29 @@ they are not engine captures or verification of cell geometry, resource counts o
 | Rolling hills / upland | Coherent rising bands, valleys and rocky shoulders | Dry or optional valley rivers, as explicitly configured |
 | Continental / coastal | Large land regions, headlands and substantial coasts | Ocean required for this variant; inland features separately controlled |
 | Central hill / dry | Accessible central elevation with surrounding expansions | Forbidden unless an explicit wet variant is selected |
-| Central water / lake region | Central basin with comparable land routes around it | Central lake required; no automatic ocean |
+| Central water / lake region | Principal central basin with connected surrounding land | Central lake required; no automatic ocean |
 | Archipelago / island profile | Several viable islands and constrained rocky landmarks | Ocean required; island progression rules apply |
 
 These combinations describe internal authoring choices; players select the resulting layout.
 Layouts own differences in strategic terrain and topology. Biome profiles mainly distinguish
 materials, vegetation and resource-region appearance, with permitted relief and feature variation
 constrained by the layout. Developers can reuse profiles without exposing a separate biome selector.
+
+### Ridge and landform references
+
+Use the [Central Water implementation concept](pictures/terrain-v2-layouts/central-water-implementation-no-roads.png)
+for stepped grass shoulders, exposed cliff sections, compact peaks and broad clearings. Use the
+[main-menu terrain reference](../assets/textures/ui/terrain_generation_concept.png) for branching
+mountain spines, uneven peaks, rocky foothills, saddles and expansive valleys. These images guide
+feature structure and visual composition, not literal heights, cell sizes or resource placement.
+
+Ridges may be substantial and connected where the layout permits them; do not impose a universal
+short-escarpment limit or isolated-peak ring. Combine rocky spines with lower shoulders and valley
+space. Vary ridge height, length, branching and location by seed while preserving required movement
+around their ends or through valid saddles/passes. Retain fine coherent cells and readable ramps;
+large-scale feature variation must not restore oversized block platforms or erase ordinary lowlands.
+Keep each layout's own balance of open land, hills and rocky masses. The natural palette direction
+can evolve without copying the illustrated grid lines or turning every height change into dark rock.
 
 ### Central Water — example recipe direction
 
@@ -752,14 +864,16 @@ proof of placement legality or an authoritative resource distribution.
 | Lake coverage | Begin near one fifth of total map area as a soft visual target; usable openings, allocated resources and access govern the final result |
 | Lake shape | Irregular connected outline with bays; optional small islands, without required fields stranded on inaccessible islands |
 | Terrain character | Broad connected lowlands around the lake; coherent outer hills, limited cliff sections and sparse compact peaks |
-| Opening routes | Ordinary two-approach default, with comparable routes around the lake and layout-authored clearance |
+| Opening access | Connected surrounding land with valid ground access; no fixed number of approaches or matched route widths |
 | Shore mixture | Predominantly low stepped banks and partially wet cells, with selected rocky sections; neither a uniform cliff ring nor an identical beach width everywhere |
 | Scenery pattern | Grouped outer vegetation, hill-shoulder groups and selected shore pockets; clearer openings, resource approaches and movement corridors |
 | Resource appearance | Irregular salvage clearings with large wreck silhouettes and smaller surrounding piles; oil pockets on eligible accessible ground |
 | Shore building opportunities | Supported where eligible geometry occurs; do not automatically spawn the illustrated shore building or require such sites unless declared by the layout contract |
 
-Validate comparable usable opening space and approaches between player sectors, rather than literal
-symmetry or a perfectly circular land ring. Terrain/resource repair can change shape and coverage
+Validate every start's usable construction envelope and fixed nearby resources independently.
+Starts may occupy suitable positions beyond the illustrated corners. Do not require comparable
+opening area, approaches, elevation or expansion opportunities, literal symmetry or a circular ring.
+Terrain/resource repair can change shape and coverage
 under section 8's priority rules; record deviations from the example targets. Resource inventories,
 harvest-node composition and final concentration tuning remain deferred.
 
@@ -824,7 +938,8 @@ replacement. Never regenerate old buildings onto different terrain.
    loading times and moving-camera clips.
 2. **Recipe resolution and regional planning:** implement compatibility and water policy, resolve
    resource budgets, and validate constructive fallback capacity for supported setups. Reserve
-   openings, expansions, field capacity and routes; add water reservations only when active.
+   candidate openings anywhere suitable, map-field capacity and required connectivity. Jointly
+   compose seeded ridges, valleys, lowlands and passages; add water reservations only when active.
    Shape Layer A through the resolved biome profile and layout constraints. Keep shared capabilities
    separate from layout tuning as specified in section 10; route reservations must not generate roads.
 3. **Coherent cells:** implement connected elevation bands and isolated-cell suppression; verify
@@ -832,7 +947,7 @@ replacement. Never regenerate old buildings onto different terrain.
 4. **Conditional hydrology and transitions:** validate the independent dry path first. For wet recipes,
    resolve permitted beds/banks and water surfaces against Layer B. Implement broad ramps, cliffs,
    wet/dry edges and supported crossings. Verify applicable depth, flow and per-domain clearance.
-5. **Openings:** validate dry early building layouts, recipe-specific exits, island self-sufficiency
+5. **Openings:** validate the proposed joint opening build plan at each start, usable exits, island self-sufficiency
    and strict immutable foundations. Validate placement types, clipped support area, foundation
    depth and perimeter access; exclude layout/settings combinations requiring unavailable transport before generation.
 6. **Required-resource repair and clusters:** implement bounded placement attempts, transactional
@@ -850,17 +965,17 @@ A failed stage returns to implementation. Visual approval cannot excuse unusable
 
 | Area | Required evidence |
 |---|---|
-| Appearance | Coherent openings and hills; memorable cliffs/peaks; no ledge carpets or repeated square macro shelves |
+| Appearance | Coherent openings and hills; ridge/valley structure informed by both references; no ledge carpets, forced zigzag lanes or repeated square macro shelves |
 | Movement | Exact mesh/query agreement, no corner shortcuts, real clearance, valid wet/dry transitions and recipe-specific land/water routes |
 | Recipe identity | Setup exposes layouts only; internal profiles obey layout constraints; numeric ranges intersect deterministically; incompatible definitions/settings are excluded before generation; zero-water outcomes use the dry path |
-| Layout variation | Shared validation holds across dry plains, uplands, central lakes, coasts and supported island recipes; Central Water's coverage, shore/scenery patterns and route topology are not imposed globally |
+| Layout variation | Multiple seeds produce distinct large-scale landform arrangements within each layout identity; starts are not restricted to corners; larger maps add spaces/features rather than uniformly enlarging them; Central Water patterns are not imposed globally |
 | Dry independence | No water-driven shaping or reservations; empty wet fields; changing inactive hydrology settings leaves authoritative dry generation unchanged |
 | Hydrology | When active: connected coverage, non-increasing river levels, consistent confluences/outlets, coherent lake/ocean levels, no flooded openings |
-| Water layouts | Adequate absolute dry opening area, comparable crossing access, island opening/expansion budgets and supported cross-island progression |
+| Water layouts | Adequate dry opening space at each start, valid required crossings, accessible allocated fields and supported cross-island progression; no cross-player route equality |
 | Buildings | Joint early building layouts; Land/Water/Shore eligibility; actual clipped connected support; combined overhang thresholds; depth limits; reachable perimeter with foundation collision |
-| Resources | Fixed openings, abundance-controlled additional field counts, site eligibility, gathering/delivery access and intended-player opening access; totals/node tuning deferred |
+| Resources | Fixed opening allocations, abundance-controlled additional field counts, site eligibility, gathering/delivery access and intended-player opening access; totals/node tuning deferred |
 | Economy | More small nodes introduce no unreviewed opening throughput advantage; compare actual gathering and delivery |
-| Fairness | Comparable building capacity, travel costs, exits and expansion opportunities; visuals need not mirror |
+| Starting guarantee | Fixed per-player opening Scrap/Oil inventories and nearby practical availability; independently usable starts; expansions and other strategic advantages need not be equal |
 | Rendering | Reviewed pan/orbit/zoom clips at shores, confluences, estuaries, ramps, cliffs, peaks, foundations and every map edge; no gaps, grey flashes, water seams or disappearing chunks |
 | Reliability | Every seed succeeds for supported setups; deterministic repairs/fallback, clean cancellation, no partial world, immutable post-generation terrain, saves and V1/V2 restoration |
 | Cost | Compare generation time, bounded attempts, repair area, fallback frequency, triangle/node counts and frame times with the baseline |
@@ -871,8 +986,9 @@ supports them, plus developer-authored layouts using different internal biome pr
 range intersections and incompatible water policies as definition/setup errors. Test dry layouts
 with river-preferring profiles, required-water layouts, and steep profiles requiring resource repair.
 Assert that ocean Uranium exclusions remain enforced while required inventories relocate to eligible
-land; changing cosmetic variation must not alter budgets or strategic topology. Verify parameter
-provenance and repeatable resolved recipes for every case.
+land; changing cosmetic variation must not alter budgets or strategic topology. Authoritative landform
+seed variation may change geography and start/expansion locations within the layout contract.
+Verify parameter provenance and repeatable resolved recipes for every case.
 Compare forbidden-water, optional zero-water and direct dry-generation cases; perturb inactive
 hydrology settings and assert identical authoritative dry results. Include ocean coasts, inland
 lakes, rivers, confluences, estuaries, cliffs at shores,
@@ -885,10 +1001,12 @@ wet tiles, boundary-only contact, disconnected support patches, water clearance,
 depth just below/at/above its configured maximum. Include narrow perimeter access, valid access
 from different sides, floating versus bed-supported water structures where implemented, and
 foundations obstructing previously usable interaction space or routes. Test
-layout-specific single-route and multiple-route openings, and scenery clearing when implemented.
+openings in varied non-corner locations, open fields, single passages and multiple passages without
+prescribed counts. Reject blocked required connectivity, including undersized gaps, and verify
+scenery clearing when implemented. Future removal must not mask current essential-access failures.
 Force ordinary placement exhaustion, failed local repairs and full constructive fallback on both
-dry and wet recipes. Assert fixed openings, resolved field counts, the original seed, valid existing
-fields/openings, deterministic final checksums and bounded execution. Test capacity-envelope limits
+dry and wet recipes. Assert fixed opening allocations (not coordinates), resolved field counts,
+the original seed, valid existing fields/openings, deterministic final checksums and bounded execution. Test capacity-envelope limits
 and reject unsupported configurations before generating terrain. Finite seed sweeps supplement,
 but cannot replace, a feasible constructive fallback for the every-seed guarantee.
 
@@ -900,5 +1018,15 @@ settings, monotonic additional field counts with documented rounding, and
 successful placement when additional counts are zero. Historical prototype checks do not validate
 this proposal.
 
-The first priority is **usable connected land with a few memorable features**. Increase terrain
+Review a recorded multi-seed gallery per layout at matching scales. Compare ridge arrangements,
+lake proportions/bays, lowland shapes, clearings and start locations, not merely different terrain
+fingerprints or rotated copies. Record building capacity, ground and drone travel, bottlenecks,
+resource exposure and useful elevation as quality diagnostics; only starting-resource guarantees
+and independent usability are enforced, not equal strategic positions. Include actual movement,
+construction, gathering/delivery and opening playtests alongside visual pan/orbit review. Record
+what is missing, improvable and changed; failed mandatory checks return to repair and affected
+verification. Run the complete layout/size/settings matrix and repeat global review after failures
+are corrected. Numerical connectivity and attractive screenshots alone are insufficient.
+
+The first priority is **usable connected land with memorable features**. Increase terrain
 density and resource spectacle only while these checks keep passing.

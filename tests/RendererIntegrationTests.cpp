@@ -157,6 +157,48 @@ bool checkVegetationCacheBuffers() {
     return noGlErrors("vegetation cache buffers") && valid;
 }
 
+bool checkMapBoundary(strategy::Renderer& renderer, const strategy::Terrain& original) {
+    const strategy::Terrain terrain{
+        7, strategy::TerrainLayoutId{"central_water"}, strategy::TerrainMode::v2, 10};
+    renderer.stageGeneratedTerrain(terrain, 7, 10);
+    strategy::CameraView camera;
+    camera.projection = glm::ortho(-0.5F, 0.5F, -0.5F, 0.5F, 0.1F, 200.0F);
+    const auto pixel = [&](glm::vec2 position, const strategy::Player* player) {
+        camera.position = {position.x, 100, position.y};
+        camera.target = {position.x, 0, position.y};
+        camera.view = glm::lookAt(camera.position, camera.target, glm::vec3{0, 0, -1});
+        renderer.beginProfileFrame();
+        renderer.beginFrame(640, 360);
+        renderer.drawTerrain(camera, player);
+        renderer.endFrame();
+        std::array<unsigned char, 4> result{};
+        glReadPixels(320, 180, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, result.data());
+        return result;
+    };
+    const strategy::Player hidden;
+    bool valid = true;
+    // Beyond each playable edge, land must continue, yet respect exploration visibility.
+    const float outsideEdge = strategy::MapArea{10}.extent() * 0.5F + 2.0F;
+    for (glm::vec2 position : {glm::vec2{-outsideEdge, 0},
+                               glm::vec2{outsideEdge, 0},
+                               glm::vec2{0, -outsideEdge},
+                               glm::vec2{0, outsideEdge}}) {
+        const auto revealed = pixel(position, nullptr);
+        const auto unexplored = pixel(position, &hidden);
+        const bool hasLand = std::abs(static_cast<int>(revealed[0]) - 82) > 12 ||
+                             std::abs(static_cast<int>(revealed[1]) - 92) > 12 ||
+                             std::abs(static_cast<int>(revealed[2]) - 97) > 12;
+        valid &= hasLand && unexplored[0] < 8 && unexplored[1] < 8 && unexplored[2] < 8;
+    }
+    // A mode switch must discard the V2 backdrop instead of retaining stale outside land.
+    renderer.stageGeneratedTerrain(original, 12345, 10);
+    const auto outside = pixel({outsideEdge, 0}, nullptr);
+    valid &= outside[2] > 200 && outside[0] < 120;
+    if (!valid)
+        std::cerr << "Map backdrop continuity, fog or mode-switch regression\n";
+    return noGlErrors("map boundary") && valid;
+}
+
 bool captureForm(strategy::Renderer& renderer, const char* name) {
     const char* directory = SDL_getenv("STRATEGY_FORM_SCREENSHOTS");
     if (!directory)
@@ -288,6 +330,7 @@ out vec4 color;void main(){color=vec4(1);})";
                                 "strategy-renderer-test.log"};
         strategy::Renderer renderer{&logger};
         const strategy::Terrain generatedTerrain{12345};
+        valid = checkMapBoundary(renderer, generatedTerrain) && valid;
         renderer.stageGeneratedTerrain(generatedTerrain, 12345, 10);
         valid =
             !renderer.terrainUploadFinished() && renderer.terrainUploadProgress() == 0.0F && valid;
