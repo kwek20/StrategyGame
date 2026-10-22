@@ -116,6 +116,45 @@
       "components": [],
       "tags": ["decoration", "vegetation", "stone-detail", "clear-on-build"],
       "stats": {}
+    },
+    "resource_rubble_metal": {
+      "presentation": "resource_rubble_metal",
+      "nameKey": "entity.resource_rubble",
+      "collisionRadius": 0,
+      "components": [],
+      "tags": [
+        "decoration",
+        "vegetation",
+        "resource-fringe",
+        "clear-on-build"
+      ],
+      "stats": {}
+    },
+    "resource_rubble_pipe": {
+      "presentation": "resource_rubble_pipe",
+      "nameKey": "entity.resource_rubble",
+      "collisionRadius": 0,
+      "components": [],
+      "tags": [
+        "decoration",
+        "vegetation",
+        "resource-fringe",
+        "clear-on-build"
+      ],
+      "stats": {}
+    },
+    "resource_rubble_stone": {
+      "presentation": "resource_rubble_stone",
+      "nameKey": "entity.resource_rubble",
+      "collisionRadius": 0,
+      "components": [],
+      "tags": [
+        "decoration",
+        "vegetation",
+        "resource-fringe",
+        "clear-on-build"
+      ],
+      "stats": {}
     }
   }
 }

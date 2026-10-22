@@ -4,6 +4,8 @@
 
 #include <algorithm>
 #include <atomic>
+#include <stdexcept>
+#include <unordered_set>
 #include <utility>
 
 namespace strategy {
@@ -21,10 +23,22 @@ VegetationField::VegetationField(std::vector<VegetationChunk> chunks)
     : chunks_(std::move(chunks))
     , identity_(nextIdentity()) {
     VegetationInstanceId next = 1;
+    std::unordered_set<VegetationInstanceId> identities;
+    identities.reserve(instanceCount());
+    for (const auto& chunk : chunks_)
+        for (const auto& instance : chunk.instances)
+            if (instance.id && !identities.insert(instance.id).second)
+                throw std::invalid_argument("Duplicate presentation instance identity");
     for (auto& chunk : chunks_) {
         chunk.revision = 0;
-        for (auto& instance : chunk.instances)
-            instance.id = next++;
+        for (auto& instance : chunk.instances) {
+            if (instance.id)
+                continue;
+            while (identities.contains(next))
+                ++next;
+            instance.id = next;
+            identities.insert(next++);
+        }
     }
 }
 

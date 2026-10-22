@@ -337,6 +337,407 @@
       "grounding": { "groundOffset": 0.0, "alignToTerrain": false, "maximumTilt": 0.0, "foundationRadius": 2.5, "maximumFoundationSlope": 10.0 },
       "selection": { "radius": 3.0, "height": 10.0 },
       "animations": {}
+    },
+    "scrap_cluster_small": {
+      "icon": "resource_scrap",
+      "model": "gen/resources/clusters/scrap_small",
+      "scale": 1.0,
+      "grounding": {
+        "groundOffset": -0.04,
+        "alignToTerrain": true,
+        "maximumTilt": 10.0,
+        "foundationRadius": 0.0
+      },
+      "selection": {
+        "radius": 2.8,
+        "height": 3.0
+      },
+      "animations": {}
+    },
+    "scrap_cluster_medium": {
+      "icon": "resource_scrap",
+      "model": "gen/resources/clusters/scrap_medium",
+      "scale": 1.0,
+      "grounding": {
+        "groundOffset": -0.04,
+        "alignToTerrain": true,
+        "maximumTilt": 10.0,
+        "foundationRadius": 0.0
+      },
+      "selection": {
+        "radius": 3.8,
+        "height": 3.0
+      },
+      "animations": {}
+    },
+    "scrap_cluster_large": {
+      "icon": "resource_scrap",
+      "model": "gen/resources/clusters/scrap_large",
+      "scale": 1.0,
+      "grounding": {
+        "groundOffset": -0.04,
+        "alignToTerrain": true,
+        "maximumTilt": 10.0,
+        "foundationRadius": 0.0
+      },
+      "selection": {
+        "radius": 5.0,
+        "height": 3.0
+      },
+      "animations": {}
+    },
+    "oil_cluster_small": {
+      "icon": "resource_oil",
+      "model": "gen/resources/clusters/oil_small",
+      "scale": 1.0,
+      "grounding": {
+        "groundOffset": -0.04,
+        "alignToTerrain": true,
+        "maximumTilt": 10.0,
+        "foundationRadius": 0.0
+      },
+      "selection": {
+        "radius": 2.8,
+        "height": 5.0
+      },
+      "animations": {}
+    },
+    "oil_cluster_medium": {
+      "icon": "resource_oil",
+      "model": "gen/resources/clusters/oil_medium",
+      "scale": 1.0,
+      "grounding": {
+        "groundOffset": -0.04,
+        "alignToTerrain": true,
+        "maximumTilt": 10.0,
+        "foundationRadius": 0.0
+      },
+      "selection": {
+        "radius": 3.8,
+        "height": 5.0
+      },
+      "animations": {}
+    },
+    "oil_cluster_large": {
+      "icon": "resource_oil",
+      "model": "gen/resources/clusters/oil_large",
+      "scale": 1.0,
+      "grounding": {
+        "groundOffset": -0.04,
+        "alignToTerrain": true,
+        "maximumTilt": 10.0,
+        "foundationRadius": 0.0
+      },
+      "selection": {
+        "radius": 5.0,
+        "height": 5.0
+      },
+      "animations": {}
+    },
+    "uranium_cluster_small": {
+      "icon": "resource_uranium",
+      "model": "gen/resources/clusters/uranium_small",
+      "scale": 1.0,
+      "grounding": {
+        "groundOffset": -0.04,
+        "alignToTerrain": true,
+        "maximumTilt": 10.0,
+        "foundationRadius": 0.0
+      },
+      "selection": {
+        "radius": 2.8,
+        "height": 3.0
+      },
+      "animations": {}
+    },
+    "uranium_cluster_medium": {
+      "icon": "resource_uranium",
+      "model": "gen/resources/clusters/uranium_medium",
+      "scale": 1.0,
+      "grounding": {
+        "groundOffset": -0.04,
+        "alignToTerrain": true,
+        "maximumTilt": 10.0,
+        "foundationRadius": 0.0
+      },
+      "selection": {
+        "radius": 3.8,
+        "height": 3.0
+      },
+      "animations": {}
+    },
+    "uranium_cluster_large": {
+      "icon": "resource_uranium",
+      "model": "gen/resources/clusters/uranium_large",
+      "scale": 1.0,
+      "grounding": {
+        "groundOffset": -0.04,
+        "alignToTerrain": true,
+        "maximumTilt": 10.0,
+        "foundationRadius": 0.0
+      },
+      "selection": {
+        "radius": 5.0,
+        "height": 3.0
+      },
+      "animations": {}
+    },
+    "v2_scrap_beams": {
+      "icon": "resource_scrap",
+      "model": "gen/resources/nodes/v2_scrap_beams",
+      "scale": 1,
+      "grounding": {
+        "groundOffset": 0,
+        "alignToTerrain": true,
+        "maximumTilt": 10,
+        "foundationRadius": 0
+      },
+      "selection": {
+        "radius": 0.8,
+        "height": 0.25
+      },
+      "animations": {}
+    },
+    "v2_scrap_plates": {
+      "icon": "resource_scrap",
+      "model": "gen/resources/nodes/v2_scrap_plates",
+      "scale": 1,
+      "grounding": {
+        "groundOffset": 0,
+        "alignToTerrain": true,
+        "maximumTilt": 10,
+        "foundationRadius": 0
+      },
+      "selection": {
+        "radius": 0.75,
+        "height": 0.2610896825790405
+      },
+      "animations": {}
+    },
+    "v2_scrap_frame": {
+      "icon": "resource_scrap",
+      "model": "gen/resources/nodes/v2_scrap_frame",
+      "scale": 1,
+      "grounding": {
+        "groundOffset": 0,
+        "alignToTerrain": true,
+        "maximumTilt": 10,
+        "foundationRadius": 0
+      },
+      "selection": {
+        "radius": 1.1,
+        "height": 0.6825304627418518
+      },
+      "animations": {}
+    },
+    "v2_scrap_pipes": {
+      "icon": "resource_scrap",
+      "model": "gen/resources/nodes/v2_scrap_pipes",
+      "scale": 1,
+      "grounding": {
+        "groundOffset": 0,
+        "alignToTerrain": true,
+        "maximumTilt": 10,
+        "foundationRadius": 0
+      },
+      "selection": {
+        "radius": 0.8,
+        "height": 0.2738974988460541
+      },
+      "animations": {}
+    },
+    "v2_scrap_wheels": {
+      "icon": "resource_scrap",
+      "model": "gen/resources/nodes/v2_scrap_wheels",
+      "scale": 1,
+      "grounding": {
+        "groundOffset": 0,
+        "alignToTerrain": true,
+        "maximumTilt": 10,
+        "foundationRadius": 0
+      },
+      "selection": {
+        "radius": 0.7,
+        "height": 0.25
+      },
+      "animations": {}
+    },
+    "v2_scrap_casing": {
+      "icon": "resource_scrap",
+      "model": "gen/resources/nodes/v2_scrap_casing",
+      "scale": 1,
+      "grounding": {
+        "groundOffset": 0,
+        "alignToTerrain": true,
+        "maximumTilt": 10,
+        "foundationRadius": 0
+      },
+      "selection": {
+        "radius": 0.85,
+        "height": 0.6131211519241333
+      },
+      "animations": {}
+    },
+    "v2_oil_seep": {
+      "icon": "resource_oil",
+      "model": "",
+      "terrainSurface": true,
+      "scale": 1,
+      "grounding": {
+        "groundOffset": 0,
+        "alignToTerrain": true,
+        "maximumTilt": 10,
+        "foundationRadius": 0
+      },
+      "selection": {
+        "radius": 0.95,
+        "height": 0.25
+      },
+      "animations": {}
+    },
+    "v2_oil_well": {
+      "icon": "resource_oil",
+      "model": "gen/resources/nodes/v2_oil_well",
+      "scale": 1,
+      "grounding": {
+        "groundOffset": 0,
+        "alignToTerrain": true,
+        "maximumTilt": 10,
+        "foundationRadius": 0
+      },
+      "selection": {
+        "radius": 0.85,
+        "height": 0.9425588250160217
+      },
+      "animations": {}
+    },
+    "v2_oil_tank": {
+      "icon": "resource_oil",
+      "model": "gen/resources/nodes/v2_oil_tank",
+      "scale": 1,
+      "grounding": {
+        "groundOffset": 0,
+        "alignToTerrain": true,
+        "maximumTilt": 10,
+        "foundationRadius": 0
+      },
+      "selection": {
+        "radius": 1.0,
+        "height": 1.1959459781646729
+      },
+      "animations": {}
+    },
+    "v2_oil_pump": {
+      "icon": "resource_oil",
+      "model": "gen/resources/nodes/v2_oil_pump",
+      "scale": 1,
+      "grounding": {
+        "groundOffset": 0,
+        "alignToTerrain": true,
+        "maximumTilt": 10,
+        "foundationRadius": 0
+      },
+      "selection": {
+        "radius": 1.65,
+        "height": 1.8589764833450317
+      },
+      "animations": {}
+    },
+    "v2_uranium_exposure": {
+      "icon": "resource_uranium",
+      "model": "gen/resources/nodes/v2_uranium_exposure",
+      "scale": 1,
+      "grounding": {
+        "groundOffset": 0,
+        "alignToTerrain": true,
+        "maximumTilt": 10,
+        "foundationRadius": 0
+      },
+      "selection": {
+        "radius": 0.8,
+        "height": 1.1057806015014648
+      },
+      "animations": {}
+    },
+    "v2_uranium_rock": {
+      "icon": "resource_uranium",
+      "model": "gen/resources/nodes/v2_uranium_rock",
+      "scale": 1,
+      "grounding": {
+        "groundOffset": 0,
+        "alignToTerrain": true,
+        "maximumTilt": 10,
+        "foundationRadius": 0
+      },
+      "selection": {
+        "radius": 1.0,
+        "height": 1.5046886205673218
+      },
+      "animations": {}
+    },
+    "v2_uranium_vein": {
+      "icon": "resource_uranium",
+      "model": "gen/resources/nodes/v2_uranium_vein",
+      "scale": 1,
+      "grounding": {
+        "groundOffset": 0,
+        "alignToTerrain": true,
+        "maximumTilt": 10,
+        "foundationRadius": 0
+      },
+      "selection": {
+        "radius": 0.65,
+        "height": 1.3299415111541748
+      },
+      "animations": {}
+    },
+    "resource_rubble_metal": {
+      "icon": "status_asset_ready",
+      "model": "gen/resources/nodes/v2_scrap_plates",
+      "scale": 1,
+      "grounding": {
+        "groundOffset": -0.01,
+        "alignToTerrain": true,
+        "maximumTilt": 20,
+        "foundationRadius": 0
+      },
+      "selection": {
+        "radius": 0,
+        "height": 0.15
+      },
+      "animations": {}
+    },
+    "resource_rubble_pipe": {
+      "icon": "status_asset_ready",
+      "model": "gen/resources/nodes/v2_scrap_pipes",
+      "scale": 1,
+      "grounding": {
+        "groundOffset": -0.01,
+        "alignToTerrain": true,
+        "maximumTilt": 20,
+        "foundationRadius": 0
+      },
+      "selection": {
+        "radius": 0,
+        "height": 0.15
+      },
+      "animations": {}
+    },
+    "resource_rubble_stone": {
+      "icon": "status_asset_ready",
+      "model": "environment/realistic_scatter/game_ready/stone_01",
+      "scale": 1,
+      "grounding": {
+        "groundOffset": -0.01,
+        "alignToTerrain": true,
+        "maximumTilt": 20,
+        "foundationRadius": 0
+      },
+      "selection": {
+        "radius": 0,
+        "height": 0.15
+      },
+      "animations": {}
     }
   }
 }

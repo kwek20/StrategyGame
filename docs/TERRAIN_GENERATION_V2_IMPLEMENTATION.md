@@ -1,25 +1,48 @@
 # V2 implementation and verification
 
-The design in `TERRAIN_GENERATION_V2.md` remains the target. This document distinguishes the first
-playable implementation from future capabilities. Concept images guide appearance; verification
-uses captures from the renderer, not generated illustrations.
+Generation revision 7 moves composition to the field: many small individually harvestable targets
+replace two or three baked compounds. Exact starting/expansion supplies and abundance-controlled
+field counts are preserved. A field's seeded node mix partitions that budget exactly; every node
+saves its neutral field membership and remaining supply. Depletion prefers another live node in
+the same field, then retains the bounded nearby-source fallback. Hovering outlines visible field
+members; shared ground links cannot cross field identities. Repeated nodes use persistent instanced
+buffers, with field-local updates on depletion. See `RESOURCE_CLUSTERS.md` and the field-node gallery.
+Save format remains 1; generation revision 7 requires a fresh match for older development V2 saves.
+
+Generation revision 6 increases minimum player-start separation by one chunk (24 world units):
+half the map width plus 24, configured by `landforms.openingSeparationPadding` in `v2.json`.
+This gives minimum separations of 144, 204 and 264 on the three supported map sizes.
+Existing matches keep their positions; new V2 matches use the revised spacing. Older V2 saves
+require a fresh match because the generation revision has changed.
+
+The design in `TERRAIN_GENERATION_V2.md` remains the target. This document describes the current
+playable implementation and separates it from future capabilities. The seeded-landform update
+below supersedes the earlier fixed opening/route-ring implementation. Concept images guide appearance;
+verification uses captures from the renderer, not generated illustrations.
 
 ## Reusable stages
 
 - `TerrainV2Recipe` loads internal profiles and layout recipes from `assets/gameplay/terrain/v2.json`.
   It intersects relief constraints, resolves water policy, validates dimensions and opening capacity,
   and excludes unsupported competitive recipes before generation. Distances and heights use world units.
-- `TerrainV2Plan` reserves player openings, two land approaches around a curved open ring, and seeded compact
-  landmarks. Reservations constrain relief and scenery without roads. Opening envelopes include
-  sampling-cell padding so processor sites retain their horizontal plane. Resource field footprints
-  and nodes stay outside the usable construction envelope. Water reservations exist only when a
-  recipe resolves positive water coverage.
-- `TerrainV2Generator` samples broad natural fields through stable area samples. Openings and routes
-  shape Layer A before elevation resolution. Relief, water and landmarks use separate seed streams.
-  Supported runtime player count is the game's two-player registry.
+- `TerrainV2Plan` chooses separated opening candidates across the active map, seeded field
+  orientation/stretch/offset, irregular elliptical lake proportions and connected bent ridge segments
+  with lower branches, sustained crests and asymmetric escarpments. Ridge centres have bounded retries;
+  overlapping arms can follow the bank but fade out before entering water or protected openings.
+  There is no four-sided route reservation or outer peak ring. A bounded
+  corner capacity arrangement is retained only when random start selection exhausts its attempts.
+  Water activates only when the resolved recipe has positive coverage.
+- `TerrainV2Generator` samples broad natural fields through stable area samples. Plains and hills
+  weight their regional signals differently. Layer A protects opening cores, adds active water and
+  composes ridges before connections are found. Supported runtime player count remains two.
+- `TerrainV2Access` searches the sampled dry landscape for low-cost connections, preferring valleys
+  and gentle contours. It eases excessive elevation transitions locally and retains neighbouring
+  heights wherever they already meet the connection profile. No roads or route-count equality are
+  imposed. Its indexed access mask supports transition/scenery queries without scanning segments
+  per sample. These are minimum connectivity safeguards, not the entire set of usable routes.
 - `TerrainTerraces` keeps source samples immutable, performs bounded score-improving sweeps, suppresses
-  accidental isolated cells and records source error. It owns cardinal flat/ramp/cliff edges. Ramps
-  follow reserved approaches and dominant source slopes; remaining ledges stay blocked. Junctions
+  accidental isolated cells and records source error. It owns cardinal flat/ramp/cliff edges. Connection samples retain their planned elevation during cleanup. Ramps
+  follow selected passages and dominant source slopes; remaining ledges stay blocked. Junctions
   use triangle fans; alternating cliff corners cannot acquire an intermediate diagonal landing.
 - `TerrainGenerationPipeline::assembleV2` serves generation and provisional repairs. It rasterizes
   onto the existing welded mesh, creates independent dry fields or local lake water, classifies
@@ -47,9 +70,9 @@ uses captures from the renderer, not generated illustrations.
 |---|---|
 | Open Plains | Dry low relief, broad openings, sparse landmarks |
 | Continental | Dry regional relief; not the future coastal/ocean variant |
-| Rolling Hills | Dry successive bands and compact outcrops |
+| Rolling Hills | Seeded regional bands, bent ridge groups, rocky shoulders and valleys |
 | Central Hill | Dry central elevation with surrounding approaches |
-| Central Water | One irregular local lake, lowland openings and two land approaches |
+| Central Water | One principal lake with variable proportions/bays and connected surrounding land; no prescribed approach count |
 | Archipelago | Definition retained; V2 launch unavailable pending transport |
 
 V1 remains independently selectable and its global water configuration is unchanged. V2 reads its
@@ -57,21 +80,95 @@ own recipes, allowing Central Water to be wet while V1 stays dry. Profiles remai
 
 ## Resources, repairs and persistence
 
+### Resource-site appearance pass (2026-10-21, revision 5)
+
+Resources retain their existing inventories, target counts, collider radii and access rules. A separate
+composition stream biases target arrangement along an authored local direction (`directionalBias` in
+`terrainV2Composition`), with ordinary placement/fallback checks still in charge. V1 placement is unchanged.
+
+`world/ResourceSiteMap` builds a CPU-only, irregular site mask from stable resource identities and
+positions. Its density also guides canopy clearance. `render/ResourceSiteTexture` owns the GPU cache:
+unchanged inputs reuse pixels/texture, while changes rasterize and upload nearby tiles. Ground is
+shaded using existing soil/rock textures, clipped away from water and steep faces, and excluded from
+remembered/hidden terrain. It changes no terrain heights, collisions, resource budgets or save fields.
+The mask is reconstructed after loading. Depleted resource entities retain their ground scars;
+destroying/moving a source updates its old/new region and proximity links.
+
+The baked models add six small Scrap silhouettes, restrained metal/rust, a large broken-frame
+landmark, lower Oil seep geometry with pump equipment, and subdued mineral exposures in host rock.
+See [20 engine captures](pictures/terrain-v2-layouts/implementation/resource-sites/README.md). Targets
+still deplete as whole compounds; finer collision, progressive visual erosion and per-piece removal
+remain separate design work.
+
+The complete Debug suite passed **33/33** in 818.61 seconds. Six affected tests passed again after
+the final canopy/cache/adapter refinements (16.86 seconds). New CPU and GPU readback checks cover
+reconstruction, unchanged frames, identity order, local removal/movement, complete clearing, bounded
+inputs and restoration of pixel-upload state. Final Debug and Release builds were warning-free;
+the Release gallery, 80 moving-camera frames and profile run completed without OpenGL errors.
+
+The final largest-map probe measured **8.77 ms render-only** on the GTX 1070 (2554×1389, Central Water,
+seed 7, 20 chunks, 108 targets, repair 0, 100 measured frames after 20 warm-up frames). Site preparation
+averaged 0.019 ms CPU; terrain, vegetation and world GPU query averages were 2.35/5.04/0.45 ms.
+No measured site-tile uploads or vegetation cache rebuilds/uploads occurred. These are changed
+resource/vegetation workloads, not an isolated shader comparison; simulation, UI and swap are excluded.
+
+An initial ~87 ms measurement used AMD integrated graphics, so it cannot be compared with the earlier
+GTX 1070 baseline. The game and renderer fixture now export executable-level high-performance GPU
+hints and log the actual graphics device. On this machine those hints selected the GTX 1070; driver
+and user settings can override them. No system settings were changed. See the performance audit.
+
+Save format remains 1; the V2 generation revision is now 5. Start a fresh V2 match after rebuilding.
+
 Opening inventories remain definition-backed: 600 scrap and 400 oil per player with current nodes.
 Abundance calculates additional fields without subtracting starting fields or imposing V1's minimum
-additional allocation. Counts round to equal two-player batches and can be zero. Node compositions
-and capacities are preserved; no extra opening nodes are added.
+additional allocation. Existing field-count rounding to multiples of player count is retained and
+counts can be zero; this does not pair field locations or guarantee equal expansion opportunities. Harvest-target counts and capacities are preserved; V2 maps each legacy node to a compound deposit,
+with larger footprints and dense baked satellite piles. No extra opening inventory is added. V2 removes matched travel-cost
+constraints and paired expansion-region placement. Starting fields retain intended-player access;
+additional fields use seeded locations. Required V2 fields also require reachable land, so flying
+delivery cannot place them on disconnected decorative islands. V1 retains its earlier distribution.
+
+V2 composition is configured per field under `terrainV2Composition`: a radius range, node spacing
+and a mapping from legacy node IDs to compound deposit IDs. Registry validation requires identical
+resource types and capacities for each mapping. Each compound mesh contains 22–58 pieces in uneven
+lobes, with larger cores and smaller satellites; satellite geometry is baked together, not submitted
+as individual draw commands. Scrap, oil and uranium retain their original harvest-target counts.
+Fields pack their compounds adjacently instead of independently scattering isolated nodes.
+
+Colliders and selection bounds cover each complete deposit. Placement checks its perimeter against
+terrain/water, other deposits and opening construction reserves. Trees use authored stand spacing
+as canopy clearance around world objects, exposing deposits without changing navigation collisions.
+Field lookup and depletion retargeting recognize both legacy and compound IDs, including after load.
+Pieces currently disappear together when their owning deposit is depleted; progressive visual erosion
+and individually destructible satellites remain future node/source design work.
+
+### Revision 4 verification (2026-10-14)
+
+The full Debug build and all 32 CTest entries passed (936.73 seconds). After the final test-harness
+cleanup, the complete Debug build and five affected generation/opening/definition/renderer/architecture
+checks passed again (33.15 seconds). Release game and fixture builds completed without compiler warnings.
+The fixture now checks both intended shader configurations: reload/recovery in Debug, unchanged
+programs with reload disabled in Release. Failure diagnostics identify the first failed check.
+
+The final Release run produced [18 reviewed captures](pictures/terrain-v2-layouts/implementation/cliffs-and-clusters/README.md),
+completed 80 moving-camera frames and emitted no OpenGL errors. The largest-map render-only probe
+(seed 7, Central Water, 20 chunks, 2554×1389, GTX 1070) averaged **9.47 ms** over 100 frames after
+20 warm-up frames. It included terrain, vegetation and 108 resource targets, with zero vegetation
+chunk rebuilds or uploaded batches during measurement. Repair level was 0. The earlier 13.2 ms run
+overlapped the CPU-heavy test suite and is not the isolated result. Timings exclude simulation, UI
+and swap throttling; they do not establish full-game FPS. Use `STRATEGY_RENDER_PROFILE=1` with the
+Release renderer fixture to reproduce the probe; `STRATEGY_TERRAIN_SCREENSHOTS` adds the gallery.
 
 Resource placement remains provisional until the whole allocation succeeds. Failure first removes
 obstructing peak relief, then uses a constructive lowland fallback with deterministic shore geometry
-and compact node patterns. Retry layouts use distinct deterministic streams. The final template's
-geometry and eligibility use fixed streams, so the failed seed cannot alter its capacity. The
-original seed is retained. Repairs can exceed ordinary source bounds and
-report their level. Fallback preserves the lake, resource eligibility, separation, local capacity and
+and compact node patterns. Retry layouts use distinct deterministic streams. The final template uses
+fixed eligibility streams and removes incidental ridge relief. Its lake capacity is bounded by the accepted opening positions, which remain attached to the original seed.
+Fallback geometry is repeatable for that seed, not required to be identical across different seeds.
+Repairs can exceed ordinary source bounds and report their level. Fallback preserves the lake, resource eligibility, separation, local capacity and
 access rules without silently dropping fields. Its surface is independent of seed-driven relief.
 Shipped preset capacities are tested explicitly even when ordinary generation succeeds.
 
-Format 1 stores V2 terrain recipe revision 2 and the repair level, plus complete foundation identity,
+Format 1 stores V2 terrain recipe revision 5 and the repair level, plus complete foundation identity,
 shape, plane, progress and slab data. Mode, repair, foundations and the surface fingerprint contribute
 to authoritative checksums. Restore stages the session's actual surface into the renderer.
 
@@ -190,3 +287,71 @@ V2 now retains its material texture colours, uses subdued ground and water palet
 and renders a cached terrain backdrop beyond the active map into matching atmospheric
 haze. Terrain generation and playable boundaries are unchanged. See
 [presentation details, captures and verification](TERRAIN_V2_PRESENTATION.md).
+
+
+## Seeded landforms and rendering (2026-10-14)
+
+The revised planner implements the accepted large-scale variation direction. Internal landform
+ranges live in `assets/gameplay/terrain/v2.json`; obsolete corner inset, route-ring width and unused
+peak-radius settings are removed. Opening cores start at radius 30 with the existing blend and sampling padding. The
+opening capacity fixture places the 20-by-20 command hub plus a drone factory, two processors,
+charging pad, generator and storage together, largest footprint first. This tests coexistence,
+placement and ground exits; it does not yet simulate a full powered opening build or prove every
+future unit formation's clearance.
+
+Central Water samples its ordinary coverage without the old corner-ring radius clamp, then bounds
+its full irregular outline against the map. Optional water is resolved before shaping. Starts are
+selected on suitable dry capacity, with separation and finite candidate attempts. The protected
+cores remain flat; their outlines are still circular rather than the proposal's eventual irregular
+multi-patch construction neighbourhoods. The ridge shoulder and branching functions preserve the
+fine 1.5-unit cells and half-unit height steps.
+
+Rendering keeps the natural material and cached map backdrop from the preceding pass. Shared V2
+atmospheric ranges now preserve more landscape contrast at overview scale, consistently across
+terrain, water and models. V2 vegetation selection reaches that fog range rather than stopping at
+the former 300-unit cutoff and leaving a bare visible horizon. V1 keeps its former selection range. The fine terrain topology and vegetation GPU cache are unchanged;
+no additional per-frame terrain generation or material texture reads were introduced.
+
+Revision 3 rejects previous V2 terrain revisions before restoring entities. Save format remains 1,
+V1 remains selectable, and changing terrain during construction remains prohibited. Begin a fresh
+V2 match to see this generation; already-running matches retain their generated surface.
+
+### Verification for this update
+
+The initial geometry/opening/render checks passed, then the expanded seven-building capacity check
+exposed a greedy ordering failure. Reserving the largest building first retains all required
+footprints without prescribing player build order. A visible connection strip was reduced by
+retaining neighbouring natural elevations instead of assigning the entire strip its centre height.
+
+| Final check | Evidence |
+|---|---|
+| Global regression | All 32 CTest entries passed in 1,030.12 seconds, including all five field/session matrices, V1 map audit, game systems, resources, navigation, persistence and rendering |
+| Seed composition | Twelve Small Central Water plans repeat exactly, vary lake area and retain separated dry opening cores; different dry seeds change landmark placement and shape |
+| Opening capacity | All five layouts fit the expanded joint building plan and preserve populated-world ground exits |
+| Post-cleanup checks | Generation/support/save, joint openings, renderer integration, definitions and render architecture passed again (5/5, 31.91 seconds) after unused tuning-field removal and connection-grid validation |
+| Final presentation | Nine terrain overviews (five layouts plus extra seeds for Central Water/Rolling Hills), six inhabited centre/edge/whole-map views and 80 motion frames passed; captures inspected; no GL errors |
+| Builds | Final Debug and Release game targets compiled successfully without compiler warnings |
+
+The later horizon-distance adjustment affects presentation only and received the final capture/motion
+rerun. It does not change the generation, resource or save results covered by the global suite.
+Logs and temporary probe sources remain under ignored `build/debug/audits/v2-composition*`.
+The [seeded-landform engine gallery](pictures/terrain-v2-layouts/implementation/seeded-landforms/README.md)
+retains the same-scale seed comparisons and inhabited views.
+
+### Render-cost probe
+
+On the GTX 1070 at 2554 by 1389, Central Water seed 7, 20 by 20 chunks, a Release render-only probe
+averaged **9.34 ms** over 100 measured frames after 20 warm-up frames. Vegetation averaged 0.265 ms
+CPU and 5.62 ms GPU, with 11,290 submitted instances and zero chunk rebuilds/instance uploads during
+measurement. The extended horizon submits more vegetation than the old cutoff, so this is a changed
+map/render workload rather than an isolated cache-speed comparison. Grouped persistent buffers remain
+in use. The probe omits simulation, UI and swap, and synchronizes with `glFinish`; it is not a
+full-game 60 FPS claim or a p95 latency result. Its temporary fixture omits unrelated cache and
+Debug-only shader-reload assertions; the actual Debug integration suite covers those checks. The
+measurement loop completed without GL errors, and temporary profiling changes were removed.
+
+Remaining proposal work includes truly irregular opening envelopes, terrain-aware ranking of
+opening candidates rather than protected capacity sites, localized transactional resource repair
+(the current escalation still removes broad landmark relief before fallback), supported clearing,
+oceans/river networks and island transport. The current unit definitions provide a worker and flying
+construction drone; competitive army behaviour needs later combat-unit and player testing.

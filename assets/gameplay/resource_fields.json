@@ -57,6 +57,42 @@
         "accessCostTolerance": 12,
         "maximumLayoutAttempts": 8,
         "contested": false
+      },
+      "terrainV2Composition": {
+        "fieldRadius": [
+          9,
+          14
+        ],
+        "nodes": {
+          "scrap_node_small": "scrap_cluster_small",
+          "scrap_node_medium": "scrap_cluster_medium",
+          "scrap_node_large": "scrap_cluster_large"
+        },
+        "minimumNodeSpacing": 0.45,
+        "directionalBias": 0.75,
+        "harvestNodes": [
+          "v2_scrap_beams",
+          "v2_scrap_plates",
+          "v2_scrap_frame",
+          "v2_scrap_pipes",
+          "v2_scrap_wheels",
+          "v2_scrap_casing"
+        ],
+        "decorativeFringe": {
+          "variants": [
+            "resource_rubble_metal",
+            "resource_rubble_pipe"
+          ],
+          "chance": 0.35,
+          "maximumPieces": 2,
+          "minimumDistance": 0.4,
+          "maximumDistance": 1.2,
+          "minimumScale": 0.2,
+          "maximumScale": 0.35,
+          "connectionSpacing": 0.65,
+          "connectionWidth": 0.45,
+          "maximumConnectionLength": 16
+        }
       }
     },
     "oil_field": {
@@ -113,6 +149,40 @@
         "accessCostTolerance": 12,
         "maximumLayoutAttempts": 8,
         "contested": false
+      },
+      "terrainV2Composition": {
+        "fieldRadius": [
+          9,
+          14
+        ],
+        "nodes": {
+          "oil_node_small": "oil_cluster_small",
+          "oil_node_medium": "oil_cluster_medium",
+          "oil_node_large": "oil_cluster_large"
+        },
+        "minimumNodeSpacing": 0.45,
+        "directionalBias": 0.35,
+        "harvestNodes": [
+          "v2_oil_seep",
+          "v2_oil_well",
+          "v2_oil_tank",
+          "v2_oil_pump"
+        ],
+        "decorativeFringe": {
+          "variants": [
+            "resource_rubble_pipe",
+            "resource_rubble_stone"
+          ],
+          "chance": 0.35,
+          "maximumPieces": 2,
+          "minimumDistance": 0.4,
+          "maximumDistance": 1.2,
+          "minimumScale": 0.2,
+          "maximumScale": 0.35,
+          "connectionSpacing": 0.65,
+          "connectionWidth": 0.45,
+          "maximumConnectionLength": 16
+        }
       }
     },
     "uranium_field": {
@@ -166,6 +236,38 @@
         "accessCostTolerance": 12,
         "maximumLayoutAttempts": 8,
         "contested": true
+      },
+      "terrainV2Composition": {
+        "fieldRadius": [
+          7,
+          11
+        ],
+        "nodes": {
+          "uranium_node_small": "uranium_cluster_small",
+          "uranium_node_medium": "uranium_cluster_medium",
+          "uranium_node_large": "uranium_cluster_large"
+        },
+        "minimumNodeSpacing": 0.45,
+        "directionalBias": 0.8,
+        "harvestNodes": [
+          "v2_uranium_exposure",
+          "v2_uranium_rock",
+          "v2_uranium_vein"
+        ],
+        "decorativeFringe": {
+          "variants": [
+            "resource_rubble_stone"
+          ],
+          "chance": 0.35,
+          "maximumPieces": 2,
+          "minimumDistance": 0.4,
+          "maximumDistance": 1.2,
+          "minimumScale": 0.2,
+          "maximumScale": 0.35,
+          "connectionSpacing": 0.65,
+          "connectionWidth": 0.45,
+          "maximumConnectionLength": 16
+        }
       }
     }
   }

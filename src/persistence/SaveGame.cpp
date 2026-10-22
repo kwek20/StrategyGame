@@ -85,7 +85,7 @@ void SaveGame::write(const std::filesystem::path& path,
     writer.String(terrainModeName(terrainMode).data());
     if (terrainMode == TerrainMode::v2) {
         writer.Key("terrainV2Revision");
-        writer.Uint(2);
+        writer.Uint(TerrainV2Generator::revision);
         writer.Key("terrainRepairLevel");
         writer.Uint(terrainRepairLevel);
     }
@@ -270,6 +270,8 @@ void SaveGame::write(const std::filesystem::path& path,
             writer.String(entity.resource.type.c_str());
             writer.Key("remaining");
             writer.Double(entity.resource.remaining);
+            writer.Key("fieldId");
+            writer.Uint64(entity.resource.fieldId);
             writer.EndObject();
         }
         if (entity.processor) {
@@ -415,7 +417,7 @@ SaveData SaveGame::read(const std::filesystem::path& path) {
     }
     if (result.terrainMode == TerrainMode::v2) {
         if (!document.HasMember("terrainV2Revision") || !document["terrainV2Revision"].IsUint() ||
-            document["terrainV2Revision"].GetUint() != 2)
+            document["terrainV2Revision"].GetUint() != TerrainV2Generator::revision)
             throw std::runtime_error(
                 "This save uses an obsolete V2 terrain recipe; start a new match");
         if (!document.HasMember("terrainRepairLevel") || !document["terrainRepairLevel"].IsUint() ||
@@ -667,6 +669,11 @@ SaveData SaveGame::read(const std::filesystem::path& path) {
                     throw std::runtime_error("Invalid resource component");
                 entity.resource.type = item["type"].GetString();
                 entity.resource.remaining = item["remaining"].GetFloat();
+                if (item.HasMember("fieldId")) {
+                    if (!item["fieldId"].IsUint64())
+                        throw std::runtime_error("Invalid resource field membership");
+                    entity.resource.fieldId = item["fieldId"].GetUint64();
+                }
             }
             if (components.HasMember("processor")) {
                 const auto& item = components["processor"];

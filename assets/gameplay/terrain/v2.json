@@ -1,5 +1,13 @@
 {
   "version": 1,
+  "landforms": {
+    "openingSeparationPadding": 24,
+    "ridgeLength": [24, 56],
+    "ridgeWidth": [10, 22],
+    "ridgeHeightScale": [0.6, 1.15],
+    "ridgeBend": [0.12, 0.4],
+    "lakeAspect": [0.82, 1.22]
+  },
   "cells": {
     "side": 1.5,
     "elevationStep": 0.5,
@@ -38,13 +46,10 @@
         12
       ],
       "baseHeight": 16,
-      "openingRadius": 24,
-      "openingInset": 54,
-      "routeWidth": 12,
+      "openingRadius": 30,
       "waterPolicy": "forbidden",
       "competitive": true,
       "peakCount": 5,
-      "peakRadius": 18,
       "peakHeight": 14,
       "forestDensity": 2,
       "forestScale": 1.4,
@@ -61,13 +66,10 @@
         4
       ],
       "baseHeight": 16,
-      "openingRadius": 24,
-      "openingInset": 54,
-      "routeWidth": 12,
+      "openingRadius": 30,
       "waterPolicy": "forbidden",
       "competitive": true,
       "peakCount": 1,
-      "peakRadius": 18,
       "peakHeight": 8,
       "forestDensity": 2,
       "forestScale": 1.4,
@@ -84,13 +86,10 @@
         16
       ],
       "baseHeight": 16,
-      "openingRadius": 24,
-      "openingInset": 54,
-      "routeWidth": 12,
+      "openingRadius": 30,
       "waterPolicy": "forbidden",
       "competitive": true,
       "peakCount": 5,
-      "peakRadius": 18,
       "peakHeight": 14,
       "forestDensity": 2,
       "forestScale": 1.4,
@@ -107,13 +106,10 @@
         14
       ],
       "baseHeight": 16,
-      "openingRadius": 24,
-      "openingInset": 54,
-      "routeWidth": 12,
+      "openingRadius": 30,
       "waterPolicy": "forbidden",
       "competitive": true,
       "peakCount": 5,
-      "peakRadius": 18,
       "peakHeight": 14,
       "forestDensity": 2,
       "forestScale": 1.4,
@@ -130,9 +126,7 @@
         8
       ],
       "baseHeight": 16,
-      "openingRadius": 24,
-      "openingInset": 54,
-      "routeWidth": 12,
+      "openingRadius": 30,
       "waterPolicy": "required",
       "competitive": true,
       "water": {
@@ -149,7 +143,6 @@
         "isletHeight": 2
       },
       "peakCount": 5,
-      "peakRadius": 18,
       "peakHeight": 14,
       "forestDensity": 2,
       "forestScale": 1.4,
@@ -166,9 +159,7 @@
         8
       ],
       "baseHeight": 16,
-      "openingRadius": 24,
-      "openingInset": 54,
-      "routeWidth": 12,
+      "openingRadius": 30,
       "waterPolicy": "required",
       "competitive": false,
       "water": {
@@ -185,7 +176,6 @@
         "isletHeight": 2
       },
       "peakCount": 5,
-      "peakRadius": 18,
       "peakHeight": 14,
       "forestDensity": 2,
       "forestScale": 1.4,

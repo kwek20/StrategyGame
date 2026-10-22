@@ -69,13 +69,17 @@ void TerrainV2Recipe::validate(float mapExtent, std::size_t players) const {
     if (!std::isfinite(mapExtent) || mapExtent <= 0.0F || players < 1 || players > 4 ||
         !std::isfinite(baseHeight) || relief.minimum < 0.0F || !std::isfinite(openingRadius) ||
         openingRadius <= cells.side || !std::isfinite(openingBlendWidth) ||
-        openingBlendWidth < cells.side || !std::isfinite(openingInset) ||
-        openingInset < openingRadius || openingInset + openingRadius >= mapExtent * 0.5F ||
-        !std::isfinite(routeWidth) || routeWidth < cells.side * 2.0F)
-        throw std::runtime_error("V2 recipe has insufficient opening/route capacity");
-    if (!std::isfinite(peakRadius) || peakRadius < cells.side || !std::isfinite(peakHeight) ||
-        peakHeight < 0)
+        openingBlendWidth < cells.side || openingRadius + cells.side * 2 >= mapExtent * 0.5F)
+        throw std::runtime_error("V2 recipe has insufficient opening capacity");
+    if (!std::isfinite(openingSeparationPadding) || openingSeparationPadding < 0)
+        throw std::runtime_error("Invalid V2 opening separation padding");
+    if (!std::isfinite(peakHeight) || peakHeight < 0)
         throw std::runtime_error("Invalid V2 peak dimensions");
+    for (const auto bounds : {ridgeLength, ridgeWidth, ridgeHeightScale, ridgeBend}) {
+        (void)bounds.intersect(bounds);
+        if (bounds.minimum <= 0)
+            throw std::runtime_error("Invalid V2 landform range");
+    }
     for (float value : {forestDensity,
                         forestScale,
                         forestSpacing,
@@ -94,6 +98,9 @@ void TerrainV2Recipe::validate(float mapExtent, std::size_t players) const {
     (void)waterCoverage.intersect({0.0F, 0.5F});
     if (waterPolicy == TerrainWaterPolicy::optional && waterCoverage.maximum == 0)
         return;
+    (void)lakeAspect.intersect(lakeAspect);
+    if (lakeAspect.minimum <= 0)
+        throw std::runtime_error("Invalid V2 lake aspect range");
     if (waterFeature == TerrainWaterFeature::none ||
         (waterPolicy == TerrainWaterPolicy::required && waterCoverage.minimum <= 0.0F) ||
         !std::isfinite(waterLevel) || !std::isfinite(lakeDepth) || lakeDepth <= 0.0F ||
@@ -127,6 +134,7 @@ TerrainV2Recipes TerrainV2Recipes::load(const std::filesystem::path& path) {
     settings.sweeps = cell["sweeps"].GetUint();
     settings.validate();
     const auto& profiles = object(document, "profiles");
+    const auto& landforms = object(document, "landforms");
     const auto& layouts = object(document, "layouts");
     TerrainV2Recipes result;
     for (auto entry = layouts.MemberBegin(); entry != layouts.MemberEnd(); ++entry) {
@@ -136,6 +144,12 @@ TerrainV2Recipes TerrainV2Recipes::load(const std::filesystem::path& path) {
         TerrainV2Recipe recipe;
         recipe.layout = TerrainLayoutId{entry->name.GetString()};
         recipe.cells = settings;
+        recipe.openingSeparationPadding = number(landforms, "openingSeparationPadding");
+        recipe.ridgeLength = range(landforms, "ridgeLength");
+        recipe.ridgeWidth = range(landforms, "ridgeWidth");
+        recipe.ridgeHeightScale = range(landforms, "ridgeHeightScale");
+        recipe.ridgeBend = range(landforms, "ridgeBend");
+        recipe.lakeAspect = range(landforms, "lakeAspect");
         recipe.biomeProfile = string(value, "profile");
         const auto& profile = object(profiles, recipe.biomeProfile.c_str());
         recipe.relief = range(value, "relief").intersect(range(profile, "relief"));
@@ -146,7 +160,6 @@ TerrainV2Recipes TerrainV2Recipes::load(const std::filesystem::path& path) {
             value["peakCount"].GetUint() > 16)
             throw std::runtime_error("Invalid V2 peak count");
         recipe.peakCount = value["peakCount"].GetUint();
-        recipe.peakRadius = number(value, "peakRadius");
         recipe.peakHeight = number(value, "peakHeight");
         recipe.baseHeight = number(value, "baseHeight");
         recipe.forestDensity = number(value, "forestDensity");
@@ -157,8 +170,6 @@ TerrainV2Recipes TerrainV2Recipes::load(const std::filesystem::path& path) {
         recipe.forestDensityScale = number(value, "forestDensityScale");
         recipe.openingRadius = number(value, "openingRadius");
         recipe.openingBlendWidth = number(value, "openingBlendWidth");
-        recipe.openingInset = number(value, "openingInset");
-        recipe.routeWidth = number(value, "routeWidth");
         const auto policy = string(value, "waterPolicy");
         if (policy == "forbidden")
             recipe.waterPolicy = TerrainWaterPolicy::forbidden;

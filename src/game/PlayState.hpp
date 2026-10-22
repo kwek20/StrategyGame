@@ -9,6 +9,7 @@
 #include "render/RmlUiManager.hpp"
 #include "simulation/GameSession.hpp"
 #include "ui/EntityHudModel.hpp"
+#include "ui/ResourceFieldSelection.hpp"
 
 #include <cstdint>
 #include <glm/vec3.hpp>
@@ -94,6 +95,7 @@ class PlayState final : public GameState {
     mutable EntityId hoveredEntity_{0};
     EntityId selectedEntity_{0};
     std::vector<EntityId> selectedUnits_;
+    ResourceFieldSelection selectedResourceField_;
     bool draggingSelection_{false};
     glm::vec2 selectionStart_{0.0F};
     glm::vec2 selectionEnd_{0.0F};

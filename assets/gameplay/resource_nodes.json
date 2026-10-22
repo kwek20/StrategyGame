@@ -45,6 +45,383 @@
       "presentation": "uranium_crystal_large", "nameKey": "entity.uranium_deposit", "collisionRadius": 2.0,
       "resourceType": "uranium", "capacity": 300,
       "components": ["resource"], "tags": ["resource", "raw", "uranium", "rare", "large"], "stats": {}
+    },
+    "scrap_cluster_small": {
+      "presentation": "scrap_cluster_small",
+      "nameKey": "entity.scrap_field",
+      "collisionRadius": 2.8,
+      "resourceType": "scrap",
+      "capacity": 200,
+      "components": [
+        "resource"
+      ],
+      "tags": [
+        "resource",
+        "raw",
+        "scrap",
+        "small"
+      ],
+      "stats": {}
+    },
+    "scrap_cluster_medium": {
+      "presentation": "scrap_cluster_medium",
+      "nameKey": "entity.scrap_field",
+      "collisionRadius": 3.8,
+      "resourceType": "scrap",
+      "capacity": 300,
+      "components": [
+        "resource"
+      ],
+      "tags": [
+        "resource",
+        "raw",
+        "scrap",
+        "medium"
+      ],
+      "stats": {}
+    },
+    "scrap_cluster_large": {
+      "presentation": "scrap_cluster_large",
+      "nameKey": "entity.scrap_field",
+      "collisionRadius": 5.0,
+      "resourceType": "scrap",
+      "capacity": 500,
+      "components": [
+        "resource"
+      ],
+      "tags": [
+        "resource",
+        "raw",
+        "scrap",
+        "large"
+      ],
+      "stats": {}
+    },
+    "oil_cluster_small": {
+      "presentation": "oil_cluster_small",
+      "nameKey": "entity.oil_deposit",
+      "collisionRadius": 2.8,
+      "resourceType": "oil",
+      "capacity": 200,
+      "components": [
+        "resource"
+      ],
+      "tags": [
+        "resource",
+        "raw",
+        "oil",
+        "small"
+      ],
+      "stats": {}
+    },
+    "oil_cluster_medium": {
+      "presentation": "oil_cluster_medium",
+      "nameKey": "entity.oil_deposit",
+      "collisionRadius": 3.8,
+      "resourceType": "oil",
+      "capacity": 300,
+      "components": [
+        "resource"
+      ],
+      "tags": [
+        "resource",
+        "raw",
+        "oil",
+        "medium"
+      ],
+      "stats": {}
+    },
+    "oil_cluster_large": {
+      "presentation": "oil_cluster_large",
+      "nameKey": "entity.oil_deposit",
+      "collisionRadius": 5.0,
+      "resourceType": "oil",
+      "capacity": 500,
+      "components": [
+        "resource"
+      ],
+      "tags": [
+        "resource",
+        "raw",
+        "oil",
+        "large"
+      ],
+      "stats": {}
+    },
+    "uranium_cluster_small": {
+      "presentation": "uranium_cluster_small",
+      "nameKey": "entity.uranium_deposit",
+      "collisionRadius": 2.8,
+      "resourceType": "uranium",
+      "capacity": 100,
+      "components": [
+        "resource"
+      ],
+      "tags": [
+        "resource",
+        "raw",
+        "uranium",
+        "rare",
+        "small"
+      ],
+      "stats": {}
+    },
+    "uranium_cluster_medium": {
+      "presentation": "uranium_cluster_medium",
+      "nameKey": "entity.uranium_deposit",
+      "collisionRadius": 3.8,
+      "resourceType": "uranium",
+      "capacity": 200,
+      "components": [
+        "resource"
+      ],
+      "tags": [
+        "resource",
+        "raw",
+        "uranium",
+        "rare",
+        "medium"
+      ],
+      "stats": {}
+    },
+    "uranium_cluster_large": {
+      "presentation": "uranium_cluster_large",
+      "nameKey": "entity.uranium_deposit",
+      "collisionRadius": 5.0,
+      "resourceType": "uranium",
+      "capacity": 300,
+      "components": [
+        "resource"
+      ],
+      "tags": [
+        "resource",
+        "raw",
+        "uranium",
+        "rare",
+        "large"
+      ],
+      "stats": {}
+    },
+    "v2_scrap_beams": {
+      "presentation": "v2_scrap_beams",
+      "nameKey": "entity.scrap_pile",
+      "collisionRadius": 0.8,
+      "resourceType": "scrap",
+      "capacity": 25,
+      "components": [
+        "resource"
+      ],
+      "tags": [
+        "resource",
+        "raw",
+        "scrap",
+        "field-node"
+      ],
+      "stats": {}
+    },
+    "v2_scrap_plates": {
+      "presentation": "v2_scrap_plates",
+      "nameKey": "entity.scrap_pile",
+      "collisionRadius": 0.75,
+      "resourceType": "scrap",
+      "capacity": 25,
+      "components": [
+        "resource"
+      ],
+      "tags": [
+        "resource",
+        "raw",
+        "scrap",
+        "field-node"
+      ],
+      "stats": {}
+    },
+    "v2_scrap_frame": {
+      "presentation": "v2_scrap_frame",
+      "nameKey": "entity.scrap_pile",
+      "collisionRadius": 1.1,
+      "resourceType": "scrap",
+      "capacity": 50,
+      "components": [
+        "resource"
+      ],
+      "tags": [
+        "resource",
+        "raw",
+        "scrap",
+        "field-node"
+      ],
+      "stats": {}
+    },
+    "v2_scrap_pipes": {
+      "presentation": "v2_scrap_pipes",
+      "nameKey": "entity.scrap_pile",
+      "collisionRadius": 0.8,
+      "resourceType": "scrap",
+      "capacity": 25,
+      "components": [
+        "resource"
+      ],
+      "tags": [
+        "resource",
+        "raw",
+        "scrap",
+        "field-node"
+      ],
+      "stats": {}
+    },
+    "v2_scrap_wheels": {
+      "presentation": "v2_scrap_wheels",
+      "nameKey": "entity.scrap_pile",
+      "collisionRadius": 0.7,
+      "resourceType": "scrap",
+      "capacity": 25,
+      "components": [
+        "resource"
+      ],
+      "tags": [
+        "resource",
+        "raw",
+        "scrap",
+        "field-node"
+      ],
+      "stats": {}
+    },
+    "v2_scrap_casing": {
+      "presentation": "v2_scrap_casing",
+      "nameKey": "entity.scrap_pile",
+      "collisionRadius": 0.85,
+      "resourceType": "scrap",
+      "capacity": 25,
+      "components": [
+        "resource"
+      ],
+      "tags": [
+        "resource",
+        "raw",
+        "scrap",
+        "field-node"
+      ],
+      "stats": {}
+    },
+    "v2_oil_seep": {
+      "presentation": "v2_oil_seep",
+      "nameKey": "entity.oil_deposit",
+      "collisionRadius": 0.95,
+      "resourceType": "oil",
+      "capacity": 25,
+      "components": [
+        "resource"
+      ],
+      "tags": [
+        "resource",
+        "raw",
+        "oil",
+        "field-node"
+      ],
+      "stats": {}
+    },
+    "v2_oil_well": {
+      "presentation": "v2_oil_well",
+      "nameKey": "entity.oil_deposit",
+      "collisionRadius": 0.85,
+      "resourceType": "oil",
+      "capacity": 25,
+      "components": [
+        "resource"
+      ],
+      "tags": [
+        "resource",
+        "raw",
+        "oil",
+        "field-node"
+      ],
+      "stats": {}
+    },
+    "v2_oil_tank": {
+      "presentation": "v2_oil_tank",
+      "nameKey": "entity.oil_deposit",
+      "collisionRadius": 1.0,
+      "resourceType": "oil",
+      "capacity": 25,
+      "components": [
+        "resource"
+      ],
+      "tags": [
+        "resource",
+        "raw",
+        "oil",
+        "field-node"
+      ],
+      "stats": {}
+    },
+    "v2_oil_pump": {
+      "presentation": "v2_oil_pump",
+      "nameKey": "entity.oil_deposit",
+      "collisionRadius": 1.65,
+      "resourceType": "oil",
+      "capacity": 50,
+      "components": [
+        "resource"
+      ],
+      "tags": [
+        "resource",
+        "raw",
+        "oil",
+        "field-node"
+      ],
+      "stats": {}
+    },
+    "v2_uranium_exposure": {
+      "presentation": "v2_uranium_exposure",
+      "nameKey": "entity.uranium_deposit",
+      "collisionRadius": 0.8,
+      "resourceType": "uranium",
+      "capacity": 20,
+      "components": [
+        "resource"
+      ],
+      "tags": [
+        "resource",
+        "raw",
+        "uranium",
+        "field-node"
+      ],
+      "stats": {}
+    },
+    "v2_uranium_rock": {
+      "presentation": "v2_uranium_rock",
+      "nameKey": "entity.uranium_deposit",
+      "collisionRadius": 1.0,
+      "resourceType": "uranium",
+      "capacity": 20,
+      "components": [
+        "resource"
+      ],
+      "tags": [
+        "resource",
+        "raw",
+        "uranium",
+        "field-node"
+      ],
+      "stats": {}
+    },
+    "v2_uranium_vein": {
+      "presentation": "v2_uranium_vein",
+      "nameKey": "entity.uranium_deposit",
+      "collisionRadius": 0.65,
+      "resourceType": "uranium",
+      "capacity": 20,
+      "components": [
+        "resource"
+      ],
+      "tags": [
+        "resource",
+        "raw",
+        "uranium",
+        "field-node"
+      ],
+      "stats": {}
     }
   }
 }

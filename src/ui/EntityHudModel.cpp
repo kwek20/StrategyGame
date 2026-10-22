@@ -202,7 +202,31 @@ HudEntityCardModel card(const Entity& entity, const DefinitionRegistry& definiti
 EntityHudModel EntityHudModelBuilder::build(const World& world,
                                             EntityId selected,
                                             const std::vector<EntityId>& selection,
-                                            const DefinitionRegistry& definitions) {
+                                            const DefinitionRegistry& definitions,
+                                            bool wholeResourceField) {
+    if (const auto* node = world.findEntity(selected);
+        wholeResourceField && node && node->resource && node->resource.fieldId) {
+        EntityHudModel result;
+        const auto* resource = definitions.resourceType(ResourceId{node->resource.type});
+        const auto name = resource ? Text::get(resource->nameKey) : node->resource.type;
+        result.title = Text::format("entity_hud.resource_field", {name});
+        result.portraitIcon = resource ? resource->icon : "resource_materials";
+        float total = 0;
+        for (const auto& member : world.entities())
+            if (member.resource && member.resource.fieldId == node->resource.fieldId &&
+                member.resource.type == node->resource.type) {
+                total += std::max(0.0F, member.resource.remaining);
+                result.totalEntities += member.resource.remaining > 0;
+            }
+        result.stats.push_back({Text::get("entity_hud.resource_remaining"),
+                                decimal(total) + " " + name,
+                                result.portraitIcon});
+        result.stats.push_back({Text::get("entity_hud.resource_nodes"),
+                                std::to_string(result.totalEntities),
+                                result.portraitIcon});
+        result.footer = Text::get("entity_hud.resource_field_hint");
+        return result;
+    }
     std::vector<const Entity*> entities;
     if (selection.empty()) {
         if (const Entity* entity = world.findEntity(selected)) entities.push_back(entity);

@@ -20,6 +20,8 @@ namespace strategy {
 
 struct EntityDefinition {
     std::string model;
+    // Selectable gameplay entity whose appearance is painted into the terrain.
+    bool terrainSurface{false};
     float scale{1.0F};
     float selectionRadius{0.5F};
     float selectionHeight{1.8F};

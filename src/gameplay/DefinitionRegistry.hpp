@@ -264,6 +264,14 @@ using ResourceNodeDefinition = EntityArchetype;
 
 struct ResourceNodeVariant {
     ResourceArchetypeId node;
+    ResourceArchetypeId terrainV2Node;
+};
+
+struct ResourceFringeDefinition {
+    std::vector<EntityArchetypeId> variants;
+    float chance{}, minimumDistance{}, maximumDistance{}, minimumScale{}, maximumScale{};
+    std::uint32_t maximumPieces{};
+    float connectionSpacing{}, connectionWidth{}, maximumConnectionLength{};
 };
 
 struct ResourceFieldDefinition {
@@ -271,6 +279,13 @@ struct ResourceFieldDefinition {
     ResourceId resourceType;
     std::vector<ResourceNodeVariant> variants;
     ResourceFieldGenerationDefinition generation;
+    // Optional spatial composition; the field inventory fixes supply, not harvest-target count.
+    std::vector<ResourceArchetypeId> terrainV2HarvestNodes;
+    ResourceFringeDefinition decorativeFringe;
+    float terrainV2MinimumRadius{0}, terrainV2MaximumRadius{0};
+    float terrainV2NodeSpacing{0};
+    float terrainV2DirectionalBias{0};
+    [[nodiscard]] float maximumRadiusForNode(ResourceArchetypeId id) const;
 };
 
 class DefinitionRegistry final {

@@ -278,6 +278,13 @@ Renderer::Renderer(Logger* logger, std::function<void()> keepResponsive)
         glDebugMessageCallback(openGlDebugMessage, logger_);
         logger_->info("renderer", "OpenGL debug output enabled");
     }
+    if (logger_) {
+        const auto* deviceLabel = glGetString(GL_RENDERER);
+        logger_->info(
+            "renderer",
+            std::string{"Graphics device: "} +
+                (deviceLabel ? reinterpret_cast<const char*>(deviceLabel) : "unavailable"));
+    }
     uiRenderer_ = std::make_unique<UiRenderer>(shaders_, resources_);
     rmlUi_ = std::make_unique<RmlUiManager>();
     iconAtlas_ = IconAtlas::load("assets/icons_atlas.json");
@@ -750,13 +757,17 @@ ResourceState Renderer::textureState(TextureHandle handle) const {
 }
 
 void Renderer::bindTerrainTextures() const {
-    static constexpr std::array<const char*, 4> keys{
-        "terrain/grass", "terrain/dirt", "terrain/rock", "terrain/dry_ground"};
+    static constexpr std::array<const char*, 5> keys{"terrain/grass",
+                                                     "terrain/dirt",
+                                                     "terrain/rock",
+                                                     "terrain/dry_ground",
+                                                     "terrain/cracked_ground"};
     for (std::size_t index = 0; index < terrainTextures_.size(); ++index) {
         if (!terrainTextures_[index])
             terrainTextures_[index] = resources_.requestTexture(keys[index]);
+        // Unit 4 belongs to foundations; 7 and 8 hold exploration and resource-site masks.
         resources_.textureOrMarker(terrainTextures_[index])
-            ->bind(static_cast<std::uint32_t>(index), true);
+            ->bind(static_cast<std::uint32_t>(index == 4 ? 5 : index), true);
     }
     glActiveTexture(GL_TEXTURE0);
 }
@@ -877,6 +888,34 @@ void Renderer::drawDiagnosticPanel(const std::vector<std::string>& lines,
                  i == 0 ? accent : glm::vec3{0.90F, 0.95F, 0.98F});
 }
 
+void Renderer::prepareResourceSites(const World& world) const {
+    if (terrain_.mode() != TerrainMode::v2) {
+        if (resourceSites_.ready())
+            resourceSites_.clear();
+        return;
+    }
+    std::vector<ResourceSiteSource> sources;
+    for (const auto& entity : world.entities()) {
+        if (!entity.resource)
+            continue;
+        const auto& type = entity.resource.type;
+        if (type != "scrap" && type != "oil" && type != "uranium")
+            continue;
+        const auto* definition = resources_.entityDefinition(entity.renderId());
+        if (!definition || definition->selectionRadius <= 0)
+            continue;
+        // Exhausted deposits leave a ground scar; no gameplay state or cache identity is saved.
+        sources.push_back({entity.id,
+                           {entity.transform.position.x, entity.transform.position.z},
+                           definition->selectionRadius,
+                           static_cast<std::uint8_t>(type == "scrap" ? 0
+                                                     : type == "oil" ? 1
+                                                                     : 2),
+                           entity.resource.fieldId});
+    }
+    resourceSites_.update(sources, activeWorldExtent());
+}
+
 void Renderer::drawTerrain(const CameraView& camera,
                            const Player* player,
                            bool terrainDebug,
@@ -888,6 +927,10 @@ void Renderer::drawTerrain(const CameraView& camera,
 
     shaders_.use(program_);
     bindTerrainTextures();
+    resourceSites_.bind();
+    glUniform1i(shaders_.uniform(program_, "resourceSiteMap"), 8);
+    glUniform1i(shaders_.uniform(program_, "useResourceSites"),
+                terrain_.mode() == TerrainMode::v2 && resourceSites_.ready());
     glUniform1i(shaders_.uniform(program_, "boundaryPresentation"), 0);
     glUniform1i(shaders_.uniform(program_, "regionalStyle"),
                 terrain_.mode() == TerrainMode::v2 ? 1 : 0);
@@ -895,6 +938,7 @@ void Renderer::drawTerrain(const CameraView& camera,
     glUniform1i(shaders_.uniform(program_, "dirtTexture"), 1);
     glUniform1i(shaders_.uniform(program_, "rockTexture"), 2);
     glUniform1i(shaders_.uniform(program_, "dryGroundTexture"), 3);
+    glUniform1i(shaders_.uniform(program_, "crackedGroundTexture"), 5);
     glUniform1i(shaders_.uniform(program_, "useFoundationTexture"), 0);
     glUniform1i(shaders_.uniform(program_, "terrainDebug"), terrainDebug ? 1 : 0);
     glUniform1i(shaders_.uniform(program_, "waterDebugMode"), waterDebugMode);
@@ -902,7 +946,7 @@ void Renderer::drawTerrain(const CameraView& camera,
     glUniformMatrix4fv(location, 1, GL_FALSE, glm::value_ptr(viewProjection));
     glUniform3fv(shaders_.uniform(program_, "cameraPosition"), 1, glm::value_ptr(camera.position));
     const bool closeView = camera.detailDistance < 20.0F;
-    glUniform2f(shaders_.uniform(program_, "fogRange"), 140.0F, 280.0F);
+    glUniform2fv(shaders_.uniform(program_, "fogRange"), 1, glm::value_ptr(worldFogRange()));
     glUniform1i(shaders_.uniform(program_, "useExploration"),
                 player && !terrainDebug && waterDebugMode == 0 ? 1 : 0);
     glUniform1f(shaders_.uniform(program_, "explorationExtent"), activeWorldExtent());
@@ -997,7 +1041,7 @@ void Renderer::drawWater(const CameraView& camera, const Player* player, int deb
                 terrain_.mode() == TerrainMode::v2 ? 1 : 0);
     glUniform1f(shaders_.uniform(waterProgram_, "timeSeconds"),
                 static_cast<float>(SDL_GetTicks()) * 0.001F);
-    glUniform2f(shaders_.uniform(waterProgram_, "fogRange"), 140.0F, 280.0F);
+    glUniform2fv(shaders_.uniform(waterProgram_, "fogRange"), 1, glm::value_ptr(worldFogRange()));
     glUniform1f(shaders_.uniform(waterProgram_, "explorationExtent"), activeWorldExtent());
     glUniform1i(shaders_.uniform(waterProgram_, "explorationMap"), 7);
     glUniform1i(shaders_.uniform(waterProgram_, "useExploration"),
@@ -1037,7 +1081,7 @@ void Renderer::drawWorld(const World& world,
     shaders_.use(modelProgram_);
     glUniform3fv(
         shaders_.uniform(modelProgram_, "cameraPosition"), 1, glm::value_ptr(camera.position));
-    glUniform2f(shaders_.uniform(modelProgram_, "fogRange"), 140.0F, 280.0F);
+    glUniform2fv(shaders_.uniform(modelProgram_, "fogRange"), 1, glm::value_ptr(worldFogRange()));
     glUniform1i(shaders_.uniform(modelProgram_, "rememberedEntity"), 0);
     glUniform1i(shaders_.uniform(modelProgram_, "explorationMap"), 7);
     glUniform1f(shaders_.uniform(modelProgram_, "explorationExtent"), activeWorldExtent());
@@ -1045,6 +1089,8 @@ void Renderer::drawWorld(const World& world,
     for (const Entity& entity : world.entities()) {
         if (entity.resource && entity.resource.remaining <= 0.0F)
             continue;
+        if (entity.resource && entity.resource.fieldId != 0)
+            continue; // Persistent field nodes use the shared instanced buffers below.
         const ModelHandle handle = modelHandle(entity.renderId());
         const Model* model = resources_.modelOrMarker(handle);
         if (model == nullptr) {
@@ -1091,6 +1137,48 @@ void Renderer::drawWorld(const World& world,
                               animationSeconds,
                               tint,
                               player && entity.authority.owner != player->id ? 1 : 0});
+    }
+    {
+        const auto& field = resourceNodePresentation_.update(world);
+        resourceNodeCache_.beginFrame(field);
+        const auto& material = materials_.get(worldMaterial_);
+        glUniform4fv(
+            shaders_.uniform(modelProgram_, "materialTint"), 1, glm::value_ptr(material.tint));
+        glUniform1f(shaders_.uniform(modelProgram_, "materialRoughness"), material.roughness);
+        glUniform1i(shaders_.uniform(modelProgram_, "visibilityMode"), player ? 1 : 0);
+        struct Group {
+            const Model* model{};
+            std::vector<ModelInstanceRange> ranges;
+        };
+        std::map<std::uint32_t, Group> groups;
+        for (std::size_t index = 0; index < field.chunks().size(); ++index) {
+            const auto& chunk = field.chunks()[index];
+            if (!visibleSphere(viewProjection,
+                               {chunk.center.x,
+                                terrain_.heightAt(chunk.center.x, chunk.center.y),
+                                chunk.center.y},
+                               chunk.radius + 16))
+                continue;
+            for (const auto& [key, batch] : resourceNodeCache_.prepareChunk(
+                     index,
+                     chunk,
+                     resources_,
+                     [&](const VegetationInstance& instance,
+                         const EntityDefinition* definition,
+                         float baseY) {
+                         return groundedEntityTransform(
+                             terrain_, instance.transform, definition, instance.id, baseY);
+                     })) {
+                if (!batch.model || !batch.count)
+                    continue;
+                auto& group = groups[batch.buffer];
+                group.model = batch.model;
+                group.ranges.push_back({batch.first, static_cast<std::uint32_t>(batch.count)});
+                resourceNodeCache_.recordSubmitted(batch.count);
+            }
+        }
+        for (const auto& [buffer, group] : groups)
+            group.model->drawInstancedRanges(modelBindings_, viewProjection, buffer, group.ranges);
     }
     if (player)
         for (const LastKnownEntity& known : player->intelligence) {
@@ -1239,7 +1327,7 @@ void Renderer::drawVegetation(const VegetationField& vegetation,
     shaders_.use(modelProgram_);
     glUniform3fv(
         shaders_.uniform(modelProgram_, "cameraPosition"), 1, glm::value_ptr(camera.position));
-    glUniform2f(shaders_.uniform(modelProgram_, "fogRange"), 140.0F, 280.0F);
+    glUniform2fv(shaders_.uniform(modelProgram_, "fogRange"), 1, glm::value_ptr(worldFogRange()));
     glUniform1i(shaders_.uniform(modelProgram_, "rememberedEntity"), 0);
     glUniform1i(shaders_.uniform(modelProgram_, "visibilityMode"), player ? 1 : 0);
     glUniform1i(shaders_.uniform(modelProgram_, "explorationMap"), 7);
@@ -1249,7 +1337,10 @@ void Renderer::drawVegetation(const VegetationField& vegetation,
     glDisable(GL_CULL_FACE);
     glUniform4fv(shaders_.uniform(modelProgram_, "materialTint"), 1, glm::value_ptr(material.tint));
     glUniform1f(shaders_.uniform(modelProgram_, "materialRoughness"), material.roughness);
-    constexpr float renderDistance = 300.0F;
+    // V2 overview haze reaches farther than the former fixed vegetation cutoff.
+    // Keep visible horizon groups in the cached draw instead of exposing a bare ring.
+    const float renderDistance =
+        terrain_.mode() == TerrainMode::v2 ? std::max(300.0F, worldFogRange().y) : 300.0F;
     struct DrawGroup {
         const Model* model{nullptr};
         std::vector<ModelInstanceRange> ranges;
@@ -2206,6 +2297,9 @@ void Renderer::regenerateTerrain(std::uint32_t seed,
                                  std::uint32_t repairLevel) {
     clearParticles();
     vegetationCache_.clear();
+    resourceNodeCache_.clear();
+    resourceNodePresentation_.clear();
+    resourceSites_.clear();
     terrainSeed_ = seed;
     activeTerrainChunksPerSide_ =
         std::clamp(chunksPerSide, 10U, static_cast<std::uint32_t>(Terrain::chunksPerSide));
@@ -2228,6 +2322,9 @@ void Renderer::stageGeneratedTerrain(const Terrain& terrain,
                                      const std::vector<TerrainFoundation>& foundations) {
     clearParticles();
     vegetationCache_.clear();
+    resourceNodeCache_.clear();
+    resourceNodePresentation_.clear();
+    resourceSites_.clear();
     terrainSeed_ = seed;
     activeTerrainChunksPerSide_ =
         std::clamp(chunksPerSide, 10U, static_cast<std::uint32_t>(Terrain::chunksPerSide));
@@ -2283,6 +2380,8 @@ void Renderer::setTerrainFoundations(const std::vector<TerrainFoundation>& found
         const glm::vec2 margin{Terrain::spacing * 2.0F};
         vegetationCache_.invalidateTerrainRegion(minimum - margin,
                                                  minimum + glm::vec2{chunkSize} + margin);
+        resourceNodeCache_.invalidateTerrainRegion(minimum - margin,
+                                                   minimum + glm::vec2{chunkSize} + margin);
         if (std::find(pendingTerrainChunkUploads_.begin(),
                       pendingTerrainChunkUploads_.end(),
                       chunk) == pendingTerrainChunkUploads_.end())

@@ -1,5 +1,6 @@
 #include "terrain/TerrainV2Generator.hpp"
 
+#include "terrain/TerrainV2Access.hpp"
 #include "world/GenerationProgress.hpp"
 
 #include <algorithm>
@@ -19,9 +20,13 @@ float naturalHeight(glm::vec2 position,
                     const TerrainV2Plan& plan,
                     const TerrainFieldGenerator& fields) {
     const auto& recipe = plan.recipe();
-    const auto sample = fields.sample(position.x, position.y);
+    const auto fieldPosition = plan.fieldPosition(position);
+    const auto sample = fields.sample(fieldPosition.x, fieldPosition.y);
     // Broad regional fields, rather than fine detail noise, define buildable contours.
-    const float regional = 0.65F * sample.continentalness + 0.35F * sample.hills;
+    const float hillWeight = recipe.shape == TerrainLayoutShape::hills    ? 0.65F
+                             : recipe.shape == TerrainLayoutShape::plains ? 0.15F
+                                                                          : 0.35F;
+    const float regional = (1 - hillWeight) * sample.continentalness + hillWeight * sample.hills;
     float height = recipe.baseHeight + plan.relief() * (regional - 0.35F);
     if (recipe.shape == TerrainLayoutShape::centralHill) {
         const float radius = glm::length(position) / (plan.extent() * 0.30F);
@@ -111,6 +116,7 @@ TerrainV2Landscape TerrainV2Generator::generate(std::uint32_t seed,
                 cell.role = TerrainCellRole::hill;
         }
     }
+    connectV2Landscape(plan, source, side, progress);
     auto terraces = TerrainTerraces::resolve(source, side, extent, settings, progress);
     if (progress)
         progress->report(WorldGenerationPhase::terrainFields, 1.0F);

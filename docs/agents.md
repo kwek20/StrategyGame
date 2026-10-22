@@ -242,7 +242,15 @@ quality tests. Vegetation expansion and tuning remain deferred as well.
 - Main menu uses `Play` to open match setup.
 - Match setup exposes seed, country choices, map size, starting-resource scale, and resource
   abundance. Current named map sizes are 10x10, 15x15, and 20x20 chunks.
-- Player starts use assigned opposite corners, independently drawing 2–5 inward chunk offsets
+- V2 revision 7 uses many small individually harvestable nodes per field. Original field budgets
+  remain exact; `terrainV2Composition.harvestNodes` partitions them using fixed node capacities.
+  Field membership is saved/checksummed and guides depletion retargeting; V1 keeps its old node
+  inventories. Models come from `tools/build_resource_nodes.py`, which does not rewrite definitions.
+  Resource models share persistent instance buffers through `ResourceNodePresentation` and the
+  existing instance cache. Depletion changes only the affected field range; terrain edits invalidate
+  intersecting ranges. The shared ground mask cannot link separate explicit fields. See
+  `docs/RESOURCE_CLUSTERS.md` for current contracts and the old compound prototype history.
+- V1 player starts use assigned opposite corners, independently drawing 2–5 inward chunk offsets
   from the same initial seed, then seed + 1 on failure (256 attempts/player). First valid starts
   remain fixed; terrain, usable land, connectivity and half-map-side separation are checked.
   Resource placement reserves exactly 600 Scrap and 400 Oil per player before expansion fields.

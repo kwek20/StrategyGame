@@ -12,6 +12,8 @@
 #include "render/ParticleRenderer.hpp"
 #include "render/RenderCommandQueue.hpp"
 #include "render/RenderGraph.hpp"
+#include "render/ResourceNodePresentation.hpp"
+#include "render/ResourceSiteTexture.hpp"
 #include "render/RmlUiManager.hpp"
 #include "render/ShaderManager.hpp"
 #include "render/TerrainBackdrop.hpp"
@@ -21,6 +23,7 @@
 #include "world/MapArea.hpp"
 
 #include <SDL3/SDL_events.h>
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cstdint>
@@ -85,6 +88,13 @@ class Renderer final {
                      const Player* player = nullptr,
                      bool terrainDebug = false,
                      int waterDebugMode = 0) const;
+    void prepareResourceSites(const World& world) const;
+    std::size_t resourceSiteUploadedTiles() const {
+        return resourceSites_.uploadedTiles();
+    }
+    const VegetationCacheStats& resourceNodeCacheStats() const {
+        return resourceNodeCache_.stats();
+    }
     void drawWorld(const World& world,
                    const CameraView& camera,
                    const Player* player = nullptr,
@@ -278,9 +288,12 @@ class Renderer final {
     mutable RenderCommandQueue commandQueue_;
     mutable RenderGraph renderGraph_;
     mutable VegetationRenderCache vegetationCache_;
+    mutable VegetationRenderCache resourceNodeCache_;
+    mutable ResourceNodePresentation resourceNodePresentation_;
+    mutable ResourceSiteTexture resourceSites_;
     std::chrono::steady_clock::time_point lastSlowFrameLog_{};
     mutable std::unordered_map<std::string, ModelHandle> modelHandles_;
-    mutable std::array<TextureHandle, 4> terrainTextures_{};
+    mutable std::array<TextureHandle, 5> terrainTextures_{};
     mutable TextureHandle foundationTexture_{};
     mutable TextureHandle iconAtlasTexture_{};
     mutable float displayedLoadingProgress_{0.0F};
@@ -294,6 +307,12 @@ class Renderer final {
     }
     [[nodiscard]] MapArea activeMapArea() const {
         return MapArea{activeTerrainChunksPerSide_};
+    }
+    [[nodiscard]] glm::vec2 worldFogRange() const {
+        const float near = terrain_.mode() == TerrainMode::v2
+                               ? std::max(220.0F, activeWorldExtent() * 0.6F)
+                               : 140.0F;
+        return {near, near * 2.0F};
     }
     void bindTerrainTextures() const;
     void ensureTerrainChunks();

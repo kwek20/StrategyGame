@@ -12,6 +12,15 @@ Raw resources are not intended to become additional stockpiled currencies. They 
 
 ## Map-generation contract
 
+V2 revision 7 generates many individual harvest nodes inside each seeded field. A field's fixed
+budget is divided exactly among those nodes; starting supply remains 600 Scrap and 400 Oil per
+player, and abundance controls additional field counts. Field identity and individual depletion
+persist across saves. See [Resource clusters](RESOURCE_CLUSTERS.md) for the implemented node model.
+For V2 distribution, use
+[Terrain Generation V2](TERRAIN_GENERATION_V2.md#8-resource-distribution-and-cluster-flair) and its
+[implementation report](TERRAIN_GENERATION_V2_IMPLEMENTATION.md). The comparable-access rules and
+starting-fields-within-total formula below describe the older V1 distribution.
+
 Player starts are accepted independently of resources. New maps allocate a fixed resource
 inventory before placement. Each player reserves exactly 600 Scrap (two medium nodes) and 400
 Oil (two small nodes), independent of map size and abundance. These are provisional opening

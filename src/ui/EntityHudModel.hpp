@@ -85,7 +85,8 @@ class EntityHudModelBuilder final {
     [[nodiscard]] static EntityHudModel build(const World& world,
                                               EntityId selected,
                                               const std::vector<EntityId>& selection,
-                                              const DefinitionRegistry& definitions);
+                                              const DefinitionRegistry& definitions,
+                                              bool wholeResourceField = false);
 };
 
 } // namespace strategy

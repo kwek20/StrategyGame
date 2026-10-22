@@ -43,6 +43,10 @@ bool usesOnlyModernGltfImporter() {
 } // namespace
 
 int strategyTestMain() {
+    for (const auto& entry :
+         std::filesystem::directory_iterator("assets/models/gen/resources/nodes"))
+        if (entry.path().extension() == ".glb" && !imports(entry.path(), false))
+            return 1;
     const bool importerConfiguration = usesOnlyModernGltfImporter();
     const bool townCenter =
         imports("assets/models/buildings/TownCenter_FirstAge_Level1.gltf", false);
@@ -53,6 +57,9 @@ int strategyTestMain() {
         imports("assets/models/gen/resources/scrap_pile_medium.glb", false) &&
         imports("assets/models/gen/resources/oil_seep_small.glb", false) &&
         imports("assets/models/gen/resources/oil_barrel_medium.glb", false) &&
+        imports("assets/models/gen/resources/clusters/oil_small.glb", false) &&
+        imports("assets/models/gen/resources/clusters/oil_medium.glb", false) &&
+        imports("assets/models/gen/resources/clusters/oil_large.glb", false) &&
         imports("assets/models/gen/resources/uranium_crystal_small.glb", false) &&
         imports("assets/models/gen/resources/uranium_crystal_large.glb", false);
     const bool terrainScenery =

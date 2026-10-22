@@ -4,6 +4,7 @@
 #include "world/Navigation.hpp"
 #include "world/StartingPlacement.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <filesystem>
@@ -76,6 +77,31 @@ int strategyTestMain() {
         std::cout << layout << " repair=" << session.terrain().repairLevel()
                   << " fields=" << session.resourceLayout().fields.size() << std::endl;
         require(session.terrainSeed() == 7, "V2 preserves the originally requested seed");
+        for (const auto& node : session.resourceLayout().nodes) {
+            const auto* field = definitions.resourceField(node.field);
+            const auto* type = definitions.resource(node.archetype);
+            require(
+                definitions.resourceFieldForNode(node.archetype) == field &&
+                    field->maximumRadiusForNode(node.archetype) == field->terrainV2MaximumRadius,
+                "Compound deposits retain field lookup and local depletion retargeting after load");
+            require(std::find(field->terrainV2HarvestNodes.begin(),
+                              field->terrainV2HarvestNodes.end(),
+                              node.archetype) != field->terrainV2HarvestNodes.end() &&
+                        type->collisionRadius <= 1.65F,
+                    "V2 fields contain individual harvest targets rather than compound fields");
+        }
+        for (std::size_t index = 0; index < session.resourceLayout().fields.size(); ++index) {
+            const auto& field = session.resourceLayout().fields[index];
+            float amount = 0;
+            std::uint32_t count = 0;
+            for (const auto& entity : session.world().entities())
+                if (entity.resource && entity.resource.fieldId == index + 1) {
+                    amount += entity.resource.remaining;
+                    ++count;
+                }
+            require(amount == field.capacity && count == field.desiredNodes && count >= 8,
+                    "Many independent nodes preserve each field's exact budget and identity");
+        }
         for (std::uint32_t player : {1U, 2U}) {
             float scrap = 0, oil = 0;
             for (const auto& field : session.resourceLayout().fields)
@@ -122,6 +148,17 @@ int strategyTestMain() {
                         TerrainMode::v2,
                         session.terrain().repairLevel());
         const auto save = SaveGame::read(savePath);
+        for (const auto& entity : session.world().entities())
+            if (entity.resource) {
+                const auto restoredNode =
+                    std::find_if(save.entities.begin(),
+                                 save.entities.end(),
+                                 [&](const auto& candidate) { return candidate.id == entity.id; });
+                require(restoredNode != save.entities.end() &&
+                            restoredNode->resource.fieldId == entity.resource.fieldId &&
+                            restoredNode->resource.remaining == entity.resource.remaining,
+                        "Field membership and individual remaining supply survive save/load");
+            }
         require(save.terrainMode == TerrainMode::v2 &&
                     save.terrainRepairLevel == session.terrain().repairLevel(),
                 "Save metadata restores the new V2 and its deterministic repair");

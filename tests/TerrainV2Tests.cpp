@@ -28,6 +28,54 @@ void require(bool value, const char* message) {
 int strategyTestMain() {
     using namespace strategy;
 
+    {
+        const auto definitions = TerrainGenerationDefinitions::load();
+        const auto recipes = TerrainV2Recipes::load();
+        const auto lakeRecipe =
+            recipes.resolve(definitions.layout(TerrainLayoutId{"central_water"}));
+        std::vector<glm::vec2> firstStarts;
+        std::size_t smallestLake = 4096, largestLake = 0;
+        for (std::uint32_t seed = 0; seed < 12; ++seed) {
+            const auto plan = TerrainV2Plan::create(seed, lakeRecipe, 240, 2);
+            const auto repeat = TerrainV2Plan::create(seed, lakeRecipe, 240, 2);
+            require(plan.openings() == repeat.openings(), "Start selection is repeatable");
+            require(glm::distance(plan.openings()[0], plan.openings()[1]) >= 144,
+                    "Random start locations retain separation");
+            for (auto opening : plan.openings())
+                require(plan.waterDistance(opening) > lakeRecipe.openingRadius,
+                        "Opening construction cores do not intersect the basin");
+            if (seed == 0)
+                firstStarts = plan.openings();
+            if (seed == 11)
+                require(plan.openings() != firstStarts,
+                        "Seeds change authoritative start positions");
+            std::size_t wet = 0;
+            for (int z = 0; z < 64; ++z)
+                for (int x = 0; x < 64; ++x) {
+                    const glm::vec2 point{-120 + (x + 0.5F) * 3.75F, -120 + (z + 0.5F) * 3.75F};
+                    wet += plan.waterDistance(point) < 0;
+                    require(plan.waterDistance(point) == repeat.waterDistance(point) &&
+                                plan.peakInfluence(point) == repeat.peakInfluence(point),
+                            "Lake and landform composition repeat exactly");
+                }
+            require(wet > 409 && wet < 1229,
+                    "Small central basin preserves its broad land surround");
+            smallestLake = std::min(smallestLake, wet);
+            largestLake = std::max(largestLake, wet);
+        }
+        require(largestLake > smallestLake + 100,
+                "Small-map lake area varies rather than clamping to one radius");
+        auto dryRecipe = recipes.resolve(definitions.layout(TerrainLayoutId{"rolling_hills"}));
+        const auto small = TerrainV2Plan::create(7, dryRecipe, 240, 2);
+        const auto other = TerrainV2Plan::create(12345, dryRecipe, 240, 2);
+        bool differentRelief = false;
+        for (int z = -100; z <= 100; z += 10)
+            for (int x = -100; x <= 100; x += 10)
+                differentRelief |=
+                    std::abs(small.peakInfluence({x, z}) - other.peakInfluence({x, z})) > 0.1F;
+        require(differentRelief, "Seeds change landform placement and shape beyond cosmetic noise");
+    }
+
     require(std::abs(surface_geometry::diskArea({{-4, -4}, {4, -4}, {4, 4}, {-4, 4}}, 3) -
                      9 * std::numbers::pi) < 1e-10,
             "Full disk area is analytic");
@@ -51,6 +99,16 @@ int strategyTestMain() {
             "Footprint clipping can remove a mesh edge's support connection");
     const auto definitions = TerrainGenerationDefinitions::load();
     const auto recipes = TerrainV2Recipes::load();
+    {
+        const TerrainRidge ridge{{0, 0}, {1, 0}, 60, 14, 1, 0.2F, 0, 1};
+        require(ridge.influence({0, 4.2F}) > 0.95F && ridge.influence({0, 7.7F}) == 0,
+                "Escarpments drop sharply beside a sustained crest");
+        require(ridge.influence({0, -7.2F}) > 0.4F,
+                "The opposite shoulder climbs gradually from the valley");
+        const float bentCrest = std::cos(0.6F * std::numbers::pi_v<float> * 0.5F) * 2.8F;
+        require(ridge.influence({18, bentCrest}) > 0.7F && ridge.influence({31, 0}) == 0,
+                "Long crests remain elevated between local peaks and end at bounded tips");
+    }
     bool rejectedRange = false;
     try {
         (void)TerrainRange{1, 2}.intersect({3, 4});
@@ -228,8 +286,10 @@ int strategyTestMain() {
             "Constructive repair preserves the active lake and records its state");
     Terrain fallbackOtherSeed{12345, TerrainLayoutId{"central_water"}, TerrainMode::v2, 10};
     fallbackOtherSeed.repairV2Resources(12345, TerrainLayoutId{"central_water"}, 2);
-    require(fallbackOtherSeed.fingerprint() == central.fingerprint(),
-            "Constructive fallback eligibility and geometry are independent of the failed seed");
+    const auto anchors = fallbackOtherSeed.v2Landscape()->plan.openings();
+    fallbackOtherSeed.repairV2Resources(12345, TerrainLayoutId{"central_water"}, 2);
+    require(fallbackOtherSeed.v2Landscape()->plan.openings() == anchors,
+            "Constructive fallback preserves the requested seed's opening locations");
 
     require(terrainModeAvailable(TerrainMode::v1), "V1 remains playable");
     require(terrainModeAvailable(TerrainMode::v2), "The new V2 is independently available");

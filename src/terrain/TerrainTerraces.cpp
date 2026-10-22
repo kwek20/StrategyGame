@@ -106,7 +106,8 @@ TerrainTerraces TerrainTerraces::resolve(std::span<const TerrainCellSource> sour
         for (int z = 0; z < side; ++z)
             for (int x = 0; x < side; ++x) {
                 auto& cell = result.cells_[result.index(x, z)];
-                if (cell.source.role == TerrainCellRole::opening)
+                if (cell.source.role == TerrainCellRole::opening ||
+                    cell.source.role == TerrainCellRole::route)
                     continue;
                 float best = cell.elevation;
                 const double originalScore = result.localScore(x, z, best);

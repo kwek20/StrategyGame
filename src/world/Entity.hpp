@@ -132,6 +132,7 @@ struct CombatComponent {
     float cooldownRemaining{0.0F};
 };
 struct ResourceComponent {
+    std::uint64_t fieldId{0}; // Generated field membership; zero for independent/legacy sources.
     std::string type;
     float remaining{0.0F};
 };

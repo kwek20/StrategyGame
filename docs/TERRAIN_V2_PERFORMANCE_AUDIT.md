@@ -174,3 +174,63 @@ forest groups, shoreline crawling, cracks, foundation drift or restored blockine
 terrain semantics, resource distribution and support rules. Cache lifetime/invalidation and
 conservative culling need focused tests; numerical generation audits need rerunning only if those
 authoritative paths change.
+
+
+## Subsequent seeded-landform render probe (2026-10-14)
+
+The new V2 composition and farther overview haze change the visible workload. Vegetation now renders
+out to the V2 fog range instead of the former fixed 300-unit cutoff. A largest-map Release probe
+at 2554 by 1389 averaged 9.34 ms render-only, with 0.265 ms vegetation CPU, 5.62 ms vegetation GPU,
+11,290 submitted instances and no measured cached-instance uploads/rebuilds. This is not an isolated
+comparison to the earlier map or a full-game FPS measurement. See
+[the current implementation report](TERRAIN_GENERATION_V2_IMPLEMENTATION.md#render-cost-probe) for
+method, caveats and verification. The destruction-aware cache and grouped GPU buffers remain in use.
+
+## Connected cliffs and compound deposits (revision 4, 2026-10-14)
+
+The final Release probe averaged **9.47 ms** at 2554×1389 on the largest map (Central Water, seed 7,
+20 chunks), with terrain repair level 0 and 108 resource targets. It measured 100 completed frames
+after 20 warm-up frames using `glFinish`, after other tests finished. Vegetation recorded no chunk
+rebuilds or instance-buffer uploads in those measured frames. An earlier concurrent-test run measured
+13.2 ms; it is superseded by the isolated measurement. This remains render-only, excluding simulation,
+UI and swap throttling.
+
+Compound deposits bake 22�58 pieces into joined meshes, keeping satellite count out of draw-command
+count. Repeated source geometry is reduced before duplication; every baked deposit stays below
+15,000 triangles. Inventory/target counts remain unchanged. No per-frame satellite-transform work
+or extra vegetation-cache invalidation was introduced. The full 32-test suite and final Release
+capture/profile run passed. Run the renderer fixture with `STRATEGY_RENDER_PROFILE=1` to reproduce.
+
+## Resource sites and adapter selection (revision 5, 2026-10-21)
+
+The latest largest-map Release run averaged **8.77 ms** on the **NVIDIA GeForce GTX 1070**, at
+2554×1389 with Central Water seed 7, 20 chunks, 108 resource targets and repair level 0. It measures
+100 frames after 20 warm-up frames. Site preparation averaged 0.019 ms CPU; GPU query averages were
+2.35 ms terrain, 5.04 ms vegetation and 0.45 ms world. There were no site-tile uploads or vegetation
+cache rebuilds/uploads in the measured frames. An earlier matching-adapter repeat measured 8.91 ms.
+This remains render-only; it does not establish full-game FPS or a direct per-feature speedup against
+revision 4, whose resource positions and vegetation workload differ.
+
+An initial ~87 ms result ran on **AMD Radeon integrated graphics**. Pass queries attributed about
+35 ms to terrain and 43 ms to vegetation; the static site preparation was only about 0.036 ms CPU
+and performed no tile uploads. It was an adapter mismatch, not comparable evidence of a GTX 1070
+regression. Always record `V2_RENDER_DEVICE` alongside `V2_RENDER_PROFILE` and `V2_RENDER_PASSES`.
+
+Both rendering executables now export the hybrid-GPU preferences documented by
+[NVIDIA](https://developer.download.nvidia.com/devzone/devcenter/gamegraphics/files/OptimusRenderingPolicies.pdf)
+and [AMD](https://gpuopen.com/learn/amdpowerxpressrequesthighperformance/). The exports belong in the
+executable, not a library or launcher. They selected the GTX 1070 here, but driver/user policies can
+override them. The normal renderer log also identifies the selected device. No global or per-app
+system settings were modified.
+
+Site appearance uses one cached RGBA mask, shared CPU density logic for canopy clearance and local
+texture updates when sources move/disappear. CPU tests compare local updates with full reconstruction;
+GPU readback checks cover partial texture writes and pixel-store restoration. All 33 Debug tests,
+six final affected checks, 20 Release captures and 80 moving-camera frames passed. Existing inventories
+and harvest-target counts are unchanged; whole-compound depletion remains in place.
+
+Compound deposits bake 22–58 pieces into joined meshes, keeping satellite count out of draw-command
+count. Repeated source geometry is reduced before duplication; every baked deposit stays below
+15,000 triangles. Inventory/target counts remain unchanged. No per-frame satellite-transform work
+or extra vegetation-cache invalidation was introduced. The full 32-test suite and final Release
+capture/profile run passed. Run the renderer fixture with `STRATEGY_RENDER_PROFILE=1` to reproduce.

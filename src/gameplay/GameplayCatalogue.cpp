@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <fstream>
+#include <limits>
 #include <rapidjson/document.h>
 #include <rapidjson/istreamwrapper.h>
 #include <stdexcept>
@@ -645,6 +646,96 @@ void DefinitionRegistry::loadResourceFields(const std::filesystem::path& path) {
             if (!variant.IsString()) throw std::runtime_error(context + " has an invalid node variant");
             field.variants.push_back({ResourceArchetypeId{variant.GetString()}});
         }
+        if (value.HasMember("terrainV2Composition")) {
+            const auto& composition = value["terrainV2Composition"];
+            if (composition.IsObject() && composition.HasMember("decorativeFringe")) {
+                const auto& fringe = composition["decorativeFringe"];
+                auto& settings = field.decorativeFringe;
+                if (!fringe.IsObject() || !fringe.HasMember("variants") ||
+                    !fringe["variants"].IsArray() || fringe["variants"].Empty() ||
+                    !fringe.HasMember("maximumPieces") || !fringe["maximumPieces"].IsUint())
+                    throw std::runtime_error(context + " has invalid decorative fringe");
+                for (const auto& variant : fringe["variants"].GetArray()) {
+                    if (!variant.IsString())
+                        throw std::runtime_error(context + " has invalid rubble variant");
+                    settings.variants.emplace_back(variant.GetString());
+                }
+                settings.chance = requiredNumber(fringe, "chance", context);
+                settings.minimumDistance = requiredNumber(fringe, "minimumDistance", context);
+                settings.maximumDistance = requiredNumber(fringe, "maximumDistance", context);
+                settings.minimumScale = requiredNumber(fringe, "minimumScale", context);
+                settings.maximumScale = requiredNumber(fringe, "maximumScale", context);
+                settings.maximumPieces = fringe["maximumPieces"].GetUint();
+                if (fringe.HasMember("connectionSpacing")) {
+                    settings.connectionSpacing =
+                        requiredNumber(fringe, "connectionSpacing", context);
+                    settings.connectionWidth = requiredNumber(fringe, "connectionWidth", context);
+                    settings.maximumConnectionLength =
+                        requiredNumber(fringe, "maximumConnectionLength", context);
+                    if (!std::isfinite(settings.connectionSpacing) ||
+                        settings.connectionSpacing < .4F || settings.connectionSpacing > 4 ||
+                        !std::isfinite(settings.connectionWidth) ||
+                        settings.connectionWidth < .1F || settings.connectionWidth > 1.5F ||
+                        !std::isfinite(settings.maximumConnectionLength) ||
+                        settings.maximumConnectionLength < 1 ||
+                        settings.maximumConnectionLength > 32)
+                        throw std::runtime_error(context + " has invalid rubble connections");
+                }
+                for (const float number : {settings.chance,
+                                           settings.minimumDistance,
+                                           settings.maximumDistance,
+                                           settings.minimumScale,
+                                           settings.maximumScale})
+                    if (!std::isfinite(number))
+                        throw std::runtime_error(context + " has nonfinite rubble settings");
+                if (settings.chance < 0 || settings.chance > 1 || settings.minimumDistance < .3F ||
+                    settings.maximumDistance < settings.minimumDistance ||
+                    settings.maximumDistance > 3 || settings.minimumScale <= 0 ||
+                    settings.maximumScale < settings.minimumScale || settings.maximumScale > .5F ||
+                    settings.maximumPieces == 0 || settings.maximumPieces > 3)
+                    throw std::runtime_error(context + " has excessive decorative fringe");
+            }
+            if (composition.IsObject() && composition.HasMember("harvestNodes")) {
+                const auto& harvestNodes = composition["harvestNodes"];
+                if (!harvestNodes.IsArray() || harvestNodes.Empty() || harvestNodes.Size() > 32)
+                    throw std::runtime_error(context + " has invalid harvest nodes");
+                for (const auto& node : harvestNodes.GetArray()) {
+                    if (!node.IsString())
+                        throw std::runtime_error(context + " has invalid harvest node");
+                    field.terrainV2HarvestNodes.emplace_back(node.GetString());
+                }
+            }
+            if (!composition.IsObject() || !composition.HasMember("fieldRadius") ||
+                !composition["fieldRadius"].IsArray() || composition["fieldRadius"].Size() != 2 ||
+                !composition["fieldRadius"][0].IsNumber() ||
+                !composition["fieldRadius"][1].IsNumber() || !composition.HasMember("nodes") ||
+                !composition["nodes"].IsObject())
+                throw std::runtime_error(context + " has invalid V2 composition");
+            field.terrainV2MinimumRadius = composition["fieldRadius"][0].GetFloat();
+            field.terrainV2MaximumRadius = composition["fieldRadius"][1].GetFloat();
+            field.terrainV2NodeSpacing = requiredNumber(composition, "minimumNodeSpacing", context);
+            field.terrainV2DirectionalBias =
+                requiredNumber(composition, "directionalBias", context);
+            if (!std::isfinite(field.terrainV2MinimumRadius) ||
+                !std::isfinite(field.terrainV2MaximumRadius) || field.terrainV2MinimumRadius <= 0 ||
+                field.terrainV2MaximumRadius < field.terrainV2MinimumRadius ||
+                !std::isfinite(field.terrainV2NodeSpacing) || field.terrainV2NodeSpacing <= 0 ||
+                !std::isfinite(field.terrainV2DirectionalBias) ||
+                field.terrainV2DirectionalBias < 0 || field.terrainV2DirectionalBias > 1)
+                throw std::runtime_error(context + " has invalid V2 radius range");
+            for (auto node = composition["nodes"].MemberBegin();
+                 node != composition["nodes"].MemberEnd();
+                 ++node) {
+                const auto found = std::find_if(
+                    field.variants.begin(), field.variants.end(), [&](const auto& variant) {
+                        return variant.node.value == node->name.GetString();
+                    });
+                if (found == field.variants.end() || !node->value.IsString() ||
+                    node->value.GetStringLength() == 0)
+                    throw std::runtime_error(context + " has invalid V2 node mapping");
+                found->terrainV2Node = ResourceArchetypeId{node->value.GetString()};
+            }
+        }
         const auto& generation = value["generation"];
         auto& settings = field.generation;
         if (!generation.HasMember("stream") || !generation["stream"].IsString())
@@ -1014,11 +1105,46 @@ void DefinitionRegistry::validateReferences() const {
                 throw std::runtime_error("Resource field '" + id +
                                          "' references an incompatible node variant '" +
                                          variant.node.value + "'");
+            if (!variant.terrainV2Node.value.empty()) {
+                const auto cluster = entities_.find(variant.terrainV2Node.value);
+                if (cluster == entities_.end() || cluster->second.kind != EntityKind::resource ||
+                    cluster->second.resourceType != node->second.resourceType ||
+                    cluster->second.resourceCapacity != node->second.resourceCapacity ||
+                    cluster->second.collisionRadius > found->second.terrainV2MinimumRadius)
+                    throw std::runtime_error(
+                        "Resource field '" + id +
+                        "' V2 composition changes capacity or exceeds its field");
+            }
         }
         const auto& settings = found->second.generation;
+        float smallestHarvest = std::numeric_limits<float>::max();
+        for (const auto& rubbleId : found->second.decorativeFringe.variants) {
+            const auto rubble = entities_.find(rubbleId.value);
+            if (rubble == entities_.end() || rubble->second.kind != EntityKind::decoration ||
+                rubble->second.collisionRadius != 0 ||
+                !rubble->second.tags.contains("clear-on-build"))
+                throw std::runtime_error(
+                    "Resource rubble must be nonblocking clearable decoration");
+        }
+        for (const auto& nodeId : found->second.terrainV2HarvestNodes) {
+            const auto node = entities_.find(nodeId.value);
+            if (node == entities_.end() || node->second.kind != EntityKind::resource ||
+                node->second.resourceType != found->second.resourceType.value ||
+                !std::isfinite(node->second.resourceCapacity) ||
+                node->second.resourceCapacity <= 0 ||
+                node->second.collisionRadius > found->second.terrainV2MinimumRadius)
+                throw std::runtime_error("Invalid V2 field harvest node: " + nodeId.value);
+            smallestHarvest = std::min(smallestHarvest, node->second.resourceCapacity);
+        }
+        for (const auto& nodeId : found->second.terrainV2HarvestNodes)
+            if (std::fmod(entities_.at(nodeId.value).resourceCapacity, smallestHarvest) != 0)
+                throw std::runtime_error("V2 harvest capacities must use a common quantum");
         for (const auto* inventory : {&settings.startingNodes, &settings.expansionNodes}) {
             float capacity = 0;
             for (const auto& node : *inventory) capacity += entities_.at(node.value).resourceCapacity;
+            if (!found->second.terrainV2HarvestNodes.empty() &&
+                (std::fmod(capacity, smallestHarvest) != 0 || capacity / smallestHarvest > 128))
+                throw std::runtime_error("V2 field budget cannot be partitioned safely");
             if (!std::isfinite(capacity) || capacity > settings.maximumLocalCapacity)
                 throw std::runtime_error("Resource field '" + id + "' inventory exceeds local capacity limit");
         }
@@ -1711,11 +1837,24 @@ const ResourceFieldDefinition* DefinitionRegistry::resourceField(ResourceFieldId
 const ResourceFieldDefinition*
 DefinitionRegistry::resourceFieldForNode(ResourceArchetypeId id) const {
     for (const auto& [fieldId, field] : resourceFields_)
-        if (std::any_of(field.variants.begin(), field.variants.end(), [&](const auto& variant) {
-                return variant.node == id;
+        if (std::find(field.terrainV2HarvestNodes.begin(), field.terrainV2HarvestNodes.end(), id) !=
+                field.terrainV2HarvestNodes.end() ||
+            std::any_of(field.variants.begin(), field.variants.end(), [&](const auto& variant) {
+                return variant.node == id ||
+                       (!variant.terrainV2Node.value.empty() && variant.terrainV2Node == id);
             }))
             return &field;
     return nullptr;
+}
+
+float ResourceFieldDefinition::maximumRadiusForNode(ResourceArchetypeId nodeId) const {
+    if (std::find(terrainV2HarvestNodes.begin(), terrainV2HarvestNodes.end(), nodeId) !=
+        terrainV2HarvestNodes.end())
+        return terrainV2MaximumRadius;
+    for (const auto& variant : variants)
+        if (!variant.terrainV2Node.value.empty() && variant.terrainV2Node == nodeId)
+            return terrainV2MaximumRadius;
+    return generation.maximumFieldRadius;
 }
 
 const ResourceDefinition* DefinitionRegistry::resourceType(ResourceId id) const {

@@ -311,6 +311,7 @@ void BuildState::render(Renderer& renderer) const {
         hoverPosition_.reset();
     }
     renderer.setTerrainFoundations(world_.foundations());
+    renderer.prepareResourceSites(world_);
     renderer.drawTerrain(view);
     renderer.drawWorld(world_, view);
     if (hoveredEntity_ != 0)

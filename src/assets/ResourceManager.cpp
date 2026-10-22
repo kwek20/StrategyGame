@@ -49,6 +49,13 @@ void ResourceManager::loadEntityDefinitions(const std::filesystem::path& path) {
         }
         EntityDefinition definition;
         definition.model = member.value["model"].GetString();
+        if (member.value.HasMember("terrainSurface")) {
+            if (!member.value["terrainSurface"].IsBool())
+                throw std::runtime_error("Invalid terrainSurface presentation");
+            definition.terrainSurface = member.value["terrainSurface"].GetBool();
+            if (definition.terrainSurface && !definition.model.empty())
+                throw std::runtime_error("Terrain surface presentations cannot also have a model");
+        }
         if (member.value.HasMember("scale") && member.value["scale"].IsNumber()) {
             definition.scale = member.value["scale"].GetFloat();
         }
@@ -171,7 +178,11 @@ ModelHandle ResourceManager::requestModel(const std::string& key) const {
     const std::uint32_t index = static_cast<std::uint32_t>(modelSlots_.size());
     ModelSlot slot;
     slot.key = handleKey;
-    if (resolved.empty()) {
+    const auto* definition = entityDefinition(key);
+    if (definition && definition->terrainSurface) {
+        // Deliberately model-free, rather than a missing asset requiring an error marker.
+        slot.state = ResourceState::ready;
+    } else if (resolved.empty()) {
         slot.state = ResourceState::failed;
         slot.error = "Model is not indexed";
     } else {

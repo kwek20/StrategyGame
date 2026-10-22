@@ -74,6 +74,7 @@ add_library(strategy_terrain STATIC
     src/terrain/TerrainV2Recipe.cpp
     src/terrain/TerrainV2Plan.cpp
     src/terrain/TerrainV2Generator.cpp
+    src/terrain/TerrainV2Access.cpp
     src/terrain/TerrainSupport.cpp
     src/terrain/SurfaceGeometry.cpp
     src/terrain/Terrain.cpp
@@ -93,6 +94,7 @@ add_library(strategy_world STATIC
     src/world/Navigation.cpp
     src/world/SpatialShape.cpp
     src/world/WorldGeneration.cpp
+    src/world/ResourceFringe.cpp
     src/world/Vegetation.cpp
 )
 strategy_target(strategy_world)
@@ -143,6 +145,11 @@ strategy_target(strategy_audio)
 target_link_libraries(strategy_audio PUBLIC strategy_core RapidJSON)
 
 # CPU asset import has no graphics dependency and is safe on worker threads or headless builds.
+add_library(strategy_resource_sites STATIC src/world/ResourceSiteMap.cpp)
+strategy_target(strategy_resource_sites)
+target_link_libraries(strategy_resource_sites PUBLIC strategy_core)
+target_link_libraries(strategy_world PRIVATE strategy_resource_sites)
+
 add_library(strategy_asset_data STATIC src/assets/ModelAsset.cpp)
 strategy_target(strategy_asset_data)
 target_include_directories(strategy_asset_data PRIVATE ${Stb_INCLUDE_DIR})
@@ -174,6 +181,7 @@ strategy_target(strategy_camera)
 target_link_libraries(strategy_camera PUBLIC strategy_core)
 
 add_library(strategy_render STATIC
+    src/render/ResourceSiteTexture.cpp
     src/render/FontRenderer.cpp
     src/render/MaterialManager.cpp
     src/render/ParticleRenderer.cpp
@@ -192,6 +200,7 @@ target_compile_definitions(strategy_render PRIVATE
     $<$<CONFIG:Debug>:STRATEGY_SHADER_HOT_RELOAD=1>
 )
 target_link_libraries(strategy_render
+    PRIVATE strategy_resource_sites
     PUBLIC strategy_assets strategy_camera strategy_diagnostics strategy_particles strategy_persistence strategy_players
            strategy_terrain strategy_world SDL3::SDL3 glad::glad Freetype::Freetype RmlUi::RmlUi
     PRIVATE strategy_localization strategy_ui_model
@@ -224,7 +233,7 @@ target_link_libraries(strategy_app
     PRIVATE strategy_localization
 )
 
-add_executable(strategy_game src/main.cpp)
+add_executable(strategy_game src/main.cpp src/platform/GraphicsPreference.cpp)
 strategy_target(strategy_game)
 target_link_libraries(strategy_game PRIVATE strategy_app)
 set_target_properties(strategy_game PROPERTIES
@@ -385,7 +394,15 @@ if(STRATEGY_BUILD_TESTS)
     set_tests_properties(state_stack_transitions PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
     add_executable(renderer_integration_tests tests/RendererIntegrationTests.cpp)
+    target_sources(renderer_integration_tests PRIVATE src/platform/GraphicsPreference.cpp)
+    add_executable(resource_site_tests tests/ResourceSiteMapTests.cpp)
+    strategy_target(resource_site_tests)
+    target_link_libraries(resource_site_tests PRIVATE strategy_resource_sites)
+    add_test(NAME resource_site_cache COMMAND resource_site_tests)
+    set_tests_properties(resource_site_cache PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
     strategy_target(renderer_integration_tests)
+    target_compile_definitions(renderer_integration_tests PRIVATE
+        $<$<CONFIG:Debug>:STRATEGY_EXPECT_SHADER_HOT_RELOAD=1>)
     target_link_libraries(renderer_integration_tests PRIVATE strategy_render strategy_simulation)
     add_test(NAME renderer_integration COMMAND renderer_integration_tests)
     set_tests_properties(renderer_integration PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
@@ -418,6 +435,7 @@ if(STRATEGY_BUILD_TESTS)
         particle_system_tests
         state_stack_tests
         renderer_integration_tests
+        resource_site_tests
         render_architecture_tests
     )
     foreach(TEST_TARGET IN LISTS STRATEGY_TEST_TARGETS)

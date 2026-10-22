@@ -176,13 +176,15 @@ Entity* GameSession::nextResourceNode(const Entity& depletedNode) {
         ResourceArchetypeId{depletedNode.archetype.value});
     const glm::vec2 depletedPosition{depletedNode.transform.position.x,
                                      depletedNode.transform.position.z};
-    // Retarget locally across field boundaries. Generation geometry is diagnostic-only and
-    // unavailable after loading, so it must not influence authoritative gathering decisions.
+    // Explicit field membership survives save/load. Legacy sources retain their local search.
     const float searchRadius = fieldDefinition
-        ? fieldDefinition->generation.maximumFieldRadius * 2.0F
-        : 0.0F;
+                                   ? fieldDefinition->maximumRadiusForNode(
+                                         ResourceArchetypeId{depletedNode.archetype.value}) *
+                                         2.0F
+                                   : 0.0F;
     if (searchRadius <= 0.0F) return nullptr;
     Entity* nearest = nullptr;
+    bool nearestInField = false;
     float nearestDistanceSquared = std::numeric_limits<float>::max();
     for (Entity& candidate : world_.entities()) {
         if (candidate.id == depletedNode.id || !candidate.resource ||
@@ -192,11 +194,16 @@ Entity* GameSession::nextResourceNode(const Entity& depletedNode) {
         const glm::vec2 position{candidate.transform.position.x, candidate.transform.position.z};
         const glm::vec2 delta = position - depletedPosition;
         const float distanceSquared = glm::dot(delta, delta);
-        if (distanceSquared > searchRadius * searchRadius) continue;
-        if (!nearest || distanceSquared < nearestDistanceSquared - 0.001F ||
+        const bool sameField = depletedNode.resource.fieldId != 0 &&
+                               candidate.resource.fieldId == depletedNode.resource.fieldId;
+        if (distanceSquared > searchRadius * searchRadius || (nearestInField && !sameField))
+            continue;
+        if (!nearest || (sameField && !nearestInField) ||
+            distanceSquared < nearestDistanceSquared - 0.001F ||
             (std::abs(distanceSquared - nearestDistanceSquared) <= 0.001F &&
              candidate.id < nearest->id)) {
             nearest = &candidate;
+            nearestInField = sameField;
             nearestDistanceSquared = distanceSquared;
         }
     }

@@ -14,7 +14,10 @@ uniform sampler2D grassTexture;
 uniform sampler2D dirtTexture;
 uniform sampler2D rockTexture;
 uniform sampler2D dryGroundTexture;
+uniform sampler2D crackedGroundTexture;
 uniform sampler2D foundationTexture;
+uniform sampler2D resourceSiteMap;
+uniform bool useResourceSites;
 uniform bool useExploration;
 uniform bool useFoundationTexture;
 uniform bool terrainDebug;
@@ -73,6 +76,15 @@ void main() {
         return;
     }
 
+    float explored = useExploration
+        ? texture(explorationMap, worldPosition.xz / explorationExtent + 0.5).r : 1.0;
+    vec4 site = vec4(0.0);
+    if (useResourceSites && regionalStyle && !useFoundationTexture && !boundaryPresentation) {
+        site = texture(resourceSiteMap, worldPosition.xz / explorationExtent + 0.5);
+        // Current entity changes must never reveal information through remembered terrain.
+        site *= smoothstep(0.75, 0.95, explored) * (1.0 - smoothstep(0.0, 0.1, waterCoverage))
+                * smoothstep(0.65, 0.95, abs(normalize(vertexNormal).y));
+    }
     vec3 lightDirection = normalize(vec3(-0.45, 0.82, 0.35));
     float diffuse = max(dot(normalize(vertexNormal), lightDirection), 0.0);
     float variation = terrainNoise(worldPosition.xz);
@@ -120,6 +132,7 @@ void main() {
                                     textured * mix(vec3(1.0), vertexColor, 0.18),
                                     textureStrength)
                               : vertexColor);
+    float oilWetness = 0.0;
     if (regionalStyle && !useFoundationTexture && weightTotal > 0.0001) {
         // Preserve the photographed material detail and soften the yellow-green cast.
         vec3 meadow = mix(grass, vec3(dot(grass, vec3(0.299, 0.587, 0.114))), 0.20)
@@ -129,8 +142,42 @@ void main() {
                   rock * vec3(0.91, 0.94, 0.96) * weights.z + dryGround * weights.w;
         float broadVariation = terrainNoise(worldPosition.xz * 0.16);
         surface *= mix(0.88, 1.12, broadVariation) * mix(0.96, 1.04, variation);
+        if (max(site.r, max(site.g, site.b)) > 0.001) {
+            float fragments = smoothstep(0.64, 0.86, terrainNoise(worldPosition.xz * 9.0));
+            vec3 salvageSoil = soil * vec3(0.82, 0.79, 0.75) * mix(0.94, 1.03, fragments);
+            surface = mix(surface, salvageSoil, site.r * 0.78);
+            if (site.g > 0.001) {
+                float seepPattern = terrainNoise(worldPosition.xz * 2.8);
+                float oilCoverage = smoothstep(0.16, 0.77,
+                    site.g + (seepPattern - 0.5) * 0.32);
+                vec3 cracked = texture(crackedGroundTexture, worldPosition.xz * 0.16).rgb;
+                // Transfer crack relief into the local biome's palette, rather than painting
+                // a beige mud island or replacing the terrain with an opaque black stain.
+                float crackDetail = clamp(dot(cracked, vec3(0.299, 0.587, 0.114)) / 0.34, 0.38, 1.45);
+                vec3 localEarth = mix(surface, soil, 0.70);
+                vec3 crackedEarth = mix(cracked * vec3(0.65, 0.66, 0.62),
+                    localEarth * crackDetail, 0.65);
+                vec3 stainedEarth = crackedEarth * vec3(0.82, 0.78, 0.69);
+                surface = mix(surface, stainedEarth, oilCoverage * 0.85);
+                // Wet cores are terrain material, never coplanar spill geometry. Broad,
+                // world-anchored variation keeps feathered edges stable during movement.
+                float wetPattern = terrainNoise(worldPosition.xz * 1.4);
+                oilWetness = smoothstep(0.08, 0.72,
+                    site.a + (wetPattern - 0.5) * 0.18) * oilCoverage;
+                vec3 wetEarth = surface * vec3(0.76, 0.67, 0.54);
+                surface = mix(surface, wetEarth, oilWetness * 0.62);
+            }
+            surface = mix(surface, mix(rock * 0.78, soil * 0.72, 0.35), site.b * 0.78);
+        }
     }
     vec3 lit = surface * (regionalStyle ? (0.48 + diffuse * 0.66) : (0.46 + diffuse * 0.64));
+    if (oilWetness > 0.001) {
+        // Restrained surface sheen, without another water pass or animated geometry.
+        vec3 viewDirection = normalize(cameraPosition - worldPosition);
+        vec3 halfDirection = normalize(lightDirection + viewDirection);
+        float sheen = pow(max(dot(normalize(vertexNormal), halfDirection), 0.0), 64.0);
+        lit += vec3(0.025, 0.028, 0.025) * sheen * oilWetness;
+    }
     // Material textures decode from sRGB on sampling. The world framebuffer is
     // display-encoded (UI and older passes share it), so encode V2 lighting here.
     if (regionalStyle && !useFoundationTexture)
@@ -145,9 +192,6 @@ void main() {
         atmospheric = mix(atmospheric, underwaterTint,
                           waterCoverage * (0.40 + underwater * 0.35));
     }
-    float explored = useExploration
-        ? texture(explorationMap, worldPosition.xz / explorationExtent + 0.5).r
-        : 1.0;
     vec3 hidden = vec3(0.008, 0.012, 0.018);
     vec3 remembered = atmospheric * 0.42;
     vec3 result = explored < 0.12 ? hidden : (explored < 0.75 ? remembered : atmospheric);

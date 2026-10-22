@@ -342,6 +342,9 @@ void PlayState::updateGameplayHud(Renderer& renderer, const Player* player) cons
     if (viewMode_ == ViewMode::unitControl && selected) {
         hud = EntityHudModelBuilder::build(session_.world(), selected->id, {}, context_.definitions);
         hud->footer = Text::get("unit.escape");
+    } else if (selectedResourceField_ && selected) {
+        hud = EntityHudModelBuilder::build(
+            session_.world(), selectedEntity_, selectedUnits_, context_.definitions, true);
     } else if (!selectedUnits_.empty() && !sameType) {
         hud = EntityHudModelBuilder::build(session_.world(), selectedEntity_, selectedUnits_, context_.definitions);
     } else if (selected && selected->authority.owner == localPlayer_) {
@@ -735,6 +738,7 @@ bool PlayState::handleGameplayHudAction(const std::string& action) {
     if (action == "resources.power") { powerOverlayVisible_ = !powerOverlayVisible_; return true; }
     if (action == "hud.satellite" && satelliteImageryAvailable_) { satelliteRevealActive_ = !satelliteRevealActive_; return true; }
     if (action.starts_with("selection.")) {
+        selectedResourceField_ = {};
         const std::string chosen = action.substr(10);
         const bool removeType = (SDL_GetModState() & SDL_KMOD_SHIFT) != 0;
         selectedUnits_.erase(std::remove_if(selectedUnits_.begin(), selectedUnits_.end(), [&](EntityId id) {
@@ -1185,6 +1189,7 @@ void PlayState::update(float deltaSeconds) {
                 pickedEntityDoubleClick_ = false;
                 return;
             }
+            selectedResourceField_ = {};
             if (selectedUnits_.empty() && selectedEntity_ != 0)
                 selectedUnits_.push_back(selectedEntity_);
             auto found = std::find(selectedUnits_.begin(), selectedUnits_.end(), clicked);
@@ -1199,6 +1204,10 @@ void PlayState::update(float deltaSeconds) {
                 clicked != 0 && pickedEntityDoubleClick_ && clicked == lastWorldClickEntity_;
             selectedEntity_ = clicked;
             selectedUnits_.clear();
+            selectedResourceField_ =
+                ResourceFieldSelection::fromClick(session_.world(), clicked, confirmedDoubleClick);
+            if (selectedResourceField_)
+                selectedUnits_ = selectedResourceField_.members(session_.world());
             if (clicked != 0)
                 context_.events.enqueue(
                     AudioEvent{session_.world().findEntity(clicked) &&
@@ -1220,6 +1229,7 @@ void PlayState::update(float deltaSeconds) {
         pickedEntityDoubleClick_ = false;
     }
     if (pickedEntities_) {
+        selectedResourceField_ = {};
         selectedUnits_ = std::move(*pickedEntities_);
         pickedEntities_.reset();
         selectedEntity_ = selectedUnits_.empty() ? 0 : selectedUnits_.front();
@@ -1413,10 +1423,18 @@ void PlayState::sanitizeEntityReferences() {
     const World& world = session_.world();
     const auto missing = [&](EntityId id) { return id != 0 && world.findEntity(id) == nullptr; };
 
+    if (selectedResourceField_) {
+        selectedUnits_ = selectedResourceField_.members(world);
+        if (std::find(selectedUnits_.begin(), selectedUnits_.end(), selectedEntity_) ==
+            selectedUnits_.end())
+            selectedEntity_ = selectedUnits_.empty() ? 0 : selectedUnits_.front();
+        if (selectedUnits_.empty())
+            selectedResourceField_ = {};
+    }
     std::erase_if(selectedUnits_, missing);
     if (missing(selectedEntity_))
         selectedEntity_ = selectedUnits_.empty() ? 0 : selectedUnits_.front();
-    if (selectedUnits_.size() == 1) {
+    if (selectedUnits_.size() == 1 && !selectedResourceField_) {
         selectedEntity_ = selectedUnits_.front();
         selectedUnits_.clear();
     }
@@ -1523,6 +1541,7 @@ void PlayState::render(Renderer& renderer) const {
             visibilityPlayer, false);
         hoverPosition_.reset();
     }
+    renderer.prepareResourceSites(session_.world());
     renderer.drawTerrain(view, visibilityPlayer, terrainDebug_, waterDebugMode_);
     particlePresenter_.sync(renderer, session_.world(), visibilityPlayer,
                             session_.mapChunksPerSide());
@@ -1618,8 +1637,26 @@ void PlayState::render(Renderer& renderer) const {
             renderer.drawEntityOutline(session_.world(), selected, view, visibilityPlayer);
     else if (selectedEntity_ != 0)
         renderer.drawEntityOutline(session_.world(), selectedEntity_, view, visibilityPlayer);
-    if (hoveredEntity_ != 0 && viewMode_ == ViewMode::strategy)
+    if (hoveredEntity_ != 0 && viewMode_ == ViewMode::strategy) {
         renderer.drawEntityOutline(session_.world(), hoveredEntity_, view, visibilityPlayer);
+        const auto* hovered = session_.world().findEntity(hoveredEntity_);
+        const bool inspectingHoveredNode = !selectedResourceField_ && selectedUnits_.empty() &&
+                                           hoveredEntity_ == selectedEntity_;
+        if (!inspectingHoveredNode && hovered && hovered->resource && hovered->resource.fieldId != 0)
+            for (const auto& node : session_.world().entities())
+                if (node.id != hoveredEntity_ && node.resource && node.resource.remaining > 0 &&
+                    node.resource.fieldId == hovered->resource.fieldId &&
+                    node.resource.type == hovered->resource.type) {
+                    if (visibilityPlayer) {
+                        const auto cell = MapArea{session_.mapChunksPerSide()}.gridCell(
+                            {node.transform.position.x, node.transform.position.z},
+                            Player::explorationCells);
+                        if (!visibilityPlayer->visible[cell.y * Player::explorationCells + cell.x])
+                            continue;
+                    }
+                    renderer.drawEntityOutline(session_.world(), node.id, view, visibilityPlayer);
+                }
+    }
     if (powerDebug_)
         renderer.drawPowerRanges(session_.world(), view, localPlayer_);
     if (powerOverlayVisible_ || powerDebug_)

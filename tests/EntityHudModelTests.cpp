@@ -1,5 +1,6 @@
 #include "gameplay/GameplayCatalogue.hpp"
 #include "ui/EntityHudModel.hpp"
+#include "ui/ResourceFieldSelection.hpp"
 #include "world/World.hpp"
 
 #include <algorithm>
@@ -52,6 +53,50 @@ int strategyTestMain() {
     const auto mixed = strategy::EntityHudModelBuilder::build(
         world, firstId, {firstId, mixedBuilding.id}, definitions);
     valid = valid && mixed.selectionGroups.size() == 2;
+
+    {
+        strategy::World fields;
+        auto& a = fields.createEntity("Scrap beams", "v2_scrap_beams", 0);
+        definitions.initializeEntity(a);
+        a.resource.fieldId = 11;
+        a.resource.remaining = 25;
+        const auto aId = a.id;
+        auto& b = fields.createEntity("Scrap frame", "v2_scrap_frame", 0);
+        definitions.initializeEntity(b);
+        b.resource.fieldId = 11;
+        b.resource.remaining = 50;
+        const auto bId = b.id;
+        auto& other = fields.createEntity("Other field", "v2_scrap_beams", 0);
+        definitions.initializeEntity(other);
+        other.resource.fieldId = 12;
+        auto& oil = fields.createEntity("Other family", "v2_oil_seep", 0);
+        definitions.initializeEntity(oil);
+        oil.resource.fieldId = 11;
+
+        const auto field = strategy::ResourceFieldSelection::fromClick(fields, aId, false);
+        valid &= field.members(fields) == std::vector<strategy::EntityId>{aId, bId};
+        const auto fieldHud = strategy::EntityHudModelBuilder::build(
+            fields, aId, field.members(fields), definitions, true);
+        valid &= fieldHud.totalEntities == 2 && fieldHud.cards.empty() &&
+                 fieldHud.selectionGroups.empty() && fieldHud.stats.size() == 2 &&
+                 fieldHud.stats[0].value.starts_with("75.0 ") && fieldHud.stats[1].value == "2";
+        const auto node = strategy::ResourceFieldSelection::fromClick(fields, aId, true);
+        const auto nodeHud = strategy::EntityHudModelBuilder::build(fields, aId, {}, definitions);
+        valid &= !node && nodeHud.totalEntities == 1 && nodeHud.stats[0].value.starts_with("25.0 ");
+
+        fields.findEntity(aId)->resource.remaining = 0;
+        valid &= field.members(fields) == std::vector<strategy::EntityId>{bId};
+        const auto lastNodeField = strategy::EntityHudModelBuilder::build(
+            fields, bId, field.members(fields), definitions, true);
+        valid &= lastNodeField.totalEntities == 1 && lastNodeField.stats.size() == 2 &&
+                 lastNodeField.stats[0].value.starts_with("50.0 ") &&
+                 lastNodeField.title == fieldHud.title;
+        fields.destroyEntity(aId);
+        valid &= field.members(fields) == std::vector<strategy::EntityId>{bId};
+        fields.findEntity(bId)->resource.remaining = 0;
+        valid &= field.members(fields).empty();
+        valid &= !strategy::ResourceFieldSelection::fromClick(fields, bId, false);
+    }
 
     if (!valid) std::cerr << "Entity HUD model presentation failed\n";
     return valid ? 0 : 1;

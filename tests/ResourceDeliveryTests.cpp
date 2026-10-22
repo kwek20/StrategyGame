@@ -167,13 +167,59 @@ int strategyTestMain() {
         std::cerr << "Depletion retarget crossed its resource-type or distance boundary\n";
     valid = boundedRetarget && valid;
 
+    // Explicit field membership takes priority over a nearer source in another field.
+    fieldRetarget.world().findEntity(firstNodeId)->resource.fieldId = 101;
+    fieldRetarget.world().findEntity(secondNodeId)->resource.fieldId = 101;
+    fieldRetarget.world().findEntity(secondNodeId)->resource.remaining = 25;
+    fieldRetarget.world().findEntity(secondNodeId)->transform.position = {20, 0, 0};
+    fieldRetarget.world().findEntity(crossFieldId)->resource.fieldId = 102;
+    fieldRetarget.world().findEntity(crossFieldId)->resource.remaining = 25;
+    retargetDrone = fieldRetarget.world().findEntity(fieldDroneId);
+    retargetDrone->gatherer.carriedAmount = 0;
+    retargetDrone->unitControl.order = strategy::UnitOrderKind::gather;
+    retargetDrone->unitControl.orderTarget = firstNodeId;
+    retargetDrone->gatherer.sourceTarget = firstNodeId;
+    const auto membershipSnapshot = fieldRetarget.world().entities();
+    fieldRetarget.advanceTicks();
+    const bool prefersOwnField =
+        fieldRetarget.world().findEntity(fieldDroneId)->gatherer.sourceTarget == secondNodeId;
+    fieldRetarget.replaceWorld(membershipSnapshot, 103U);
+    fieldRetarget.advanceTicks();
+    valid = prefersOwnField &&
+            fieldRetarget.world().findEntity(fieldDroneId)->gatherer.sourceTarget == secondNodeId &&
+            valid;
+
+    fieldRetarget.replaceWorld({}, 103U);
+    const auto smallDroneId =
+        create(fieldRetarget, definitions, "Small-node gatherer", "construction_drone").id;
+    const auto smallFirstId =
+        create(fieldRetarget, definitions, "Partly depleted pile", "v2_scrap_beams").id;
+    const auto smallSecondId =
+        create(fieldRetarget, definitions, "Next pile", "v2_scrap_plates").id;
+    fieldRetarget.world().findEntity(smallDroneId)->transform.position = {0, 6, 0};
+    fieldRetarget.world().findEntity(smallFirstId)->transform.position = {0, 0, 0};
+    fieldRetarget.world().findEntity(smallSecondId)->transform.position = {3, 0, 0};
+    fieldRetarget.world().findEntity(smallFirstId)->resource.fieldId = 201;
+    fieldRetarget.world().findEntity(smallSecondId)->resource.fieldId = 201;
+    fieldRetarget.world().findEntity(smallFirstId)->resource.remaining = 1;
+    valid = fieldRetarget.submit(
+                {1, 99, strategy::GatherResourceCommand{smallDroneId, smallFirstId, 0}}) &&
+            valid;
+    fieldRetarget.advanceTicks(120);
+    const auto* smallGatherer = fieldRetarget.world().findEntity(smallDroneId);
+    const float smallRemaining =
+        fieldRetarget.world().findEntity(smallSecondId)->resource.remaining;
+    valid = smallGatherer->gatherer.carriedAmount > 9.9F &&
+            fieldRetarget.world().findEntity(smallFirstId)->resource.remaining == 0 &&
+            std::abs(smallRemaining + smallGatherer->gatherer.carriedAmount - 26) < .001F && valid;
+
     strategy::GameSession stableDelivery{definitions, 104U};
     stableDelivery.replaceWorld({}, 104U);
-    strategy::Entity& deliveryHub = create(
-        stableDelivery, definitions, "Delivery hub", "command_hub");
+    strategy::Entity& deliveryHub =
+        create(stableDelivery, definitions, "Delivery hub", "command_hub");
     const strategy::EntityId deliveryHubId = deliveryHub.id;
-    strategy::Entity& deliveryDrone = create(
-        stableDelivery, definitions, "Delivery drone", "construction_drone");
+    strategy::Entity& deliveryDrone =
+        create(stableDelivery, definitions, "Delivery drone", "construction_drone");
     const strategy::EntityId deliveryDroneId = deliveryDrone.id;
     stableDelivery.world().findEntity(deliveryHubId)->transform.position = {30, 0, 0};
     strategy::Entity* transporting = stableDelivery.world().findEntity(deliveryDroneId);
@@ -189,8 +235,8 @@ int strategyTestMain() {
     transporting = stableDelivery.world().findEntity(deliveryDroneId);
     valid = valid && committedTarget == deliveryHubId &&
             transporting->gatherer.deliveryTarget == committedTarget &&
-            glm::distance(transporting->unitControl.strategicDestination,
-                          committedDestination) < 0.001F;
+            glm::distance(transporting->unitControl.strategicDestination, committedDestination) <
+                0.001F;
 
     // New deliveries convert on their delivery tick regardless of entity creation order.
     for (const bool droneFirst : {false, true}) {

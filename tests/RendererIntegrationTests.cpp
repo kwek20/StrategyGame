@@ -88,6 +88,11 @@ bool captureTerrain(const char* name) {
 
 bool checkVegetationCacheBuffers() {
     strategy::ResourceManager resources{"assets"};
+    const auto seep = resources.requestModel("v2_oil_seep");
+    if (resources.state(seep) != strategy::ResourceState::ready ||
+        resources.modelOrMarker(seep) != nullptr || !resources.error(seep).empty() ||
+        !resources.entityDefinition("v2_oil_seep")->terrainSurface)
+        return false;
     strategy::VegetationInstance instance;
     instance.presentation = strategy::PresentationId{"grass_fresh"};
     instance.transform.position = {2, 0, 3};
@@ -250,6 +255,74 @@ bool checkProgress(strategy::Renderer& renderer, const char* id, Rml::Colourb ti
         std::cerr << "Progress bar fill, tint, or fixed track failed: " << id << '\n';
     return valid;
 }
+bool checkResourceSiteTexture() {
+    {
+        strategy::World nodes;
+        nodes.createEntity("unrelated entity", "command_hub", 1);
+        auto& first = nodes.createEntity("first", "v2_scrap_beams", 0);
+        const auto firstId = first.id;
+        first.resource.emplace();
+        first.resource.fieldId = 1;
+        first.resource.remaining = 25;
+        auto& second = nodes.createEntity("second", "v2_scrap_plates", 0);
+        second.resource.emplace();
+        second.resource.fieldId = 2;
+        second.resource.remaining = 25;
+        strategy::ResourceNodePresentation presentation;
+        const auto& initial = presentation.update(nodes);
+        const auto identity = initial.identity();
+        if (initial.chunks().size() != 2 || initial.instanceCount() != 2 ||
+            presentation.update(nodes).identity() != identity)
+            return false;
+        nodes.findEntity(firstId)->resource.remaining = 0;
+        const auto& depleted = presentation.update(nodes);
+        if (depleted.identity() != identity || depleted.instanceCount() != 1 ||
+            depleted.chunks()[0].revision != 1 || depleted.chunks()[1].revision != 0)
+            return false;
+        nodes.findEntity(firstId)->resource.remaining = 25;
+        if (presentation.update(nodes).identity() == identity)
+            return false;
+    }
+    strategy::ResourceSiteTexture texture;
+    strategy::ResourceSiteMap reference;
+    std::vector<strategy::ResourceSiteSource> sources{{1, {-8, 0}, 3.8F, 0}, {2, {5, 2}, 5, 0}};
+    GLint oldRows = 0, oldAlignment = 0;
+    glGetIntegerv(GL_UNPACK_ROW_LENGTH, &oldRows);
+    glGetIntegerv(GL_UNPACK_ALIGNMENT, &oldAlignment);
+    const auto compare = [&] {
+        glPixelStorei(GL_UNPACK_ROW_LENGTH, 7);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 2);
+        texture.update(sources, 480);
+        GLint rows = 0, alignment = 0;
+        glGetIntegerv(GL_UNPACK_ROW_LENGTH, &rows);
+        glGetIntegerv(GL_UNPACK_ALIGNMENT, &alignment);
+        reference.clear();
+        reference.update(sources, 480);
+        std::vector<std::uint8_t> pixels(reference.pixels().size());
+        texture.bind();
+        glActiveTexture(GL_TEXTURE8);
+        glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+        glActiveTexture(GL_TEXTURE0);
+        return pixels == reference.pixels() && rows == 7 && alignment == 2;
+    };
+    bool valid = compare();
+    const auto fullUpload = texture.uploadedTiles();
+    valid = compare() && texture.uploadedTiles() == 0 && valid;
+    sources.erase(sources.begin());
+    valid =
+        compare() && texture.uploadedTiles() > 0 && texture.uploadedTiles() < fullUpload && valid;
+    sources.front().position = {130, -120};
+    valid = compare() && valid;
+    sources.clear();
+    valid = compare() && valid;
+    glPixelStorei(GL_UNPACK_ROW_LENGTH, oldRows);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, oldAlignment);
+    if (!valid)
+        std::cerr
+            << "Resource site texture replacement/removal or pixel-store restoration failed\n";
+    return noGlErrors("resource site texture cache") && valid;
+}
+
 } // namespace
 
 int strategyTestMain() {
@@ -277,7 +350,13 @@ int strategyTestMain() {
         return 0;
     }
 
-    bool valid = noGlErrors("context creation") && checkVegetationCacheBuffers();
+    bool valid = noGlErrors("context creation") && checkVegetationCacheBuffers() &&
+                 checkResourceSiteTexture();
+    const auto reportCheck = [&valid](bool result, int line) {
+        if (valid && !result)
+            std::cerr << "Renderer integration check failed at line " << line << "\n";
+        return result;
+    };
     {
         strategy::ShaderManager shaders;
         constexpr std::string_view vertex = R"(#version 450 core
@@ -286,12 +365,15 @@ void main(){gl_Position=vec4(0,0,0,1);})";
 out vec4 color;void main(){color=vec4(1);})";
         const strategy::ShaderHandle first = shaders.load("integration-test", vertex, fragment);
         const strategy::ShaderHandle cached = shaders.load("integration-test", vertex, fragment);
-        valid = first == cached && shaders.state(first) == strategy::ResourceState::ready && valid;
+        valid = reportCheck(first == cached &&
+                                shaders.state(first) == strategy::ResourceState::ready && valid,
+                            __LINE__);
         const GLint firstLocation = shaders.uniform(first, "notPresent");
         const GLint cachedLocation = shaders.uniform(first, "notPresent");
         shaders.use(first);
-        valid = firstLocation == -1 && cachedLocation == firstLocation &&
-                noGlErrors("shader manager") && valid;
+        valid = reportCheck(firstLocation == -1 && cachedLocation == firstLocation &&
+                                noGlErrors("shader manager") && valid,
+                            __LINE__);
 
         const std::filesystem::path shaderDirectory =
             std::filesystem::temp_directory_path() / "strategy-shader-reload-test";
@@ -312,16 +394,30 @@ out vec4 color;void main(){color=vec4(1);})";
             fragmentPath, std::filesystem::file_time_type::clock::now() + std::chrono::seconds(1));
         std::this_thread::sleep_for(std::chrono::milliseconds(260));
         const auto successfulReload = shaders.reloadChanged();
-        valid = successfulReload.size() == 1 && successfulReload.front().succeeded &&
-                shaders.program(fileShader) != originalProgram && valid;
+#ifdef STRATEGY_EXPECT_SHADER_HOT_RELOAD
+        valid = reportCheck(successfulReload.size() == 1 && successfulReload.front().succeeded &&
+                                shaders.program(fileShader) != originalProgram && valid,
+                            __LINE__);
+#else
+        valid = reportCheck(successfulReload.empty() &&
+                                shaders.program(fileShader) == originalProgram && valid,
+                            __LINE__);
+#endif
         const std::uint32_t validReplacement = shaders.program(fileShader);
         write(fragmentPath, "this is not valid GLSL");
         std::filesystem::last_write_time(
             fragmentPath, std::filesystem::file_time_type::clock::now() + std::chrono::seconds(2));
         std::this_thread::sleep_for(std::chrono::milliseconds(260));
         const auto failedReload = shaders.reloadChanged();
-        valid = failedReload.size() == 1 && !failedReload.front().succeeded &&
-                shaders.program(fileShader) == validReplacement && valid;
+#ifdef STRATEGY_EXPECT_SHADER_HOT_RELOAD
+        valid = reportCheck(failedReload.size() == 1 && !failedReload.front().succeeded &&
+                                shaders.program(fileShader) == validReplacement && valid,
+                            __LINE__);
+#else
+        valid = reportCheck(failedReload.empty() &&
+                                shaders.program(fileShader) == validReplacement && valid,
+                            __LINE__);
+#endif
         std::filesystem::remove(vertexPath);
         std::filesystem::remove(fragmentPath);
         std::filesystem::remove(shaderDirectory);
@@ -330,7 +426,7 @@ out vec4 color;void main(){color=vec4(1);})";
                                 "strategy-renderer-test.log"};
         strategy::Renderer renderer{&logger};
         const strategy::Terrain generatedTerrain{12345};
-        valid = checkMapBoundary(renderer, generatedTerrain) && valid;
+        valid = reportCheck(checkMapBoundary(renderer, generatedTerrain) && valid, __LINE__);
         renderer.stageGeneratedTerrain(generatedTerrain, 12345, 10);
         valid =
             !renderer.terrainUploadFinished() && renderer.terrainUploadProgress() == 0.0F && valid;
@@ -340,6 +436,26 @@ out vec4 color;void main(){color=vec4(1);})";
         camera.target = {0, 0, 0};
         camera.view = glm::lookAt(camera.position, camera.target, glm::vec3{0, 1, 0});
         camera.projection = glm::perspective(glm::radians(55.0F), 640.0F / 360.0F, 0.1F, 500.0F);
+
+        {
+            strategy::World seeps;
+            auto& seep = seeps.createEntity("Terrain seep", "v2_oil_seep", 0);
+            seep.kind = strategy::EntityKind::resource;
+            seep.resource.emplace();
+            seep.resource.remaining = 25;
+            auto pickCamera = camera;
+            pickCamera.target = {0, generatedTerrain.heightAt(0, 0), 0};
+            pickCamera.position = pickCamera.target + glm::vec3{0, 20, 0};
+            pickCamera.view =
+                glm::lookAt(pickCamera.position, pickCamera.target, glm::vec3{0, 0, -1});
+            renderer.beginFrame(640, 360);
+            valid = reportCheck(
+                renderer.pickEntity(320, 180, seeps, pickCamera) == seep.id && valid, __LINE__);
+            seep.resource.remaining = 0;
+            valid = reportCheck(renderer.pickEntity(320, 180, seeps, pickCamera) == 0 && valid,
+                                __LINE__);
+            renderer.endFrame();
+        }
 
         strategy::World world;
         strategy::Entity& town = world.createEntity("Town Center", "town_center", 1);
@@ -400,7 +516,7 @@ out vec4 color;void main(){color=vec4(1);})";
             renderer.drawWorld(world, camera);
             renderer.endFrame();
             glFinish();
-            valid = noGlErrors("frame") && valid;
+            valid = reportCheck(noGlErrors("frame") && valid, __LINE__);
             loadProgress = renderer.assetProgress("match");
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
         }
@@ -415,26 +531,33 @@ out vec4 color;void main(){color=vec4(1);})";
         };
         vegetationFrame(); // Settle the last async asset completion before cache assertions.
         auto cacheStats = vegetationFrame();
-        valid = cacheStats.rebuiltChunks == 0 && cacheStats.uploadedBatches == 0 &&
-                cacheStats.submittedInstances == 3 && valid;
-        valid = vegetation.removeInstance(vegetation.chunks()[0].instances[0].id) && valid;
+        valid = reportCheck(cacheStats.rebuiltChunks == 0 && cacheStats.uploadedBatches == 0 &&
+                                cacheStats.submittedInstances == 3 && valid,
+                            __LINE__);
+        valid = reportCheck(
+            vegetation.removeInstance(vegetation.chunks()[0].instances[0].id) && valid, __LINE__);
         cacheStats = vegetationFrame();
-        valid = cacheStats.rebuiltChunks == 1 && cacheStats.uploadedBatches == 1 &&
-                cacheStats.submittedInstances == 2 && valid;
+        valid = reportCheck(cacheStats.rebuiltChunks == 1 && cacheStats.uploadedBatches == 1 &&
+                                cacheStats.submittedInstances == 2 && valid,
+                            __LINE__);
         cacheStats = vegetationFrame();
-        valid = cacheStats.rebuiltChunks == 0 && cacheStats.uploadedBatches == 0 && valid;
+        valid = reportCheck(
+            cacheStats.rebuiltChunks == 0 && cacheStats.uploadedBatches == 0 && valid, __LINE__);
         valid =
             vegetation.clearWithin({strategy::FootprintShape::circle, {8, -2}, 1}) == 1 && valid;
         cacheStats = vegetationFrame();
-        valid = cacheStats.rebuiltChunks == 1 && cacheStats.uploadedBatches == 0 &&
-                cacheStats.submittedInstances == 1 && valid;
+        valid = reportCheck(cacheStats.rebuiltChunks == 1 && cacheStats.uploadedBatches == 0 &&
+                                cacheStats.submittedInstances == 1 && valid,
+                            __LINE__);
         vegetation = strategy::VegetationField{vegetation};
         cacheStats = vegetationFrame();
-        valid = cacheStats.rebuiltChunks == 2 && cacheStats.submittedInstances == 1 && valid;
+        valid = reportCheck(
+            cacheStats.rebuiltChunks == 2 && cacheStats.submittedInstances == 1 && valid, __LINE__);
         renderer.stageGeneratedTerrain(generatedTerrain, 12345, 10);
         cacheStats = vegetationFrame();
-        valid = cacheStats.rebuiltChunks == 2 && cacheStats.submittedInstances == 1 &&
-                noGlErrors("vegetation cache destruction and replacement") && valid;
+        valid = reportCheck(cacheStats.rebuiltChunks == 2 && cacheStats.submittedInstances == 1 &&
+                                noGlErrors("vegetation cache destruction and replacement") && valid,
+                            __LINE__);
         while (!renderer.terrainUploadFinished())
             vegetationFrame();
         if (SDL_getenv("STRATEGY_TERRAIN_SCREENSHOTS")) {
@@ -460,8 +583,35 @@ out vec4 color;void main(){color=vec4(1);})";
                 renderer.beginFrame(1280, 720);
                 renderer.drawTerrain(terrainCamera);
                 renderer.endFrame();
-                valid = captureTerrain((std::string{layout} + ".bmp").c_str()) &&
-                        noGlErrors("V2 terrain") && valid;
+                valid = reportCheck(captureTerrain((std::string{layout} + ".bmp").c_str()) &&
+                                        noGlErrors("V2 terrain") && valid,
+                                    __LINE__);
+            }
+            // Same-scale captures compare composition changes, not merely texture noise.
+            for (const char* layout : {"central_water", "rolling_hills"}) {
+                for (std::uint32_t seed : {1U, 12345U}) {
+                    const strategy::Terrain variant{
+                        seed, strategy::TerrainLayoutId{layout}, strategy::TerrainMode::v2, 10};
+                    renderer.stageGeneratedTerrain(variant, seed, 10);
+                    auto variantCamera = camera;
+                    variantCamera.position = {150, 205, 185};
+                    variantCamera.target = {0, 12, 0};
+                    variantCamera.view = glm::lookAt(
+                        variantCamera.position, variantCamera.target, glm::vec3{0, 1, 0});
+                    variantCamera.projection =
+                        glm::perspective(glm::radians(55.0F), 1280.0F / 720.0F, 0.1F, 1000.0F);
+                    for (int frame = 0; frame < 200 && !renderer.terrainUploadFinished(); ++frame) {
+                        renderer.beginProfileFrame();
+                        renderer.beginFrame(1280, 720);
+                        renderer.drawTerrain(variantCamera);
+                        renderer.endFrame();
+                    }
+                    valid = reportCheck(captureTerrain((std::string{layout} + "-seed-" +
+                                                        std::to_string(seed) + ".bmp")
+                                                           .c_str()) &&
+                                            noGlErrors("V2 seeded composition") && valid,
+                                        __LINE__);
+                }
             }
             const strategy::DefinitionRegistry gameplay;
             strategy::GameSession v2Session{gameplay,
@@ -481,35 +631,62 @@ out vec4 color;void main(){color=vec4(1);})";
             auto reviewCamera = camera;
             reviewCamera.projection =
                 glm::perspective(glm::radians(55.0F), 1280.0F / 720.0F, 0.1F, 600.0F);
-            for (int view = 0; view < 6; ++view) {
-                const glm::vec3 focus = view == 0 ? glm::vec3{0, 12, 0}
-                                                  : glm::vec3{view == 1   ? -85.0F
-                                                              : view == 2 ? 85.0F
-                                                                          : 0.0F,
-                                                              12,
-                                                              view == 3   ? -85.0F
-                                                              : view == 4 ? 85.0F
-                                                                          : 0.0F};
+            for (int view = 0; view < 15; ++view) {
+                glm::vec3 focus = view == 0 ? glm::vec3{0, 12, 0}
+                                            : glm::vec3{view == 1   ? -85.0F
+                                                        : view == 2 ? 85.0F
+                                                                    : 0.0F,
+                                                        12,
+                                                        view == 3   ? -85.0F
+                                                        : view == 4 ? 85.0F
+                                                                    : 0.0F};
+                if (view == 6) {
+                    const auto p = v2Session.resourceLayout().fields.front().center;
+                    focus = {p.x, v2Session.terrain().heightAt(p.x, p.y), p.y};
+                } else if (view == 7 && !v2Session.terrain().v2Landscape()->plan.ridges().empty()) {
+                    const auto p = v2Session.terrain().v2Landscape()->plan.ridges().front().center;
+                    focus = {p.x, v2Session.terrain().heightAt(p.x, p.y), p.y};
+                } else if (view >= 8) {
+                    const std::string family = view == 8                   ? "scrap_field"
+                                               : (view == 9 || view >= 11) ? "oil_field"
+                                                                           : "uranium_field";
+                    for (const auto& field : v2Session.resourceLayout().fields)
+                        if (field.definition.value == family &&
+                            (view == 11 ? field.startingPlayer != 0 : field.startingPlayer == 0)) {
+                            const auto p = field.center;
+                            focus = {p.x, v2Session.terrain().heightAt(p.x, p.y), p.y};
+                            break;
+                        }
+                }
                 reviewCamera.target = focus;
-                reviewCamera.position =
-                    focus + (view == 5 ? glm::vec3{150, 205, 185} : glm::vec3{0, 80, 75});
+                reviewCamera.position = focus + (view == 10   ? glm::vec3{-28, 38, -32}
+                                                 : view == 13 ? glm::vec3{0, 12, 14}
+                                                 : view == 14 ? glm::vec3{0, 12, -14}
+                                                 : view == 12 ? glm::vec3{0, 45, 55}
+                                                 : view == 5  ? glm::vec3{150, 205, 185}
+                                                 : view >= 6  ? glm::vec3{0, 26, 32}
+                                                              : glm::vec3{0, 80, 75});
                 reviewCamera.view =
                     glm::lookAt(reviewCamera.position, reviewCamera.target, glm::vec3{0, 1, 0});
                 for (int frame = 0; frame < 200 && !renderer.terrainUploadFinished(); ++frame) {
                     renderer.beginProfileFrame();
                     renderer.beginFrame(1280, 720);
+                    renderer.prepareResourceSites(v2Session.world());
                     renderer.drawTerrain(reviewCamera);
                     renderer.endFrame();
                 }
                 renderer.beginProfileFrame();
                 renderer.beginFrame(1280, 720);
+                renderer.prepareResourceSites(v2Session.world());
                 renderer.drawTerrain(reviewCamera);
                 renderer.drawVegetation(v2Session.vegetation(), reviewCamera);
                 renderer.drawWorld(v2Session.world(), reviewCamera);
                 renderer.endFrame();
-                valid = captureTerrain(
-                            ("central-water-play-" + std::to_string(view) + ".bmp").c_str()) &&
-                        noGlErrors("V2 movement review") && valid;
+                valid = reportCheck(
+                    captureTerrain(
+                        ("central-water-play-" + std::to_string(view) + ".bmp").c_str()) &&
+                        noGlErrors("V2 movement review") && valid,
+                    __LINE__);
             }
             // Exercise continuous motion across shores, cliffs and active-map boundaries.
             for (int frame = 0; frame < 80; ++frame) {
@@ -521,12 +698,113 @@ out vec4 color;void main(){color=vec4(1);})";
                     glm::lookAt(reviewCamera.position, reviewCamera.target, glm::vec3{0, 1, 0});
                 renderer.beginProfileFrame();
                 renderer.beginFrame(1280, 720);
+                renderer.prepareResourceSites(v2Session.world());
                 renderer.drawTerrain(reviewCamera);
                 renderer.drawVegetation(v2Session.vegetation(), reviewCamera);
                 renderer.drawWorld(v2Session.world(), reviewCamera);
                 renderer.endFrame();
             }
-            valid = noGlErrors("V2 continuous camera motion") && valid;
+            valid = reportCheck(noGlErrors("V2 continuous camera motion") && valid, __LINE__);
+            renderer.stageGeneratedTerrain(generatedTerrain, 12345, 10);
+            for (int frame = 0; frame < 200 && !renderer.terrainUploadFinished(); ++frame) {
+                renderer.beginProfileFrame();
+                renderer.beginFrame(640, 360);
+                renderer.drawTerrain(camera);
+                renderer.endFrame();
+            }
+        }
+        if (SDL_getenv("STRATEGY_RENDER_PROFILE")) {
+            // Opt-in render-only probe: excludes simulation, UI and swap throttling. Avoid a
+            // machine-dependent FPS assertion in CTest; report CPU+GPU completion time instead.
+            const strategy::DefinitionRegistry definitions;
+            strategy::GameSession scene{definitions,
+                                        7,
+                                        "spain",
+                                        "japan",
+                                        "unassigned",
+                                        "unassigned",
+                                        20,
+                                        1,
+                                        1,
+                                        strategy::TerrainLayoutId{"central_water"},
+                                        nullptr,
+                                        strategy::TerrainMode::v2};
+            renderer.stageGeneratedTerrain(scene.terrain(), 7, 20, scene.world().foundations());
+            SDL_SetWindowSize(window, 2554, 1389);
+            SDL_PumpEvents();
+            auto probeCamera = camera;
+            probeCamera.target = {0, 12, 0};
+            probeCamera.position = {0, 92, 75};
+            probeCamera.view =
+                glm::lookAt(probeCamera.position, probeCamera.target, glm::vec3{0, 1, 0});
+            probeCamera.projection =
+                glm::perspective(glm::radians(55.0F), 2554.0F / 1389, 0.1F, 1000.0F);
+            for (int frame = 0; frame < 1000 && !renderer.terrainUploadFinished(); ++frame) {
+                renderer.beginProfileFrame();
+                renderer.beginFrame(2554, 1389);
+                renderer.prepareResourceSites(scene.world());
+                renderer.drawTerrain(probeCamera);
+                renderer.endFrame();
+            }
+            double totalMilliseconds = 0;
+            double prepareMilliseconds = 0;
+            std::array<double, 3> gpuMilliseconds{};
+            std::array<GLuint, 3> queries{};
+            glGenQueries(3, queries.data());
+            std::cout << "V2_RENDER_DEVICE " << glGetString(GL_RENDERER) << std::endl;
+            std::size_t rebuilt = 0, uploaded = 0, siteUploads = 0, nodeUploads = 0;
+            for (int frame = 0; frame < 120; ++frame) {
+                glFinish();
+                const auto start = std::chrono::steady_clock::now();
+                renderer.beginProfileFrame();
+                renderer.beginFrame(2554, 1389);
+                const auto prepareStart = std::chrono::steady_clock::now();
+                renderer.prepareResourceSites(scene.world());
+                const double prepareMs = std::chrono::duration<double, std::milli>(
+                                             std::chrono::steady_clock::now() - prepareStart)
+                                             .count();
+                glBeginQuery(GL_TIME_ELAPSED, queries[0]);
+                renderer.drawTerrain(probeCamera);
+                glEndQuery(GL_TIME_ELAPSED);
+                glBeginQuery(GL_TIME_ELAPSED, queries[1]);
+                renderer.drawVegetation(scene.vegetation(), probeCamera);
+                glEndQuery(GL_TIME_ELAPSED);
+                glBeginQuery(GL_TIME_ELAPSED, queries[2]);
+                renderer.drawWorld(scene.world(), probeCamera);
+                glEndQuery(GL_TIME_ELAPSED);
+                renderer.endFrame();
+                glFinish();
+                if (frame >= 20) {
+                    prepareMilliseconds += prepareMs;
+                    for (std::size_t pass = 0; pass < queries.size(); ++pass) {
+                        GLuint64 ns = 0;
+                        glGetQueryObjectui64v(queries[pass], GL_QUERY_RESULT, &ns);
+                        gpuMilliseconds[pass] += static_cast<double>(ns) / 1000000;
+                    }
+                    totalMilliseconds += std::chrono::duration<double, std::milli>(
+                                             std::chrono::steady_clock::now() - start)
+                                             .count();
+                    rebuilt += renderer.vegetationCacheStats().rebuiltChunks;
+                    uploaded += renderer.vegetationCacheStats().uploadedBatches;
+                    siteUploads += renderer.resourceSiteUploadedTiles();
+                    nodeUploads += renderer.resourceNodeCacheStats().uploadedBatches;
+                }
+            }
+            std::cout << "V2_RENDER_PROFILE chunks=20 pixels=2554x1389 frames=100 mean_ms="
+                      << totalMilliseconds / 100 << " repair=" << scene.terrain().repairLevel()
+                      << " resource_targets=" << scene.resourceLayout().nodes.size()
+                      << " rebuilt_chunks=" << rebuilt << " uploaded_batches=" << uploaded
+                      << " site_tile_uploads=" << siteUploads
+                      << " node_batch_uploads=" << nodeUploads << std::endl;
+            std::cout << "V2_RENDER_PASSES prepare_cpu_ms=" << prepareMilliseconds / 100
+                      << " terrain_gpu_ms=" << gpuMilliseconds[0] / 100
+                      << " vegetation_gpu_ms=" << gpuMilliseconds[1] / 100
+                      << " world_gpu_ms=" << gpuMilliseconds[2] / 100 << std::endl;
+            glDeleteQueries(3, queries.data());
+            valid = reportCheck(renderer.terrainUploadFinished() && rebuilt == 0 && uploaded == 0 &&
+                                    siteUploads == 0 && nodeUploads == 0 &&
+                                    noGlErrors("V2 render profile") && valid,
+                                __LINE__);
             renderer.stageGeneratedTerrain(generatedTerrain, 12345, 10);
             for (int frame = 0; frame < 200 && !renderer.terrainUploadFinished(); ++frame) {
                 renderer.beginProfileFrame();
@@ -540,12 +818,15 @@ out vec4 color;void main(){color=vec4(1);})";
         // Asset groups can grow without requiring this renderer behavior test to duplicate the
         // manifest's exact inventory. Verify that every declared item completed and that all
         // currently required presentation models were uploaded.
-        valid = loadProgress.total >= 44 && loadProgress.completed == loadProgress.total &&
-                loadProgress.failed == 0 && renderer.loadedModelCount() >= 29 &&
-                renderer.terrainUploadFinished() && renderer.terrainUploadProgress() == 1.0F &&
-                valid;
-        valid = renderer.textureState(texture) == strategy::ResourceState::ready &&
-                noGlErrors("standalone texture") && valid;
+        valid =
+            reportCheck(loadProgress.total >= 44 && loadProgress.completed == loadProgress.total &&
+                            loadProgress.failed == 0 && renderer.loadedModelCount() >= 29 &&
+                            renderer.terrainUploadFinished() &&
+                            renderer.terrainUploadProgress() == 1.0F && valid,
+                        __LINE__);
+        valid = reportCheck(renderer.textureState(texture) == strategy::ResourceState::ready &&
+                                noGlErrors("standalone texture") && valid,
+                            __LINE__);
         renderer.beginProfileFrame();
         renderer.beginFrame(640, 360);
         renderer.drawTerrain(camera, nullptr, true);
@@ -567,18 +848,19 @@ out vec4 color;void main(){color=vec4(1);})";
         renderer.drawPowerDebugHud(world, 1, {0.0F, 0.0F, 0.0F});
         renderer.endFrame();
         glFinish();
-        valid = noGlErrors("complete render") && valid;
+        valid = reportCheck(noGlErrors("complete render") && valid, __LINE__);
         renderer.beginFrame(1280, 720);
         renderer.drawLoadingScreen(0.42F, "GENERATING TERRAIN FIELDS");
-        valid = checkProgress(renderer, "loading-fill", Rml::Colourb(84, 215, 242)) && valid;
+        valid = reportCheck(
+            checkProgress(renderer, "loading-fill", Rml::Colourb(84, 215, 242)) && valid, __LINE__);
         renderer.endFrame();
         glFinish();
-        valid = noGlErrors("RmlUi loading screen") && valid;
+        valid = reportCheck(noGlErrors("RmlUi loading screen") && valid, __LINE__);
         renderer.beginFrame(1280, 720);
         renderer.drawLoadingScreen(1.0F, "CLICK TO START");
         renderer.endFrame();
         glFinish();
-        valid = noGlErrors("RmlUi completed loading screen") && valid;
+        valid = reportCheck(noGlErrors("RmlUi completed loading screen") && valid, __LINE__);
         if (const char* loadingScreenshotPath = SDL_getenv("STRATEGY_LOADING_SCREENSHOT")) {
             std::vector<unsigned char> pixels(1280 * 720 * 4), flipped(pixels.size());
             glReadPixels(0, 0, 1280, 720, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
@@ -588,7 +870,8 @@ out vec4 color;void main(){color=vec4(1);})";
                             flipped.data() + (719 - row) * 1280 * 4);
             SDL_Surface* surface = SDL_CreateSurfaceFrom(
                 1280, 720, SDL_PIXELFORMAT_RGBA32, flipped.data(), 1280 * 4);
-            valid = surface && SDL_SaveBMP(surface, loadingScreenshotPath) && valid;
+            valid = reportCheck(surface && SDL_SaveBMP(surface, loadingScreenshotPath) && valid,
+                                __LINE__);
             SDL_DestroySurface(surface);
         }
         renderer.finishLoadingScreen();
@@ -602,7 +885,7 @@ out vec4 color;void main(){color=vec4(1);})";
         renderer.drawRmlUi();
         renderer.endFrame();
         glFinish();
-        valid = noGlErrors("RmlUi pause menu") && valid;
+        valid = reportCheck(noGlErrors("RmlUi pause menu") && valid, __LINE__);
         renderer.removeUiScreen(pauseScreen);
         const strategy::RmlUiScreenHandle settingsScreen =
             renderer.pushUiScreen({"assets/ui/settings.rml",
@@ -620,9 +903,10 @@ out vec4 color;void main(){color=vec4(1);})";
         renderer.drawRmlUi();
         renderer.endFrame();
         glFinish();
-        valid = noGlErrors("RmlUi settings menu") && valid;
-        valid = checkFormPanel(renderer, "settings.resolution", "settings.apply") && valid;
-        valid = captureForm(renderer, "settings.bmp") && valid;
+        valid = reportCheck(noGlErrors("RmlUi settings menu") && valid, __LINE__);
+        valid = reportCheck(
+            checkFormPanel(renderer, "settings.resolution", "settings.apply") && valid, __LINE__);
+        valid = reportCheck(captureForm(renderer, "settings.bmp") && valid, __LINE__);
         renderer.removeUiScreen(settingsScreen);
         const auto matchScreen = renderer.pushUiScreen(
             {"assets/ui/match_setup.rml",
@@ -642,8 +926,9 @@ out vec4 color;void main(){color=vec4(1);})";
         renderer.drawRmlUi();
         renderer.endFrame();
         glFinish();
-        valid = noGlErrors("RmlUi match setup") && valid;
-        valid = checkFormPanel(renderer, "match.player_country", "match.start") && valid;
+        valid = reportCheck(noGlErrors("RmlUi match setup") && valid, __LINE__);
+        valid = reportCheck(
+            checkFormPanel(renderer, "match.player_country", "match.start") && valid, __LINE__);
         for (const auto& [id, value] : std::vector<std::pair<std::string, std::string>>{
                  {"match-mode", "1 VS 1 SKIRMISH"},
                  {"players-header", "PLAYERS"},
@@ -675,11 +960,12 @@ out vec4 color;void main(){color=vec4(1);})";
         renderer.setUiAttribute("player-emblem", "src", "../textures/ui/country_emblem_brazil.png");
         renderer.setUiAttribute(
             "opponent-emblem", "src", "../textures/ui/country_emblem_japan.png");
-        valid = captureForm(renderer, "match-setup.bmp") && valid;
+        valid = reportCheck(captureForm(renderer, "match-setup.bmp") && valid, __LINE__);
         renderer.setUiScale(1.5F);
         renderer.setUiText("match-mode", strategy::Text::get("match_setup.generation_failed"));
         renderer.setUiProperty("match-mode", "color", "#ffbf75");
-        valid = captureForm(renderer, "match-generation-failed.bmp") && valid;
+        valid =
+            reportCheck(captureForm(renderer, "match-generation-failed.bmp") && valid, __LINE__);
         renderer.setUiScale(1.0F);
         renderer.removeUiScreen(matchScreen);
         const strategy::RmlUiScreenHandle buildScreen =
@@ -697,7 +983,7 @@ out vec4 color;void main(){color=vec4(1);})";
         renderer.drawRmlUi();
         renderer.endFrame();
         glFinish();
-        valid = noGlErrors("RmlUi build menu") && valid;
+        valid = reportCheck(noGlErrors("RmlUi build menu") && valid, __LINE__);
         renderer.removeUiScreen(buildScreen);
         const strategy::RmlUiScreenHandle gameplayScreen =
             renderer.pushUiScreen({"assets/ui/gameplay_hud.rml",
@@ -748,24 +1034,28 @@ out vec4 color;void main(){color=vec4(1);})";
         renderer.drawRmlUi();
         renderer.endFrame();
         glFinish();
-        valid = noGlErrors("RmlUi gameplay HUD") && valid;
+        valid = reportCheck(noGlErrors("RmlUi gameplay HUD") && valid, __LINE__);
         const auto infoBounds = renderer.uiBounds("test.info");
         const auto statBounds = renderer.uiBounds("test.stat");
         const auto lastSlot = renderer.uiBounds("test.slot.10");
         if (!infoBounds || !statBounds || !lastSlot || statBounds->right > infoBounds->right + 1 ||
             lastSlot->right >= infoBounds->left || lastSlot->bottom > 720) {
             std::cerr << "HUD panels overlap or clip their content\n";
-            valid = false;
+            valid = reportCheck(false, __LINE__);
         }
 
-        valid = checkProgress(renderer, "test.health", Rml::Colourb(239, 100, 92)) && valid;
-        valid = checkProgress(renderer, "test.power", Rml::Colourb(84, 215, 242)) && valid;
-        valid = checkProgress(renderer, "test.construction", Rml::Colourb(239, 191, 86)) && valid;
-        valid = captureForm(renderer, "progress-bars.bmp") && valid;
+        valid = reportCheck(
+            checkProgress(renderer, "test.health", Rml::Colourb(239, 100, 92)) && valid, __LINE__);
+        valid = reportCheck(
+            checkProgress(renderer, "test.power", Rml::Colourb(84, 215, 242)) && valid, __LINE__);
+        valid = reportCheck(
+            checkProgress(renderer, "test.construction", Rml::Colourb(239, 191, 86)) && valid,
+            __LINE__);
+        valid = reportCheck(captureForm(renderer, "progress-bars.bmp") && valid, __LINE__);
         const auto unscaledActionBounds = renderer.uiBounds("action.preview");
         hudDocument->GetElementById("action.preview")->SetPseudoClass("hover", true);
         hudDocument->GetElementById("action.preview")->QuerySelector(".tooltip")->SetProperty("animation", "none");
-        valid = captureForm(renderer, "hud-tooltip.bmp") && valid;
+        valid = reportCheck(captureForm(renderer, "hud-tooltip.bmp") && valid, __LINE__);
         hudDocument->GetElementById("action.preview")->SetPseudoClass("hover", false);
         renderer.setUiScale(1.5F);
         renderer.beginFrame(1280, 720);
@@ -784,13 +1074,13 @@ out vec4 color;void main(){color=vec4(1);})";
         hudContext->Update();
         if (hudDocument->GetElementById("test.scroll") != scrollPanel || scrollPanel->GetScrollTop() < 89) {
             std::cerr << "Identical HUD updates reset the scrolling subtree\n";
-            valid = false;
+            valid = reportCheck(false, __LINE__);
         }
         // The cache must detect changes made through another UI API.
         renderer.resetUiScroll("test.scroll");
         if (scrollPanel->GetScrollTop() != 0) {
             std::cerr << "Explicit selection scroll reset failed\n";
-            valid = false;
+            valid = reportCheck(false, __LINE__);
         }
         scrollPanel->SetInnerRML("ALTERED");
         renderer.setUiText("entity-queue", scrollMarkup);
@@ -798,7 +1088,7 @@ out vec4 color;void main(){color=vec4(1);})";
         scrollPanel = hudDocument->GetElementById("test.scroll");
         if (scrollPanel->GetInnerRML().find("SCROLL RETENTION") == std::string::npos) {
             std::cerr << "Cached markup failed to restore externally changed content\n";
-            valid = false;
+            valid = reportCheck(false, __LINE__);
         }
         const auto scrollBounds = renderer.uiBounds("test.scroll");
         SDL_Event wheel{};
@@ -813,10 +1103,10 @@ out vec4 color;void main(){color=vec4(1);})";
         }
         if (!renderer.pointerOverUi() || scrollPanel->GetScrollTop() < 1) {
             std::cerr << "Wheel event did not target and scroll its UI panel\n";
-            valid = false;
+            valid = reportCheck(false, __LINE__);
         }
         renderer.setUiText("entity-queue", "");
-        valid = captureForm(renderer, "hud-large.bmp") && valid;
+        valid = reportCheck(captureForm(renderer, "hud-large.bmp") && valid, __LINE__);
         renderer.setUiAttribute("entity-shell", "class", "info-only");
         hudContext->Update();
         const auto compactInfo = renderer.uiBounds("test.info");
@@ -825,15 +1115,15 @@ out vec4 color;void main(){color=vec4(1);})";
             compactInfo->left < compactShell->left ||
             actionPanel->GetProperty<Rml::Style::Display>("display") != Rml::Style::Display::None) {
             std::cerr << "Information-only HUD failed to compact its layout\n";
-            valid = false;
+            valid = reportCheck(false, __LINE__);
         }
-        valid = captureForm(renderer, "hud-info-only.bmp") && valid;
+        valid = reportCheck(captureForm(renderer, "hud-info-only.bmp") && valid, __LINE__);
         renderer.setUiAttribute("entity-shell", "class", "");
         if (!unscaledActionBounds || !scaledActionBounds ||
             scaledActionBounds->right - scaledActionBounds->left <=
                 (unscaledActionBounds->right - unscaledActionBounds->left) * 1.25F) {
             std::cerr << "RmlUi global scale did not resize the active HUD\n";
-            valid = false;
+            valid = reportCheck(false, __LINE__);
         }
         renderer.setUiScale(1.0F);
         renderer.beginFrame(1280, 720);
@@ -854,11 +1144,11 @@ out vec4 color;void main(){color=vec4(1);})";
             if (!clicked || *clicked != "action.preview") {
                 std::cerr << "RmlUi gameplay action did not receive a pointer click at "
                           << down.button.x << ", " << down.button.y << "\n";
-                valid = false;
+                valid = reportCheck(false, __LINE__);
             }
         } else {
             std::cerr << "RmlUi gameplay action has no bounds\n";
-            valid = false;
+            valid = reportCheck(false, __LINE__);
         }
         renderer.removeUiScreen(gameplayScreen);
         if (const char* screenshotPath = SDL_getenv("STRATEGY_UI_SCREENSHOT")) {
@@ -870,7 +1160,7 @@ out vec4 color;void main(){color=vec4(1);})";
                             flipped.data() + (719 - row) * 1280 * 4);
             SDL_Surface* surface =
                 SDL_CreateSurfaceFrom(1280, 720, SDL_PIXELFORMAT_RGBA32, flipped.data(), 1280 * 4);
-            valid = surface && SDL_SaveBMP(surface, screenshotPath) && valid;
+            valid = reportCheck(surface && SDL_SaveBMP(surface, screenshotPath) && valid, __LINE__);
             SDL_DestroySurface(surface);
         }
     }
