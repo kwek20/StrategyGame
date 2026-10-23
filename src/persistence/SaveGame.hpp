@@ -27,6 +27,7 @@ struct SaveData {
     std::string playerOneSpecialization{"unassigned"};
     std::string playerTwoSpecialization{"unassigned"};
     std::array<std::map<std::string, float>, 2> resources;
+    std::array<std::map<std::string, std::uint32_t>, 2> researchedUpgrades;
     std::array<std::vector<std::uint8_t>, 2> discovered;
     std::array<std::vector<LastKnownEntity>, 2> intelligence;
 };

@@ -470,6 +470,32 @@ bool GameSession::canStartRecipe(PlayerId playerId, EntityId producerId, RecipeI
     return true;
 }
 
+std::uint32_t GameSession::upgradeLevel(PlayerId playerId, EntityId researcherId,
+                                       const std::string& upgradeId) const {
+    const auto* definition = gameplay_.upgrade(upgradeId);
+    const auto* player = players_.find(playerId);
+    const auto* researcher = world_.findEntity(researcherId);
+    if (!definition || !player || !researcher || researcher->authority.owner != playerId)
+        return 0;
+    if (definition->satelliteCoverage != SatelliteCoverage::none) {
+        const auto level = player->researchedUpgrades.find(upgradeId);
+        return level == player->researchedUpgrades.end() ? 0 : level->second;
+    }
+    if (!researcher->upgrades)
+        return 0;
+    const auto level = researcher->upgrades.levels.find(upgradeId);
+    return level == researcher->upgrades.levels.end() ? 0 : level->second;
+}
+
+SatelliteCoverage GameSession::satelliteCoverage(PlayerId playerId) const {
+    SatelliteCoverage coverage = SatelliteCoverage::none;
+    if (const auto* player = players_.find(playerId))
+        for (const auto& [id, level] : player->researchedUpgrades)
+            if (const auto* upgrade = gameplay_.upgrade(id); upgrade && level > 0)
+                coverage = std::max(coverage, upgrade->satelliteCoverage);
+    return coverage;
+}
+
 bool GameSession::canStartUpgrade(PlayerId playerId,
                                   EntityId researcherId,
                                   const std::string& upgradeId) const {
@@ -482,17 +508,18 @@ bool GameSession::canStartUpgrade(PlayerId playerId,
         std::find(upgrade->allowedResearchers.begin(), upgrade->allowedResearchers.end(),
                   entity->archetype.value) == upgrade->allowedResearchers.end())
         return false;
-    std::uint32_t scheduledLevel = entity->upgrades.levels.contains(upgradeId)
-                                       ? entity->upgrades.levels.at(upgradeId)
-                                       : 0;
-    for (const ProductionOrder& order : entity->production.queue)
-        if (order.upgradeId == upgradeId)
-            ++scheduledLevel;
+    std::uint32_t scheduledLevel = upgradeLevel(playerId, researcherId, upgradeId);
+    for (const Entity& researcher : world_.entities())
+        if (researcher.authority.owner == playerId && researcher.production &&
+            (researcher.id == researcherId ||
+             upgrade->satelliteCoverage != SatelliteCoverage::none))
+            for (const ProductionOrder& order : researcher.production.queue)
+                if (order.upgradeId == upgradeId)
+                    ++scheduledLevel;
     if (scheduledLevel >= upgrade->maximumLevel)
         return false;
     for (const std::string& prerequisite : upgrade->prerequisites)
-        if (!entity->upgrades.levels.contains(prerequisite) ||
-            entity->upgrades.levels.at(prerequisite) == 0)
+        if (upgradeLevel(playerId, researcherId, prerequisite) == 0)
             return false;
     if (!upgrade->exclusiveGroup.empty())
         for (const auto& [id, level] : entity->upgrades.levels)
@@ -514,15 +541,113 @@ bool GameSession::canStartUpgrade(PlayerId playerId,
     return true;
 }
 
+BuildingPlacementPlan GameSession::planBuildingPlacement(PlayerId playerId,
+                                                         const PlaceBuildingCommand& intent,
+                                                         TerrainPlacementCache* previewCache,
+                                                         bool checkOccupancy) const {
+    BuildingPlacementPlan plan;
+    const auto fail = [&](PlacementFailure reason) {
+        plan.failure = reason;
+        return plan;
+    };
+    const auto* player = players_.find(playerId);
+    const auto* builder = world_.findEntity(intent.entity);
+    const auto* recipe = gameplay_.recipe(RecipeId{intent.buildingId});
+    if (!player || !builder || builder->authority.owner != playerId || !builder->flight)
+        return fail(PlacementFailure::invalidBuilder);
+    if (!recipe || recipe->product.kind != RecipeProductKind::building)
+        return fail(PlacementFailure::invalidRecipe);
+    const auto* definition = gameplay_.archetype(recipe->product.id);
+    const float radius = collisionRadius(gameplay_, recipe->product.id);
+    plan.footprint = definition && definition->footprint
+                         ? *definition->footprint
+                         : TerrainFootprint{FootprintShape::circle, radius, {radius, radius}};
+    if (!std::isfinite(intent.position.x) || !std::isfinite(intent.position.z) ||
+        !std::isfinite(intent.rotationDegrees))
+        return fail(PlacementFailure::outsideMap);
+    const float yaw = std::remainder(intent.rotationDegrees, 360.0F);
+    plan.footprint.rotationDegrees += yaw;
+    plan.shape = spatialShape(gameplay_,
+                              EntityArchetypeId{recipe->product.id},
+                              {intent.position.x, intent.position.z},
+                              yaw);
+    const auto bounds = axisAlignedHalfExtents(plan.shape);
+    const float extent =
+        MapArea{mapChunksPerSide_}.halfExtent() - gameplay_.matchRules().terrainEdgeMargin;
+    if (std::abs(plan.shape.center.x) + bounds.x > extent ||
+        std::abs(plan.shape.center.y) + bounds.y > extent)
+        return fail(PlacementFailure::outsideMap);
+    if (!missingBuildingUpgrades(playerId, recipe->product.id).empty())
+        return fail(PlacementFailure::requirements);
+    for (const auto& [resource, amount] : recipe->cost) {
+        const auto available = player->resources.find(resource);
+        if (available == player->resources.end() || available->second < amount)
+            return fail(PlacementFailure::resources);
+    }
+    if (checkOccupancy) {
+        plan.blocker = firstPlacementBlocker(world_, gameplay_, plan.shape);
+        if (plan.blocker)
+            return fail(PlacementFailure::collision);
+    }
+    const auto profile = definition ? definition->placement : TerrainPlacementProfile{};
+    plan.terrain =
+        previewCache ? previewCache->evaluate(terrain_, plan.shape.center, plan.footprint, profile)
+                     : terrain_.evaluatePlacement(
+                           intent.position.x, intent.position.z, plan.footprint, profile);
+    if (!plan.terrain.valid())
+        return fail(PlacementFailure::terrain);
+    plan.foundation = terrain_.foundationFromPlacement(
+        0, plan.shape.center, plan.footprint, profile, plan.terrain);
+    return plan;
+}
+
 void GameSession::apply(const PlayerCommand& command) {
     std::visit(
         [this, &command](const auto& payload) {
-            Entity* entity = world_.findEntity(payload.entity);
-            if (entity == nullptr || entity->authority.owner != command.player) {
-                return;
-            }
             using Type = std::decay_t<decltype(payload)>;
-            if constexpr (std::is_same_v<Type, PossessUnitCommand>) {
+            Entity* entity = world_.findEntity(payload.entity);
+            if constexpr (std::is_same_v<Type, AdvanceSatelliteCommand>) {
+                auto* player = players_.find(command.player);
+                if (!player || payload.entity != 0)
+                    return;
+                const auto current = satelliteCoverage(command.player);
+                if (current == SatelliteCoverage::highResolution)
+                    return;
+                const auto next = current == SatelliteCoverage::none
+                                      ? SatelliteCoverage::lowResolution
+                                      : SatelliteCoverage::highResolution;
+                const UpgradeDefinition* grant = nullptr;
+                for (const auto& [id, upgrade] : gameplay_.upgrades()) {
+                    if (upgrade.satelliteCoverage != next ||
+                        !std::all_of(upgrade.prerequisites.begin(), upgrade.prerequisites.end(),
+                                     [&](const auto& prerequisite) {
+                                         const auto found = player->researchedUpgrades.find(prerequisite);
+                                         return found != player->researchedUpgrades.end() && found->second > 0;
+                                     }))
+                        continue;
+                    if (!grant || id < grant->id)
+                        grant = &upgrade;
+                }
+                if (!grant)
+                    return;
+                player->researchedUpgrades[grant->id] = grant->maximumLevel;
+                // Refund a queued purchase made redundant by the instant grant.
+                for (auto& researcher : world_.entities())
+                    if (researcher.authority.owner == command.player && researcher.production)
+                        std::erase_if(researcher.production.queue, [&](const ProductionOrder& order) {
+                            if (order.upgradeId != grant->id)
+                                return false;
+                            for (const auto& [resource, amount] : order.reservedCosts)
+                                player->resources[resource] += amount;
+                            return true;
+                        });
+                return;
+            } else if (entity == nullptr || entity->authority.owner != command.player) {
+                if constexpr (std::is_same_v<Type, PlaceBuildingCommand>)
+                    placementEvents_.push_back(
+                        {command.player, command.sequence, 0, PlacementFailure::invalidBuilder});
+                return;
+            } else if constexpr (std::is_same_v<Type, PossessUnitCommand>) {
                 if (entity->unitControl && entity->unitControl.directlyControllable &&
                     (entity->authority.directController == 0 ||
                      entity->authority.directController == command.player)) {
@@ -662,7 +787,8 @@ void GameSession::apply(const PlayerCommand& command) {
                 entity->unitControl.hasStrategicDestination = false;
                 entity->transient.navigationPath.clear();
             } else if constexpr (std::is_same_v<Type, SetPreferredProcessorCommand>) {
-                if (!entity->gatherer) return;
+                if (!entity->gatherer)
+                    return;
                 if (payload.processor != 0) {
                     const Entity* processor = world_.findEntity(payload.processor);
                     if (!processor || processor->authority.owner != command.player ||
@@ -672,17 +798,20 @@ void GameSession::apply(const PlayerCommand& command) {
                 entity->gatherer.preferredProcessor = payload.processor;
                 entity->gatherer.deliveryTarget = 0;
             } else if constexpr (std::is_same_v<Type, SetDeliveryOutputCommand>) {
-                if (!entity->gatherer || payload.output.empty()) return;
+                if (!entity->gatherer || payload.output.empty())
+                    return;
                 const std::string input = !entity->gatherer.carriedResource.empty()
                     ? entity->gatherer.carriedResource
                     : [&]() {
                         const Entity* source = world_.findEntity(entity->gatherer.sourceTarget);
                         return source && source->resource ? source->resource.type : std::string{};
                     }();
-                if (input != "synthetic") return;
+                if (input != "synthetic")
+                    return;
                 bool validRoute = false;
                 for (const Entity& candidate : world_.entities()) {
-                    if (candidate.authority.owner != command.player || !candidate.processor) continue;
+                    if (candidate.authority.owner != command.player || !candidate.processor)
+                        continue;
                     const auto* conversion = gameplay_.conversionFor(
                         BuildingArchetypeId{candidate.archetype.value}, ResourceId{input});
                     if (conversion && conversion->output.value == payload.output) {
@@ -690,7 +819,8 @@ void GameSession::apply(const PlayerCommand& command) {
                         break;
                     }
                 }
-                if (!validRoute) return;
+                if (!validRoute)
+                    return;
                 entity->gatherer.preferredOutput = payload.output;
                 entity->gatherer.preferredProcessor = 0;
                 entity->gatherer.deliveryTarget = 0;
@@ -726,9 +856,11 @@ void GameSession::apply(const PlayerCommand& command) {
                 if (entity->power && entity->power.storageCapacity > 0.0F)
                     entity->power.dischargeEnabled = payload.enabled;
             } else if constexpr (std::is_same_v<Type, SetPowerConsumptionEnabledCommand>) {
-                if (entity->power) entity->power.consumptionEnabled = payload.enabled;
+                if (entity->power)
+                    entity->power.consumptionEnabled = payload.enabled;
             } else if constexpr (std::is_same_v<Type, SetPowerOutputEnabledCommand>) {
-                if (entity->power) entity->power.outputEnabled = payload.enabled;
+                if (entity->power)
+                    entity->power.outputEnabled = payload.enabled;
             } else if constexpr (std::is_same_v<Type, AttackEntityCommand>) {
                 Entity* target = world_.findEntity(payload.target);
                 if (entity->unitControl && entity->combat &&
@@ -773,55 +905,43 @@ void GameSession::apply(const PlayerCommand& command) {
                     entity->production.queue.push_back(std::move(order));
                 }
             } else if constexpr (std::is_same_v<Type, PlaceBuildingCommand>) {
+                const auto reject = [&](PlacementFailure reason,
+                                        TerrainPlacementFailure terrain =
+                                            TerrainPlacementFailure::none) {
+                    placementEvents_.push_back(
+                        {command.player, command.sequence, 0, reason, terrain});
+                };
+                const auto plan = planBuildingPlacement(command.player, payload);
+                if (!plan.valid()) {
+                    reject(plan.failure, plan.terrain.failure);
+                    return;
+                }
                 Player* player = players_.find(command.player);
                 const RecipeDefinition* recipe = gameplay_.recipe(RecipeId{payload.buildingId});
-                if (!player || !entity->flight || !recipe || recipe->product.kind != RecipeProductKind::building)
-                    return;
-                const EntityArchetype* buildingDefinition = gameplay_.archetype(recipe->product.id);
-                if (!missingBuildingUpgrades(command.player, recipe->product.id).empty()) return;
-                const float footprintRadius = collisionRadius(gameplay_, recipe->product.id);
-                TerrainFootprint shape = buildingDefinition && buildingDefinition->footprint
-                                             ? *buildingDefinition->footprint
-                                             : TerrainFootprint{FootprintShape::circle, footprintRadius,
-                                                                {footprintRadius, footprintRadius}};
-                const SpatialShape placementShape = spatialShape(
-                    gameplay_, EntityArchetypeId{recipe->product.id},
-                    {payload.position.x, payload.position.z}, 0.0F);
-                const glm::vec2 bounds = axisAlignedHalfExtents(placementShape);
-                const MapArea map{mapChunksPerSide_};
-                const float playableExtent =
-                    map.halfExtent() - gameplay_.matchRules().terrainEdgeMargin;
-                if (std::abs(placementShape.center.x) + bounds.x > playableExtent ||
-                    std::abs(placementShape.center.y) + bounds.y > playableExtent) return;
-                if (overlapsObject(world_, gameplay_, placementShape)) return;
-                const TerrainPlacementResult placement = terrain_.evaluatePlacement(
-                    payload.position.x, payload.position.z, shape,
-                    buildingDefinition ? buildingDefinition->placement
-                                       : TerrainPlacementProfile{});
-                if (!placement.valid()) return;
                 for (const auto& [resource, amount] : recipe->cost)
-                    if (player->resources[resource] < amount) return;
-                for (const auto& [resource, amount] : recipe->cost) player->resources[resource] -= amount;
-                vegetation_.clearWithin(placementShape);
+                    player->resources[resource] -= amount;
+                vegetation_.clearWithin(plan.shape);
                 Entity& building = world_.createEntity(recipe->product.id, recipe->product.id, command.player);
+                placementEvents_.push_back({command.player, command.sequence, building.id});
                 gameplay_.initializeEntity(building);
                 building.transform.position = {payload.position.x, 0.0F, payload.position.z};
-                TerrainFoundation foundation = terrain_.evaluateFoundation(
-                    building.id,
-                    payload.position.x,
-                    payload.position.z,
-                    shape,
-                    buildingDefinition ? buildingDefinition->placement : TerrainPlacementProfile{});
+                TerrainFoundation foundation = plan.foundation;
+                foundation.sourceEntity = building.id;
+                building.transform.rotationDegrees.y =
+                    std::remainder(payload.rotationDegrees, 360.F);
                 foundation.influence = 0.0F;
                 building.transform.rotationDegrees.x = -glm::degrees(std::atan(foundation.gradient.y));
                 building.transform.rotationDegrees.z = glm::degrees(std::atan(foundation.gradient.x));
                 world_.foundations().push_back(foundation);
                 terrain_.applyFoundation(foundation);
+                if (foundation.levelsTerrain)
+                    navigation_.refreshTerrainHeights(terrain_, &foundation);
                 building.construction.emplace();
                 building.construction.recipeId = recipe->id;
                 building.construction.powerRequired = recipe->constructionPower;
                 building.construction.state = BuildingLifecycleState::planned;
-                if (building.health) building.health.current = 0.0F;
+                if (building.health)
+                    building.health.current = 0.0F;
                 if (const EntityId connected = powerGridSystem_.connectNearestForPlacement(
                         world_, command.player, building.id); connected != 0)
                     powerEvents_.push_back({PowerEventKind::connectionCreated, tick_, command.player,
@@ -863,7 +983,8 @@ void GameSession::apply(const PlayerCommand& command) {
             } else if constexpr (std::is_same_v<Type, StopConstructionCommand>) {
                 stopUnit(*entity);
             } else if constexpr (std::is_same_v<Type, CancelConstructionCommand>) {
-                if (!entity->construction || isOperational(*entity)) return;
+                if (!entity->construction || isOperational(*entity))
+                    return;
                 const RecipeDefinition* recipe = gameplay_.recipe(RecipeId{entity->construction.recipeId});
                 Player* player = players_.find(command.player);
                 if (recipe && player) {
@@ -881,19 +1002,28 @@ void GameSession::apply(const PlayerCommand& command) {
                     return foundation.sourceEntity == cancelled;
                 });
                 terrain_.rebuildFoundations(world_.foundations());
+                if (terrain_.mode() == TerrainMode::v2)
+                    navigation_.refreshTerrainHeights(terrain_);
                 if (entity->power)
                     powerGridSystem_.markDirty(entity->authority.owner);
                 world_.destroyEntity(cancelled);
             } else if constexpr (std::is_same_v<Type, RepairCommand>) {
                 const auto* repairType = gameplay_.archetype(entity->archetype);
-                if (!repairType || !repairType->repair) return;
+                if (!repairType || !repairType->repair)
+                    return;
                 Entity* target = world_.findEntity(payload.target);
                 if (entity->battery && entity->battery.charge <= 0.0F) {
                     beginRecharge(*entity);
                     return;
                 }
                 if (entity->flight && target && target->health && entity->battery &&
-                    !entity->battery.returningToCharge) { clearGatherLoop(*entity); entity->unitControl.order=UnitOrderKind::repair; entity->unitControl.orderTarget=target->id; entity->unitControl.strategicDestination=target->transform.position; entity->unitControl.hasStrategicDestination=true; }
+                    !entity->battery.returningToCharge) {
+                    clearGatherLoop(*entity);
+                    entity->unitControl.order = UnitOrderKind::repair;
+                    entity->unitControl.orderTarget = target->id;
+                    entity->unitControl.strategicDestination = target->transform.position;
+                    entity->unitControl.hasStrategicDestination = true;
+                }
             } else if constexpr (std::is_same_v<Type, StartUpgradeCommand>) {
                 if (!canStartUpgrade(command.player, entity->id, payload.upgradeId))
                     return;
@@ -1111,10 +1241,14 @@ void GameSession::simulateTick() {
                     if (!order.upgradeId.empty()) {
                         if (!entity.upgrades)
                             entity.upgrades.emplace();
-                        auto& level = entity.upgrades.levels[order.upgradeId];
-                        if (const UpgradeDefinition* upgrade = gameplay_.upgrade(order.upgradeId);
-                            upgrade && level < upgrade->maximumLevel)
-                            ++level;
+                        if (const UpgradeDefinition* upgrade = gameplay_.upgrade(order.upgradeId)) {
+                            auto* player = players_.find(entity.authority.owner);
+                            auto& levels = upgrade->satelliteCoverage != SatelliteCoverage::none && player
+                                               ? player->researchedUpgrades : entity.upgrades.levels;
+                            auto& level = levels[order.upgradeId];
+                            if (level < upgrade->maximumLevel)
+                                ++level;
+                        }
                         if (order.upgradeId == "building.town_center_level_2") {
                             entity.archetype = EntityArchetypeId{"town_center_level_2"};
                             entity.presentation = PresentationId{"town_center_level_2"};
@@ -1593,6 +1727,15 @@ void GameSession::simulateTick() {
                 worker.unitControl.orderTarget = 0;
                 worker.unitControl.hasStrategicDestination = false;
             }
+        if (terrain_.mode() == TerrainMode::v2) {
+            const auto removed = std::erase_if(world_.foundations(), [id](const auto& foundation) {
+                return foundation.sourceEntity == id;
+            });
+            if (removed) {
+                terrain_.rebuildFoundations(world_.foundations());
+                navigation_.refreshTerrainHeights(terrain_);
+            }
+        }
         world_.destroyEntity(id);
     }
     // Deliveries from every unit are complete. Convert using this tick's power result,
@@ -1728,6 +1871,15 @@ void GameSession::updateExploration() {
                     }
                 }
         }
+        const auto coverage = satelliteCoverage(player.id);
+        if (coverage != SatelliteCoverage::none)
+            std::fill(player.discovered.begin(), player.discovered.end(), 255);
+        if (coverage == SatelliteCoverage::highResolution)
+            std::fill(player.visible.begin(), player.visible.end(), 255);
+        // Full coverage replaces the entire snapshot each tick. Reuse its storage and
+        // append in world order instead of searching every old entry for every entity.
+        if (coverage == SatelliteCoverage::highResolution)
+            player.intelligence.clear();
         const auto cellVisible = [&](glm::vec3 position) {
             const glm::ivec2 cell =
                 map.gridCell({position.x, position.z}, Player::explorationCells);
@@ -1737,8 +1889,9 @@ void GameSession::updateExploration() {
         for (const Entity& entity : world_.entities())
             if (entity.authority.owner != player.id && cellVisible(entity.transform.position)) {
                 const bool depleted = entity.resource && entity.resource.remaining <= 0.0F;
-                auto known =
-                    std::find_if(player.intelligence.begin(),
+                auto known = coverage == SatelliteCoverage::highResolution
+                                 ? player.intelligence.end()
+                                 : std::find_if(player.intelligence.begin(),
                                  player.intelligence.end(),
                                  [&](const LastKnownEntity& item) { return item.id == entity.id; });
                 if (depleted) {
@@ -1777,36 +1930,52 @@ void GameSession::replaceWorld(std::vector<Entity> entities,
                                std::uint32_t mapChunksPerSide,
                                TerrainLayoutId terrainLayout,
                                TerrainMode terrainMode,
-                               std::uint32_t repairLevel) {
+                               std::uint32_t repairLevel,
+                               WorldGenerationProgress* generationProgress) {
     world_.replaceEntities(std::move(entities));
     world_.replaceFoundations(std::move(foundations));
     terrainSeed_ = terrainSeed;
     terrainLayout_ = std::move(terrainLayout);
     mapChunksPerSide_ = std::clamp(mapChunksPerSide, 10U,
                                    static_cast<std::uint32_t>(Terrain::chunksPerSide));
-    terrain_ = Terrain{terrainSeed, terrainLayout_, terrainMode, mapChunksPerSide_};
+    terrain_ =
+        Terrain{terrainSeed, terrainLayout_, terrainMode, mapChunksPerSide_, generationProgress};
     if (repairLevel)
-        terrain_.repairV2Resources(terrainSeed, terrainLayout_, repairLevel);
+        terrain_.repairV2Resources(terrainSeed, terrainLayout_, repairLevel, generationProgress);
     terrain_.rebuildFoundations(world_.foundations());
     resourceLayout_ = {};
-    navigation_.rebuildTerrain(terrain_, mapChunksPerSide_);
-    vegetation_ = generateVegetation(world_, terrain_, gameplay_, terrainSeed_, mapChunksPerSide_);
+    navigation_.rebuildTerrain(terrain_, mapChunksPerSide_, generationProgress);
+    vegetation_ = generateVegetation(
+        world_, terrain_, gameplay_, terrainSeed_, mapChunksPerSide_, generationProgress);
     commands_.clear();
     lastSequence_.clear();
     powerGridSystem_.reset();
     powerEvents_.clear();
+    placementEvents_.clear();
     updateExploration();
 }
 
 void GameSession::restorePlayerProgress(PlayerId id,
                                         std::map<std::string, float> resources,
                                         std::vector<std::uint8_t> discovered,
-                                        std::vector<LastKnownEntity> intelligence) {
+                                        std::vector<LastKnownEntity> intelligence,
+                                        std::map<std::string, std::uint32_t> researchedUpgrades) {
+    for (const auto& [upgradeId, level] : researchedUpgrades) {
+        const auto* upgrade = gameplay_.upgrade(upgradeId);
+        if (!upgrade || upgrade->satelliteCoverage == SatelliteCoverage::none ||
+            level == 0 || level > upgrade->maximumLevel)
+            throw std::runtime_error("Invalid restored player research: " + upgradeId);
+        for (const auto& prerequisite : upgrade->prerequisites)
+            if (!researchedUpgrades.contains(prerequisite))
+                throw std::runtime_error("Restored player research is missing its prerequisite");
+    }
     if (Player* player = players_.find(id)) {
         player->resources = std::move(resources);
         if (discovered.size() == player->discovered.size())
             player->discovered = std::move(discovered);
         player->intelligence = std::move(intelligence);
+        player->researchedUpgrades = std::move(researchedUpgrades);
+        updateExploration();
     }
 }
 

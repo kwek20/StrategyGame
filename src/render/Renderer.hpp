@@ -31,6 +31,7 @@
 #include <glm/vec3.hpp>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -60,10 +61,14 @@ class Renderer final {
     void beginFrame(int width, int height);
     void beginProfileFrame();
     void recordProfile(const std::string& name, double milliseconds);
+    std::vector<ProfileMetric> profileMetrics() const {
+        return profiler_.snapshot();
+    }
     void endFrame();
     [[nodiscard]] RmlUiScreenHandle pushUiScreen(RmlUiScreenDefinition definition);
     void setUiScale(float scale);
     void removeUiScreen(RmlUiScreenHandle handle);
+    void activateUiScreen(RmlUiScreenHandle handle);
     void handleUiEvent(const SDL_Event& event);
     void focusUi(int direction);
     void activateFocusedUiItem();
@@ -89,6 +94,14 @@ class Renderer final {
                      bool terrainDebug = false,
                      int waterDebugMode = 0) const;
     void prepareResourceSites(const World& world) const;
+    void beginResourceSitePreparation(const World& world);
+    bool advanceResourceSitePreparation();
+    float resourceSitePreparationProgress() const {
+        return resourceSites_.preparationProgress();
+    }
+    void beginPresentationFence();
+    bool presentationFenceReady();
+    void cancelPresentationPreparation();
     std::size_t resourceSiteUploadedTiles() const {
         return resourceSites_.uploadedTiles();
     }
@@ -98,7 +111,18 @@ class Renderer final {
     void drawWorld(const World& world,
                    const CameraView& camera,
                    const Player* player = nullptr,
-                   bool powerOverlayVisible = false) const;
+                   bool powerOverlayVisible = false,
+                   const TerrainFoundation* placementPlane = nullptr) const;
+    // Entity-only preview: never updates world resource presentation or persistent caches.
+    void drawPlacementGhost(const Entity& ghost,
+                            const CameraView& camera,
+                            const TerrainFoundation* plane = nullptr) const;
+    void drawBuildingPlacementPreview(glm::vec2 center,
+                                      const TerrainFootprint& footprint,
+                                      const TerrainPlacementProfile& profile,
+                                      const TerrainPlacementResult& result,
+                                      bool valid,
+                                      const CameraView& camera) const;
     void drawVegetation(const VegetationField& vegetation,
                         const CameraView& camera,
                         const Player* player = nullptr) const;
@@ -152,8 +176,10 @@ class Renderer final {
                           EntityId selected,
                           const std::vector<EntityId>& selection,
                           const CameraView& camera) const;
-    [[nodiscard]] glm::vec3
-    screenToTerrain(float pixelX, float pixelY, const CameraView& camera) const;
+    [[nodiscard]] glm::vec3 screenToTerrain(float pixelX,
+                                            float pixelY,
+                                            const CameraView& camera,
+                                            const Terrain* authoritativeTerrain = nullptr) const;
     [[nodiscard]] EntityId pickEntity(float pixelX,
                                       float pixelY,
                                       const World& world,
@@ -195,6 +221,19 @@ class Renderer final {
         initialTerrainUploadCount_ = 0;
     }
     void setTerrainFoundations(const std::vector<TerrainFoundation>& foundations);
+    // A bounded texture overrides only terrain vertex presentation; authoritative terrain/caches
+    // stay intact.
+    void setPlacementTerrainPreview(const TerrainFoundation* cut);
+    std::size_t placementSurfaceUploads() const {
+        return placementSurfaceUploads_;
+    }
+    void flushTerrainUpdates();
+    [[nodiscard]] std::size_t foundationMeshUploadCount() const {
+        return foundationMeshUploads_;
+    }
+    [[nodiscard]] std::size_t foundationMeshCount() const {
+        return foundationMeshes_.size();
+    }
     void preloadAssetGroup(const std::string& group);
     [[nodiscard]] AssetLoadProgress assetProgress(const std::string& group);
     [[nodiscard]] TextureHandle requestTexture(const std::string& key) const;
@@ -234,6 +273,9 @@ class Renderer final {
         glm::vec2 halfExtents{0.0F};
         float rotationDegrees{0.0F};
         bool visible{true};
+        bool scaffold{false};
+        float progress{1};
+        TerrainFoundation geometry;
     };
 
     struct TerrainChunk {
@@ -274,6 +316,16 @@ class Renderer final {
     std::vector<TerrainChunk> terrainChunks_;
     TerrainBackdrop terrainBackdrop_;
     std::vector<FoundationMesh> foundationMeshes_;
+    std::size_t foundationMeshUploads_{};
+    std::optional<TerrainFoundation> placementSurfaceCut_;
+    std::uint64_t placementSurfaceRevision_{};
+    std::uint32_t placementSurfaceTexture_{};
+    glm::ivec2 placementSurfaceOrigin_{};
+    glm::ivec2 placementSurfaceSize_{};
+    glm::ivec2 placementSurfaceCapacity_{};
+    std::vector<float> placementScratchHeights_;
+    std::vector<glm::vec4> placementScratchPixels_;
+    std::size_t placementSurfaceUploads_{};
     std::vector<std::pair<int, int>> pendingTerrainChunkUploads_;
     std::vector<std::pair<int, int>> pendingInitialTerrainUploads_;
     std::size_t initialTerrainUploadCount_{0};
@@ -290,6 +342,21 @@ class Renderer final {
     mutable VegetationRenderCache vegetationCache_;
     mutable VegetationRenderCache resourceNodeCache_;
     mutable ResourceNodePresentation resourceNodePresentation_;
+    struct PlacementPreviewMesh {
+        bool initialized{}, valid{};
+        std::uint64_t terrainRevision{};
+        glm::vec2 center{};
+        TerrainFootprint footprint;
+        TerrainPlacementProfile profile;
+        FootprintFit fit;
+        std::shared_ptr<const surface_geometry::PlacementGeometry> geometry;
+        std::array<std::uint32_t, 3> buffers{};
+        std::array<std::size_t, 3> counts{};
+    };
+    mutable PlacementPreviewMesh placementPreview_;
+
+    std::vector<ResourceSiteSource> resourceSiteSources(const World& world) const;
+    void* presentationFence_{};
     mutable ResourceSiteTexture resourceSites_;
     std::chrono::steady_clock::time_point lastSlowFrameLog_{};
     mutable std::unordered_map<std::string, ModelHandle> modelHandles_;
@@ -314,6 +381,12 @@ class Renderer final {
                                : 140.0F;
         return {near, near * 2.0F};
     }
+    void drawEntityModels(std::span<const Entity> entities,
+                          const CameraView& camera,
+                          const Player* player,
+                          bool powerOverlayVisible,
+                          const TerrainFoundation* plane) const;
+    void flushModelCommands(const CameraView& camera) const;
     void bindTerrainTextures() const;
     void ensureTerrainChunks();
     void drawIcon(const std::string& id,
@@ -326,6 +399,7 @@ class Renderer final {
     void uploadTerrainChunk(int chunkX, int chunkZ);
     void drawWater(const CameraView& camera, const Player* player, int debugMode) const;
     void syncFoundationMeshes();
+    void syncScaffoldMeshes();
     void drawText(const std::string& text,
                   float x,
                   float y,

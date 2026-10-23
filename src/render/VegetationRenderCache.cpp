@@ -18,11 +18,14 @@ void VegetationRenderCache::clear() {
     stats_ = {};
 }
 
-void VegetationRenderCache::beginFrame(const VegetationField& field) {
-    stats_ = {};
+void VegetationRenderCache::beginFrame(const VegetationField& field, bool resetStats) {
+    if (resetStats)
+        resetFrameStats();
     if (fieldIdentity_ == field.identity())
         return;
+    const auto previousStats = stats_;
     clear();
+    stats_ = previousStats;
     chunks_.resize(field.chunks().size());
     for (std::size_t i = 0; i < chunks_.size(); ++i) {
         chunks_[i].center = field.chunks()[i].center;

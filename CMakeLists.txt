@@ -180,6 +180,10 @@ add_library(strategy_camera STATIC
 strategy_target(strategy_camera)
 target_link_libraries(strategy_camera PUBLIC strategy_core)
 
+add_library(strategy_scaffolds STATIC src/render/ScaffoldGeometry.cpp)
+strategy_target(strategy_scaffolds)
+target_link_libraries(strategy_scaffolds PUBLIC strategy_terrain)
+
 add_library(strategy_render STATIC
     src/render/ResourceSiteTexture.cpp
     src/render/FontRenderer.cpp
@@ -196,6 +200,7 @@ add_library(strategy_render STATIC
     src/render/TerrainBackdrop.cpp
 )
 strategy_target(strategy_render)
+target_link_libraries(strategy_render PRIVATE strategy_scaffolds)
 target_compile_definitions(strategy_render PRIVATE
     $<$<CONFIG:Debug>:STRATEGY_SHADER_HOT_RELOAD=1>
 )
@@ -349,6 +354,32 @@ if(STRATEGY_BUILD_TESTS)
     set_tests_properties(map_generation_audit PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "generation;audit" TIMEOUT 1800)
 
     add_executable(entity_hud_model_tests tests/EntityHudModelTests.cpp)
+    add_executable(scaffold_geometry_tests tests/ScaffoldGeometryTests.cpp)
+    strategy_target(scaffold_geometry_tests)
+    target_link_libraries(scaffold_geometry_tests PRIVATE strategy_scaffolds)
+    add_test(NAME scaffold_geometry COMMAND scaffold_geometry_tests)
+    set_tests_properties(scaffold_geometry PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+    add_executable(satellite_tests tests/SatelliteTests.cpp)
+    strategy_target(satellite_tests)
+    target_link_libraries(satellite_tests PRIVATE strategy_simulation strategy_persistence)
+    add_test(NAME satellite COMMAND satellite_tests)
+    set_tests_properties(satellite PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
+    add_executable(terrain_grading_tests tests/TerrainGradingTests.cpp)
+    strategy_target(terrain_grading_tests)
+    target_link_libraries(terrain_grading_tests PRIVATE strategy_simulation strategy_persistence)
+    add_test(NAME terrain_grading COMMAND terrain_grading_tests)
+    set_tests_properties(terrain_grading PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+    add_executable(placement_planning_tests tests/PlacementPlanningTests.cpp)
+    strategy_target(placement_planning_tests)
+    target_link_libraries(placement_planning_tests PRIVATE strategy_simulation strategy_persistence)
+    add_test(NAME placement_planning COMMAND placement_planning_tests)
+    set_tests_properties(placement_planning PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+    add_executable(building_placement_tests tests/BuildingPlacementTests.cpp)
+    strategy_target(building_placement_tests)
+    target_link_libraries(building_placement_tests PRIVATE strategy_simulation)
+    add_test(NAME building_placement COMMAND building_placement_tests)
+    set_tests_properties(building_placement PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
     strategy_target(entity_hud_model_tests)
     target_link_libraries(entity_hud_model_tests PRIVATE strategy_ui_model)
     add_test(NAME entity_hud_model COMMAND entity_hud_model_tests)
@@ -395,7 +426,8 @@ if(STRATEGY_BUILD_TESTS)
 
     add_executable(renderer_integration_tests tests/RendererIntegrationTests.cpp)
     target_sources(renderer_integration_tests PRIVATE src/platform/GraphicsPreference.cpp)
-    add_executable(resource_site_tests tests/ResourceSiteMapTests.cpp)
+    add_executable(resource_site_tests tests/ResourceSiteMapTests.cpp
+        tests/reference/ResourceSiteMapReference.cpp)
     strategy_target(resource_site_tests)
     target_link_libraries(resource_site_tests PRIVATE strategy_resource_sites)
     add_test(NAME resource_site_cache COMMAND resource_site_tests)
@@ -403,7 +435,11 @@ if(STRATEGY_BUILD_TESTS)
     strategy_target(renderer_integration_tests)
     target_compile_definitions(renderer_integration_tests PRIVATE
         $<$<CONFIG:Debug>:STRATEGY_EXPECT_SHADER_HOT_RELOAD=1>)
-    target_link_libraries(renderer_integration_tests PRIVATE strategy_render strategy_simulation)
+    target_link_libraries(renderer_integration_tests PRIVATE strategy_render strategy_simulation strategy_states)
+    add_test(NAME explored_static_visibility COMMAND renderer_integration_tests)
+    set_tests_properties(explored_static_visibility PROPERTIES
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        ENVIRONMENT "STRATEGY_RENDER_CASE=explored_static")
     add_test(NAME renderer_integration COMMAND renderer_integration_tests)
     set_tests_properties(renderer_integration PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
@@ -428,6 +464,11 @@ if(STRATEGY_BUILD_TESTS)
         opening_generation_tests
         map_generation_audit_tests
         entity_hud_model_tests
+        scaffold_geometry_tests
+        building_placement_tests
+        placement_planning_tests
+        terrain_grading_tests
+        satellite_tests
         definition_registry_tests
         persistence_tests
         asset_import_tests

@@ -2,15 +2,18 @@
 
 #include "gameplay/GameplayCatalogue.hpp"
 #include "players/PlayerRegistry.hpp"
+#include "simulation/BuildingPlacementPlan.hpp"
 #include "simulation/Command.hpp"
+#include "simulation/PlacementEvent.hpp"
 #include "simulation/PowerEvent.hpp"
 #include "simulation/PowerGridSystem.hpp"
 #include "simulation/ResourceEvent.hpp"
 #include "terrain/Terrain.hpp"
+#include "terrain/TerrainPlacementCache.hpp"
 #include "world/Navigation.hpp"
+#include "world/Vegetation.hpp"
 #include "world/World.hpp"
 #include "world/WorldGeneration.hpp"
-#include "world/Vegetation.hpp"
 
 #include <cstdint>
 #include <deque>
@@ -46,17 +49,27 @@ class GameSession final {
     void update(double elapsedSeconds);
     void advanceTicks(std::uint32_t count = 1);
     bool submit(PlayerCommand command);
+    [[nodiscard]] BuildingPlacementPlan
+    planBuildingPlacement(PlayerId player,
+                          const PlaceBuildingCommand& intent,
+                          TerrainPlacementCache* previewCache = nullptr,
+                          bool checkOccupancy = true) const;
+    [[nodiscard]] std::uint32_t upgradeLevel(PlayerId player, EntityId researcher,
+                                             const std::string& upgradeId) const;
+    [[nodiscard]] SatelliteCoverage satelliteCoverage(PlayerId player) const;
     void replaceWorld(std::vector<Entity> entities,
                       std::uint32_t terrainSeed,
                       std::vector<TerrainFoundation> foundations = {},
                       std::uint32_t mapChunksPerSide = Terrain::chunksPerSide,
                       TerrainLayoutId terrainLayout = TerrainLayoutId{"continental"},
                       TerrainMode terrainMode = TerrainMode::v1,
-                      std::uint32_t repairLevel = 0);
+                      std::uint32_t repairLevel = 0,
+                      WorldGenerationProgress* generationProgress = nullptr);
     void restorePlayerProgress(PlayerId player,
                                std::map<std::string, float> resources,
                                std::vector<std::uint8_t> discovered,
-                               std::vector<LastKnownEntity> intelligence = {});
+                               std::vector<LastKnownEntity> intelligence = {},
+                               std::map<std::string, std::uint32_t> researchedUpgrades = {});
 
     [[nodiscard]] World& world() {
         return world_;
@@ -97,6 +110,11 @@ class GameSession final {
         powerEvents_.clear();
         return result;
     }
+    [[nodiscard]] std::vector<PlacementEvent> consumePlacementEvents() {
+        auto result = std::move(placementEvents_);
+        placementEvents_.clear();
+        return result;
+    }
 
   private:
     PlayerRegistry players_;
@@ -118,6 +136,7 @@ class GameSession final {
     std::vector<glm::vec2> startingAnchors_;
     std::vector<ResourceEvent> resourceEvents_;
     std::vector<PowerEvent> powerEvents_;
+    std::vector<PlacementEvent> placementEvents_;
     PowerGridSystem powerGridSystem_;
 
     void simulateTick();

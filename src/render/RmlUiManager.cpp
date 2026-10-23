@@ -316,6 +316,20 @@ class RmlUiManager::Impl final : public Rml::EventListener {
         return screens_.back().handle;
     }
 
+    void activateScreen(RmlUiScreenHandle handle) {
+        auto found = std::find_if(screens_.begin(), screens_.end(), [handle](const Screen& screen) {
+            return screen.handle == handle;
+        });
+        if (found == screens_.end() || found == screens_.end() - 1)
+            return;
+        screens_.back().document->Hide();
+        std::rotate(found, found + 1, screens_.end());
+        screens_.back().document->Show();
+        pendingAction_.reset();
+        applyDensity();
+        focusCurrent();
+    }
+
     void setScale(float scale) {
         uiScale_ = std::clamp(scale, 0.75F, 1.5F);
         applyDensity();
@@ -576,6 +590,9 @@ RmlUiManager::RmlUiManager()
 RmlUiManager::~RmlUiManager() = default;
 RmlUiScreenHandle RmlUiManager::pushScreen(RmlUiScreenDefinition definition) {
     return impl_->pushScreen(std::move(definition));
+}
+void RmlUiManager::activateScreen(RmlUiScreenHandle handle) {
+    impl_->activateScreen(handle);
 }
 void RmlUiManager::setScale(float scale) {
     impl_->setScale(scale);

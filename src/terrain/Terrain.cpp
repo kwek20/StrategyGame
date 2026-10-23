@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <glm/common.hpp>
@@ -18,6 +19,11 @@
 #include <stdexcept>
 
 namespace strategy {
+std::uint64_t Terrain::nextPlacementRevision() {
+    static std::atomic<std::uint64_t> serial{0};
+    return ++serial;
+}
+
 TerrainTagMask terrainTagFromName(std::string_view name) {
     if (name == "land") return terrainTagBit(TerrainTag::land);
     if (name == "water") return terrainTagBit(TerrainTag::water);
@@ -1284,17 +1290,55 @@ float Terrain::vertexHeight(int x, int z) const {
     return normalizedHeight(x, z) * heightScale;
 }
 
-float Terrain::heightAt(float worldX, float worldZ) const {
-    const float halfExtent = worldExtent() * 0.5F;
-    const float gridX = (worldX + halfExtent) / spacing;
-    const float gridZ = (worldZ + halfExtent) / spacing;
-    if (gridX < 0.0F || gridZ < 0.0F || gridX > static_cast<float>(cellCount) ||
-        gridZ > static_cast<float>(cellCount)) {
+bool Terrain::permitsTerrainCutAt(glm::vec2 position) const {
+    return std::none_of(appliedFoundations_.begin(), appliedFoundations_.end(), [&](const auto& f) {
+        return signedDistanceToFootprint(f, position) <= spacing * std::sqrt(2.0F);
+    });
+}
+
+float Terrain::foundationTerrainVertexHeight(const TerrainFoundation& foundation,
+                                             int x,
+                                             int z) const {
+    const float current = vertexHeight(x, z);
+    if (!foundation.levelsTerrain || x < 0 || z < 0 || x >= vertexCount || z >= vertexCount)
+        return current;
+    const auto index = static_cast<std::size_t>(z * vertexCount + x);
+    const float original = baseHeights_[index] * heightScale;
+    const glm::vec2 p{x * spacing - worldExtent() * .5F, z * spacing - worldExtent() * .5F};
+    // Include all vertices incident to a footprint triangle, then feather the cut outside.
+    const float distance = signedDistanceToFootprint(foundation, p) - spacing * std::sqrt(2.0F);
+    if (distance >= foundation.levelingBlendWidth || waterCoverage_[index] > 0)
+        return current;
+    const float weight =
+        distance <= 0
+            ? 1
+            : 1 - smoothstep(0, std::max(foundation.levelingBlendWidth, spacing * 2), distance);
+    const float plane =
+        foundation.center.y +
+        glm::dot(foundation.gradient, p - glm::vec2{foundation.center.x, foundation.center.z});
+    const float bounded = glm::clamp(
+        plane, original - foundation.levelingMaximumCut, original + foundation.levelingMaximumFill);
+    const float target = glm::mix(original, bounded, weight);
+    // Compose absolute displacements from the same base raster. The strongest edit wins;
+    // cuts win exact ties. This is order-independent and preserves cut-only composition.
+    const float requested = std::abs(target - original), existing = std::abs(current - original);
+    if (requested > existing)
+        return target;
+    return requested == existing ? std::min(current, target) : current;
+}
+
+namespace {
+template <class Sample>
+float sampleRasterHeight(float worldX, float worldZ, float halfExtent, Sample vertexHeight) {
+    const float gridX = (worldX + halfExtent) / Terrain::spacing;
+    const float gridZ = (worldZ + halfExtent) / Terrain::spacing;
+    if (gridX < 0.0F || gridZ < 0.0F || gridX > static_cast<float>(Terrain::cellCount) ||
+        gridZ > static_cast<float>(Terrain::cellCount)) {
         return 0.0F;
     }
 
-    const int x0 = std::min(static_cast<int>(std::floor(gridX)), cellCount - 1);
-    const int z0 = std::min(static_cast<int>(std::floor(gridZ)), cellCount - 1);
+    const int x0 = std::min(static_cast<int>(std::floor(gridX)), Terrain::cellCount - 1);
+    const int z0 = std::min(static_cast<int>(std::floor(gridZ)), Terrain::cellCount - 1);
     const float u = gridX - static_cast<float>(x0);
     const float v = gridZ - static_cast<float>(z0);
     const float h00 = vertexHeight(x0, z0);
@@ -1307,13 +1351,32 @@ float Terrain::heightAt(float worldX, float worldZ) const {
     }
     return h11 + (1.0F - u) * (h01 - h11) + (1.0F - v) * (h10 - h11);
 }
+} // namespace
 
-float Terrain::entityBaseHeight(std::uint64_t entity, float worldX, float worldZ) const {
+float Terrain::heightAt(float worldX, float worldZ) const {
+    return sampleRasterHeight(
+        worldX, worldZ, worldExtent() * .5F, [&](int x, int z) { return vertexHeight(x, z); });
+}
+
+float Terrain::foundationTerrainHeightAt(const TerrainFoundation& cut, glm::vec2 position) const {
+    return sampleRasterHeight(position.x, position.y, worldExtent() * .5F, [&](int x, int z) {
+        return foundationTerrainVertexHeight(cut, x, z);
+    });
+}
+
+const TerrainFoundation*
+Terrain::entityFoundation(std::uint64_t entity, float worldX, float worldZ) const {
     if (v2_)
         for (const auto& foundation : appliedFoundations_)
             if (foundation.sourceEntity == entity && foundation.center.x == worldX &&
                 foundation.center.z == worldZ)
-                return foundation.center.y;
+                return &foundation;
+    return nullptr;
+}
+
+float Terrain::entityBaseHeight(std::uint64_t entity, float worldX, float worldZ) const {
+    if (const auto* foundation = entityFoundation(entity, worldX, worldZ))
+        return foundation->center.y;
     return heightAt(worldX, worldZ);
 }
 
@@ -1673,19 +1736,35 @@ TerrainFoundation Terrain::evaluateFoundation(std::uint64_t sourceEntity,
                                               float worldZ,
                                               const TerrainFootprint& footprint,
                                               TerrainPlacementProfile profile) const {
+    return foundationFromPlacement(sourceEntity,
+                                   {worldX, worldZ},
+                                   footprint,
+                                   profile,
+                                   evaluatePlacement(worldX, worldZ, footprint, profile));
+}
+
+TerrainFoundation Terrain::foundationFromPlacement(std::uint64_t sourceEntity,
+                                                   glm::vec2 position,
+                                                   const TerrainFootprint& footprint,
+                                                   TerrainPlacementProfile profile,
+                                                   const TerrainPlacementResult& support) const {
+    const float worldX = position.x, worldZ = position.y;
     if (v2_) {
-        const auto support = TerrainSupport::evaluate(*this, {worldX, worldZ}, footprint, profile);
         TerrainFoundation foundation{
-            sourceEntity, {worldX, support.fit.height, worldZ}, footprint, {0, 0}};
-        foundation.requiresSlab = profile.support != TerrainBuildingSupport::floating &&
-                                  support.supportedArea < support.footprintArea - 1e-6;
+            sourceEntity, {worldX, support.fit.height, worldZ}, footprint, support.fit.gradient};
+        if (support.leveling) {
+            foundation = *support.leveling;
+            foundation.sourceEntity = sourceEntity;
+        }
+        foundation.requiresSlab =
+            profile.support != TerrainBuildingSupport::floating && support.requiresScaffold();
         return foundation;
     }
-    FootprintFit fit = fitFootprint(worldX, worldZ, footprint);
+    const FootprintFit& fit = support.fit;
     glm::vec2 gradient = fit.gradient;
     // Buildings follow gentle terrain directly. On moderate slopes a recessed slab
-    // absorbs the excess while the building itself never tilts beyond five degrees.
-    constexpr float maximumBuildingTiltDegrees = 5.0F;
+    // absorbs the excess while the building itself respects the shared tilt limit.
+    constexpr float maximumBuildingTiltDegrees = TerrainPlacementProfile::maximumAllowedTiltDegrees;
     const float maximumGradient = std::tan(glm::radians(maximumBuildingTiltDegrees));
     const float magnitude = glm::length(gradient);
     if (magnitude > maximumGradient && magnitude > 0.0F)
@@ -1760,7 +1839,16 @@ void Terrain::applyFoundationPixels(const TerrainFoundation& foundation) {
 }
 
 void Terrain::applyFoundation(const TerrainFoundation& foundation) {
+    placementRevision_ = nextPlacementRevision();
     if (v2_) {
+        if (foundation.levelsTerrain) {
+            auto next = appliedFoundations_;
+            std::erase_if(next,
+                          [&](const auto& f) { return f.sourceEntity == foundation.sourceEntity; });
+            next.push_back(foundation);
+            rebuildFoundations(next);
+            return;
+        }
         const auto found = std::find_if(
             appliedFoundations_.begin(), appliedFoundations_.end(), [&](const auto& item) {
                 return item.sourceEntity == foundation.sourceEntity;
@@ -1784,9 +1872,102 @@ void Terrain::applyFoundation(const TerrainFoundation& foundation) {
 }
 
 void Terrain::rebuildFoundations(const std::vector<TerrainFoundation>& foundations) {
+    const auto sameProtection = [](const TerrainFoundation& a, const TerrainFoundation& b) {
+        return a.sourceEntity == b.sourceEntity && a.center == b.center && a.shape == b.shape &&
+               a.outerRadius == b.outerRadius && a.halfExtents == b.halfExtents &&
+               a.rotationDegrees == b.rotationDegrees && a.gradient == b.gradient &&
+               a.levelsTerrain == b.levelsTerrain && a.levelingBlendWidth == b.levelingBlendWidth &&
+               a.levelingMaximumCut == b.levelingMaximumCut &&
+               a.levelingMaximumFill == b.levelingMaximumFill;
+    };
+    if (!v2_ || appliedFoundations_.size() != foundations.size() ||
+        !std::equal(appliedFoundations_.begin(),
+                    appliedFoundations_.end(),
+                    foundations.begin(),
+                    sameProtection))
+        placementRevision_ = nextPlacementRevision();
     if (v2_) {
+        const auto sameCuts = [](const auto& a, const auto& b) {
+            return a.sourceEntity == b.sourceEntity && a.center == b.center && a.shape == b.shape &&
+                   a.outerRadius == b.outerRadius && a.halfExtents == b.halfExtents &&
+                   a.rotationDegrees == b.rotationDegrees && a.gradient == b.gradient &&
+                   a.levelsTerrain == b.levelsTerrain &&
+                   a.levelingBlendWidth == b.levelingBlendWidth &&
+                   a.levelingMaximumCut == b.levelingMaximumCut &&
+                   a.levelingMaximumFill == b.levelingMaximumFill;
+        };
+        std::vector<TerrainFoundation> oldCuts, newCuts;
+        for (const auto& f : appliedFoundations_)
+            if (f.levelsTerrain)
+                oldCuts.push_back(f);
+        for (const auto& f : foundations)
+            if (f.levelsTerrain)
+                newCuts.push_back(f);
+        // Stable replay order also eliminates normalization-rounding differences when
+        // callers rebuild the same overlapping edits in a different container order.
+        const auto order = [](const auto& a, const auto& b) {
+            return a.sourceEntity < b.sourceEntity;
+        };
+        std::sort(oldCuts.begin(), oldCuts.end(), order);
+        std::sort(newCuts.begin(), newCuts.end(), order);
+        const bool unchanged =
+            oldCuts.size() == newCuts.size() &&
+            std::equal(oldCuts.begin(), oldCuts.end(), newCuts.begin(), sameCuts);
+        if (!unchanged) {
+            const auto started = std::chrono::steady_clock::now();
+            std::uint64_t reset = 0;
+            const auto visit = [&](const auto& f, const auto& operation) {
+                const float half = worldExtent() * .5F;
+                const float radius = f.outerRadius + f.levelingBlendWidth + spacing * 2;
+                const int x0 =
+                    std::max(0, static_cast<int>((f.center.x - radius + half) / spacing) - 1);
+                const int x1 = std::min(
+                    cellCount, static_cast<int>((f.center.x + radius + half) / spacing) + 1);
+                const int z0 =
+                    std::max(0, static_cast<int>((f.center.z - radius + half) / spacing) - 1);
+                const int z1 = std::min(
+                    cellCount, static_cast<int>((f.center.z + radius + half) / spacing) + 1);
+                // Include normal samples on adjoining chunks, once per region rather than vertex.
+                for (int cz = std::max(0, (z0 - 1) / chunkCellCount);
+                     cz <= std::min(chunksPerSide - 1, (z1 + 1) / chunkCellCount);
+                     ++cz)
+                    for (int cx = std::max(0, (x0 - 1) / chunkCellCount);
+                         cx <= std::min(chunksPerSide - 1, (x1 + 1) / chunkCellCount);
+                         ++cx) {
+                        const auto chunk = std::pair{cx, cz};
+                        if (std::find(dirtyChunks_.begin(), dirtyChunks_.end(), chunk) ==
+                            dirtyChunks_.end())
+                            dirtyChunks_.push_back(chunk);
+                    }
+                for (int z = z0; z <= z1; ++z)
+                    for (int x = x0; x <= x1; ++x)
+                        operation(x, z);
+            };
+            const auto restore = [&](int x, int z) {
+                const auto i = static_cast<std::size_t>(z * vertexCount + x);
+                heights_[i] = baseHeights_[i];
+                ++reset;
+            };
+            for (const auto& f : oldCuts)
+                visit(f, restore);
+            for (const auto& f : newCuts)
+                visit(f, restore);
+            for (const auto& f : newCuts)
+                visit(f, [&](int x, int z) {
+                    auto& normalized = heights_[static_cast<std::size_t>(z * vertexCount + x)];
+                    const float adjusted = foundationTerrainVertexHeight(f, x, z);
+                    normalized = adjusted / heightScale;
+                });
+            ++foundationDiagnostics_.rebuildCount;
+            foundationDiagnostics_.lastResetVertices = reset;
+            foundationDiagnostics_.lastMilliseconds =
+                std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() -
+                                                          started)
+                    .count();
+            foundationDiagnostics_.peakMilliseconds = std::max(
+                foundationDiagnostics_.peakMilliseconds, foundationDiagnostics_.lastMilliseconds);
+        }
         appliedFoundations_ = foundations;
-        dirtyChunks_.clear();
         return;
     }
     const auto started = std::chrono::steady_clock::now();

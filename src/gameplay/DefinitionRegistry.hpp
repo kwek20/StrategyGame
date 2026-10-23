@@ -76,10 +76,13 @@ struct RuntimeModifierLayers {
     std::vector<GameplayModifier> powerState;
 };
 
+enum class SatelliteCoverage { none, lowResolution, highResolution };
+
 struct UpgradeDefinition {
     std::string id, researchRecipe, nameKey, icon, exclusiveGroup, descriptionKey;
     std::uint32_t maximumLevel{1};
     bool affectsProducer{false};
+    SatelliteCoverage satelliteCoverage{SatelliteCoverage::none};
     std::vector<std::string> prerequisites, allowedResearchers;
     std::vector<GameplayModifier> modifiers;
 };

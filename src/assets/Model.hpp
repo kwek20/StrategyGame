@@ -58,6 +58,8 @@ class Model final {
     }
     [[nodiscard]] bool hasAnimation(const std::string& name) const;
     [[nodiscard]] float baseY() const { return baseY_; }
+    // Bind-pose sphere about model origin, including static mesh node transforms.
+    [[nodiscard]] float boundingRadius() const { return boundingRadius_; }
 
   private:
     static constexpr std::size_t maxBones = ModelAsset::maxBones;
@@ -87,6 +89,7 @@ class Model final {
     Node root_;
     glm::mat4 globalInverse_{1};
     float baseY_{0.0F};
+    float boundingRadius_{0.0F};
     void evaluateAnimation(const Animation&, double, std::array<glm::mat4, maxBones>&) const;
 };
 } // namespace strategy

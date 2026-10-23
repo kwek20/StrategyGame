@@ -2,7 +2,7 @@
     "matchSetup": {
         "biomes": {},
         "resourceAbundanceScale": 1.5,
-        "terrainLayout": "continental",
+        "terrainLayout": "central_water",
         "terrainSeed": 1,
         "playerOneCountry": "china",
         "mapChunksPerSide": 15,

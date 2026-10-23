@@ -59,6 +59,14 @@ int strategyTestMain() {
     valid = valid && stack.size() == 1 &&
             static_cast<TestState*>(stack.current())->value == 3;
 
+    auto prepared = std::make_unique<TestState>(context, 4);
+    const auto* identity = prepared.get();
+    stack.replace(std::move(prepared));
+    valid = valid && static_cast<TestState*>(stack.current())->value == 3;
+    stack.applyPendingChanges();
+    valid = valid && stack.current() == identity &&
+            static_cast<TestState*>(stack.current())->value == 4;
+
     stack.clear();
     stack.applyPendingChanges();
     valid = valid && stack.empty() && stack.current() == nullptr;

@@ -237,6 +237,40 @@ quality tests. Vegetation expansion and tuning remain deferred as well.
 
 ## Current implemented gameplay contracts
 
+### Satellite coverage (2026-10-23)
+
+The former presentation-only SAT reveal is replaced by player-owned research. Command hubs offer
+`satellite.low_resolution` (permanent full exploration) and `satellite.high_resolution` (requires
+low resolution; continuous full vision including enemies). The top SAT button grants the next
+missing tier for free, immediately, without a hub or selection/camera changes: low, high, then
+no-op. `AdvanceSatelliteCommand` is a player-wide entity-zero command appended at codec index 26.
+It refunds/removes queued purchases of the tier it grants. Paid hub research remains available.
+Recipe costs/times are provisional: 100 Alloy / 900
+ticks, then 250 Alloy + 100 Fuel / 1800 ticks.
+
+`UpgradeDefinition::satelliteCoverage` marks these single-level player capabilities. Completed
+levels live in `Player::researchedUpgrades`, survive loss of the researcher, and participate in
+format-1 saves/checksums. `GameSession::upgradeLevel` resolves researcher-local versus player
+research; duplicate queued satellite purchases are blocked across owned hubs. Exploration/vision
+are applied by `updateExploration`, before intelligence snapshots. Loading restores player
+research and recomputes visibility. Static resource/decoration rendering uses explored fog
+(model shader visibility mode 2), dimmed to 42% like terrain; units retain live-vision filtering.
+Resource fields/vegetation keep their chunked instance caches; active resources bypass redundant
+remembered draws. Explored resources remain selectable/outlined and use muted minimap markers.
+The isolated `explored_static_visibility` CTest case uses `STRATEGY_RENDER_CASE=explored_static`
+to run only the directly changed render regression, without the rest of renderer integration.
+`PlayState::restoreSavedPlayerProgress` is shared by initial
+load and F9 quickload; the latter previously skipped player state entirely. The new mandatory
+player save field requires a new match for
+older development saves; user saves/setup are never deleted as part of this work.
+
+`SatelliteTests.cpp` covers completion timing, owner isolation, prerequisites, duplicate queues,
+cancellation/refunds, distant placement and construction orders, moving-enemy intelligence,
+researcher loss and both-tier save/load. Renderer integration also exercises an initially
+unexplored distant site after low-resolution coverage, top-bar free grants and F9 loading
+between covered and uncovered player states using isolated temporary saves. Full live coverage
+rebuilds intelligence in world order, avoiding quadratic lookups across the globally visible map.
+
 ### Match setup and maps
 
 - Main menu uses `Play` to open match setup.
@@ -360,11 +394,34 @@ Then proceed to Milestone 6, the first combat slice.
 
 ### Construction and terrain foundations
 
+- Latest exception to the older immutable-V2 statements below: Land placement can perform bounded
+  cut-only levelling. `defaultPlacement.v2.leveling` in `buildings.json` sets relief 0.75, cut 0.6,
+  average excavation 0.1 and feather width 1.5. `TerrainSupport` chooses an area-weighted median,
+  validates the full dry cut/collar and then re-evaluates support. Larger cliffs/water and existing
+  foundations are protected; shallow half-unit steps can qualify despite their generated labels.
+  Preview temporarily adjusts renderer terrain; actual placement remains read-only until accepted.
+  Foundation fields persist the frozen cut in format 1. Progress does not re-excavate; cancellation
+  and destruction restore it while retaining other cuts. Terrain chunks, instance transforms and
+  navigation height costs refresh. See `docs/pictures/building-placement/leveling/README.md`.
+
 - Drone build palette appears when a drone or homogeneous drone selection is selected; there is no
   `B` shortcut.
-- Selecting a recipe creates a live world preview: gray/valid, red/invalid. Escape or right-click
-  cancels preview. Placement is forbidden in currently unknown terrain but allowed in previously
+- Selecting a recipe creates a live world preview: gray/valid, red/invalid. Escape cancels;
+  right-drag retains camera control during placement. Placement is forbidden in currently unknown terrain but allowed in previously
   explored terrain, subject to authoritative collision checks.
+- Placement stays active until a sequence-correlated simulation outcome confirms acceptance.
+  Rejection keeps the tool open with its reason; repeated clicks cannot duplicate an in-flight
+  request. Right-click leaves the tool active and does not issue move orders while placing.
+  The preview includes the footprint, amber unsupported areas and cyan V2 metal scaffolds. Its
+  cursor panel reports support fraction, required/maximum depth, distinct support/depth/access
+  failures and cancellation controls, clamped inside the viewport. Fill colours are illustrative
+  samples; exact clipped triangle areas remain authoritative. No terrain rules changed.
+- Subsequent gentle-ground fix: V2 support no longer demands perfectly horizontal triangles at
+  exactly the highest vertex. `defaultPlacement.v2.supportHeightTolerance` is 0.25 world units;
+  dry triangles within that shallow band and the footprint slope limit count as base-supported.
+  Existing strict cliff/water ratios, connected-support and depth limits remain. Shallow gaps get
+  a foundation base without terrain edits. Geometry tests reproduce the former 0%-support/0.1-unit
+  relief rejection and verify acceptance, tighter authored tolerance and unchanged cliff boundaries.
 - Placing deducts the up-front recipe cost, creates an unfinished building, and automatically
   assigns the selected drone(s). Construction consumes drone battery/power per work step.
 - Building health equals construction completion percentage. Completion makes it fully operational.
@@ -374,9 +431,12 @@ Then proceed to Milestone 6, the first combat slice.
   incremental render updates. Preview and final placement share evaluation.
 - Foundation influence increases with construction progress. Buildings are terrain-aligned, and
   selection outlines must use the same transform.
-- Current slope policy allows up to 10 degrees from building definitions. Slab/foundation visual
-  work was deliberately deferred/reverted and should be revisited later; do not assume visible
-  concrete bases are final.
+- Current slope policy allows up to 10 degrees from building definitions. V2 uses dark steel
+  scaffold foundations with a thin closed deck, anchored feet/columns and X-braced exposed bays.
+  `ScaffoldGeometry` supplies preview and world geometry, including rotated/circular footprints.
+  A member-stage shader reveals construction without changing the floor or reuploading meshes;
+  source geometry changes, removal and terrain replacement invalidate the cache. V1 retains its
+  legacy foundation rendering. Placement and water/support rules remain unchanged.
 - Multiple construction contributions are resolved before one terrain-foundation rebuild per tick.
   Rebuilds restore only affected old/new regions rather than copying the complete heightfield. F3
   reports last/peak rebuild time, reset vertices, and rebuild count.
@@ -555,7 +615,8 @@ Then proceed to Milestone 6, the first combat slice.
 - Gameplay values belong in definitions; presentation dimensions/colors/font sizes may remain in UI.
 - Entity menus must not render one full menu per item in a multi-selection.
 - World outlines/highlights must be occluded by opaque UI panels.
-- Foundation/slab visuals are unfinished; avoid treating the current concrete texture as approved.
+- V2 scaffold visuals have an engine capture gallery under `docs/pictures/building-placement/scaffolds`;
+  V1 retains legacy concrete rendering.
 - Movement still uses floating point. Cross-architecture lockstep may eventually require fixed point
   or authoritative correction even though commands/ticks/order/checksums are deterministic today.
 # Match setup persistence
@@ -565,3 +626,86 @@ Match setup choices are stored independently of save games in `gamedata/match_se
 values, never UI selector indices. `MatchSetupProfileStore` preserves unknown JSON members when it
 writes known options, so future biome and layout controls can add nested settings without losing
 them. This profile has no save-game format version and must not change `SaveGame::formatVersion`.
+
+
+## 2026-10-22 V2 angled placement
+
+Dry Land uses ordered tiers: fit up to 5 degrees; fit plus bounded excavation with full support;
+fit plus small cuts and metal scaffolding with strict >2/3 connected support. The median dry
+triangle gradient defines the direction, vector magnitude caps total tilt, and all gaps/cuts are
+relative to that plane. Water-overlapping placements remain horizontal. `maximumTiltDegrees` in
+`defaultPlacement.v2` controls building tilt; footprint maximumTiltDegrees still controls raw
+surface eligibility. `FoundationOrientation.hpp` gives previews, buildings and outlines a rigid
+basis from the saved gradient and footprint heading. The cut cache identity includes gradient.
+Save format 1 and generation revision 7 remain unchanged; angled cuts use the existing gradient.
+
+
+## 2026-10-22 match presentation preparation
+
+Match entry now constructs and warms the actual PlayState before Click to Start, then transfers
+ownership through StateStack without rebuilding it. `PlayState::beginPresentationPreparation` and
+`advancePresentationPreparation` stage terrain, paint resource tiles, initialize starting-view
+render caches/HUD, render a complete gameplay frame and wait for a GPU fence. Simulation/input stay
+frozen. ResourceSiteMap's sliced painter preserves the synchronous pixel output; loading advances
+whole 32×32 tiles in small batches. Escape drops pending work and terrain staging clears old identities.
+RmlUiManager can activate an existing screen so loading stays in front of the retained HUD. New
+matches and main-menu saved-game entry share the sequence; saved reconstruction uses a cancellable
+worker. The application resets frame/FPS clocks after confirmation. See MATCH_STARTUP_AUDIT.md.
+
+
+## 2026-10-22 resource painting performance
+
+ResourceSiteMap now shares pixel noise across brushes, skips provably zero-contribution brush
+samples using conservative bounds, and builds links with field/family spatial buckets. An extra
+bucket ring preserves links rounded to exact six-/22-unit limits. Candidate pairs keep source-ID
+order; original distance tests decide eligibility. Dirty tiles, scars, loading slices and image
+semantics are unchanged. A frozen test-only painter in tests/reference provides byte-for-byte
+comparison, including boundary rounding and incremental edits. Run resource_site_tests with
+STRATEGY_RESOURCE_PAINT_BENCHMARK=1 for old/new CPU timing comparisons. See MATCH_STARTUP_AUDIT.md.
+
+
+## 2026-10-22 player-placement perimeter gate removed
+
+Player placement must not require usable perimeter interaction space. TerrainSupport no longer
+samples worker movement segments or returns an access rejection; the unused profile fields,
+interactionUnit setting and placement.access UI reason were removed. Both preview and command
+validation use this shared validator. Generation-time opening/resource connectivity checks remain
+separate. TerrainV2Tests covers floating placement without land-worker access. Do not reintroduce
+an access gate or warning as part of later placement optimization.
+
+
+## 2026-10-22 building-placement audit implementation
+
+The follow-up in BUILDING_PLACEMENT_AUDIT.md records the verified changes. GameSession's
+planBuildingPlacement is the shared read-only preview/commit planner. Only previews may provide a
+TerrainPlacementCache; command application must revalidate current state without it. Terrain's
+placementRevision is a transient identity for both surface changes and foundation protections,
+including same-seed regeneration and no-cut foundations. Construction influence alone leaves V2
+analysis reusable. Do not put that revision into saves or authoritative checksums.
+
+The pending click captures its own recipe, builder IDs, heading and screen-to-world result; a later
+hover/rotation cannot discard or alter it. Right-click rotates 45 degrees, right-drag remains camera
+control, Escape cancels. PlaceBuildingCommand's codec carries yaw; existing saved entity/foundation
+rotation fields remain authoritative, with save format 1 and generation revision 7 unchanged.
+
+Renderer::drawPlacementGhost uses only entity model rendering. Never send a temporary ghost World
+through drawWorld: it replaces the resource field/cache identity. Temporary excavation uses a bounded
+height/normal texture, not setTerrainFoundations. Only accepted cuts invalidate persistent terrain,
+vegetation/resource buffers or navigation. Placement overlay buffers are reused, and frame statistics
+accumulate across passes. Scaffold previews sample the same proposed raster as committed geometry.
+
+TerrainSupport prepares the actual footprint AABB once and shares clipped surface pieces, median
+heights, base outcomes and raster adjacency across a bounded plane/intercept search. Inline convex
+polygons avoid per-triangle allocation. Count the actual eligible dry support band, and connect only
+positive overlapping edge intervals. Do not loosen the strict two-thirds support rule to compensate
+for raster undercounting. Excavation-budget messages are emitted only when a repair otherwise passed
+geometry/protection checks; rejected plans must not expose an accepted leveling operation.
+
+
+Final placement validation: 36/36 Release tests passed (97.97s), followed by a final Release renderer
+input-guard/capture pass (17.64s); focused Debug terrain/planning/placement/renderer tests passed
+4/4 (93.36s). Both game configurations build. The 120-frame Release moving-hub-cut sample measured
+11.82ms median/14.91ms p95, with zero scenery/node-buffer uploads; one 34.61ms outlier remains.
+See the audit for scope/limits. Do not claim universal 60 FPS or that the aspirational 2ms overhead
+has been met on every difficult site. Both original missed-plane fixtures remain regression tests;
+do not prune the dominant/patch blended gradient, which the shelf case needs.

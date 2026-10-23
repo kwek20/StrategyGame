@@ -8,6 +8,7 @@
 #include "render/Renderer.hpp"
 #include "terrain/Terrain.hpp"
 #include "ui/EntityHudModel.hpp"
+#include "ui/PlacementFeedback.hpp"
 #include "world/Collision.hpp"
 #include "world/MapArea.hpp"
 
@@ -15,7 +16,9 @@
 #include <algorithm>
 #include <cmath>
 #include <glm/geometric.hpp>
+#include <iomanip>
 #include <iostream>
+#include <limits>
 #include <map>
 #include <sstream>
 
@@ -220,6 +223,76 @@ PlayState::PlayState(StateContext& context, MatchSetupOptions setup, GameSession
     initializeStartingView();
 }
 
+void PlayState::beginPresentationPreparation(Renderer& renderer) {
+    preparation_ = Preparation::terrain;
+    preparationProgress_ = 0;
+    renderer.stageGeneratedTerrain(session_.terrain(),
+                                   session_.terrainSeed(),
+                                   session_.mapChunksPerSide(),
+                                   session_.world().foundations());
+    pendingTerrainSeed_.reset();
+    pendingTerrainChunksPerSide_.reset();
+    pendingTerrainLayout_.reset();
+}
+
+bool PlayState::advancePresentationPreparation(Renderer& renderer) {
+    const Player* local = session_.players().find(localPlayer_);
+    const auto focus = camera_.focus();
+    const auto view =
+        camera_.view(renderer.aspectRatio(), session_.terrain().heightAt(focus.x, focus.z));
+    switch (preparation_) {
+    case Preparation::terrain:
+        preparationProgress_ = renderer.terrainUploadProgress() * .2F;
+        if (!renderer.terrainUploadFinished())
+            break;
+        renderer.beginResourceSitePreparation(session_.world());
+        preparation_ = Preparation::resources;
+        break;
+    case Preparation::resources:
+        if (renderer.advanceResourceSitePreparation())
+            preparation_ = Preparation::vegetation;
+        preparationProgress_ = .2F + renderer.resourceSitePreparationProgress() * .55F;
+        break;
+    case Preparation::vegetation:
+        renderer.drawVegetation(session_.vegetation(), view, local);
+        preparationProgress_ = .8F;
+        preparation_ = Preparation::world;
+        break;
+    case Preparation::world:
+        renderer.drawWorld(session_.world(), view, local);
+        preparationProgress_ = .85F;
+        preparation_ = Preparation::hud;
+        break;
+    case Preparation::hud:
+        ensureGameplayHud(renderer);
+        renderer.activateUiScreen(hudScreen_);
+        updateGameplayHud(renderer, local);
+        renderer.drawRmlUi();
+        preparationProgress_ = .9F;
+        preparation_ = Preparation::frame;
+        break;
+    case Preparation::frame:
+        renderer.activateUiScreen(hudScreen_);
+        render(renderer);
+        preparationProgress_ = .95F;
+        preparation_ = Preparation::fence;
+        break;
+    case Preparation::fence:
+        renderer.beginPresentationFence();
+        preparation_ = Preparation::gpu;
+        break;
+    case Preparation::gpu:
+        if (renderer.presentationFenceReady()) {
+            preparationProgress_ = 1;
+            preparation_ = Preparation::ready;
+        }
+        break;
+    case Preparation::ready:
+        break;
+    }
+    return preparation_ == Preparation::ready;
+}
+
 void PlayState::initializeStartingView() {
     for (const Entity& entity : session_.world().entities()) {
         if (entity.authority.owner != localPlayer_)
@@ -231,7 +304,7 @@ void PlayState::initializeStartingView() {
     }
 }
 
-PlayState::PlayState(StateContext& context, SaveData data)
+PlayState::PlayState(StateContext& context, SaveData data, WorldGenerationProgress* progress)
     : GameState(context)
     , session_(context.definitions,
                data.terrainSeed,
@@ -243,7 +316,7 @@ PlayState::PlayState(StateContext& context, SaveData data)
                1.0F,
                1.0F,
                TerrainLayoutId{data.terrainLayout},
-               nullptr,
+               progress,
                data.terrainMode)
     , config_(GameConfig::load(context.configPath)) {
     session_.replaceWorld(std::move(data.entities),
@@ -252,15 +325,23 @@ PlayState::PlayState(StateContext& context, SaveData data)
                           data.mapChunksPerSide,
                           TerrainLayoutId{data.terrainLayout},
                           data.terrainMode,
-                          data.terrainRepairLevel);
-    session_.restorePlayerProgress(1,
-                                   std::move(data.resources[0]),
-                                   std::move(data.discovered[0]),
-                                   std::move(data.intelligence[0]));
-    session_.restorePlayerProgress(2,
-                                   std::move(data.resources[1]),
-                                   std::move(data.discovered[1]),
-                                   std::move(data.intelligence[1]));
+                          data.terrainRepairLevel,
+                          progress);
+    restoreSavedPlayerProgress(data);
+}
+
+void PlayState::restoreSavedPlayerProgress(SaveData& data) {
+    for (std::size_t index = 0; index < data.resources.size(); ++index) {
+        const PlayerId id = index + 1;
+        if (auto* player = session_.players().find(id)) {
+            player->countryId = index == 0 ? data.playerOneCountry : data.playerTwoCountry;
+            player->specializationId = index == 0 ? data.playerOneSpecialization : data.playerTwoSpecialization;
+        }
+        session_.restorePlayerProgress(id, std::move(data.resources[index]),
+                                       std::move(data.discovered[index]),
+                                       std::move(data.intelligence[index]),
+                                       std::move(data.researchedUpgrades[index]));
+    }
 }
 
 PlayState::~PlayState() {
@@ -320,7 +401,11 @@ void PlayState::updateGameplayHud(Renderer& renderer, const Player* player) cons
     renderer.setUiText("resources.power.label",
                        std::to_string(static_cast<int>(demand)) + "/" +
                            std::to_string(static_cast<int>(generation)) + " kW");
-    renderer.setUiText("hud.satellite.label", satelliteRevealActive_ ? "SAT ON" : "SAT");
+    const auto coverage = session_.satelliteCoverage(localPlayer_);
+    renderer.setUiText("hud.satellite.label",
+                       Text::get(coverage == SatelliteCoverage::highResolution ? "hud.satellite.high"
+                                 : coverage == SatelliteCoverage::lowResolution ? "hud.satellite.low"
+                                                                              : "hud.satellite"));
 
     std::ostringstream power;
     power << "<h2>POWER GRID</h2><div class='power-summary'>SUPPLIED " << static_cast<int>(supplied)
@@ -454,10 +539,34 @@ void PlayState::updateGameplayHud(Renderer& renderer, const Player* player) cons
     std::ostringstream alerts;
     for (const HudAlert& alert : hudAlerts_) alerts << "<div class='alert'>" << escapeRml(alert.text) << "</div>";
     renderer.setUiText("alerts", alerts.str());
-    renderer.setUiText("placement-reason", constructionPlacementMode_ && !constructionPreviewValid_ ? escapeRml(constructionPreviewReason_) : "");
-    renderer.setUiProperty("placement-reason", "left", std::to_string(static_cast<int>(pointerScreen_.x + 18.0F)) + "px");
-    renderer.setUiProperty("placement-reason", "top", std::to_string(static_cast<int>(pointerScreen_.y + 18.0F)) + "px");
-    renderer.setUiProperty("placement-reason", "display", constructionPlacementMode_ && !constructionPreviewValid_ && !constructionPreviewReason_.empty() ? "block" : "none");
+    std::string placementMessage = pendingPlacementSequence_ ? Text::get("placement.confirming")
+                                   : placementRejectionRemaining_ > 0 ? placementRejection_
+                                   : !constructionPreviewValid_       ? constructionPreviewReason_
+                                                                : Text::get("placement.ready");
+    if (!constructionPreviewSummary_.empty())
+        placementMessage += "\n" + constructionPreviewSummary_;
+    placementMessage += "\n" + Text::get("placement.controls");
+    renderer.setUiText("placement-reason", escapeRml(placementMessage));
+    renderer.setUiAttribute(
+        "placement-reason",
+        "class",
+        !constructionPreviewValid_ || placementRejectionRemaining_ > 0 ? "invalid" : "valid");
+    const auto placementBounds = renderer.uiBounds("placement-reason");
+    const float panelWidth =
+        placementBounds ? placementBounds->right - placementBounds->left : 340 * config_.uiScale;
+    const float panelHeight =
+        std::max(130 * config_.uiScale,
+                 placementBounds ? placementBounds->bottom - placementBounds->top : 0.0F);
+    const float x = std::clamp(
+        pointerScreen_.x + 18, 8.0F, std::max(8.0F, renderer.viewportWidth() - panelWidth - 8));
+    const float y = std::clamp(
+        pointerScreen_.y + 18, 8.0F, std::max(8.0F, renderer.viewportHeight() - panelHeight - 8));
+    renderer.setUiProperty("placement-reason", "left", std::to_string(static_cast<int>(x)) + "px");
+    renderer.setUiProperty("placement-reason", "top", std::to_string(static_cast<int>(y)) + "px");
+    renderer.setUiProperty("placement-reason",
+                           "display",
+                           constructionPlacementMode_ && constructionCursorScreen_ ? "block"
+                                                                                   : "none");
     renderer.setUiControls(std::move(focus), std::move(actions));
 }
 
@@ -479,6 +588,20 @@ void PlayState::setPaused(bool paused) {
         context_.renderer->removeUiScreen(pauseScreen_);
         pauseScreen_ = {};
     }
+}
+
+void PlayState::cancelConstructionPlacement() {
+    constructionPlacementMode_ = false;
+    pendingConstructionScreen_.reset();
+    pendingConstructionIntent_.reset();
+    pendingPlacementSequence_.reset();
+    pendingUnexploredPlacement_ = false;
+    placementRejection_.clear();
+    placementRejectionRemaining_ = 0;
+    constructionPreviewSummary_.clear();
+    constructionTerrainCache_.clear();
+    constructionGhost_.reset();
+    constructionRotationDegrees_ = 0;
 }
 
 EntityHudModel PlayState::buildConstructionHudModel(const Entity& selected,
@@ -592,8 +715,10 @@ EntityHudModel PlayState::buildEntityActionHudModel(const Entity& selected,
         action.icon = upgrade->icon;
         const RecipeDefinition* research =
             context_.definitions.recipe(RecipeId{upgrade->researchRecipe});
+        const bool playerResearch = upgrade->satelliteCoverage != SatelliteCoverage::none;
+        const auto researchCount = playerResearch ? 1 : targets.size();
         action.cost =
-            resourceCost(context_.definitions, research, targets.size(), &action.costIcons);
+            resourceCost(context_.definitions, research, researchCount, &action.costIcons);
         action.power = powerDescription(context_.definitions,
                                         context_.definitions.archetype(selected.archetype));
         action.requirements =
@@ -606,10 +731,12 @@ EntityHudModel PlayState::buildEntityActionHudModel(const Entity& selected,
                                                               GameSession::fixedTickSeconds))});
         if (!upgrade->descriptionKey.empty())
             action.description = Text::get(upgrade->descriptionKey) + "\n" + action.description;
-        action.enabled = canAffordForAll(player, research, targets.size()) &&
-                         std::all_of(targets.begin(), targets.end(), [&](EntityId id) {
-                             return session_.canStartUpgrade(localPlayer_, id, upgrade->id);
-                         });
+        const auto canResearch = [&](EntityId id) {
+            return session_.canStartUpgrade(localPlayer_, id, upgrade->id);
+        };
+        action.enabled = canAffordForAll(player, research, researchCount) &&
+                         (playerResearch ? std::any_of(targets.begin(), targets.end(), canResearch)
+                                         : std::all_of(targets.begin(), targets.end(), canResearch));
         if (!action.enabled)
             action.disabledReason = Text::get("entity_hud.action_unavailable");
         std::vector<std::string> missing;
@@ -626,15 +753,13 @@ EntityHudModel PlayState::buildEntityActionHudModel(const Entity& selected,
         for (const auto& required : upgrade->prerequisites)
             if (std::any_of(targets.begin(), targets.end(), [&](EntityId id) {
                     const auto* entity = session_.world().findEntity(id);
-                    return !entity || !entity->upgrades ||
-                           !entity->upgrades.levels.contains(required) ||
-                           entity->upgrades.levels.at(required) == 0;
+                    return !entity || session_.upgradeLevel(localPlayer_, id, required) == 0;
                 }))
                 missing.push_back(required);
         if (!missing.empty())
             action.disabledReason = Text::format("entity_hud.tooltip_missing",
                                                  {upgradeNames(context_.definitions, missing)});
-        if (!canAffordForAll(player, research, targets.size())) {
+        if (!canAffordForAll(player, research, researchCount)) {
             if (!action.disabledReason.empty())
                 action.disabledReason += "\n";
             action.disabledReason += Text::get("entity_hud.insufficient_resources");
@@ -736,7 +861,10 @@ std::optional<glm::vec2> PlayState::minimapWorldAt(float screenX, float screenY)
 bool PlayState::handleGameplayHudAction(const std::string& action) {
     if (action == "hud.menu") { setPaused(true); return true; }
     if (action == "resources.power") { powerOverlayVisible_ = !powerOverlayVisible_; return true; }
-    if (action == "hud.satellite" && satelliteImageryAvailable_) { satelliteRevealActive_ = !satelliteRevealActive_; return true; }
+    if (action == "hud.satellite") {
+        session_.submit({localPlayer_, nextCommandSequence_++, AdvanceSatelliteCommand{}});
+        return true;
+    }
     if (action.starts_with("selection.")) {
         selectedResourceField_ = {};
         const std::string chosen = action.substr(10);
@@ -762,6 +890,7 @@ bool PlayState::handleGameplayHudAction(const std::string& action) {
     const std::string id = action.substr(7);
     const auto targets = actionTargets(selectedEntity_, selectedUnits_);
     if (selected->archetype.value == "construction_drone" && !id.starts_with("delivery-output:")) {
+        cancelConstructionPlacement();
         constructionRecipeId_ = id; constructionPlacementMode_ = true; return true;
     }
     if (id == "power.connect" || id == "power.disconnect") {
@@ -801,7 +930,14 @@ bool PlayState::handleGameplayHudAction(const std::string& action) {
         for (EntityId target : targets) session_.submit({localPlayer_, nextCommandSequence_++, StartRecipeCommand{target, recipe->id}});
         context_.events.enqueue(AudioEvent{AudioCue::trainUnit});
     } else if (const UpgradeDefinition* upgrade = context_.definitions.upgrade(id)) {
-        for (EntityId target : targets) session_.submit({localPlayer_, nextCommandSequence_++, StartUpgradeCommand{target, upgrade->id}});
+        for (EntityId target : targets) {
+            if (upgrade->satelliteCoverage != SatelliteCoverage::none &&
+                !session_.canStartUpgrade(localPlayer_, target, upgrade->id))
+                continue;
+            session_.submit({localPlayer_, nextCommandSequence_++, StartUpgradeCommand{target, upgrade->id}});
+            if (upgrade->satelliteCoverage != SatelliteCoverage::none)
+                break;
+        }
     }
     return true;
 }
@@ -889,6 +1025,8 @@ void PlayState::handleEvent(const SDL_Event& event) {
                                   TerrainLayoutId{data.terrainLayout},
                                   data.terrainMode,
                                   data.terrainRepairLevel);
+            restoreSavedPlayerProgress(data);
+            cancelConstructionPlacement();
             possessedEntity_ = 0;
             viewMode_ = ViewMode::strategy;
             setMouseCaptured(false);
@@ -941,9 +1079,7 @@ void PlayState::handleEvent(const SDL_Event& event) {
             return;
         }
         if (constructionPlacementMode_) {
-            constructionPlacementMode_ = false;
-            pendingConstructionScreen_.reset();
-            pendingConstructionPosition_.reset();
+            cancelConstructionPlacement();
             return;
         }
         if (viewMode_ == ViewMode::unitControl && possessedEntity_ != 0) {
@@ -988,8 +1124,15 @@ void PlayState::handleEvent(const SDL_Event& event) {
         constructionCursorScreen_ = glm::vec2{event.motion.x, event.motion.y};
     if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_LEFT &&
         viewMode_ == ViewMode::strategy && constructionPlacementMode_) {
+        if (pendingConstructionIntent_ || pendingPlacementSequence_)
+            return;
         constructionCursorScreen_ = glm::vec2{event.button.x, event.button.y};
         pendingConstructionScreen_ = constructionCursorScreen_;
+        std::vector<EntityId> builders = selectedUnits_;
+        if (builders.empty())
+            builders.push_back(selectedEntity_);
+        pendingConstructionIntent_ = PlaceBuildingCommand{
+            builders.front(), constructionRecipeId_, {}, builders, constructionRotationDegrees_};
         draggingSelection_ = false;
         return;
     }
@@ -1025,7 +1168,8 @@ void PlayState::handleEvent(const SDL_Event& event) {
     }
     if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_RIGHT &&
         viewMode_ == ViewMode::strategy) {
-        if (const auto world = minimapWorldAt(event.button.x, event.button.y)) {
+        if (const auto world = minimapWorldAt(event.button.x, event.button.y);
+            world && !constructionPlacementMode_) {
             pendingOrderTarget_ = 0;
             pendingMoveDestination_ = glm::vec3{world->x, 0.0F, world->y};
             return;
@@ -1037,8 +1181,13 @@ void PlayState::handleEvent(const SDL_Event& event) {
     if (event.type == SDL_EVENT_MOUSE_BUTTON_UP && event.button.button == SDL_BUTTON_RIGHT &&
         viewMode_ == ViewMode::strategy) {
         mousePanning_ = false;
-        if (rightDragDistance_ < 4.0F)
-            pendingMoveScreen_ = glm::vec2{event.button.x, event.button.y};
+        if (rightDragDistance_ < 4.0F) {
+            if (constructionPlacementMode_)
+                constructionRotationDegrees_ =
+                    std::remainder(constructionRotationDegrees_ + 45.F, 360.F);
+            else
+                pendingMoveScreen_ = glm::vec2{event.button.x, event.button.y};
+        }
         return;
     }
     if (event.type == SDL_EVENT_MOUSE_MOTION && viewMode_ == ViewMode::unitControl) {
@@ -1153,6 +1302,7 @@ void PlayState::handlePauseEvent(const SDL_Event& event) {
 }
 
 void PlayState::update(float deltaSeconds) {
+    placementRejectionRemaining_ = std::max(0.0F, placementRejectionRemaining_ - deltaSeconds);
     entryFadeRemaining_ = std::max(0.0F, entryFadeRemaining_ - deltaSeconds);
     for (HudAlert& alert : hudAlerts_)
         alert.remaining -= deltaSeconds;
@@ -1243,9 +1393,7 @@ void PlayState::update(float deltaSeconds) {
         isHomogeneousSelection(session_.world(), selectedUnits_, "construction_drone");
     if (!selectionContext || selectionContext->archetype.value != "construction_drone" ||
         (!selectedUnits_.empty() && !homogeneousDrones)) {
-        constructionPlacementMode_ = false;
-        pendingConstructionScreen_.reset();
-        pendingConstructionPosition_.reset();
+        cancelConstructionPlacement();
     }
     if (pendingMoveDestination_) {
         const glm::vec3 destination = *pendingMoveDestination_;
@@ -1290,32 +1438,22 @@ void PlayState::update(float deltaSeconds) {
             order(selectedEntity_);
         pendingOrderTarget_ = 0;
     }
-    if (pendingConstructionPosition_) {
-        EntityId drone = selectedEntity_;
-        if (!selectedUnits_.empty())
-            drone = selectedUnits_.front();
-        if (constructionPreviewValid_)
-            if (const Entity* builder = session_.world().findEntity(drone);
-                builder && builder->flight) {
-                std::vector<EntityId> builders;
-                if (selectedUnits_.empty())
-                    builders.push_back(drone);
-                else
-                    for (EntityId id : selectedUnits_)
-                        if (const Entity* selected = session_.world().findEntity(id);
-                            selected && selected->authority.owner == localPlayer_ &&
-                            selected->flight)
-                            builders.push_back(id);
-                session_.submit({localPlayer_,
-                                 nextCommandSequence_++,
-                                 PlaceBuildingCommand{drone,
-                                                      constructionRecipeId_,
-                                                      *pendingConstructionPosition_,
-                                                      std::move(builders)}});
+    if (pendingUnexploredPlacement_) {
+        placementRejection_ = Text::get("placement.unexplored");
+        placementRejectionRemaining_ = 4;
+        pendingUnexploredPlacement_ = false;
+    }
+    if (pendingConstructionIntent_ && !pendingConstructionScreen_) {
+        if (!pendingPlacementSequence_) {
+            const auto sequence = nextCommandSequence_++;
+            if (session_.submit({localPlayer_, sequence, *pendingConstructionIntent_}))
+                pendingPlacementSequence_ = sequence;
+            else {
+                placementRejection_ = Text::get("placement.rejected");
+                placementRejectionRemaining_ = 4;
             }
-        pendingConstructionPosition_.reset();
-        if (constructionPreviewValid_)
-            constructionPlacementMode_ = false;
+        }
+        pendingConstructionIntent_.reset();
     }
     const float forward = static_cast<float>(forward_) - static_cast<float>(backward_);
     const float right = static_cast<float>(right_) - static_cast<float>(left_);
@@ -1330,6 +1468,18 @@ void PlayState::update(float deltaSeconds) {
         camera_.pan(forward, right, deltaSeconds, running_);
     }
     session_.update(deltaSeconds);
+    for (const auto& event : session_.consumePlacementEvents()) {
+        if (event.player != localPlayer_ || !pendingPlacementSequence_ ||
+            event.sequence != *pendingPlacementSequence_)
+            continue;
+        pendingPlacementSequence_.reset();
+        if (event.accepted())
+            cancelConstructionPlacement();
+        else {
+            placementRejection_ = Text::get(placementFailureKey(event));
+            placementRejectionRemaining_ = 4;
+        }
+    }
     sanitizeEntityReferences();
     for (const ResourceEvent& event : session_.consumeResourceEvents()) {
         context_.events.enqueue(event);
@@ -1477,21 +1627,12 @@ void PlayState::render(Renderer& renderer) const {
         pendingTerrainChunksPerSide_.reset();
         pendingTerrainLayout_.reset();
     }
-    renderer.setTerrainFoundations(session_.world().foundations());
     const glm::vec3 focus = camera_.focus();
     const Player* local = session_.players().find(localPlayer_);
-    // Satellite imagery is a non-authoritative visibility view. It never modifies saved
-    // discovery data, simulation vision, checksums, or the owning player's resource state.
-    std::optional<Player> satelliteView;
+    // Satellite research updates authoritative exploration/vision in the simulation.
     const Player* visibilityPlayer = local;
-    if (local && satelliteImageryAvailable_ && satelliteRevealActive_) {
-        satelliteView = *local;
-        std::fill(satelliteView->discovered.begin(), satelliteView->discovered.end(), 255);
-        std::fill(satelliteView->visible.begin(), satelliteView->visible.end(), 255);
-        visibilityPlayer = &*satelliteView;
-    }
     CameraView view =
-        camera_.view(renderer.aspectRatio(), renderer.terrainHeightAt(focus.x, focus.z));
+        camera_.view(renderer.aspectRatio(), session_.terrain().heightAt(focus.x, focus.z));
     if (viewMode_ == ViewMode::unitControl && possessedEntity_ != 0) {
         if (const Entity* entity = session_.world().findEntity(possessedEntity_)) {
             const float ground = renderer.terrainHeightAt(entity->transform.position.x,
@@ -1511,8 +1652,22 @@ void PlayState::render(Renderer& renderer) const {
             renderer.screenToTerrain(pendingMoveScreen_->x, pendingMoveScreen_->y, view);
         pendingMoveScreen_.reset();
     }
-    if (pendingConstructionScreen_) {
-        pendingConstructionPosition_ = renderer.screenToTerrain(pendingConstructionScreen_->x, pendingConstructionScreen_->y, view);
+    if (pendingConstructionScreen_ && pendingConstructionIntent_) {
+        pendingConstructionIntent_->position =
+            renderer.screenToTerrain(pendingConstructionScreen_->x,
+                                     pendingConstructionScreen_->y,
+                                     view,
+                                     &session_.terrain());
+        if (local) {
+            const auto p = pendingConstructionIntent_->position;
+            const auto cell =
+                MapArea{session_.mapChunksPerSide()}.gridCell({p.x, p.z}, Player::explorationCells);
+            const auto index = static_cast<std::size_t>(cell.y * Player::explorationCells + cell.x);
+            if (index >= local->discovered.size() || !local->discovered[index]) {
+                pendingConstructionIntent_.reset();
+                pendingUnexploredPlacement_ = true;
+            }
+        }
         pendingConstructionScreen_.reset();
     }
     if (pendingSelection_) {
@@ -1541,37 +1696,32 @@ void PlayState::render(Renderer& renderer) const {
             visibilityPlayer, false);
         hoverPosition_.reset();
     }
-    renderer.prepareResourceSites(session_.world());
-    renderer.drawTerrain(view, visibilityPlayer, terrainDebug_, waterDebugMode_);
-    particlePresenter_.sync(renderer, session_.world(), visibilityPlayer,
-                            session_.mapChunksPerSide());
-    renderer.drawVegetation(session_.vegetation(), view, visibilityPlayer);
-    renderer.drawWorld(session_.world(), view, visibilityPlayer,
-                       powerOverlayVisible_ || powerDebug_);
-    renderer.drawParticles(view);
+    const auto drawScene = [&] {
+        renderer.flushTerrainUpdates();
+        renderer.prepareResourceSites(session_.world());
+        renderer.drawTerrain(view, visibilityPlayer, terrainDebug_, waterDebugMode_);
+        particlePresenter_.sync(
+            renderer, session_.world(), visibilityPlayer, session_.mapChunksPerSide());
+        renderer.drawVegetation(session_.vegetation(), view, visibilityPlayer);
+        renderer.drawWorld(
+            session_.world(), view, visibilityPlayer, powerOverlayVisible_ || powerDebug_);
+        renderer.drawParticles(view);
+    };
     if (constructionPlacementMode_ && constructionCursorScreen_) {
         const RecipeDefinition* selectedRecipe =
             context_.definitions.recipe(RecipeId{constructionRecipeId_});
-        if (!selectedRecipe || selectedRecipe->product.kind != RecipeProductKind::building)
+        if (!selectedRecipe || selectedRecipe->product.kind != RecipeProductKind::building) {
+            renderer.setPlacementTerrainPreview(nullptr);
+            renderer.setTerrainFoundations(session_.world().foundations());
+            drawScene();
             return;
+        }
         const std::string& buildingId = selectedRecipe->product.id;
-        const glm::vec3 position = renderer.screenToTerrain(constructionCursorScreen_->x, constructionCursorScreen_->y, view);
+        const glm::vec3 position = renderer.screenToTerrain(
+            constructionCursorScreen_->x, constructionCursorScreen_->y, view, &session_.terrain());
         bool currentlyVisible = true;
         bool previouslyExplored = true;
         const EntityArchetype* buildingDefinition = context_.definitions.archetype(buildingId);
-        const float buildingRadius = collisionRadius(context_.definitions, buildingId);
-        const TerrainFootprint buildingFootprint = buildingDefinition && buildingDefinition->footprint
-                                                       ? *buildingDefinition->footprint
-                                                       : TerrainFootprint{FootprintShape::circle,
-                                                                          buildingRadius,
-                                                                          {buildingRadius, buildingRadius}};
-        const SpatialShape placementShape = spatialShape(
-            context_.definitions, EntityArchetypeId{buildingId},
-            {position.x, position.z}, 0.0F);
-        const glm::vec2 placementBounds = axisAlignedHalfExtents(placementShape);
-        const TerrainPlacementResult terrainPlacement = renderer.evaluateTerrainPlacement(
-            position.x, position.z, buildingFootprint,
-            buildingDefinition ? buildingDefinition->placement : TerrainPlacementProfile{});
         if (local) {
             const glm::ivec2 cell = MapArea{session_.mapChunksPerSide()}.gridCell(
                 {position.x, position.z}, Player::explorationCells);
@@ -1582,53 +1732,110 @@ void PlayState::render(Renderer& renderer) const {
             previouslyExplored = index < visibilityPlayer->discovered.size() &&
                                  visibilityPlayer->discovered[index] != 0;
         }
+        const EntityId builder = selectedUnits_.empty() ? selectedEntity_ : selectedUnits_.front();
+        const auto analysisStarted = FrameProfiler::Clock::now();
+        const auto plan = session_.planBuildingPlacement(
+            localPlayer_,
+            {builder, constructionRecipeId_, position, {}, constructionRotationDegrees_},
+            &constructionTerrainCache_,
+            currentlyVisible);
+        renderer.recordProfile("placement.analysis",
+                               FrameProfiler::millisecondsSince(analysisStarted));
+        const auto& buildingFootprint = plan.footprint;
+        // A live cost/occupancy rejection must not snap the ghost back to a different
+        // height or angle. Keep its geometric pose independent of permission to commit.
+        const auto& terrainPlacement =
+            !plan.terrain.fit.valid && previouslyExplored && buildingDefinition &&
+                    plan.failure != PlacementFailure::outsideMap
+                ? constructionTerrainCache_.evaluate(session_.terrain(),
+                                                     {position.x, position.z},
+                                                     buildingFootprint,
+                                                     buildingDefinition->placement)
+                : plan.terrain;
         constructionPreviewValid_ = true;
         constructionPreviewReason_.clear();
         const auto invalidate = [&](const char* key) {
-            if (constructionPreviewValid_) constructionPreviewReason_ = Text::get(key);
+            if (constructionPreviewValid_)
+                constructionPreviewReason_ = Text::get(key);
             constructionPreviewValid_ = false;
         };
         if (!previouslyExplored) invalidate("placement.unexplored");
-        const MapArea placementMap{session_.mapChunksPerSide()};
-        const float playableExtent = placementMap.halfExtent() -
-                                     context_.definitions.matchRules().terrainEdgeMargin;
-        if (std::abs(position.x) + placementBounds.x > playableExtent ||
-            std::abs(position.z) + placementBounds.y > playableExtent)
-            invalidate("placement.outside_map");
-        // Hidden enemy construction is resolved authoritatively by PlaceBuildingCommand.
-        // Do not leak it through a red preview in previously explored fog.
-        if (currentlyVisible &&
-            overlapsObject(session_.world(), context_.definitions, placementShape))
-            invalidate("placement.collision");
-        if (!terrainPlacement.valid()) {
-            const char* key = terrainPlacement.failure == TerrainPlacementFailure::excessiveSlope
-                                  ? "placement.slope"
-                              : terrainPlacement.failure == TerrainPlacementFailure::shoreRequired
-                                  ? "placement.shore"
-                                  : "placement.terrain";
-            invalidate(key);
+        if (!plan.valid())
+            invalidate(placementFailureKey(
+                PlacementEvent{localPlayer_, 0, 0, plan.failure, terrainPlacement.failure}));
+        if (constructionPreviewValid_ == false && plan.blocker && currentlyVisible)
+            if (const auto* blocker = session_.world().findEntity(plan.blocker))
+                constructionPreviewReason_ += " · " + blocker->name;
+        constructionPreviewSummary_.clear();
+        if (previouslyExplored && terrainPlacement.footprintArea > 0) {
+            std::ostringstream support, summary;
+            support << std::fixed << std::setprecision(1)
+                    << std::floor(1000 * terrainPlacement.supportedArea /
+                                  terrainPlacement.footprintArea) /
+                           10;
+            summary << std::fixed << std::setprecision(1) << terrainPlacement.foundationDepth;
+            const float maximumDepth =
+                buildingDefinition ? buildingDefinition->placement.maximumFoundationDepth : 6;
+            constructionPreviewSummary_ =
+                Text::format("placement.support_summary",
+                             {support.str(), summary.str(), displayNumber(maximumDepth)});
         }
-        if (local)
-            if (selectedRecipe)
-                for (const auto& [resource, amount] : selectedRecipe->cost)
-                    if (!local->resources.contains(resource) || local->resources.at(resource) < amount)
-                        invalidate("placement.resources");
-        World preview;
-        Entity& ghost = preview.createEntity(buildingId, buildingId, localPlayer_);
-        context_.definitions.initializeEntity(ghost);
-        ghost.transform.position = {position.x, 0.0F, position.z};
-        // drawWorld supplies the same immutable base surface. Offset the transient model to
-        // its evaluated support plane, including a coincident occupied building's plane.
-        if (session_.terrain().mode() == TerrainMode::v2 && terrainPlacement.footprintArea > 0)
-            ghost.transform.position.y =
-                terrainPlacement.fit.height -
-                session_.terrain().entityBaseHeight(ghost.id, position.x, position.z);
-        ghost.construction.emplace();
-        ghost.construction.state = BuildingLifecycleState::planned;
+        if (previouslyExplored && terrainPlacement.fit.valid) {
+            std::ostringstream angle;
+            angle << std::fixed << std::setprecision(1) << terrainPlacement.fit.slopeDegrees;
+            const char* strategy =
+                terrainPlacement.strategy == TerrainPlacementResult::Strategy::fit
+                    ? "placement.strategy.fit"
+                : terrainPlacement.strategy == TerrainPlacementResult::Strategy::excavation
+                    ? "placement.strategy.excavation"
+                    : "placement.strategy.scaffold";
+            constructionPreviewSummary_ =
+                Text::format("placement.tilt_summary", {angle.str(), Text::get(strategy)}) + "\n" +
+                constructionPreviewSummary_;
+        }
+        renderer.setTerrainFoundations(session_.world().foundations());
+        renderer.setPlacementTerrainPreview(constructionPreviewValid_ && terrainPlacement.leveling
+                                                ? &*terrainPlacement.leveling
+                                                : nullptr);
+        drawScene();
+        if (!constructionGhost_ || constructionGhost_->archetype.value != buildingId) {
+            constructionGhost_.emplace();
+            auto& ghost = *constructionGhost_;
+            ghost.id = std::numeric_limits<EntityId>::max();
+            ghost.archetype = EntityArchetypeId{buildingId};
+            ghost.presentation = PresentationId{buildingId};
+            ghost.authority.owner = localPlayer_;
+            context_.definitions.initializeEntity(ghost);
+            ghost.construction.emplace();
+            ghost.construction.state = BuildingLifecycleState::planned;
+        }
+        auto& ghost = *constructionGhost_;
+        ghost.transform.position = {position.x, 0.F, position.z};
+        ghost.transform.rotationDegrees.y = constructionRotationDegrees_;
+        std::optional<TerrainFoundation> previewPlane;
+        if (session_.terrain().mode() == TerrainMode::v2 && terrainPlacement.fit.valid)
+            previewPlane.emplace(ghost.id,
+                                 glm::vec3{position.x, terrainPlacement.fit.height, position.z},
+                                 buildingFootprint,
+                                 terrainPlacement.fit.gradient);
         ghost.construction.placementValid = constructionPreviewValid_;
-        renderer.drawWorld(preview, view, nullptr);
+        renderer.drawPlacementGhost(ghost, view, previewPlane ? &*previewPlane : nullptr);
+        if (previouslyExplored)
+            renderer.drawBuildingPlacementPreview({position.x, position.z},
+                                                  buildingFootprint,
+                                                  buildingDefinition ? buildingDefinition->placement
+                                                                     : TerrainPlacementProfile{},
+                                                  terrainPlacement,
+                                                  constructionPreviewValid_,
+                                                  view);
+        if (plan.blocker && currentlyVisible)
+            renderer.drawEntityOutline(session_.world(), plan.blocker, view, visibilityPlayer);
         if (ghost.power)
             renderer.drawPowerPlacementConnection(session_.world(), view, localPlayer_, ghost);
+    } else {
+        renderer.setPlacementTerrainPreview(nullptr);
+        renderer.setTerrainFoundations(session_.world().foundations());
+        drawScene();
     }
     if (viewMode_ == ViewMode::strategy)
         renderer.drawOrderMarkers(session_.world(), selectedEntity_, selectedUnits_, view);
@@ -1651,7 +1858,7 @@ void PlayState::render(Renderer& renderer) const {
                         const auto cell = MapArea{session_.mapChunksPerSide()}.gridCell(
                             {node.transform.position.x, node.transform.position.z},
                             Player::explorationCells);
-                        if (!visibilityPlayer->visible[cell.y * Player::explorationCells + cell.x])
+                        if (!visibilityPlayer->discovered[cell.y * Player::explorationCells + cell.x])
                             continue;
                     }
                     renderer.drawEntityOutline(session_.world(), node.id, view, visibilityPlayer);

@@ -33,6 +33,7 @@ class RmlUiManager final {
     RmlUiManager& operator=(const RmlUiManager&) = delete;
 
     [[nodiscard]] RmlUiScreenHandle pushScreen(RmlUiScreenDefinition definition);
+    void activateScreen(RmlUiScreenHandle handle);
     void setScale(float scale);
     void removeScreen(RmlUiScreenHandle handle);
     void handleEvent(const SDL_Event& event);

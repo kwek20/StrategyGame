@@ -1,10 +1,21 @@
+#include "TerrainLevelingFixture.hpp"
+#include "TerrainTiltFixture.hpp"
+#include "audio/AudioSystem.hpp"
+#include "core/EventBus.hpp"
 #include "diagnostics/Logger.hpp"
+#include "game/PlayState.hpp"
+#include "game/RtsCamera.hpp"
 #include "gameplay/DefinitionRegistry.hpp"
 #include "localization/Text.hpp"
 #include "render/Renderer.hpp"
 #include "render/ShaderManager.hpp"
 #include "simulation/GameSession.hpp"
+#include "simulation/StateChecksum.hpp"
+#include "world/GenerationProgress.hpp"
 #include "terrain/Terrain.hpp"
+#include "terrain/TerrainGenerationPipeline.hpp"
+#include "terrain/TerrainV2Recipe.hpp"
+#include "world/Collision.hpp"
 #include "world/Vegetation.hpp"
 #include "world/World.hpp"
 #include "world/WorldGeneration.hpp"
@@ -16,6 +27,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <future>
 #include <glad/glad.h>
 #include <glm/gtc/matrix_transform.hpp>
 #include <iostream>
@@ -69,6 +81,8 @@ bool checkFormPanel(strategy::Renderer& renderer, const char* selectorId, const 
 
 bool captureTerrain(const char* name) {
     const char* directory = SDL_getenv("STRATEGY_TERRAIN_SCREENSHOTS");
+    if (!directory && std::string_view{name}.starts_with("satellite-"))
+        directory = SDL_getenv("STRATEGY_SATELLITE_SCREENSHOTS");
     if (!directory)
         return true;
     std::filesystem::create_directories(directory);
@@ -84,6 +98,462 @@ bool captureTerrain(const char* name) {
         surface && SDL_SaveBMP(surface, (std::filesystem::path(directory) / name).string().c_str());
     SDL_DestroySurface(surface);
     return saved;
+}
+
+bool checkPlacementPreview(strategy::Renderer& renderer, const strategy::Terrain& original) {
+    using namespace strategy;
+    const auto terrainDefinitions = TerrainGenerationDefinitions::load();
+    auto recipe =
+        TerrainV2Recipes::load().resolve(terrainDefinitions.layout(TerrainLayoutId{"open_plains"}));
+    recipe.cells = TerrainCellSettings{};
+    std::vector<TerrainCellSource> source(1600);
+    for (int z = 0; z < 40; ++z)
+        for (int x = 0; x < 40; ++x) {
+            const float h = x < 20 ? 16.0F : 12.0F;
+            source[z * 40 + x] = {h, h, h, {0, 0}, TerrainCellRole::opening};
+        }
+    Terrain terrain{Terrain::DeferredInitialization{}};
+    TerrainGenerationPipeline::assembleV2(
+        terrain,
+        7,
+        terrainDefinitions.layout(recipe.layout),
+        terrainDefinitions,
+        {TerrainV2Plan::create(7, recipe, 240, 2),
+         TerrainTerraces::resolve(source, 40, 240, recipe.cells)});
+    renderer.stageGeneratedTerrain(terrain, 7, 10);
+    const DefinitionRegistry definitions;
+    const auto* type = definitions.archetype("alloy_processor");
+    CameraView camera;
+    camera.target = {-3, 16, 0};
+    camera.position = camera.target + glm::vec3{17, 20, 22};
+    camera.view = glm::lookAt(camera.position, camera.target, glm::vec3{0, 1, 0});
+    camera.projection = glm::perspective(glm::radians(55.0F), 1280.0F / 720, .1F, 600.0F);
+    renderer.preloadAssetGroup("match");
+    for (int frame = 0; frame < 400; ++frame) {
+        renderer.beginFrame(1280, 720);
+        renderer.drawTerrain(camera);
+        renderer.endFrame();
+        if (renderer.terrainUploadFinished() && renderer.assetProgress("match").finished())
+            break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    bool valid = true;
+    for (int view = 0; view < 4; ++view) {
+        if (view == 3) {
+            recipe.cells.elevationStep = .1F;
+            for (int z = 0; z < 40; ++z)
+                for (int x = 0; x < 40; ++x) {
+                    const float h = x < 20 ? 16.0F : 16.1F;
+                    source[z * 40 + x] = {h, h, h, {.02F, 0}, TerrainCellRole::route};
+                }
+            TerrainGenerationPipeline::assembleV2(
+                terrain,
+                7,
+                terrainDefinitions.layout(recipe.layout),
+                terrainDefinitions,
+                {TerrainV2Plan::create(7, recipe, 240, 2),
+                 TerrainTerraces::resolve(source, 40, 240, recipe.cells)});
+            renderer.stageGeneratedTerrain(terrain, 7, 10);
+            for (int i = 0; i < 200 && !renderer.terrainUploadFinished(); ++i) {
+                renderer.beginFrame(1280, 720);
+                renderer.drawTerrain(camera);
+                renderer.endFrame();
+            }
+        }
+        const glm::vec2 center{view == 3 ? 0.0F : view == 1 ? .25F : -3.5F, 0};
+        auto profile = type->placement;
+        if (view == 2)
+            profile.maximumFoundationDepth = 2;
+        const auto result =
+            terrain.evaluatePlacement(center.x, center.y, *type->footprint, profile);
+        valid &= view == 0 || view == 3 ? result.valid() : !result.valid();
+        World ghost;
+        auto& building = ghost.createEntity("Preview", "alloy_processor", 1);
+        definitions.initializeEntity(building);
+        building.transform.position = {
+            center.x,
+            result.fit.height - terrain.entityBaseHeight(building.id, center.x, center.y),
+            center.y};
+        building.construction.emplace();
+        building.construction.placementValid = result.valid();
+        renderer.beginFrame(1280, 720);
+        renderer.drawTerrain(camera);
+        renderer.drawWorld(ghost, camera);
+        renderer.drawBuildingPlacementPreview(
+            center, *type->footprint, profile, result, result.valid(), camera);
+        renderer.endFrame();
+        glFinish();
+        valid &= captureTerrain(view == 0   ? "placement-valid.bmp"
+                                : view == 1 ? "placement-overhang.bmp"
+                                : view == 2 ? "placement-depth.bmp"
+                                            : "placement-gentle-ground.bmp");
+        valid &= noGlErrors("building footprint and support preview");
+        if (view == 0) {
+            auto foundation = terrain.evaluateFoundation(
+                building.id, center.x, center.y, *type->footprint, profile);
+            foundation.influence = 0;
+            const auto initialUploads = renderer.foundationMeshUploadCount();
+            renderer.setTerrainFoundations({foundation});
+            const auto uploads = renderer.foundationMeshUploadCount();
+            valid &= uploads == initialUploads + 1 && renderer.foundationMeshCount() == 1;
+            auto closeCamera = camera;
+            closeCamera.target = {center.x, 16, center.y};
+            closeCamera.position = closeCamera.target + glm::vec3{11, 10, 14};
+            closeCamera.view =
+                glm::lookAt(closeCamera.position, closeCamera.target, glm::vec3{0, 1, 0});
+            building.transform.position.y = 0;
+            for (int phase = 0; phase < 4; ++phase) {
+                foundation.influence = phase == 0 ? 0 : phase == 1 ? .22F : phase == 2 ? .6F : 1;
+                renderer.setTerrainFoundations({foundation});
+                building.construction.state = phase == 3
+                                                  ? BuildingLifecycleState::operational
+                                                  : BuildingLifecycleState::underConstruction;
+                renderer.beginFrame(1280, 720);
+                renderer.drawTerrain(closeCamera);
+                renderer.drawWorld(ghost, closeCamera);
+                renderer.endFrame();
+                glFinish();
+                valid &= captureTerrain(
+                    ("scaffold-construction-" + std::to_string(phase) + ".bmp").c_str());
+                valid &= renderer.foundationMeshUploadCount() == uploads;
+            }
+            auto second = foundation;
+            second.sourceEntity = 999;
+            second.center.z += 12;
+            renderer.setTerrainFoundations({foundation, second});
+            valid &= renderer.foundationMeshUploadCount() == uploads + 1 &&
+                     renderer.foundationMeshCount() == 2;
+            renderer.setTerrainFoundations({foundation});
+            valid &= renderer.foundationMeshUploadCount() == uploads + 1 &&
+                     renderer.foundationMeshCount() == 1;
+            auto moved = foundation;
+            moved.center.z += .5F;
+            renderer.setTerrainFoundations({moved});
+            valid &= renderer.foundationMeshUploadCount() == uploads + 2;
+            renderer.stageGeneratedTerrain(terrain, 7, 10, {foundation});
+            for (int frame = 0; frame < 200 && !renderer.terrainUploadFinished(); ++frame) {
+                renderer.beginFrame(1280, 720);
+                renderer.drawTerrain(closeCamera);
+                renderer.endFrame();
+            }
+            renderer.beginFrame(1280, 720);
+            renderer.drawTerrain(closeCamera);
+            renderer.drawWorld(ghost, closeCamera);
+            renderer.endFrame();
+            glFinish();
+            valid &= captureTerrain("scaffold-restored.bmp") && renderer.foundationMeshCount() == 1;
+            TerrainFootprint round{FootprintShape::circle, 4, {4, 4}, 37};
+            auto circular = terrain.evaluateFoundation(998, -2, 0, round, profile);
+            circular.influence = 1;
+            renderer.setTerrainFoundations({circular});
+            renderer.beginFrame(1280, 720);
+            renderer.drawTerrain(closeCamera);
+            renderer.endFrame();
+            glFinish();
+            valid &= captureTerrain("scaffold-circle-rotated.bmp");
+            renderer.setTerrainFoundations({});
+            valid &= renderer.foundationMeshCount() == 0 &&
+                     noGlErrors("scaffold cache and reconstruction");
+        }
+    }
+    // The same immutable bed fixture under shallow water exercises submerged footings.
+    auto wetRecipe = TerrainV2Recipes::load().resolve(
+        terrainDefinitions.layout(TerrainLayoutId{"central_water"}));
+    wetRecipe.cells = TerrainCellSettings{};
+    for (int z = 0; z < 40; ++z)
+        for (int x = 0; x < 40; ++x) {
+            const float h = x < 20 ? 16.0F : 12.0F;
+            source[z * 40 + x] = {h, h, h, {0, 0}, TerrainCellRole::opening};
+        }
+    Terrain wet{Terrain::DeferredInitialization{}};
+    TerrainGenerationPipeline::assembleV2(
+        wet,
+        7,
+        terrainDefinitions.layout(wetRecipe.layout),
+        terrainDefinitions,
+        {TerrainV2Plan::create(7, wetRecipe, 240, 2),
+         TerrainTerraces::resolve(source, 40, 240, wetRecipe.cells)});
+    TerrainFootprint shoreFootprint{FootprintShape::rectangle, 3, {3, 3}};
+    valid &= wet.evaluatePlacement(-3.1F, 0, shoreFootprint, {}).valid();
+    TerrainPlacementProfile shoreProfile;
+    shoreProfile.support = TerrainBuildingSupport::shore;
+    shoreProfile.shore = TerrainShoreSupport{0.2F, 0.8F, 0.4F};
+    valid &= wet.evaluatePlacement(0, 0, shoreFootprint, shoreProfile).valid();
+    auto shoreFoundation = wet.evaluateFoundation(997, 0, 0, shoreFootprint, shoreProfile);
+    shoreFoundation.influence = 1;
+    renderer.stageGeneratedTerrain(wet, 7, 10, {shoreFoundation});
+    camera.target = {0, 16, 0};
+    camera.position = camera.target + glm::vec3{11, 10, 14};
+    camera.view = glm::lookAt(camera.position, camera.target, glm::vec3{0, 1, 0});
+    for (int frame = 0; frame < 200 && !renderer.terrainUploadFinished(); ++frame) {
+        renderer.beginFrame(1280, 720);
+        renderer.drawTerrain(camera);
+        renderer.endFrame();
+    }
+    renderer.beginFrame(1280, 720);
+    renderer.drawTerrain(camera);
+    renderer.endFrame();
+    glFinish();
+    valid &= captureTerrain("scaffold-shore.bmp") && noGlErrors("submerged scaffold supports");
+    renderer.stageGeneratedTerrain(original, 12345, 10);
+    return valid;
+}
+
+bool checkLevelingPreview(strategy::Renderer& renderer, const strategy::Terrain& original) {
+    using namespace strategy;
+    auto terrain = test::levelingFixture(.5F, false, false, 3);
+    DefinitionRegistry definitions;
+    const auto* type = definitions.archetype("alloy_processor");
+    auto profile = type->placement;
+    profile.levelingMaximumFill = 0;
+    profile.levelingMaximumAverageEarthwork = 0;
+    auto strict = profile;
+    strict.levelingMaximumRelief = 0;
+    const auto before = terrain.evaluatePlacement(0, 0, *type->footprint, strict);
+    const auto after = terrain.evaluatePlacement(0, 0, *type->footprint, profile);
+    if (!after.valid() || !after.leveling) {
+        std::cerr << "Leveling fixture missing repair: valid=" << after.valid()
+                  << " repair=" << after.leveling.has_value() << '\n';
+        return false;
+    }
+    CameraView camera;
+    camera.target = {0, 16, 0};
+    camera.position = camera.target + glm::vec3{12, 12, 15};
+    camera.view = glm::lookAt(camera.position, camera.target, glm::vec3{0, 1, 0});
+    camera.projection = glm::perspective(glm::radians(55.F), 1280.F / 720, .1F, 600.F);
+    renderer.stageGeneratedTerrain(terrain, 7, 10);
+    while (!renderer.terrainUploadFinished()) {
+        renderer.beginFrame(1280, 720);
+        renderer.drawTerrain(camera);
+        renderer.endFrame();
+    }
+    World world;
+    auto& building = world.createEntity("Preview", "alloy_processor", 1);
+    definitions.initializeEntity(building);
+    auto foundation = terrain.evaluateFoundation(building.id, 0, 0, *type->footprint, profile);
+    // This probe isolates the cut raster. Scaffold geometry has separate tests; including
+    // an accepted shallow support deck would obscure the terrain-only depth comparison.
+    foundation.requiresSlab = false;
+    bool valid = true;
+    std::vector<float> originalDepth, previewDepth;
+    for (int phase = 0; phase < 4; ++phase) {
+        renderer.setTerrainFoundations(phase == 2 ? std::vector{foundation}
+                                                  : std::vector<TerrainFoundation>{});
+        renderer.setPlacementTerrainPreview(phase == 1 ? &foundation : nullptr);
+        const auto uploads = renderer.placementSurfaceUploads();
+        renderer.setPlacementTerrainPreview(phase == 1 ? &foundation : nullptr);
+        valid &= uploads == renderer.placementSurfaceUploads();
+        renderer.flushTerrainUpdates();
+        const auto& placement = phase == 0 || phase == 3 ? before : after;
+        building.transform.position.y = 0;
+        const TerrainFoundation plane{
+            building.id, {0, placement.fit.height, 0}, *type->footprint, placement.fit.gradient};
+        building.construction.emplace();
+        building.construction.placementValid = phase != 0 && phase != 3;
+        building.construction.state =
+            phase == 2 ? BuildingLifecycleState::operational : BuildingLifecycleState::planned;
+        renderer.beginFrame(1280, 720);
+        renderer.drawTerrain(camera);
+        std::vector<float> depth(1280 * 720);
+        glReadPixels(0, 0, 1280, 720, GL_DEPTH_COMPONENT, GL_FLOAT, depth.data());
+        if (phase == 0)
+            originalDepth = depth;
+        if (phase == 1) {
+            previewDepth = depth;
+            std::size_t changed = 0;
+            for (std::size_t i = 0; i < depth.size(); ++i)
+                changed += std::abs(depth[i] - originalDepth[i]) > 1e-6F;
+            valid &= changed > 100; // The temporary layer really changes rendered geometry.
+        }
+        if (phase == 2)
+            for (std::size_t i = 0; i < depth.size(); ++i)
+                valid &= std::abs(depth[i] - previewDepth[i]) < 2e-6F;
+        renderer.drawWorld(world, camera, nullptr, false, &plane);
+        if (phase != 2)
+            renderer.drawBuildingPlacementPreview(
+                {0, 0}, *type->footprint, profile, placement, placement.valid(), camera);
+        renderer.endFrame();
+        glFinish();
+        valid &= captureTerrain(phase == 0   ? "leveling-before.bmp"
+                                : phase == 1 ? "leveling-preview.bmp"
+                                : phase == 2 ? "leveling-complete.bmp"
+                                             : "leveling-cancelled.bmp");
+        if (!valid)
+            std::cerr << "Leveling depth/mesh failure phase=" << phase << '\n';
+        valid &= renderer.foundationMeshCount() == 0;
+        valid &= phase == 2
+                     ? std::abs(renderer.terrainHeightAt(1.5F, 1.5F) -
+                                terrain.foundationTerrainHeightAt(foundation, {1.5F, 1.5F})) < 1e-4F
+                     : renderer.terrainHeightAt(1.5F, 1.5F) > 16.4F;
+    }
+    if (!valid)
+        std::cerr << "Leveling preview mismatch: plane=" << after.fit.height
+                  << " angle=" << after.fit.slopeDegrees << '\n';
+    renderer.stageGeneratedTerrain(original, 12345, 10);
+    return valid && noGlErrors("bounded leveling preview and commit");
+}
+
+bool checkGradingPreview(strategy::Renderer& renderer, const strategy::Terrain& original) {
+    using namespace strategy;
+    DefinitionRegistry definitions;
+    const auto* type = definitions.archetype("storage_silo");
+    auto terrain = test::levelingFixture(-.5F, false, false, 3);
+    const auto placement = terrain.evaluatePlacement(0, 0, *type->footprint, type->placement);
+    if (!placement.valid() || !placement.leveling || placement.fillVolume <= 0 ||
+        placement.requiresScaffold())
+        return false;
+    World world;
+    auto& building = world.createEntity("Graded pad", "storage_silo", 1);
+    definitions.initializeEntity(building);
+    building.construction.emplace();
+    building.construction.placementValid = true;
+    auto foundation = terrain.foundationFromPlacement(
+        building.id, {0, 0}, *type->footprint, type->placement, placement);
+    CameraView camera;
+    camera.target = {0, foundation.center.y + 3, 0};
+    camera.position = camera.target + glm::vec3{14, 10, 18};
+    camera.view = glm::lookAt(camera.position, camera.target, glm::vec3{0, 1, 0});
+    camera.projection = glm::perspective(glm::radians(55.F), 1280.F / 720, .1F, 600.F);
+    renderer.stageGeneratedTerrain(terrain, 7, 10);
+    while (!renderer.terrainUploadFinished()) {
+        renderer.beginFrame(1280, 720);
+        renderer.drawTerrain(camera);
+        renderer.endFrame();
+    }
+    bool valid = true;
+    std::vector<float> before, preview;
+    const float oldHeight = terrain.heightAt(1.5F, 1.5F);
+    for (int phase = 0; phase < 4; ++phase) {
+        renderer.setTerrainFoundations(phase == 2 ? std::vector{foundation}
+                                                  : std::vector<TerrainFoundation>{});
+        renderer.setPlacementTerrainPreview(phase == 1 ? &foundation : nullptr);
+        renderer.flushTerrainUpdates();
+        renderer.beginFrame(1280, 720);
+        renderer.drawTerrain(camera);
+        std::vector<float> depth(1280 * 720);
+        glReadPixels(0, 0, 1280, 720, GL_DEPTH_COMPONENT, GL_FLOAT, depth.data());
+        if (phase == 0)
+            before = depth;
+        if (phase == 1)
+            preview = depth;
+        if (phase == 2)
+            for (std::size_t i = 0; i < depth.size(); ++i)
+                valid &= std::abs(depth[i] - preview[i]) < 2e-6F;
+        if (phase == 3)
+            for (std::size_t i = 0; i < depth.size(); ++i)
+                valid &= std::abs(depth[i] - before[i]) < 2e-6F;
+        valid &= phase == 2 ? renderer.terrainHeightAt(1.5F, 1.5F) > oldHeight + .1F
+                            : renderer.terrainHeightAt(1.5F, 1.5F) == oldHeight;
+        if (phase == 1 || phase == 2)
+            renderer.drawPlacementGhost(building, camera, &foundation);
+        renderer.endFrame();
+        valid &= renderer.foundationMeshCount() == 0;
+        valid &= captureTerrain(phase == 0   ? "grading-before.bmp"
+                                : phase == 1 ? "grading-preview.bmp"
+                                : phase == 2 ? "grading-complete.bmp"
+                                             : "grading-cancelled.bmp");
+    }
+    std::size_t changed = 0;
+    for (std::size_t i = 0; i < preview.size(); ++i)
+        changed += std::abs(preview[i] - before[i]) > 1e-6F;
+    valid &= changed > 100;
+    renderer.stageGeneratedTerrain(original, 12345, 10);
+    return valid && noGlErrors("graded pad preview/commit/cancel");
+}
+
+bool checkTiltedPlacement(strategy::Renderer& renderer, const strategy::Terrain& original) {
+    using namespace strategy;
+    DefinitionRegistry definitions;
+    bool valid = true;
+    for (int tier = 0; tier < 4; ++tier) {
+        auto terrain = tier == 3 ? Terrain{1, TerrainLayoutId{"continental"}, TerrainMode::v2, 15}
+                                 : test::tiltFixture(tier == 0   ? .5F
+                                                     : tier == 1 ? 1.F
+                                                                 : .25F,
+                                                     tier == 2 ? .25F : 0.F,
+                                                     tier == 2);
+        TerrainFootprint footprint{FootprintShape::rectangle,
+                                   tier == 2 ? 8.F : 5.F,
+                                   tier == 2 ? glm::vec2{8, 8} : glm::vec2{5, 4}};
+        footprint.maximumTiltDegrees = 10;
+        const glm::vec2 center =
+            tier == 3 ? glm::vec2{-64, -160} : glm::vec2{tier == 2 ? -6.F : 0.F, 0};
+        auto profile =
+            tier == 3 ? definitions.archetype("alloy_processor")->placement : test::tiltProfile();
+        if (tier == 1)
+            profile.maximumBuildingTiltDegrees = 10;
+        const auto placement = terrain.evaluatePlacement(center.x, center.y, footprint, profile);
+        if (!placement.valid() || (tier == 1 && placement.fit.slopeDegrees < 9.F))
+            return false;
+        World world;
+        auto& building = world.createEntity("Angled placement", "alloy_processor", 1);
+        definitions.initializeEntity(building);
+        building.transform.position = {center.x, 0, center.y};
+        // Match the larger combined-case footprint instead of displaying an oversized empty deck.
+        if (tier == 2)
+            building.transform.scale = {1.6F, 1, 2};
+        auto foundation =
+            terrain.evaluateFoundation(building.id, center.x, center.y, footprint, profile);
+        CameraView camera;
+        camera.target = foundation.center;
+        camera.position = camera.target + glm::vec3{16, 10, 18};
+        camera.view = glm::lookAt(camera.position, camera.target, glm::vec3{0, 1, 0});
+        camera.projection = glm::perspective(glm::radians(55.F), 1280.F / 720, .1F, 600.F);
+        renderer.stageGeneratedTerrain(terrain, 7, 10, {foundation});
+        while (!renderer.terrainUploadFinished()) {
+            renderer.beginFrame(1280, 720);
+            renderer.drawTerrain(camera);
+            renderer.endFrame();
+        }
+        std::vector<float> ghostDepth(1280 * 720);
+        for (bool preview : {true, false}) {
+            building.construction.emplace();
+            building.construction.placementValid = true;
+            building.construction.state =
+                preview ? BuildingLifecycleState::planned : BuildingLifecycleState::operational;
+            renderer.beginFrame(1280, 720);
+            renderer.drawTerrain(camera);
+            if (preview)
+                renderer.drawPlacementGhost(building, camera, &foundation);
+            else
+                renderer.drawWorld(world, camera);
+            std::vector<float> depth(1280 * 720);
+            glReadPixels(0, 0, 1280, 720, GL_DEPTH_COMPONENT, GL_FLOAT, depth.data());
+            if (preview)
+                ghostDepth = depth;
+            else
+                for (std::size_t i = 0; i < depth.size(); ++i)
+                    valid &= std::abs(depth[i] - ghostDepth[i]) < 2e-6F;
+            if (preview)
+                renderer.drawBuildingPlacementPreview(
+                    center, footprint, profile, placement, true, camera);
+            renderer.endFrame();
+            glFinish();
+            const std::string name = "tilt-tier-" + std::to_string(tier + 1) +
+                                     (preview ? "-preview.bmp" : "-complete.bmp");
+            valid &= captureTerrain(name.c_str()) && noGlErrors("tilted placement");
+            valid &= renderer.foundationMeshCount() == (foundation.requiresSlab ? 1 : 0);
+        }
+        // Prove that the actual ghost renderer visibly tilts the mesh, rather than
+        // merely reporting a nonzero angle in the support overlay.
+        auto horizontal = foundation;
+        horizontal.gradient = {0, 0};
+        renderer.beginFrame(1280, 720);
+        renderer.drawTerrain(camera);
+        renderer.drawPlacementGhost(building, camera, &horizontal);
+        std::vector<float> flatDepth(1280 * 720);
+        glReadPixels(0, 0, 1280, 720, GL_DEPTH_COMPONENT, GL_FLOAT, flatDepth.data());
+        std::size_t changed = 0;
+        for (std::size_t i = 0; i < flatDepth.size(); ++i)
+            changed += std::abs(flatDepth[i] - ghostDepth[i]) > 2e-6F;
+        valid &= placement.fit.slopeDegrees > .5F && changed > 100;
+        std::cout << "Rendered placement tier=" << tier + 1
+                  << " angle=" << placement.fit.slopeDegrees
+                  << " pixels changed by tilt=" << changed << '\n';
+        renderer.endFrame();
+    }
+    renderer.stageGeneratedTerrain(original, 12345, 10);
+    return valid;
 }
 
 bool checkVegetationCacheBuffers() {
@@ -204,6 +674,150 @@ bool checkMapBoundary(strategy::Renderer& renderer, const strategy::Terrain& ori
     return noGlErrors("map boundary") && valid;
 }
 
+bool checkRememberedCulling(strategy::Renderer& renderer) {
+    using namespace strategy;
+    auto terrain = test::levelingFixture(0);
+    renderer.stageGeneratedTerrain(terrain, 7, 10);
+    while (!renderer.terrainUploadFinished()) {
+        renderer.beginFrame(1280, 720);
+        renderer.drawLoadingScreen(.5F, "MEMORY CULLING TEST");
+        renderer.endFrame();
+    }
+    renderer.finishLoadingScreen();
+    CameraView camera;
+    camera.target = {0, terrain.heightAt(0, 0), 0};
+    camera.position = camera.target + glm::vec3{0, 100, 0};
+    camera.view = glm::lookAt(camera.position, camera.target, glm::vec3{0, 0, -1});
+    camera.projection = glm::ortho(-20.F, 20.F, -20.F, 20.F, .1F, 200.F);
+    World empty;
+    Player player;
+    std::fill(player.discovered.begin(), player.discovered.end(), 255);
+    player.intelligence.push_back({99999, "basic_generator", {0, 0, 0}, {0, 0, 0}, {1, 1, 1}, true});
+    GLuint query = 0;
+    glGenQueries(1, &query);
+    const auto primitives = [&] {
+        renderer.beginFrame(1280, 720);
+        renderer.drawTerrain(camera, &player);
+        glBeginQuery(GL_PRIMITIVES_GENERATED, query);
+        renderer.drawWorld(empty, camera, &player);
+        glEndQuery(GL_PRIMITIVES_GENERATED);
+        renderer.endFrame();
+        GLuint count = 0;
+        glGetQueryObjectuiv(query, GL_QUERY_RESULT, &count);
+        return count;
+    };
+    bool valid = primitives() > 0; // Explored but unseen memory remains drawable.
+    player.intelligence.front().position.x = 10000;
+    valid &= primitives() == 0; // Off-screen memory never reaches the GPU.
+    player.intelligence.front().position.x = 0;
+    std::fill(player.visible.begin(), player.visible.end(), 255);
+    valid &= primitives() == 0; // Full satellite coverage has no remembered-only draws.
+    player.visible.back() = 0;
+    valid &= primitives() == 0; // Local live coverage also removes redundant memory.
+    const auto cell = MapArea{10}.gridCell({0, 0}, Player::explorationCells);
+    player.visible[cell.y * Player::explorationCells + cell.x + 1] = 0;
+    player.intelligence.front().scale = {10, 10, 10};
+    valid &= primitives() > 0; // A large object crossing a fog boundary must remain.
+    std::fill(player.visible.begin(), player.visible.end(), 0);
+    player.intelligence.front().position.x = 21;
+    valid &= primitives() > 0; // Its origin is outside the camera, but its bounds overlap.
+    glDeleteQueries(1, &query);
+    if (!valid)
+        std::cerr << "Remembered-object live/fog/frustum culling regression\n";
+    return valid && noGlErrors("remembered entity culling");
+}
+
+bool checkExploredStaticVisibility(strategy::Renderer& renderer) {
+    using namespace strategy;
+    const DefinitionRegistry definitions;
+    auto terrain = test::levelingFixture(0);
+    renderer.stageGeneratedTerrain(terrain, 7, 10);
+    while (!renderer.terrainUploadFinished()) {
+        renderer.beginFrame(1280, 720);
+        renderer.drawLoadingScreen(.5F, "EXPLORED LANDSCAPE TEST");
+        renderer.endFrame();
+    }
+    renderer.finishLoadingScreen();
+    CameraView camera;
+    camera.target = {0, terrain.heightAt(0, 0), 0};
+    camera.position = camera.target + glm::vec3{0, 100, 0};
+    camera.view = glm::lookAt(camera.position, camera.target, glm::vec3{0, 0, -1});
+    camera.projection = glm::ortho(-20.F, 20.F, -20.F, 20.F, .1F, 200.F);
+    Player player;
+    player.id = 1;
+    World empty, resources, enemies;
+    auto& node = resources.createEntity("Scrap", "scrap_node_small", 0);
+    definitions.initializeEntity(node);
+    node.transform.scale = {4, 4, 4};
+    const auto nodeId = node.id;
+    auto& enemy = enemies.createEntity("Enemy", "worker", 2);
+    definitions.initializeEntity(enemy);
+    enemy.transform.scale = {4, 4, 4};
+    VegetationChunk chunk;
+    chunk.radius = 20;
+    chunk.instances.push_back({EntityArchetypeId{"foliage_conifer_1"},
+                               PresentationId{"foliage_conifer_1"}, Transform{}, 90001});
+    const VegetationField vegetation{{chunk}};
+    struct Image {
+        std::vector<unsigned char> color = std::vector<unsigned char>(1280 * 720 * 4);
+        std::vector<float> depth = std::vector<float>(1280 * 720);
+    };
+    const auto frame = [&](const World& world, bool trees = false) {
+        renderer.beginFrame(1280, 720);
+        renderer.drawTerrain(camera, &player);
+        renderer.drawWorld(world, camera, &player);
+        if (trees)
+            renderer.drawVegetation(vegetation, camera, &player);
+        renderer.endFrame();
+        Image image;
+        glReadPixels(0, 0, 1280, 720, GL_RGBA, GL_UNSIGNED_BYTE, image.color.data());
+        glReadPixels(0, 0, 1280, 720, GL_DEPTH_COMPONENT, GL_FLOAT, image.depth.data());
+        return image;
+    };
+    const auto measure = [](const Image& ground, const Image& objects) {
+        std::size_t count = 0;
+        double brightness = 0;
+        for (std::size_t i = 0; i < ground.depth.size(); ++i)
+            if (objects.depth[i] < ground.depth[i] - 1e-6F) {
+                ++count;
+                brightness += objects.color[i * 4] + objects.color[i * 4 + 1] + objects.color[i * 4 + 2];
+            }
+        return std::pair{count, count ? brightness / count : 0};
+    };
+    const auto hidden = frame(empty);
+    bool valid = measure(hidden, frame(resources)).first == 0 &&
+                 measure(hidden, frame(empty, true)).first == 0 &&
+                 renderer.pickEntity(640, 360, resources, camera, &player, true) == 0;
+    std::fill(player.discovered.begin(), player.discovered.end(), 255);
+    const auto explored = frame(empty);
+    const auto dimResource = measure(explored, frame(resources));
+    valid &= dimResource.first > 20 &&
+             renderer.pickEntity(640, 360, resources, camera, &player, true) == nodeId;
+    resources.findEntity(nodeId)->resource.fieldId = 17;
+    const auto dimField = measure(explored, frame(resources));
+    const auto dimTrees = measure(explored, frame(empty, true));
+    valid &= dimField.first > 20 && dimTrees.first > 20 &&
+             measure(explored, frame(enemies)).first == 0 &&
+             renderer.pickEntity(640, 360, enemies, camera, &player, true) == 0;
+    std::fill(player.visible.begin(), player.visible.end(), 255);
+    const auto live = frame(empty);
+    const auto brightField = measure(live, frame(resources));
+    frame(resources); // A visibility change must reuse the warmed field allocation.
+    valid &= renderer.resourceNodeCacheStats().uploadedBatches == 0;
+    const auto brightTrees = measure(live, frame(empty, true));
+    valid &= renderer.vegetationCacheStats().uploadedBatches == 0;
+    valid &= brightField.first > 20 && brightTrees.first > 20 &&
+             dimField.second < brightField.second * .65 && dimField.second > brightField.second * .2 &&
+             dimTrees.second < brightTrees.second * .65 && dimTrees.second > brightTrees.second * .2 &&
+             measure(live, frame(enemies)).first > 20;
+    std::cout << "Explored field pixels=" << dimField.first << " brightness=" << dimField.second
+              << "/" << brightField.second << " trees=" << dimTrees.first << " brightness="
+              << dimTrees.second << "/" << brightTrees.second << '\n';
+    if (!valid)
+        std::cerr << "Explored resources/decoration, enemy fog or static cache regression\n";
+    return valid && noGlErrors("explored static visibility");
+}
+
 bool captureForm(strategy::Renderer& renderer, const char* name) {
     const char* directory = SDL_getenv("STRATEGY_FORM_SCREENSHOTS");
     if (!directory)
@@ -223,6 +837,362 @@ bool captureForm(strategy::Renderer& renderer, const char* name) {
     const bool saved = surface && SDL_SaveBMP(surface, (std::filesystem::path(directory) / name).string().c_str());
     SDL_DestroySurface(surface);
     return saved;
+}
+
+bool checkMatchPreparation(strategy::Renderer& renderer, strategy::Logger& logger) {
+    using namespace strategy;
+    DefinitionRegistry definitions;
+    AudioSystem audio;
+    EventBus events;
+    StateContext context{audio, events, logger, definitions, "gamedata/config.json", &renderer};
+    MatchSetupOptions setup;
+    setup.terrainMode = TerrainMode::v2;
+    setup.mapChunksPerSide = 10;
+    setup.terrainSeed = 17;
+    setup.terrainLayout = "open_plains";
+    const auto checksum = [](const PlayState& state) {
+        const auto& session = state.session();
+        return authoritativeStateChecksum(session.world(),
+                                          session.players(),
+                                          session.terrainSeed(),
+                                          session.tick(),
+                                          session.mapChunksPerSide(),
+                                          session.terrainLayout().value,
+                                          session.terrain().mode());
+    };
+    const auto prepare = [&](PlayState& state) {
+        const auto before = checksum(state);
+        state.beginPresentationPreparation(renderer);
+        bool ready = false;
+        float previous = 0;
+        int steps = 0;
+        const auto started = std::chrono::steady_clock::now();
+        while (!ready && std::chrono::steady_clock::now() - started < std::chrono::seconds(90)) {
+            renderer.beginFrame(1280, 720);
+            ready = state.advancePresentationPreparation(renderer);
+            if (state.presentationPreparationProgress() < previous)
+                return false;
+            previous = state.presentationPreparationProgress();
+            renderer.drawLoadingScreen(.8F + .19F * previous, "PREPARING BATTLEFIELD");
+            renderer.endFrame();
+            ++steps;
+            if (previous >= .9F && previous < 1)
+                captureTerrain("startup-preparing.bmp");
+            // The loading document must remain on top after preparing the gameplay HUD.
+            if (!renderer.uiBounds("loading-title"))
+                return false;
+        }
+        if (!ready || steps < 5 || checksum(state) != before)
+            return false;
+        renderer.drawLoadingScreen(1, "CLICK TO START");
+        captureTerrain("startup-ready.bmp");
+        renderer.finishLoadingScreen();
+        renderer.beginFrame(1280, 720);
+        const auto first = std::chrono::steady_clock::now();
+        state.render(renderer);
+        renderer.endFrame();
+        glFinish();
+        const auto milliseconds =
+            std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - first)
+                .count();
+        std::cout << "Prepared first gameplay frame: " << milliseconds
+                  << " ms, loading steps=" << steps << '\n';
+        return renderer.resourceSiteUploadedTiles() == 0 &&
+               renderer.vegetationCacheStats().uploadedBatches == 0 &&
+               renderer.resourceNodeCacheStats().uploadedBatches == 0 &&
+               renderer.uiBounds("top-shell").has_value() && checksum(state) == before &&
+               noGlErrors("prepared match entry");
+    };
+    bool valid = true;
+    const auto path = std::filesystem::temp_directory_path() / "strategy_prepared_entry_save.json";
+    {
+        PlayState state{context, setup};
+        // Cancel during terrain/tile preparation; the next job must start with a fresh identity.
+        state.beginPresentationPreparation(renderer);
+        renderer.cancelPresentationPreparation();
+        valid &= !renderer.presentationFenceReady();
+        valid &= prepare(state);
+        const auto& session = state.session();
+        SaveGame::write(path,
+                        session.terrainSeed(),
+                        session.world(),
+                        &session.players(),
+                        session.mapChunksPerSide(),
+                        session.terrainLayout().value,
+                        TerrainMode::v2,
+                        session.terrain().repairLevel());
+    }
+    {
+        WorldGenerationProgress progress;
+        auto restoring = std::async(std::launch::async, [&] {
+            return std::make_unique<PlayState>(context, SaveGame::read(path), &progress);
+        });
+        auto restored = restoring.get();
+        valid &= prepare(*restored);
+        WorldGenerationProgress cancelled;
+        cancelled.requestCancellation();
+        bool aborted = false;
+        try {
+            PlayState abandoned{context, SaveGame::read(path), &cancelled};
+        } catch (const WorldGenerationCancelled&) {
+            aborted = true;
+        }
+        valid &= aborted;
+    }
+    std::filesystem::remove(path);
+    setup.terrainMode = TerrainMode::v1;
+    {
+        PlayState legacy{context, setup};
+        valid &= prepare(legacy);
+    }
+    renderer.finishLoadingScreen();
+    return valid;
+}
+
+bool checkPlacementControls(strategy::Renderer& renderer, strategy::Logger& logger, bool satellite = false) {
+    using namespace strategy;
+    DefinitionRegistry definitions;
+    GameSession session{definitions,
+                        7,
+                        "spain",
+                        "japan",
+                        "unassigned",
+                        "unassigned",
+                        10,
+                        1,
+                        1,
+                        TerrainLayoutId{"open_plains"},
+                        nullptr,
+                        TerrainMode::v2};
+    session.players().find(1)->resources["alloy"] = 10000;
+    Entity* blocker = nullptr;
+    Entity* drone = nullptr;
+    glm::vec3 hub{};
+    for (auto& entity : session.world().entities()) {
+        if (entity.authority.owner != 1)
+            continue;
+        if (entity.archetype.value == "worker")
+            blocker = &entity;
+        if (entity.archetype.value == "construction_drone")
+            drone = &entity;
+        if (entity.archetype.value == "command_hub")
+            hub = entity.transform.position;
+    }
+    if (!blocker || !drone)
+        return false;
+    const auto originalBlocker = blocker->transform;
+    const auto* generator = definitions.archetype("basic_generator");
+    glm::vec3 target{};
+    bool found = false;
+    const float searchRadius = satellite ? 48.F : 24.F;
+    for (float z = hub.z - searchRadius; z <= hub.z + searchRadius && !found; z += 2)
+        for (float x = hub.x - searchRadius; x <= hub.x + searchRadius && !found; x += 2) {
+            const auto cell = MapArea{10}.gridCell({x, z}, Player::explorationCells);
+            const auto index = cell.y * Player::explorationCells + cell.x;
+            const auto* player = session.players().find(1);
+            const bool eligible = satellite ? !player->discovered[index] : player->visible[index] != 0;
+            if (eligible &&
+                !overlapsObject(
+                    session.world(),
+                    definitions,
+                    spatialShape(definitions, EntityArchetypeId{"basic_generator"}, {x, z}, 0)) &&
+                session.terrain()
+                    .evaluatePlacement(x, z, *generator->footprint, generator->placement)
+                    .valid()) {
+                target = {x, session.terrain().heightAt(x, z), z};
+                found = true;
+            }
+        }
+    if (!found)
+        return false;
+    if (satellite) {
+        const auto* player = session.players().find(1);
+        session.restorePlayerProgress(1, player->resources, player->discovered, player->intelligence,
+                                      {{"satellite.low_resolution", 1}});
+    }
+    RtsCamera projectionCamera;
+    projectionCamera.focusAt(hub);
+    const auto camera =
+        projectionCamera.view(1280.0F / 720, session.terrain().heightAt(hub.x, hub.z));
+    const auto clip = camera.viewProjection() * glm::vec4{target, 1};
+    const glm::vec2 targetScreen{(clip.x / clip.w + 1) * 640, (1 - clip.y / clip.w) * 360};
+    renderer.stageGeneratedTerrain(session.terrain(), 7, 10, session.world().foundations());
+    AudioSystem audio;
+    EventBus events;
+    const auto testDirectory = std::filesystem::path{"build/debug/audits"} /
+        ("strategy-satellite-ui-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    std::filesystem::create_directories(testDirectory);
+    auto testConfig = GameConfig::load("gamedata/config.json");
+    testConfig.saveDirectory = testDirectory;
+    testConfig.saveFile = "quickload.json";
+    const auto configPath = testDirectory / "config.json";
+    testConfig.write(configPath);
+    StateContext context{audio, events, logger, definitions, configPath, &renderer};
+    PlayState state{context, MatchSetupOptions{}, std::move(session)};
+    state.update(.5F); // Finish the entry fade before inspecting placement feedback.
+    const auto frame = [&] {
+        renderer.beginFrame(1280, 720);
+        state.render(renderer);
+        renderer.endFrame();
+    };
+    for (int i = 0; i < 200; ++i) {
+        frame();
+        if (renderer.terrainUploadFinished())
+            break;
+    }
+    const auto panel = [&] {
+        auto* context = Rml::GetContext("strategy_ui");
+        for (int i = 0; i < context->GetNumDocuments(); ++i)
+            if (auto* element = context->GetDocument(i)->GetElementById("placement-reason"))
+                return element;
+        return static_cast<Rml::Element*>(nullptr);
+    };
+    const auto motion = [&](float x, float y) {
+        SDL_Event event{};
+        event.type = SDL_EVENT_MOUSE_MOTION;
+        event.motion.x = x;
+        event.motion.y = y;
+        state.handleEvent(event);
+    };
+    const auto button = [&](SDL_EventType type, Uint8 button, float x, float y) {
+        SDL_Event event{};
+        event.type = type;
+        event.button.button = button;
+        event.button.x = x;
+        event.button.y = y;
+        event.button.clicks = 1;
+        state.handleEvent(event);
+    };
+    const auto activate = [&] {
+        const auto bounds = renderer.uiBounds("action.construct.basic_generator");
+        if (!bounds)
+            return false;
+        const float x = (bounds->left + bounds->right) * .5F,
+                    y = (bounds->top + bounds->bottom) * .5F;
+        motion(x, y);
+        button(SDL_EVENT_MOUSE_BUTTON_DOWN, SDL_BUTTON_LEFT, x, y);
+        button(SDL_EVENT_MOUSE_BUTTON_UP, SDL_BUTTON_LEFT, x, y);
+        motion(1265, 700);
+        frame();
+        return panel() && panel()->IsVisible();
+    };
+    bool valid = activate();
+    valid &= captureTerrain("placement-controls.bmp");
+    if (auto bounds = renderer.uiBounds("placement-reason"))
+        valid &=
+            bounds->left >= 0 && bounds->top >= 0 && bounds->right <= 1280 && bounds->bottom <= 720;
+    button(SDL_EVENT_MOUSE_BUTTON_DOWN, SDL_BUTTON_RIGHT, 800, 300);
+    button(SDL_EVENT_MOUSE_BUTTON_UP, SDL_BUTTON_RIGHT, 800, 300);
+    state.update(1.0F / 30);
+    frame();
+    valid &= panel() && panel()->IsVisible();
+    valid &= drone->unitControl.order == UnitOrderKind::idle;
+    SDL_Event escape{};
+    escape.type = SDL_EVENT_KEY_DOWN;
+    escape.key.key = SDLK_ESCAPE;
+    state.handleEvent(escape);
+    frame();
+    valid &= panel() && !panel()->IsVisible();
+    valid &= activate();
+    motion(targetScreen.x, targetScreen.y);
+    frame();
+    frame();
+    valid &= renderer.resourceNodeCacheStats().rebuiltChunks == 0 &&
+             renderer.resourceNodeCacheStats().uploadedBatches == 0;
+    button(SDL_EVENT_MOUSE_BUTTON_DOWN, SDL_BUTTON_LEFT, targetScreen.x, targetScreen.y);
+    button(SDL_EVENT_MOUSE_BUTTON_UP, SDL_BUTTON_LEFT, targetScreen.x, targetScreen.y);
+    frame();
+    // The preview was valid; a ground unit moves into it before the simulation commits.
+    blocker->transform.position = {target.x, 0, target.z};
+    state.update(1.0F / 30);
+    frame();
+    valid &= panel() && panel()->IsVisible() &&
+             panel()->GetInnerRML().find(Text::get("placement.collision")) != std::string::npos;
+    valid &= captureTerrain("placement-rejected.bmp");
+    blocker->transform = originalBlocker;
+    motion(targetScreen.x, targetScreen.y);
+    frame();
+    button(SDL_EVENT_MOUSE_BUTTON_DOWN, SDL_BUTTON_LEFT, targetScreen.x, targetScreen.y);
+    button(SDL_EVENT_MOUSE_BUTTON_UP, SDL_BUTTON_LEFT, targetScreen.x, targetScreen.y);
+    button(SDL_EVENT_MOUSE_BUTTON_DOWN, SDL_BUTTON_RIGHT, targetScreen.x, targetScreen.y);
+    button(SDL_EVENT_MOUSE_BUTTON_UP, SDL_BUTTON_RIGHT, targetScreen.x, targetScreen.y);
+    motion(640, 360); // New hover is blocked by the hub; the clicked intent remains legal.
+    button(SDL_EVENT_MOUSE_BUTTON_DOWN, SDL_BUTTON_LEFT, 640, 360);
+    button(SDL_EVENT_MOUSE_BUTTON_UP, SDL_BUTTON_LEFT, 640, 360); // Cannot overwrite the pending click.
+    const auto before = state.session().world().size();
+    frame();
+    state.update(1.0F / 30);
+    frame();
+    valid &= state.session().world().size() == before + 1;
+    valid &= state.session().world().entities().back().transform.rotationDegrees.y == 0;
+    valid &= panel() && !panel()->IsVisible();
+    valid &= activate();
+    button(SDL_EVENT_MOUSE_BUTTON_DOWN, SDL_BUTTON_RIGHT, 800, 300);
+    SDL_Event drag{};
+    drag.type = SDL_EVENT_MOUSE_MOTION;
+    drag.motion.x = 824;
+    drag.motion.y = 300;
+    drag.motion.xrel = 24;
+    state.handleEvent(drag);
+    button(SDL_EVENT_MOUSE_BUTTON_UP, SDL_BUTTON_RIGHT, 824, 300);
+    frame();
+    valid &= panel() && panel()->IsVisible();
+    state.handleEvent(escape);
+    frame();
+    valid &= panel() && !panel()->IsVisible();
+    const auto resourcesBeforeSatellite = state.session().players().find(1)->resources;
+    if (auto bounds = renderer.uiBounds("hud.satellite")) {
+        const float x = (bounds->left + bounds->right) * .5F;
+        const float y = (bounds->top + bounds->bottom) * .5F;
+        for (int click = 0; click < 3; ++click) {
+            motion(x, y);
+            button(SDL_EVENT_MOUSE_BUTTON_DOWN, SDL_BUTTON_LEFT, x, y);
+            button(SDL_EVENT_MOUSE_BUTTON_UP, SDL_BUTTON_LEFT, x, y);
+            state.update(1.F / 30);
+            frame();
+            valid &= state.session().satelliteCoverage(1) ==
+                     (!satellite && click == 0 ? SatelliteCoverage::lowResolution
+                                               : SatelliteCoverage::highResolution);
+            valid &= state.session().players().find(1)->resources == resourcesBeforeSatellite;
+            valid &= renderer.uiBounds("action.construct.basic_generator").has_value();
+        }
+    } else {
+        valid = false;
+    }
+    if (satellite) {
+        auto savedPlayers = state.session().players();
+        auto withoutCoverage = savedPlayers;
+        auto* unknown = withoutCoverage.find(1);
+        unknown->researchedUpgrades.clear();
+        std::fill(unknown->discovered.begin(), unknown->discovered.end(), 0);
+        unknown->resources["alloy"] = 777;
+        const auto quickload = [&](const PlayerRegistry& players) {
+            const auto& current = state.session();
+            SaveGame::write(testConfig.savePath(), current.terrainSeed(), current.world(), &players,
+                            current.mapChunksPerSide(), current.terrainLayout().value,
+                            current.terrain().mode(), current.terrain().repairLevel());
+            SDL_Event load{};
+            load.type = SDL_EVENT_KEY_DOWN;
+            load.key.key = SDLK_F9;
+            state.handleEvent(load);
+        };
+        quickload(withoutCoverage);
+        valid &= state.session().satelliteCoverage(1) == SatelliteCoverage::none &&
+                 state.session().players().find(1)->resources.at("alloy") == 777;
+        quickload(savedPlayers);
+        const auto* restored = state.session().players().find(1);
+        valid &= state.session().satelliteCoverage(1) == SatelliteCoverage::highResolution &&
+                 std::all_of(restored->discovered.begin(), restored->discovered.end(),
+                             [](auto cell) { return cell != 0; }) &&
+                 restored->resources == savedPlayers.find(1)->resources;
+        frame();
+    }
+    std::filesystem::remove(testConfig.savePath());
+    std::filesystem::remove(configPath);
+    std::filesystem::remove(testDirectory);
+    if (!valid)
+        std::cerr << "Placement camera controls, Escape cancellation or commit feedback failed\n";
+    return valid && noGlErrors("placement controls");
 }
 
 bool checkProgress(strategy::Renderer& renderer, const char* id, Rml::Colourb tint) {
@@ -307,6 +1277,16 @@ bool checkResourceSiteTexture() {
     };
     bool valid = compare();
     const auto fullUpload = texture.uploadedTiles();
+    texture.beginPreparation(sources, 480);
+    while (!texture.advancePreparation()) {
+    }
+    texture.bind();
+    glActiveTexture(GL_TEXTURE8);
+    std::vector<std::uint8_t> preparedPixels(reference.pixels().size());
+    glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, preparedPixels.data());
+    glActiveTexture(GL_TEXTURE0);
+    valid &= preparedPixels == reference.pixels();
+
     valid = compare() && texture.uploadedTiles() == 0 && valid;
     sources.erase(sources.begin());
     valid =
@@ -348,6 +1328,27 @@ int strategyTestMain() {
         SDL_DestroyWindow(window);
         SDL_Quit();
         return 0;
+    }
+
+    if (const char* testCase = SDL_getenv("STRATEGY_RENDER_CASE");
+        testCase && std::string_view{testCase} == "explored_static") {
+        bool result = false;
+        {
+            strategy::Logger logger{"build/debug/audits/explored-static-render.log"};
+            strategy::Renderer renderer{&logger};
+            renderer.preloadAssetGroup("match");
+            while (!renderer.assetProgress("match").finished()) {
+                renderer.beginFrame(1280, 720);
+                renderer.drawLoadingScreen(.5F, "EXPLORED LANDSCAPE TEST");
+                renderer.endFrame();
+            }
+            renderer.finishLoadingScreen();
+            result = checkExploredStaticVisibility(renderer);
+        }
+        SDL_GL_DestroyContext(context);
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+        return result ? 0 : 1;
     }
 
     bool valid = noGlErrors("context creation") && checkVegetationCacheBuffers() &&
@@ -427,6 +1428,10 @@ out vec4 color;void main(){color=vec4(1);})";
         strategy::Renderer renderer{&logger};
         const strategy::Terrain generatedTerrain{12345};
         valid = reportCheck(checkMapBoundary(renderer, generatedTerrain) && valid, __LINE__);
+        valid = reportCheck(checkPlacementPreview(renderer, generatedTerrain) && valid, __LINE__);
+        valid = reportCheck(checkLevelingPreview(renderer, generatedTerrain) && valid, __LINE__);
+        valid = reportCheck(checkTiltedPlacement(renderer, generatedTerrain) && valid, __LINE__);
+        valid = reportCheck(checkGradingPreview(renderer, generatedTerrain) && valid, __LINE__);
         renderer.stageGeneratedTerrain(generatedTerrain, 12345, 10);
         valid =
             !renderer.terrainUploadFinished() && renderer.terrainUploadProgress() == 0.0F && valid;
@@ -1151,6 +2156,10 @@ out vec4 color;void main(){color=vec4(1);})";
             valid = reportCheck(false, __LINE__);
         }
         renderer.removeUiScreen(gameplayScreen);
+        valid = reportCheck(checkPlacementControls(renderer, logger) && valid, __LINE__);
+        valid = reportCheck(checkRememberedCulling(renderer) && valid, __LINE__);
+        valid = reportCheck(checkPlacementControls(renderer, logger, true) && valid, __LINE__);
+        valid = reportCheck(checkMatchPreparation(renderer, logger) && valid, __LINE__);
         if (const char* screenshotPath = SDL_getenv("STRATEGY_UI_SCREENSHOT")) {
             std::vector<unsigned char> pixels(1280 * 720 * 4), flipped(pixels.size());
             glReadPixels(0, 0, 1280, 720, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());

@@ -1,5 +1,67 @@
 # V2 implementation and verification
 
+Dry Land placement first tries a fitted tilt up to 10 degrees without earthwork. A bounded
+candidate search also considers the largest continuous dry patch, the mean gradient, a level
+plane and a blend of dominant/patch gradients. Repair heights target the area-weighted ground height first, with a median and
+two shallow offsets as fallbacks within the existing support band. Candidate work shares one clipped local surface patch,
+median results, adjacency and original-surface outcomes. Plans without a scaffold are preferred over partial grading/support plans and ungraded frames.
+The ordinary base conceals up to 0.1 units. Grading permits at most 0.5 units of fill on shallow
+residual relief, retaining the 0.6 cut / 0.1 average cut limits and adding a 0.15 average combined
+earthwork limit. Both signs of movement and the feathered border count toward the budget.
+All candidates obey the unchanged total-angle, cut-depth, complete feathered-volume, water,
+protected-foundation and at-least-half connected dry bearing limits. Water-overlapping placement keeps its
+horizontal contract. See the [tilted placement engine captures](pictures/building-placement/tilt/README.md).
+
+Floor contact is measured within the shallow base-height band. Foundation bearing extends down
+continuous dry ground within the depth limit. Canonical cliff faces separate shelves; a supported
+component must contain positive-area floor contact, so an unrelated lower shelf cannot inflate
+support. At least half the footprint must belong to that connected bearing region. Positive
+shared-edge intervals connect support; corner contact or disjoint portions of one edge do not.
+The overlay partitions supported and unsupported regions without overlap and uses compact
+position/color vertices. Circle acceptance is analytic; presentation uses a circular fragment mask.
+
+`GameSession::planBuildingPlacement` supplies the shared placement rules and returns a structured
+outcome, blocker, terrain result, collision shape and foundation. The preview caches only terrain
+analysis keyed by exact pose, footprint, profile and a transient terrain/protection revision.
+Ownership, costs, requirements and occupancy remain live. Previously explored fog does not expose
+hidden occupancy through the preview; commit always checks the real world without trusting its cache.
+The accepted foundation is built from that plan, avoiding a second terrain solve after spending.
+
+Preview excavation uploads a bounded height/normal texture for vertex-shader presentation. It never
+modifies persistent terrain, foundation ownership, navigation, vegetation or resource caches.
+Scaffold feet sample the same proposed raster heights as the eventual accepted cut. Ghosts use an
+entity-only draw path; overlay/scaffold buffers and ghost entities are reused. Cache statistics are
+reset once per actual frame and accumulate across render passes.
+
+Bounded [dry-ground levelling](pictures/building-placement/leveling/README.md) applies only after
+acceptance; cancellation/destruction restores the owned original region. The frozen adjustment is
+saved with its foundation, independent of construction progress. A committed cut refreshes only
+nearby navigation heights. Preview and authority share exact planes and rotations; a queued click
+owns its builder IDs, recipe, heading and resolved position independently of later cursor movement.
+Right-click rotates 45 degrees; right-drag controls the camera; Escape cancels. Existing entity and
+foundation rotation fields persist the heading without changing save format 1 or generation revision 7.
+
+V2 foundations now use shared procedural metal scaffold geometry for placement previews and the
+finished world: a closed thin deck, bed-anchored feet/columns and X braces where exposed bays allow
+them. Dark steel receives subtle wear/rust and sparse hazard collars. Construction progressively
+reveals members while the building plane remains fixed. Per-foundation GPU meshes are reused
+across progress changes; geometry changes, removal and terrain replacement invalidate the relevant
+cache. See the [engine capture gallery](pictures/building-placement/scaffolds/README.md).
+The scaffold pass itself is presentation only. The separate levelling change above adjusts bounded
+dry ground and persists its overlay; V1, water heights, resource budgets and save format remain unchanged.
+
+Gentle-ground placement now uses an authored 0.25-unit support-height band plus each footprint's
+slope limit. It accepts shallow natural relief that previously reported 0% support, while retaining
+connected-support, strict cliff-overhang, water eligibility and foundation-depth checks. The floor
+now follows the fitted plane on dry Land; terrain changes only through the bounded cut allowance.
+Shallow remaining relief receives a foundation base.
+
+The [building placement feedback pass](pictures/building-placement/README.md) adds explicit
+simulation outcomes, Escape cancellation with right-drag camera control, footprint/support/foundation previews and
+distinct support/depth messages with a cursor readout. It preserves the existing terrain
+support ratios and generation revision. Bounded excavation is the explicit surface exception.
+Player placement does not require usable perimeter interaction space.
+
 Generation revision 7 moves composition to the field: many small individually harvestable targets
 replace two or three baked compounds. Exact starting/expansion supplies and abundance-controlled
 field counts are preserved. A field's seeded node mix partitions that budget exactly; every node
@@ -54,8 +116,8 @@ verification uses captures from the renderer, not generated illustrations.
   joined only through positive-length shared triangle edges. Corner contact and clipped-away edges
   cannot combine support islands. `TerrainSupport` clips
   final triangles against rotated rectangles or circles, measures connected support, applies strict
-  overhang/depth rules and classifies full/partial wet tiles. Perimeter space derives from the declared
-  interacting unit's radius, movement domain and interaction margin. Foundations never alter terrain
+  overhang/depth rules and classifies full/partial wet tiles. Perimeter interaction access does not
+  gate player placement. Foundations never alter terrain
   or water. Support walls follow the unchanged bed; buildings and construction ghosts use their
   evaluated foundation plane. Shore requires explicit wet-fraction bounds and a minimum connected
   dry-support fraction; absent or incompatible contracts reject.
@@ -182,7 +244,7 @@ fixes. All 23 test areas have passing coverage across the global run and affecte
 | Check | Final evidence |
 |---|---|
 | V2 generation | 45 repeated layout/size/seed cases; immutable sources, bounded cleanup, dry independence, edge/junction topology and cancellation |
-| Support | Exact rectangle/disk areas, corner-only disconnection, clipped edge contacts, strict one-third boundary, foundation depth, Land/Water/Shore contracts and unchanged surfaces |
+| Support | Exact rectangle/disk areas, corner-only disconnection, clipped edge contacts, inclusive half-support boundary, foundation depth, Land/Water/Shore contracts and unchanged surfaces |
 | V2 sessions/resources | 35 ordinary sessions plus 45 forced fallback allocations across five layouts, 10/15/20 sizes and abundance presets; exact field counts and populated-world ground routes |
 | Joint openings | Both players fit processors and a charging pad alongside headquarters, workers and resources; ground exits remain open on all five supported recipes |
 | Persistence | Setup toggle, complete foundations, deterministic terrain restoration, prototype rejection and format-1 round trips |
@@ -215,8 +277,8 @@ rather than accepting that appearance during ordinary generation.
 Static views, camera motion samples and GL checks cannot prove that every possible camera path is
 artifact-free. Detailed salvage art and richer scenery composition need a separate content pass.
 Node tuning remains deferred as specified. Populated-world routes and joint early building layouts
-are tested. Per-building interaction routes with final foundation collision and broader
-recipe-authoring validation remain audit targets beyond terrain-only perimeter checks.
+are tested. Broader recipe-authoring validation remains an audit target. Per-building interaction
+routes are runtime navigation concerns, not player-placement acceptance gates.
 
 
 ## Visual refinement against the no-roads reference
@@ -355,3 +417,72 @@ opening candidates rather than protected capacity sites, localized transactional
 (the current escalation still removes broad landmark relief before fallback), supported clearing,
 oceans/river networks and island transport. The current unit definitions provide a worker and flying
 construction drone; competitive army behaviour needs later combat-unit and player testing.
+
+
+### Placement angle/height follow-up (2026-10-23)
+
+The bounded candidate search now ranks directions by residual surface relief before accepting a
+fit. On a genuinely planar slope it uses angle alone. Small local bumps inside the contact-height
+tolerance no longer bypass ground adjustment: the first cut target uses area-weighted ground
+height, followed by the existing median and raised-intercept alternatives when required by the
+unchanged cut/support limits. A valid uncut plan remains a fallback. Preview cost/collision
+rejections retain their geometric pose on explored terrain. Render regression tests compare
+actual ghost and committed depth and verify a visible tilt relative to a horizontal mesh.
+See [captures](pictures/building-placement/angle-height-2026-10-23/README.md).
+
+
+### Increased placement tilt (2026-10-23)
+
+The live building catalogue now allows ten degrees of total tilt. The definition validator,
+V2 candidate clamps and legacy foundation clamp share the same ten-degree hard limit.
+Lower per-profile limits remain supported, including the original five-degree regression fixtures.
+A live-catalogue probe and an actual ghost-versus-placed render probe cover an approximately
+9.46-degree slope with angle-only placement. Water and excavation rules are unchanged.
+
+Validation of the increased limit: all four targeted Release checks passed (placement planning,
+building placement, terrain V2 and renderer integration, 20.83 seconds). The actual rendered
+slope was 9.46232 degrees, with 32,561 pixels differing from a horizontal pose, and preview /
+placed depths matching. Debug and Release game builds completed successfully.
+
+
+### Continuous hillside foundations and half support (2026-10-23)
+
+Land now requires at least 50% connected dry bearing, with exact equality allowed. Bearing
+extends down continuous ground within the foundation depth; floor contact remains a separate
+shallow band. Canonical cliff faces split bearing patches, and the selected patch must include
+positive-area floor contact, preventing a disconnected lower shelf from inflating support.
+Small steep ramp triangles no longer suppress the overall hillside fit. Base/scaffold selection
+and overlay geometry share these quantities. Total tilt remains capped at ten degrees; cut,
+water, occupied-foundation protection and depth limits retain their previous rules.
+
+A generated Continental seed-1 scan improved from 19/209 terrain-valid sites with no angled
+placements to 178/209 valid with 135 tilted by more than one degree. The representative
+(-64, -160) site fits at about 4.1 degrees; its real ghost and committed render depths match.
+Exact half thresholds cover rectangles and analytic disks, with disconnected lower-shelf,
+rough-hill contact/bearing, low-budget repair and depth regressions. Full Release validation
+passed all 36 tests; final search pruning passed the four affected checks and three Debug
+placement checks. Both game builds are updated. Large previews still have occasional sub-60-FPS
+frames (about 18.2 ms p95 for a moving hub cut in the measured scene).
+See [captures](pictures/building-placement/hillside-support-2026-10-23/README.md).
+
+
+### Bounded cut-and-fill pads (2026-10-23)
+
+Accepted grading records now include `levelingMaximumFill`. The same per-vertex prediction
+function supplies the temporary GPU raster and committed terrain; both positive and negative
+updates invalidate affected terrain, navigation and render-cache regions. Remaining operations
+replay from base heights in stable source-ID order with strongest-displacement composition.
+Fill limits participate in terrain protection revisions, renderer preview/foundation cache keys,
+persistence validation and authoritative checksums. Progress changes do not reapply earthwork.
+
+`terrain_grading` covers actual production limits, a shallow depression with cut and fill,
+no raised metal frame, preview/commit identity, cancellation, deterministic overlap replay,
+protected neighbours, water, tight budgets, shorter mixed foundations, cache invalidation and
+save/load, including the current ten-degree grading limit. Renderer integration compares
+original/preview/committed/restored depth on a building pad and asserts that no scaffold mesh exists.
+Full Release validation passed all 37 tests; all four affected Debug checks also passed.
+See the [grading captures](pictures/building-placement/grading-2026-10-23/README.md).
+
+Format remains 1, terrain generation revision remains 7. Older development saves without the new
+fill field are intentionally not migrated; start a new match. User runtime setup/saves were not
+rewritten or deleted by this work.

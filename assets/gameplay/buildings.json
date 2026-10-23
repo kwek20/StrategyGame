@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "defaultPlacement": { "domains": ["land"], "requiresShore": false, "v2": { "type": "land", "maximumFoundationDepth": 6.0, "waterClearance": 0.25, "minimumWaterDepth": 1.0, "interactionUnit": "worker" } },
+  "defaultPlacement": { "domains": ["land"], "requiresShore": false, "v2": { "type": "land", "maximumFoundationDepth": 6.0, "supportHeightTolerance": 0.25, "maximumTiltDegrees": 10.0, "leveling": { "maximumRelief": 0.75, "maximumCut": 0.6, "maximumAverageCut": 0.1, "maximumFill": 0.5, "maximumAverageEarthwork": 0.15, "blendWidth": 1.5 }, "waterClearance": 0.25, "minimumWaterDepth": 1.0 } },
   "buildings": {
     "town_center": {
       "descriptionKey": "building.town_center.description",

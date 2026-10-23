@@ -52,6 +52,7 @@ class TerrainTerraces final {
     }
     float surfaceAt(glm::vec2 position) const;
     bool crossesCliff(glm::vec2 start, glm::vec2 end) const;
+    float maximumCliffDrop(glm::vec2 start, glm::vec2 end) const;
 
   private:
     int side_{};
@@ -63,5 +64,6 @@ class TerrainTerraces final {
     double localScore(int x, int z, float candidate) const;
     std::uint32_t isolatedCount() const;
     void classifyEdges();
+    float cliffDrop(glm::vec2 start, glm::vec2 end, bool firstOnly) const;
 };
 } // namespace strategy

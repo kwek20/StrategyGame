@@ -14,6 +14,8 @@
       "modifiers": [
         { "id": "upgrade.efficient_training.speed", "stat": "trainingTime", "operation": "multiply", "value": 0.9, "target": { "tags": ["unit"] } }
       ]
-    }
+    },
+    {"id": "satellite.low_resolution", "researchRecipe": "research.satellite_low_resolution", "maximumLevel": 1, "prerequisites": [], "allowedResearchers": ["command_hub"], "nameKey": "upgrade.satellite_low_resolution", "descriptionKey": "upgrade.satellite_low_resolution.description", "icon": "building_sensor_tower", "satelliteCoverage": "lowResolution", "modifiers": []},
+    {"id": "satellite.high_resolution", "researchRecipe": "research.satellite_high_resolution", "maximumLevel": 1, "prerequisites": ["satellite.low_resolution"], "allowedResearchers": ["command_hub"], "nameKey": "upgrade.satellite_high_resolution", "descriptionKey": "upgrade.satellite_high_resolution.description", "icon": "building_sensor_tower", "satelliteCoverage": "highResolution", "modifiers": []}
   ]
 }

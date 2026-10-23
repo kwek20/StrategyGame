@@ -31,6 +31,7 @@ class Navigation final {
     static constexpr float cellSize = 2.0F;
     Navigation(const Terrain& terrain, const DefinitionRegistry& definitions,
                std::uint32_t mapChunksPerSide, WorldGenerationProgress* progress = nullptr);
+    void refreshTerrainHeights(const Terrain& terrain, const TerrainFoundation* cut = nullptr);
     void rebuildTerrain(const Terrain& terrain, std::uint32_t mapChunksPerSide,
                         WorldGenerationProgress* progress = nullptr);
     [[nodiscard]] std::vector<glm::vec3> findPath(

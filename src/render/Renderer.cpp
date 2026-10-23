@@ -7,7 +7,10 @@
 #include "particles/ParticleSystem.hpp"
 #include "render/RenderPass.hpp"
 #include "render/RmlUiManager.hpp"
+#include "render/ScaffoldGeometry.hpp"
 #include "render/UiRenderer.hpp"
+#include "terrain/FoundationOrientation.hpp"
+#include "terrain/SurfaceGeometry.hpp"
 #include "ui/EntityHudModel.hpp"
 #include "world/Vegetation.hpp"
 #include "world/World.hpp"
@@ -225,36 +228,46 @@ glm::mat4 groundedEntityTransform(const Terrain& terrain,
                                   const EntityDefinition* definition,
                                   EntityId entityId,
                                   float modelBaseY,
-                                  float scaleMultiplier = 1.0F) {
+                                  float scaleMultiplier = 1.0F,
+                                  const TerrainFoundation* placementPlane = nullptr) {
     glm::mat4 transform{1.0F};
-    const float ground = terrain.entityBaseHeight(entityId, shown.position.x, shown.position.z);
+    const auto* foundation =
+        placementPlane ? placementPlane
+                       : terrain.entityFoundation(entityId, shown.position.x, shown.position.z);
+    const float ground =
+        foundation ? foundation->center.y
+                   : terrain.entityBaseHeight(entityId, shown.position.x, shown.position.z);
     transform =
         glm::translate(transform,
                        {shown.position.x,
                         ground + shown.position.y + presentationGroundOffset(definition, entityId),
                         shown.position.z});
-    if (definition && definition->alignToTerrain && definition->maximumTilt > 0.0F) {
-        const float sample = Terrain::spacing * 2.0F;
-        const float pitch =
-            glm::clamp(glm::degrees(std::atan2(
-                           terrain.heightAt(shown.position.x, shown.position.z - sample) -
-                               terrain.heightAt(shown.position.x, shown.position.z + sample),
-                           sample * 2.0F)),
-                       -definition->maximumTilt,
-                       definition->maximumTilt);
-        const float roll =
-            glm::clamp(glm::degrees(std::atan2(
-                           terrain.heightAt(shown.position.x + sample, shown.position.z) -
-                               terrain.heightAt(shown.position.x - sample, shown.position.z),
-                           sample * 2.0F)),
-                       -definition->maximumTilt,
-                       definition->maximumTilt);
-        transform = glm::rotate(transform, glm::radians(pitch), {1.0F, 0.0F, 0.0F});
-        transform = glm::rotate(transform, glm::radians(roll), {0.0F, 0.0F, 1.0F});
+    if (foundation && terrain.mode() == TerrainMode::v2) {
+        transform *= foundationOrientation(foundation->gradient, foundation->rotationDegrees);
+    } else {
+        if (definition && definition->alignToTerrain && definition->maximumTilt > 0.0F) {
+            const float sample = Terrain::spacing * 2.0F;
+            const float pitch =
+                glm::clamp(glm::degrees(std::atan2(
+                               terrain.heightAt(shown.position.x, shown.position.z - sample) -
+                                   terrain.heightAt(shown.position.x, shown.position.z + sample),
+                               sample * 2.0F)),
+                           -definition->maximumTilt,
+                           definition->maximumTilt);
+            const float roll =
+                glm::clamp(glm::degrees(std::atan2(
+                               terrain.heightAt(shown.position.x + sample, shown.position.z) -
+                                   terrain.heightAt(shown.position.x - sample, shown.position.z),
+                               sample * 2.0F)),
+                           -definition->maximumTilt,
+                           definition->maximumTilt);
+            transform = glm::rotate(transform, glm::radians(pitch), {1.0F, 0.0F, 0.0F});
+            transform = glm::rotate(transform, glm::radians(roll), {0.0F, 0.0F, 1.0F});
+        }
+        transform = glm::rotate(transform, glm::radians(shown.rotationDegrees.x), {1, 0, 0});
+        transform = glm::rotate(transform, glm::radians(shown.rotationDegrees.y), {0, 1, 0});
+        transform = glm::rotate(transform, glm::radians(shown.rotationDegrees.z), {0, 0, 1});
     }
-    transform = glm::rotate(transform, glm::radians(shown.rotationDegrees.x), {1, 0, 0});
-    transform = glm::rotate(transform, glm::radians(shown.rotationDegrees.y), {0, 1, 0});
-    transform = glm::rotate(transform, glm::radians(shown.rotationDegrees.z), {0, 0, 1});
     const float catalogueScale = definition ? definition->scale : 1.0F;
     transform = glm::scale(transform, shown.scale * catalogueScale * scaleMultiplier);
     return glm::translate(transform, {0.0F, -modelBaseY, 0.0F});
@@ -556,6 +569,10 @@ void Renderer::drawIcon(const std::string& id, float left, float top, float righ
 }
 
 Renderer::~Renderer() {
+    glDeleteBuffers(3, placementPreview_.buffers.data());
+    if (placementSurfaceTexture_)
+        glDeleteTextures(1, &placementSurfaceTexture_);
+    cancelPresentationPreparation();
     for (const FoundationMesh& mesh : foundationMeshes_) {
         if (mesh.ebo) glDeleteBuffers(1, &mesh.ebo);
         if (mesh.vbo) glDeleteBuffers(1, &mesh.vbo);
@@ -577,6 +594,10 @@ RmlUiScreenHandle Renderer::pushUiScreen(RmlUiScreenDefinition definition) {
 void Renderer::setUiScale(float scale) {
     rmlUi_->setScale(scale);
 }
+void Renderer::activateUiScreen(RmlUiScreenHandle handle) {
+    rmlUi_->activateScreen(handle);
+}
+
 void Renderer::removeUiScreen(RmlUiScreenHandle handle) {
     rmlUi_->removeScreen(handle);
 }
@@ -655,6 +676,8 @@ void Renderer::refreshModelShaderBindings() {
 void Renderer::beginFrame(int width, int height) {
     ProfileScope profile(profiler_, "render.begin");
     renderGraph_.beginFrame();
+    vegetationCache_.resetFrameStats();
+    resourceNodeCache_.resetFrameStats();
     commandQueue_.clear();
     const std::vector<ShaderReloadResult> reloads = shaders_.reloadChanged();
     if (!reloads.empty()) {
@@ -816,6 +839,7 @@ void Renderer::drawLoadingScreen(float progress, const std::string& status) cons
                                              {},
                                              1.0F});
     }
+    rmlUi_->activateScreen(loadingScreen_);
     const int percentage = static_cast<int>(std::round(visibleProgress * 100.0F));
     const bool awaitingStart = visibleProgress >= 1.0F;
     rmlUi_->setText("loading-title",
@@ -894,6 +918,43 @@ void Renderer::prepareResourceSites(const World& world) const {
             resourceSites_.clear();
         return;
     }
+    resourceSites_.update(resourceSiteSources(world), activeWorldExtent());
+}
+void Renderer::beginResourceSitePreparation(const World& world) {
+    if (terrain_.mode() == TerrainMode::v2)
+        resourceSites_.beginPreparation(resourceSiteSources(world), activeWorldExtent());
+}
+bool Renderer::advanceResourceSitePreparation() {
+    return terrain_.mode() != TerrainMode::v2 || resourceSites_.advancePreparation();
+}
+void Renderer::beginPresentationFence() {
+    if (presentationFence_)
+        glDeleteSync(static_cast<GLsync>(presentationFence_));
+    presentationFence_ = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+    if (!presentationFence_)
+        throw std::runtime_error("Could not fence match presentation");
+    glFlush();
+}
+bool Renderer::presentationFenceReady() {
+    if (!presentationFence_)
+        return false;
+    const auto status = glClientWaitSync(static_cast<GLsync>(presentationFence_), 0, 0);
+    if (status == GL_WAIT_FAILED)
+        throw std::runtime_error("Match presentation fence failed");
+    if (status != GL_ALREADY_SIGNALED && status != GL_CONDITION_SATISFIED)
+        return false;
+    glDeleteSync(static_cast<GLsync>(presentationFence_));
+    presentationFence_ = nullptr;
+    return true;
+}
+void Renderer::cancelPresentationPreparation() {
+    if (presentationFence_)
+        glDeleteSync(static_cast<GLsync>(presentationFence_));
+    presentationFence_ = nullptr;
+    resourceSites_.clear();
+    cancelTerrainUpload();
+}
+std::vector<ResourceSiteSource> Renderer::resourceSiteSources(const World& world) const {
     std::vector<ResourceSiteSource> sources;
     for (const auto& entity : world.entities()) {
         if (!entity.resource)
@@ -913,7 +974,7 @@ void Renderer::prepareResourceSites(const World& world) const {
                                                                      : 2),
                            entity.resource.fieldId});
     }
-    resourceSites_.update(sources, activeWorldExtent());
+    return sources;
 }
 
 void Renderer::drawTerrain(const CameraView& camera,
@@ -926,6 +987,19 @@ void Renderer::drawTerrain(const CameraView& camera,
     const glm::mat4 viewProjection = camera.viewProjection();
 
     shaders_.use(program_);
+    glUniform1i(shaders_.uniform(program_, "usePlacementSurface"),
+                placementSurfaceCut_.has_value());
+    glUniform1i(shaders_.uniform(program_, "placementSurface"), 9);
+    glUniform2iv(shaders_.uniform(program_, "placementSurfaceOrigin"),
+                 1,
+                 glm::value_ptr(placementSurfaceOrigin_));
+    glUniform2iv(shaders_.uniform(program_, "placementSurfaceSize"),
+                 1,
+                 glm::value_ptr(placementSurfaceSize_));
+    glUniform1f(shaders_.uniform(program_, "terrainHalfExtent"), terrain_.worldExtent() * .5F);
+    glUniform1f(shaders_.uniform(program_, "terrainVertexSpacing"), Terrain::spacing);
+    glActiveTexture(GL_TEXTURE9);
+    glBindTexture(GL_TEXTURE_2D, placementSurfaceTexture_);
     bindTerrainTextures();
     resourceSites_.bind();
     glUniform1i(shaders_.uniform(program_, "resourceSiteMap"), 8);
@@ -940,6 +1014,7 @@ void Renderer::drawTerrain(const CameraView& camera,
     glUniform1i(shaders_.uniform(program_, "dryGroundTexture"), 3);
     glUniform1i(shaders_.uniform(program_, "crackedGroundTexture"), 5);
     glUniform1i(shaders_.uniform(program_, "useFoundationTexture"), 0);
+    glUniform1i(shaders_.uniform(program_, "useScaffoldMaterial"), 0);
     glUniform1i(shaders_.uniform(program_, "terrainDebug"), terrainDebug ? 1 : 0);
     glUniform1i(shaders_.uniform(program_, "waterDebugMode"), waterDebugMode);
     const GLint location = shaders_.uniform(program_, "viewProjection");
@@ -997,12 +1072,24 @@ void Renderer::drawTerrain(const CameraView& camera,
                        GL_UNSIGNED_INT,
                        nullptr);
     }
+    glUniform1i(shaders_.uniform(program_, "usePlacementSurface"), 0);
     if (!terrainDebug && waterDebugMode == 0) {
         glUniform1i(shaders_.uniform(program_, "boundaryPresentation"), 1);
         terrainBackdrop_.draw();
         glUniform1i(shaders_.uniform(program_, "boundaryPresentation"), 0);
     }
     for (const FoundationMesh& mesh : foundationMeshes_) {
+        if (!mesh.visible || mesh.indexCount == 0)
+            continue;
+        if (mesh.scaffold) {
+            glUniform1i(shaders_.uniform(program_, "useScaffoldMaterial"), 1);
+            glUniform1f(shaders_.uniform(program_, "foundationProgress"), mesh.progress);
+            glBindVertexArray(mesh.vao);
+            glDrawElements(
+                GL_TRIANGLES, static_cast<GLsizei>(mesh.indexCount), GL_UNSIGNED_INT, nullptr);
+            glUniform1i(shaders_.uniform(program_, "useScaffoldMaterial"), 0);
+            continue;
+        }
         if (!foundationTexture_)
             foundationTexture_ = resources_.requestTexture("foundation_concrete");
         resources_.textureOrMarker(foundationTexture_)->bind(4, true);
@@ -1070,14 +1157,11 @@ void Renderer::drawWater(const CameraView& camera, const Player* player, int deb
     glBindVertexArray(0);
 }
 
-void Renderer::drawWorld(const World& world,
-                         const CameraView& camera,
-                         const Player* player,
-                         bool powerOverlayVisible) const {
-    renderGraph_.enter(RenderPassKind::world);
-    ProfileScope profile(profiler_, "render.world");
-    RenderPass pass(RenderPassKind::world);
-    const glm::mat4 viewProjection = camera.viewProjection();
+void Renderer::drawEntityModels(std::span<const Entity> entities,
+                                const CameraView& camera,
+                                const Player* player,
+                                bool powerOverlayVisible,
+                                const TerrainFoundation* placementPlane) const {
     shaders_.use(modelProgram_);
     glUniform3fv(
         shaders_.uniform(modelProgram_, "cameraPosition"), 1, glm::value_ptr(camera.position));
@@ -1086,7 +1170,7 @@ void Renderer::drawWorld(const World& world,
     glUniform1i(shaders_.uniform(modelProgram_, "explorationMap"), 7);
     glUniform1f(shaders_.uniform(modelProgram_, "explorationExtent"), activeWorldExtent());
 
-    for (const Entity& entity : world.entities()) {
+    for (const Entity& entity : entities) {
         if (entity.resource && entity.resource.remaining <= 0.0F)
             continue;
         if (entity.resource && entity.resource.fieldId != 0)
@@ -1097,8 +1181,13 @@ void Renderer::drawWorld(const World& world,
             continue;
         }
         const EntityDefinition* definition = resources_.entityDefinition(entity.renderId());
-        const glm::mat4 transform = groundedEntityTransform(
-            terrain_, entity.transform, definition, entity.id, model->baseY());
+        const glm::mat4 transform = groundedEntityTransform(terrain_,
+                                                            entity.transform,
+                                                            definition,
+                                                            entity.id,
+                                                            model->baseY(),
+                                                            1.0F,
+                                                            placementPlane);
         std::string animation;
         if (definition) {
             const bool moving = entity.authority.directController != 0
@@ -1136,16 +1225,75 @@ void Renderer::drawWorld(const World& world,
                               std::move(animation),
                               animationSeconds,
                               tint,
-                              player && entity.authority.owner != player->id ? 1 : 0});
+                              player ? (entity.resource || entity.kind == EntityKind::decoration ? 2
+                                        : entity.authority.owner != player->id ? 1 : 0) : 0});
     }
+    flushModelCommands(camera);
+}
+
+void Renderer::drawPlacementGhost(const Entity& ghost,
+                                  const CameraView& camera,
+                                  const TerrainFoundation* plane) const {
+    renderGraph_.enter(RenderPassKind::world);
+    ProfileScope profile(profiler_, "render.placement_ghost");
+    RenderPass pass(RenderPassKind::world);
+    drawEntityModels(std::span<const Entity>{&ghost, 1}, camera, nullptr, false, plane);
+}
+
+void Renderer::flushModelCommands(const CameraView& camera) const {
+    const auto viewProjection = camera.viewProjection();
+    commandQueue_.sort();
+    for (const ModelRenderCommand& command : commandQueue_.commands()) {
+        const RenderMaterial& material = materials_.get(command.material);
+        material.depthTest ? glEnable(GL_DEPTH_TEST) : glDisable(GL_DEPTH_TEST);
+        material.cullFace ? glEnable(GL_CULL_FACE) : glDisable(GL_CULL_FACE);
+        material.blending ? glEnable(GL_BLEND) : glDisable(GL_BLEND);
+        glDepthMask(material.depthWrite ? GL_TRUE : GL_FALSE);
+        shaders_.use(material.shader);
+        glUniform4fv(
+            shaders_.uniform(material.shader, "materialTint"), 1, glm::value_ptr(material.tint));
+        glUniform1f(shaders_.uniform(material.shader, "materialRoughness"), material.roughness);
+        const bool tinted = material.rememberedEntity || command.tint != glm::vec3{1.0F};
+        glUniform1i(shaders_.uniform(material.shader, "rememberedEntity"), tinted ? 1 : 0);
+        glUniform1i(shaders_.uniform(material.shader, "visibilityMode"), command.visibilityMode);
+        if (tinted)
+            glUniform3fv(shaders_.uniform(material.shader, "rememberedTint"),
+                         1,
+                         glm::value_ptr(command.tint));
+        const Texture* albedo =
+            material.albedo ? resources_.textureOrMarker(material.albedo) : nullptr;
+        if (const Model* model = resources_.modelOrMarker(command.model))
+            model->draw(modelBindings_,
+                        viewProjection,
+                        command.transform,
+                        command.animation,
+                        command.animationSeconds,
+                        albedo ? albedo->id() : 0);
+    }
+    glDepthMask(GL_TRUE);
+    glUniform1i(shaders_.uniform(modelProgram_, "rememberedEntity"), 0);
+    commandQueue_.clear();
+}
+
+void Renderer::drawWorld(const World& world,
+                         const CameraView& camera,
+                         const Player* player,
+                         bool powerOverlayVisible,
+                         const TerrainFoundation* placementPlane) const {
+    renderGraph_.enter(RenderPassKind::world);
+    ProfileScope profile(profiler_, "render.world");
+    RenderPass pass(RenderPassKind::world);
+    drawEntityModels(world.entities(), camera, player, powerOverlayVisible, placementPlane);
+    const auto viewProjection = camera.viewProjection();
+    shaders_.use(modelProgram_);
     {
         const auto& field = resourceNodePresentation_.update(world);
-        resourceNodeCache_.beginFrame(field);
+        resourceNodeCache_.beginFrame(field, false);
         const auto& material = materials_.get(worldMaterial_);
         glUniform4fv(
             shaders_.uniform(modelProgram_, "materialTint"), 1, glm::value_ptr(material.tint));
         glUniform1f(shaders_.uniform(modelProgram_, "materialRoughness"), material.roughness);
-        glUniform1i(shaders_.uniform(modelProgram_, "visibilityMode"), player ? 1 : 0);
+        glUniform1i(shaders_.uniform(modelProgram_, "visibilityMode"), player ? 2 : 0);
         struct Group {
             const Model* model{};
             std::vector<ModelInstanceRange> ranges;
@@ -1180,8 +1328,15 @@ void Renderer::drawWorld(const World& world,
         for (const auto& [buffer, group] : groups)
             group.model->drawInstancedRanges(modelBindings_, viewProjection, buffer, group.ranges);
     }
-    if (player)
+    // A fully live map has no remembered-only geometry to draw. In particular,
+    // satellite intelligence must not submit a second, shader-discarded copy of the world.
+    const bool fullyVisible = player && std::all_of(player->visible.begin(), player->visible.end(),
+                                                   [](auto cell) { return cell != 0; });
+    if (player && !fullyVisible)
         for (const LastKnownEntity& known : player->intelligence) {
+            const auto* current = world.findEntity(known.id);
+            if (current && current->resource && current->resource.remaining > 0)
+                continue; // Explored resources already use the static/instanced draw path.
             const Model* model = resources_.modelOrMarker(modelHandle(known.modelKey));
             if (!model)
                 continue;
@@ -1189,42 +1344,34 @@ void Renderer::drawWorld(const World& world,
             const Transform shown{known.position, known.rotationDegrees, known.scale};
             const glm::mat4 transform =
                 groundedEntityTransform(terrain_, shown, definition, known.id, model->baseY());
+            const float radius = model->boundingRadius() *
+                                 std::max({glm::length(glm::vec3{transform[0]}),
+                                           glm::length(glm::vec3{transform[1]}),
+                                           glm::length(glm::vec3{transform[2]})});
+            const glm::vec3 center{transform[3]};
+            if (!visibleSphere(viewProjection, center, radius))
+                continue;
+            // Use conservative model bounds, not just its center: an object straddling
+            // the vision boundary still needs the shader's per-fragment fog clipping.
+            // The fog texture is linearly filtered, so include adjacent texels too.
+            const auto first = glm::max(activeMapArea().gridCell(glm::vec2{center.x, center.z} - radius,
+                                                                 Player::explorationCells) - glm::ivec2{1},
+                                        glm::ivec2{0});
+            const auto last = glm::min(activeMapArea().gridCell(glm::vec2{center.x, center.z} + radius,
+                                                                Player::explorationCells) + glm::ivec2{1},
+                                       glm::ivec2{Player::explorationCells - 1});
+            bool live = true;
+            for (int z = first.y; z <= last.y && live; ++z)
+                for (int x = first.x; x <= last.x && live; ++x)
+                    live = player->visible[z * Player::explorationCells + x] != 0;
+            if (live)
+                continue;
             const glm::vec3 tint =
                 known.building ? glm::vec3{0.22F, 0.34F, 0.40F} : glm::vec3{0.27F, 0.29F, 0.31F};
             commandQueue_.submit(
                 {modelHandle(known.modelKey), rememberedMaterial_, transform, {}, 0.0, tint, -1});
         }
-    commandQueue_.sort();
-    for (const ModelRenderCommand& command : commandQueue_.commands()) {
-        const RenderMaterial& material = materials_.get(command.material);
-        material.depthTest ? glEnable(GL_DEPTH_TEST) : glDisable(GL_DEPTH_TEST);
-        material.cullFace ? glEnable(GL_CULL_FACE) : glDisable(GL_CULL_FACE);
-        material.blending ? glEnable(GL_BLEND) : glDisable(GL_BLEND);
-        glDepthMask(material.depthWrite ? GL_TRUE : GL_FALSE);
-        shaders_.use(material.shader);
-        glUniform4fv(
-            shaders_.uniform(material.shader, "materialTint"), 1, glm::value_ptr(material.tint));
-        glUniform1f(shaders_.uniform(material.shader, "materialRoughness"), material.roughness);
-        const bool tinted = material.rememberedEntity || command.tint != glm::vec3{1.0F};
-        glUniform1i(shaders_.uniform(material.shader, "rememberedEntity"), tinted ? 1 : 0);
-        glUniform1i(shaders_.uniform(material.shader, "visibilityMode"), command.visibilityMode);
-        if (tinted)
-            glUniform3fv(shaders_.uniform(material.shader, "rememberedTint"),
-                         1,
-                         glm::value_ptr(command.tint));
-        const Texture* albedo =
-            material.albedo ? resources_.textureOrMarker(material.albedo) : nullptr;
-        if (const Model* model = resources_.modelOrMarker(command.model))
-            model->draw(modelBindings_,
-                        viewProjection,
-                        command.transform,
-                        command.animation,
-                        command.animationSeconds,
-                        albedo ? albedo->id() : 0);
-    }
-    glDepthMask(GL_TRUE);
-    glUniform1i(shaders_.uniform(modelProgram_, "rememberedEntity"), 0);
-    commandQueue_.clear();
+    flushModelCommands(camera);
     std::vector<glm::vec2> healthBack, healthDamage, healthRemaining, constructionProgress;
     for (const Entity& entity : world.entities()) {
         const bool constructing = entity.construction && !isOperational(entity) &&
@@ -1322,14 +1469,14 @@ void Renderer::drawVegetation(const VegetationField& vegetation,
     renderGraph_.enter(RenderPassKind::world);
     ProfileScope profile(profiler_, "render.vegetation");
     const glm::mat4 viewProjection = camera.viewProjection();
-    vegetationCache_.beginFrame(vegetation);
+    vegetationCache_.beginFrame(vegetation, false);
 
     shaders_.use(modelProgram_);
     glUniform3fv(
         shaders_.uniform(modelProgram_, "cameraPosition"), 1, glm::value_ptr(camera.position));
     glUniform2fv(shaders_.uniform(modelProgram_, "fogRange"), 1, glm::value_ptr(worldFogRange()));
     glUniform1i(shaders_.uniform(modelProgram_, "rememberedEntity"), 0);
-    glUniform1i(shaders_.uniform(modelProgram_, "visibilityMode"), player ? 1 : 0);
+    glUniform1i(shaders_.uniform(modelProgram_, "visibilityMode"), player ? 2 : 0);
     glUniform1i(shaders_.uniform(modelProgram_, "explorationMap"), 7);
     glUniform1f(shaders_.uniform(modelProgram_, "explorationExtent"), activeWorldExtent());
     const RenderMaterial& material = materials_.get(worldMaterial_);
@@ -1969,6 +2116,200 @@ void Renderer::drawPowerRanges(const World& world, const CameraView& camera, Pla
     glBindVertexArray(0);
 }
 
+void Renderer::drawBuildingPlacementPreview(glm::vec2 center,
+                                            const TerrainFootprint& footprint,
+                                            const TerrainPlacementProfile& profile,
+                                            const TerrainPlacementResult& result,
+                                            bool valid,
+                                            const CameraView& camera) const {
+    ProfileScope profileTiming(profiler_, "render.placement_overlay");
+    renderGraph_.enter(RenderPassKind::overlay);
+    RenderPass pass(RenderPassKind::overlay);
+    struct OverlayVertex {
+        glm::vec3 position, color;
+    };
+    auto& cache = placementPreview_;
+    const bool changed =
+        !cache.initialized || cache.center != center || cache.footprint != footprint ||
+        cache.profile != profile || cache.valid != valid || cache.fit.height != result.fit.height ||
+        cache.fit.gradient != result.fit.gradient || cache.fit.valid != result.fit.valid ||
+        cache.terrainRevision != terrain_.placementRevision() || cache.geometry != result.geometry;
+    if (changed) {
+        cache.initialized = true;
+        cache.center = center;
+        cache.footprint = footprint;
+        cache.profile = profile;
+        cache.valid = valid;
+        cache.fit = result.fit;
+        cache.terrainRevision = terrain_.placementRevision();
+        cache.geometry = result.geometry;
+        const bool circle = footprint.shape == FootprintShape::circle;
+        const auto extent = circle ? glm::vec2{footprint.radius} : footprint.halfExtents;
+        const float angle = glm::radians(footprint.rotationDegrees);
+        const float c = std::cos(angle), s = std::sin(angle);
+        const auto world = [&](glm::vec2 p) {
+            return center + glm::vec2{c * p.x - s * p.y, s * p.x + c * p.y};
+        };
+        const float plane =
+            result.fit.valid ? result.fit.height : terrain_.heightAt(center.x, center.y);
+        const bool v2 = terrain_.mode() == TerrainMode::v2;
+        const auto height = [&](glm::vec2 p) {
+            return plane + glm::dot(result.fit.gradient, p - center);
+        };
+        const glm::vec3 green{.22F, .85F, .64F}, amber{1, .65F, .18F}, red{1, .24F, .16F},
+            cyan{.25F, .8F, 1};
+        std::vector<OverlayVertex> fill, structure, lines;
+        const auto vertex = [](glm::vec2 p, float h, glm::vec3 color) {
+            return OverlayVertex{{p.x, h, p.y}, color};
+        };
+        const auto triangle = [&](glm::vec2 a, glm::vec2 b, glm::vec2 d) {
+            const auto middle = (a + b + d) / 3.0F;
+            const bool supported =
+                terrain_.waterCoverageAt(middle.x, middle.y) <= .01F &&
+                (!v2 || (std::abs(terrain_.heightAt(middle.x, middle.y) - height(middle)) <=
+                             profile.supportHeightTolerance + 1e-5F &&
+                         terrain_.sampleAt(middle.x, middle.y).slopeDegrees <=
+                             footprint.maximumTiltDegrees));
+            // This is a visual sample, not the exact clipped-area acceptance test above.
+            const auto color = supported ? green : amber;
+            for (const auto p : {a, b, d})
+                fill.push_back(vertex(p, height(p) + .055F, color));
+        };
+        if (v2 && result.geometry) {
+            const auto emit =
+                [&](const surface_geometry::Polygon& polygon, glm::vec3 color, float lift) {
+                    for (std::size_t i = 1; i + 1 < polygon.size(); ++i)
+                        for (const auto local : {polygon[0], polygon[i], polygon[i + 1]}) {
+                            const auto p = world(glm::vec2{local});
+                            fill.push_back(vertex(p, height(p) + lift, color));
+                        }
+                };
+            for (const auto& polygon : result.geometry->unsupported)
+                emit(polygon, amber, .05F);
+            for (const auto& polygon : result.geometry->supported)
+                emit(polygon, green, .055F);
+        } else if (circle) {
+            constexpr int segments = 64, rings = 8;
+            for (int ring = 0; ring < rings; ++ring)
+                for (int i = 0; i < segments; ++i) {
+                    const float a = glm::two_pi<float>() * i / segments,
+                                b = glm::two_pi<float>() * (i + 1) / segments;
+                    const float inner = extent.x * ring / rings,
+                                outer = extent.x * (ring + 1) / rings;
+                    const auto p = world(glm::vec2{std::cos(a), std::sin(a)} * inner);
+                    const auto q = world(glm::vec2{std::cos(a), std::sin(a)} * outer);
+                    const auto r = world(glm::vec2{std::cos(b), std::sin(b)} * outer);
+                    const auto t = world(glm::vec2{std::cos(b), std::sin(b)} * inner);
+                    triangle(p, q, r);
+                    triangle(p, r, t);
+                }
+        } else {
+            const int nx = std::max(1, static_cast<int>(std::ceil(extent.x * 2 / .75F)));
+            const int nz = std::max(1, static_cast<int>(std::ceil(extent.y * 2 / .75F)));
+            for (int z = 0; z < nz; ++z)
+                for (int x = 0; x < nx; ++x) {
+                    const auto p = [&](int ix, int iz) {
+                        return world({-extent.x + 2 * extent.x * ix / nx,
+                                      -extent.y + 2 * extent.y * iz / nz});
+                    };
+                    triangle(p(x, z), p(x + 1, z), p(x + 1, z + 1));
+                    triangle(p(x, z), p(x + 1, z + 1), p(x, z + 1));
+                }
+        }
+        std::vector<glm::vec2> perimeter;
+        if (circle) {
+            const int n =
+                std::max(32, static_cast<int>(std::ceil(glm::two_pi<float>() * extent.x / .75F)));
+            for (int i = 0; i < n; ++i) {
+                const float a = glm::two_pi<float>() * i / n;
+                perimeter.push_back(world({std::cos(a) * extent.x, std::sin(a) * extent.x}));
+            }
+        } else {
+            const std::array<glm::vec2, 4> corners{{{-extent.x, -extent.y},
+                                                    {extent.x, -extent.y},
+                                                    {extent.x, extent.y},
+                                                    {-extent.x, extent.y}}};
+            for (int edge = 0; edge < 4; ++edge) {
+                const auto a = corners[edge], b = corners[(edge + 1) % 4];
+                const int n = std::max(1, static_cast<int>(std::ceil(glm::distance(a, b) / .75F)));
+                for (int i = 0; i < n; ++i)
+                    perimeter.push_back(world(glm::mix(a, b, static_cast<float>(i) / n)));
+            }
+        }
+        for (std::size_t i = 0; i < perimeter.size(); ++i) {
+            const auto a = perimeter[i], b = perimeter[(i + 1) % perimeter.size()];
+            lines.push_back(vertex(a, height(a) + .09F, valid ? green : red));
+            lines.push_back(vertex(b, height(b) + .09F, valid ? green : red));
+        }
+        if (v2 && result.fit.valid && profile.support != TerrainBuildingSupport::floating) {
+            TerrainFoundation foundation = result.leveling.value_or(
+                TerrainFoundation{0, {center.x, plane, center.y}, footprint, result.fit.gradient});
+            foundation.requiresSlab =
+                result.requiresScaffold();
+            const auto geometry = buildScaffoldGeometry(terrain_, foundation);
+            for (auto index : geometry.indices) {
+                const auto& v = geometry.vertices[index];
+                // The filled footprint already shows the capped deck. Reveal its actual supports.
+                if (v.stage < .78F)
+                    structure.push_back({v.position, cyan});
+            }
+        }
+        if (!cache.buffers[0])
+            glGenBuffers(3, cache.buffers.data());
+        const std::array<const std::vector<OverlayVertex>*, 3> batches{&fill, &structure, &lines};
+        for (std::size_t i = 0; i < batches.size(); ++i) {
+            cache.counts[i] = batches[i]->size();
+            glBindBuffer(GL_ARRAY_BUFFER, cache.buffers[i]);
+            glBufferData(GL_ARRAY_BUFFER,
+                         static_cast<GLsizeiptr>(cache.counts[i] * sizeof(OverlayVertex)),
+                         batches[i]->data(),
+                         GL_DYNAMIC_DRAW);
+        }
+    }
+    shaders_.use(powerOverlayProgram_);
+    const auto matrix = camera.viewProjection();
+    glUniformMatrix4fv(shaders_.uniform(powerOverlayProgram_, "viewProjection"),
+                       1,
+                       GL_FALSE,
+                       glm::value_ptr(matrix));
+    glBindVertexArray(hudVao_);
+    glEnableVertexAttribArray(0);
+    glEnableVertexAttribArray(2);
+    glDepthMask(GL_FALSE);
+    glDisable(GL_CULL_FACE);
+    glUniform2fv(
+        shaders_.uniform(powerOverlayProgram_, "placementCenter"), 1, glm::value_ptr(center));
+    glUniform1f(shaders_.uniform(powerOverlayProgram_, "placementRadius"), footprint.radius);
+    const auto draw = [&](std::size_t index, GLenum mode, float alpha) {
+        glBindBuffer(GL_ARRAY_BUFFER, cache.buffers[index]);
+        glVertexAttribPointer(0,
+                              3,
+                              GL_FLOAT,
+                              GL_FALSE,
+                              sizeof(OverlayVertex),
+                              reinterpret_cast<void*>(offsetof(OverlayVertex, position)));
+        glVertexAttribPointer(2,
+                              3,
+                              GL_FLOAT,
+                              GL_FALSE,
+                              sizeof(OverlayVertex),
+                              reinterpret_cast<void*>(offsetof(OverlayVertex, color)));
+        glUniform1i(shaders_.uniform(powerOverlayProgram_, "clipPlacementDisk"),
+                    index == 0 && footprint.shape == FootprintShape::circle);
+        glUniform1f(shaders_.uniform(powerOverlayProgram_, "overlayAlpha"), alpha);
+        glDrawArrays(mode, 0, static_cast<GLsizei>(cache.counts[index]));
+    };
+    draw(0, GL_TRIANGLES, .16F);
+    draw(1, GL_TRIANGLES, .48F);
+    glLineWidth(2);
+    draw(2, GL_LINES, .85F);
+    glUniform1i(shaders_.uniform(powerOverlayProgram_, "clipPlacementDisk"), 0);
+    glLineWidth(1);
+    glDepthMask(GL_TRUE);
+    glDisableVertexAttribArray(2);
+    glBindVertexArray(0);
+}
+
 void Renderer::drawPowerPlacementConnection(const World& world,
                                             const CameraView& camera,
                                             PlayerId owner,
@@ -2295,6 +2636,7 @@ void Renderer::regenerateTerrain(std::uint32_t seed,
                                  TerrainLayoutId layout,
                                  TerrainMode mode,
                                  std::uint32_t repairLevel) {
+    cancelPresentationPreparation();
     clearParticles();
     vegetationCache_.clear();
     resourceNodeCache_.clear();
@@ -2320,6 +2662,8 @@ void Renderer::stageGeneratedTerrain(const Terrain& terrain,
                                      std::uint32_t seed,
                                      std::uint32_t chunksPerSide,
                                      const std::vector<TerrainFoundation>& foundations) {
+    placementSurfaceCut_.reset();
+    cancelPresentationPreparation();
     clearParticles();
     vegetationCache_.clear();
     resourceNodeCache_.clear();
@@ -2356,6 +2700,98 @@ float Renderer::terrainUploadProgress() const {
                       static_cast<float>(initialTerrainUploadCount_);
 }
 
+void Renderer::setPlacementTerrainPreview(const TerrainFoundation* cut) {
+    if (!cut || !cut->levelsTerrain || terrain_.mode() != TerrainMode::v2) {
+        placementSurfaceCut_.reset();
+        return;
+    }
+    if (placementSurfaceCut_ && placementSurfaceRevision_ == terrain_.placementRevision()) {
+        const auto& previous = *placementSurfaceCut_;
+        if (previous.center == cut->center && previous.gradient == cut->gradient &&
+            previous.shape == cut->shape && previous.halfExtents == cut->halfExtents &&
+            previous.outerRadius == cut->outerRadius &&
+            previous.rotationDegrees == cut->rotationDegrees &&
+            previous.levelingBlendWidth == cut->levelingBlendWidth &&
+            previous.levelingMaximumCut == cut->levelingMaximumCut &&
+            previous.levelingMaximumFill == cut->levelingMaximumFill)
+            return;
+    }
+    placementSurfaceCut_ = *cut;
+    placementSurfaceRevision_ = terrain_.placementRevision();
+    const float half = terrain_.worldExtent() * .5F;
+    const float reach = cut->outerRadius + cut->levelingBlendWidth + Terrain::spacing * 3;
+    const auto grid = [&](float v) {
+        return static_cast<int>(std::floor((v + half) / Terrain::spacing));
+    };
+    placementSurfaceOrigin_ = glm::max(
+        glm::ivec2{grid(cut->center.x - reach), grid(cut->center.z - reach)}, glm::ivec2{0});
+    const auto end =
+        glm::min(glm::ivec2{grid(cut->center.x + reach) + 1, grid(cut->center.z + reach) + 1},
+                 glm::ivec2{Terrain::cellCount});
+    placementSurfaceSize_ = end - placementSurfaceOrigin_ + glm::ivec2{1};
+    ProfileScope profile(profiler_, "render.placement_surface");
+    const auto padded = placementSurfaceSize_ + glm::ivec2{2};
+    placementScratchHeights_.resize(static_cast<std::size_t>(padded.x * padded.y));
+    placementScratchPixels_.resize(
+        static_cast<std::size_t>(placementSurfaceSize_.x * placementSurfaceSize_.y));
+    for (int z = 0; z < padded.y; ++z)
+        for (int x = 0; x < padded.x; ++x) {
+            const auto p = placementSurfaceOrigin_ + glm::ivec2{x - 1, z - 1};
+            placementScratchHeights_[static_cast<std::size_t>(z * padded.x + x)] =
+                terrain_.foundationTerrainVertexHeight(*cut,
+                                                       std::clamp(p.x, 0, Terrain::cellCount),
+                                                       std::clamp(p.y, 0, Terrain::cellCount));
+        }
+    for (int z = 0; z < placementSurfaceSize_.y; ++z)
+        for (int x = 0; x < placementSurfaceSize_.x; ++x) {
+            const auto index = static_cast<std::size_t>((z + 1) * padded.x + x + 1);
+            const auto& h = placementScratchHeights_;
+            const auto normal =
+                glm::normalize(glm::vec3{h[index - 1] - h[index + 1],
+                                         Terrain::spacing * 2,
+                                         h[index - padded.x] - h[index + padded.x]});
+            placementScratchPixels_[static_cast<std::size_t>(z * placementSurfaceSize_.x + x)] = {
+                h[index], normal.x, normal.y, normal.z};
+        }
+    if (!placementSurfaceTexture_)
+        glGenTextures(1, &placementSurfaceTexture_);
+    glActiveTexture(GL_TEXTURE9);
+    glBindTexture(GL_TEXTURE_2D, placementSurfaceTexture_);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    if (placementSurfaceSize_.x > placementSurfaceCapacity_.x ||
+        placementSurfaceSize_.y > placementSurfaceCapacity_.y) {
+        const auto capacity = [](int required) {
+            int side = 1;
+            while (side < required)
+                side *= 2;
+            return side;
+        };
+        placementSurfaceCapacity_ = {capacity(placementSurfaceSize_.x),
+                                     capacity(placementSurfaceSize_.y)};
+        glTexImage2D(GL_TEXTURE_2D,
+                     0,
+                     GL_RGBA32F,
+                     placementSurfaceCapacity_.x,
+                     placementSurfaceCapacity_.y,
+                     0,
+                     GL_RGBA,
+                     GL_FLOAT,
+                     nullptr);
+    }
+    glTexSubImage2D(GL_TEXTURE_2D,
+                    0,
+                    0,
+                    0,
+                    placementSurfaceSize_.x,
+                    placementSurfaceSize_.y,
+                    GL_RGBA,
+                    GL_FLOAT,
+                    placementScratchPixels_.data());
+    ++placementSurfaceUploads_;
+    glActiveTexture(GL_TEXTURE0);
+}
+
 void Renderer::setTerrainFoundations(const std::vector<TerrainFoundation>& foundations) {
     const auto equal = [](const TerrainFoundation& a, const TerrainFoundation& b) {
         return a.sourceEntity == b.sourceEntity && a.shape == b.shape && a.center == b.center &&
@@ -2363,7 +2799,10 @@ void Renderer::setTerrainFoundations(const std::vector<TerrainFoundation>& found
                a.edgeFalloff == b.edgeFalloff && a.halfExtents == b.halfExtents &&
                a.rotationDegrees == b.rotationDegrees && a.gradient == b.gradient &&
                a.influence == b.influence && a.sourceSlopeDegrees == b.sourceSlopeDegrees &&
-               a.requiresSlab == b.requiresSlab;
+               a.requiresSlab == b.requiresSlab && a.levelsTerrain == b.levelsTerrain &&
+               a.levelingBlendWidth == b.levelingBlendWidth &&
+               a.levelingMaximumCut == b.levelingMaximumCut &&
+               a.levelingMaximumFill == b.levelingMaximumFill;
     };
     if (terrainFoundations_.size() == foundations.size() &&
         std::equal(
@@ -2390,7 +2829,109 @@ void Renderer::setTerrainFoundations(const std::vector<TerrainFoundation>& found
     terrain_.clearDirtyChunks();
 }
 
+void Renderer::flushTerrainUpdates() {
+    for (const auto [x, z] : pendingTerrainChunkUploads_)
+        uploadTerrainChunk(x, z);
+    pendingTerrainChunkUploads_.clear();
+}
+
+void Renderer::syncScaffoldMeshes() {
+    const auto release = [](const FoundationMesh& mesh) {
+        if (mesh.ebo)
+            glDeleteBuffers(1, &mesh.ebo);
+        if (mesh.vbo)
+            glDeleteBuffers(1, &mesh.vbo);
+        if (mesh.vao)
+            glDeleteVertexArrays(1, &mesh.vao);
+    };
+    std::erase_if(foundationMeshes_, [&](const auto& mesh) {
+        const bool absent = std::none_of(
+            terrainFoundations_.begin(), terrainFoundations_.end(), [&](const auto& f) {
+                return f.requiresSlab && f.sourceEntity == mesh.sourceEntity;
+            });
+        if (absent || !mesh.scaffold) {
+            release(mesh);
+            return true;
+        }
+        return false;
+    });
+    for (const auto& foundation : terrainFoundations_) {
+        if (!foundation.requiresSlab)
+            continue;
+        auto found =
+            std::find_if(foundationMeshes_.begin(), foundationMeshes_.end(), [&](const auto& mesh) {
+                return mesh.sourceEntity == foundation.sourceEntity;
+            });
+        const bool bedChanged = std::any_of(
+            terrain_.dirtyChunks().begin(), terrain_.dirtyChunks().end(), [&](const auto& chunk) {
+                const float side = Terrain::chunkCellCount * Terrain::spacing;
+                const glm::vec2 minimum = glm::vec2{chunk.first, chunk.second} * side -
+                                          glm::vec2{terrain_.worldExtent() * .5F};
+                const glm::vec2 point{foundation.center.x, foundation.center.z};
+                const auto nearest = glm::clamp(point, minimum, minimum + glm::vec2{side});
+                return glm::distance(nearest, point) <= foundation.outerRadius;
+            });
+        if (found != foundationMeshes_.end() && sameScaffoldGeometry(found->geometry, foundation) &&
+            !bedChanged) {
+            found->progress = glm::clamp(foundation.influence, 0.0F, 1.0F);
+            continue;
+        }
+        if (found != foundationMeshes_.end()) {
+            release(*found);
+            foundationMeshes_.erase(found);
+        }
+        const auto geometry = buildScaffoldGeometry(terrain_, foundation);
+        if (geometry.indices.empty())
+            continue;
+        FoundationMesh mesh;
+        mesh.sourceEntity = foundation.sourceEntity;
+        mesh.center = foundation.center;
+        mesh.halfExtents = foundation.halfExtents;
+        mesh.rotationDegrees = foundation.rotationDegrees;
+        mesh.scaffold = true;
+        mesh.progress = glm::clamp(foundation.influence, 0.0F, 1.0F);
+        mesh.geometry = foundation;
+        mesh.indexCount = static_cast<std::uint32_t>(geometry.indices.size());
+        glGenVertexArrays(1, &mesh.vao);
+        glGenBuffers(1, &mesh.vbo);
+        glGenBuffers(1, &mesh.ebo);
+        glBindVertexArray(mesh.vao);
+        glBindBuffer(GL_ARRAY_BUFFER, mesh.vbo);
+        glBufferData(GL_ARRAY_BUFFER,
+                     static_cast<GLsizeiptr>(geometry.vertices.size() * sizeof(ScaffoldVertex)),
+                     geometry.vertices.data(),
+                     GL_STATIC_DRAW);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mesh.ebo);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER,
+                     static_cast<GLsizeiptr>(geometry.indices.size() * sizeof(std::uint32_t)),
+                     geometry.indices.data(),
+                     GL_STATIC_DRAW);
+        const auto attribute = [](GLuint location, GLint size, std::size_t offset) {
+            glEnableVertexAttribArray(location);
+            glVertexAttribPointer(location,
+                                  size,
+                                  GL_FLOAT,
+                                  GL_FALSE,
+                                  sizeof(ScaffoldVertex),
+                                  reinterpret_cast<void*>(offset));
+        };
+        attribute(0, 3, offsetof(ScaffoldVertex, position));
+        attribute(1, 3, offsetof(ScaffoldVertex, normal));
+        attribute(2, 3, offsetof(ScaffoldVertex, color));
+        attribute(4, 1, offsetof(ScaffoldVertex, stage));
+        attribute(5, 1, offsetof(ScaffoldVertex, waterSurface));
+        attribute(6, 1, offsetof(ScaffoldVertex, waterCoverage));
+        glBindVertexArray(0);
+        foundationMeshes_.push_back(mesh);
+        ++foundationMeshUploads_;
+    }
+}
+
 void Renderer::syncFoundationMeshes() {
+    if (terrain_.mode() == TerrainMode::v2) {
+        syncScaffoldMeshes();
+        return;
+    }
     std::vector<std::uint64_t> expected;
     for (const TerrainFoundation& foundation : terrainFoundations_)
         if (foundation.requiresSlab)
@@ -2428,53 +2969,7 @@ void Renderer::syncFoundationMeshes() {
             const glm::vec2 offset = point - glm::vec2{foundation.center.x, foundation.center.z};
             return foundation.center.y + glm::dot(foundation.gradient, offset);
         };
-        if (terrain_.mode() == TerrainMode::v2) {
-            std::vector<glm::vec2> perimeter;
-            if (foundation.shape == FootprintShape::circle) {
-                const int segments = std::max(
-                    24,
-                    static_cast<int>(std::ceil(glm::two_pi<float>() * foundation.outerRadius /
-                                               Terrain::spacing)));
-                for (int i = 0; i < segments; ++i) {
-                    const float angle = glm::two_pi<float>() * i / segments;
-                    perimeter.push_back(
-                        {foundation.center.x + std::cos(angle) * foundation.outerRadius,
-                         foundation.center.z + std::sin(angle) * foundation.outerRadius});
-                }
-            } else {
-                const std::array<glm::vec2, 4> corners{
-                    {{-foundation.halfExtents.x, -foundation.halfExtents.y},
-                     {foundation.halfExtents.x, -foundation.halfExtents.y},
-                     {foundation.halfExtents.x, foundation.halfExtents.y},
-                     {-foundation.halfExtents.x, foundation.halfExtents.y}}};
-                const float angle = glm::radians(foundation.rotationDegrees), c = std::cos(angle),
-                            s = std::sin(angle);
-                for (std::size_t edge = 0; edge < 4; ++edge) {
-                    const auto a = corners[edge], b = corners[(edge + 1) % 4];
-                    const int segments = std::max(
-                        1, static_cast<int>(std::ceil(glm::length(b - a) / Terrain::spacing)));
-                    for (int i = 0; i < segments; ++i) {
-                        const auto p = glm::mix(a, b, static_cast<float>(i) / segments);
-                        perimeter.push_back({foundation.center.x + c * p.x - s * p.y,
-                                             foundation.center.z + s * p.x + c * p.y});
-                    }
-                }
-            }
-            for (auto point : perimeter) {
-                const float top = height(point) - 0.06F;
-                const float bottom = std::min(terrain_.heightAt(point.x, point.y), top - 0.15F);
-                const auto outward =
-                    glm::normalize(point - glm::vec2{foundation.center.x, foundation.center.z});
-                const glm::vec3 sideNormal{outward.x, 0, outward.y};
-                vertices.push_back({{point.x, top, point.y}, sideNormal, sideColor});
-                vertices.push_back({{point.x, bottom, point.y}, sideNormal, sideColor});
-            }
-            for (std::uint32_t i = 0; i < perimeter.size(); ++i) {
-                const auto next = (i + 1) % static_cast<std::uint32_t>(perimeter.size());
-                indices.insert(indices.end(),
-                               {i * 2, i * 2 + 1, next * 2 + 1, i * 2, next * 2 + 1, next * 2});
-            }
-        } else if (foundation.shape == FootprintShape::circle) {
+        if (foundation.shape == FootprintShape::circle) {
             constexpr std::uint32_t segments = 24;
             for (std::uint32_t i = 0; i < segments; ++i) {
                 const float angle = glm::two_pi<float>() * static_cast<float>(i) / segments;
@@ -2482,13 +2977,9 @@ void Renderer::syncFoundationMeshes() {
                     foundation.center.x + std::cos(angle) * foundation.outerRadius,
                     foundation.center.z + std::sin(angle) * foundation.outerRadius};
                 vertices.push_back({{point.x, height(point) - 0.06F, point.y}, normal, sideColor});
-                vertices.push_back(
-                    {{point.x,
-                      terrain_.mode() == TerrainMode::v2 ? terrain_.heightAt(point.x, point.y)
-                                                         : height(point) - thickness,
-                      point.y},
-                     {std::cos(angle), 0.0F, std::sin(angle)},
-                     sideColor});
+                vertices.push_back({{point.x, height(point) - thickness, point.y},
+                                    {std::cos(angle), 0.0F, std::sin(angle)},
+                                    sideColor});
             }
             for (std::uint32_t i = 0; i < segments; ++i) {
                 const std::uint32_t next = (i + 1) % segments;
@@ -2508,12 +2999,7 @@ void Renderer::syncFoundationMeshes() {
                                       foundation.center.z + s * p.x + c * p.y};
                 vertices.push_back({{point.x, height(point) - 0.06F, point.y}, normal, sideColor});
                 vertices.push_back(
-                    {{point.x,
-                      terrain_.mode() == TerrainMode::v2 ? terrain_.heightAt(point.x, point.y)
-                                                         : height(point) - thickness,
-                      point.y},
-                     normal,
-                     sideColor});
+                    {{point.x, height(point) - thickness, point.y}, normal, sideColor});
             }
             for (std::uint32_t i = 0; i < 4; ++i) {
                 const std::uint32_t next = (i + 1) % 4;
@@ -2660,12 +3146,16 @@ void Renderer::drawStrategyHud(const World& world,
                 }
             }
     for (const Entity& entity : world.entities()) {
+        if (entity.resource && entity.resource.remaining <= 0)
+            continue;
+        bool rememberedResource = false;
         if (player && entity.authority.owner != player->id) {
             const glm::ivec2 cell =
                 activeMapArea().gridCell({entity.transform.position.x, entity.transform.position.z},
                                          Player::explorationCells);
-            if (!player->visible[static_cast<std::size_t>(cell.y * Player::explorationCells +
-                                                          cell.x)])
+            const auto index = static_cast<std::size_t>(cell.y * Player::explorationCells + cell.x);
+            rememberedResource = entity.resource && player->discovered[index] && !player->visible[index];
+            if (!player->visible[index] && !rememberedResource)
                 continue;
         }
         const glm::vec2 normalized =
@@ -2673,10 +3163,13 @@ void Renderer::drawStrategyHud(const World& world,
         const float x = mapLeft + normalized.x * (mapRight - mapLeft);
         const float y = mapTop + normalized.y * (mapBottom - mapTop);
         appendHudRectangle(
-            dots, x - 2.5F, y - 2.5F, x + 2.5F, y + 2.5F, viewportWidth_, viewportHeight_);
+            rememberedResource ? rememberedDots : dots, x - 2.5F, y - 2.5F, x + 2.5F, y + 2.5F, viewportWidth_, viewportHeight_);
     }
     if (player)
         for (const LastKnownEntity& known : player->intelligence) {
+            const auto* current = world.findEntity(known.id);
+            if (current && current->resource && current->resource.remaining > 0)
+                continue;
             const glm::ivec2 cell = activeMapArea().gridCell({known.position.x, known.position.z},
                                                              Player::explorationCells);
             if (player
@@ -2852,13 +3345,10 @@ void Renderer::drawOrderMarkers(const World& world,
                                 const CameraView& camera) const {
     renderGraph_.enter(RenderPassKind::overlay);
     std::vector<glm::vec2> destinations;
-    std::vector<const Entity*> cargoEntities;
     const auto add = [&](EntityId id) {
         const Entity* entity = world.findEntity(id);
         if (!entity)
             return;
-        if (entity->gatherer && entity->gatherer.carriedAmount > 0.0F)
-            cargoEntities.push_back(entity);
         if (!entity->unitControl || !entity->unitControl.hasStrategicDestination)
             return;
         const glm::vec2 destination{entity->unitControl.strategicDestination.x,
@@ -2873,9 +3363,9 @@ void Renderer::drawOrderMarkers(const World& world,
     else
         for (EntityId id : selection)
             add(id);
-    if (destinations.empty() && cargoEntities.empty())
+    if (destinations.empty())
         return;
-    std::vector<glm::vec2> poles, flags, cargo;
+    std::vector<glm::vec2> poles, flags;
     const auto screen = [this](glm::vec4 clip) {
         const glm::vec3 ndc = glm::vec3(clip) / clip.w;
         return glm::vec2{(ndc.x + 1.0F) * 0.5F * viewportWidth_,
@@ -2906,24 +3396,7 @@ void Renderer::drawOrderMarkers(const World& world,
                       ndc({base.x + 20.0F, base.y - 24.0F}),
                       ndc({base.x + 1.5F, base.y - 18.0F})});
     }
-    for (const Entity* entity : cargoEntities) {
-        const glm::vec4 clip =
-            camera.viewProjection() * glm::vec4{entity->transform.position.x,
-                                                entity->transform.position.y + 2.2F,
-                                                entity->transform.position.z,
-                                                1.0F};
-        if (clip.w <= 0.0F)
-            continue;
-        const glm::vec2 point = screen(clip);
-        appendHudRectangle(cargo,
-                           point.x - 5.0F,
-                           point.y - 5.0F,
-                           point.x + 5.0F,
-                           point.y + 5.0F,
-                           viewportWidth_,
-                           viewportHeight_);
-    }
-    if (poles.empty() && cargo.empty())
+    if (poles.empty())
         return;
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
@@ -2942,15 +3415,18 @@ void Renderer::drawOrderMarkers(const World& world,
     };
     draw(poles, {0.92F, 0.92F, 0.82F});
     draw(flags, {1.0F, 0.72F, 0.05F});
-    draw(cargo, {0.20F, 0.85F, 0.95F});
     glBindVertexArray(0);
     glEnable(GL_CULL_FACE);
     glEnable(GL_DEPTH_TEST);
 }
 
-glm::vec3 Renderer::screenToTerrain(float pixelX, float pixelY, const CameraView& camera) const {
+glm::vec3 Renderer::screenToTerrain(float pixelX,
+                                    float pixelY,
+                                    const CameraView& camera,
+                                    const Terrain* authoritativeTerrain) const {
+    const Terrain& surface = authoritativeTerrain ? *authoritativeTerrain : terrain_;
     const glm::vec3 focus = camera.target;
-    const float ground = terrain_.heightAt(focus.x, focus.z);
+    const float ground = surface.heightAt(focus.x, focus.z);
     const glm::mat4 inverseViewProjection = glm::inverse(camera.viewProjection());
     const float x = 2.0F * pixelX / static_cast<float>(viewportWidth_) - 1.0F;
     const float y = 1.0F - 2.0F * pixelY / static_cast<float>(viewportHeight_);
@@ -2961,21 +3437,21 @@ glm::vec3 Renderer::screenToTerrain(float pixelX, float pixelY, const CameraView
     const glm::vec3 origin{nearPoint};
     const glm::vec3 direction = glm::normalize(glm::vec3(farPoint - nearPoint));
     glm::vec3 previous = origin;
-    float previousDelta = previous.y - terrain_.heightAt(previous.x, previous.z);
+    float previousDelta = previous.y - surface.heightAt(previous.x, previous.z);
     for (float distance = 1.0F; distance <= 350.0F; distance += 1.0F) {
         const glm::vec3 point = origin + direction * distance;
-        const float delta = point.y - terrain_.heightAt(point.x, point.z);
+        const float delta = point.y - surface.heightAt(point.x, point.z);
         if (previousDelta >= 0.0F && delta <= 0.0F) {
             glm::vec3 low = previous, high = point;
             for (int i = 0; i < 8; ++i) {
                 const glm::vec3 middle = (low + high) * 0.5F;
-                if (middle.y > terrain_.heightAt(middle.x, middle.z))
+                if (middle.y > surface.heightAt(middle.x, middle.z))
                     low = middle;
                 else
                     high = middle;
             }
             glm::vec3 result = (low + high) * 0.5F;
-            result.y = terrain_.heightAt(result.x, result.z);
+            result.y = surface.heightAt(result.x, result.z);
             return result;
         }
         previous = point;
@@ -3013,9 +3489,10 @@ EntityId Renderer::pickEntity(float pixelX,
                                          Player::explorationCells);
             const std::size_t index =
                 static_cast<std::size_t>(cell.y * Player::explorationCells + cell.x);
-            if (!player->discovered[index] || (currentlyVisibleOnly && !player->visible[index]))
+            if (!player->discovered[index] ||
+                (currentlyVisibleOnly && !player->visible[index] && !entity.resource))
                 continue;
-            if (!player->visible[index]) {
+            if (!player->visible[index] && !entity.resource) {
                 const auto known =
                     std::find_if(player->intelligence.begin(),
                                  player->intelligence.end(),
@@ -3073,8 +3550,10 @@ void Renderer::drawEntityOutline(const World& world,
     if (player && entity->authority.owner != player->id) {
         const glm::ivec2 cell = activeMapArea().gridCell({shown.position.x, shown.position.z},
                                                          Player::explorationCells);
-        if (!player
-                 ->visible[static_cast<std::size_t>(cell.y * Player::explorationCells + cell.x)]) {
+        const auto index = static_cast<std::size_t>(cell.y * Player::explorationCells + cell.x);
+        if (entity->resource && (!player->discovered[index] || entity->resource.remaining <= 0))
+            return;
+        if (!player->visible[index] && !entity->resource) {
             const auto known =
                 std::find_if(player->intelligence.begin(),
                              player->intelligence.end(),

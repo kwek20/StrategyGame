@@ -23,14 +23,27 @@ class PlayState final : public GameState {
   public:
     PlayState(StateContext& context, MatchSetupOptions setup);
     PlayState(StateContext& context, MatchSetupOptions setup, GameSession preparedSession);
-    PlayState(StateContext& context, SaveData data);
+    PlayState(StateContext& context, SaveData data, WorldGenerationProgress* progress = nullptr);
     ~PlayState() override;
     void handleEvent(const SDL_Event& event) override;
     void update(float deltaSeconds) override;
     void render(Renderer& renderer) const override;
     StateRequest takeRequest() override;
+    // Called only while loading; performs presentation work without update() or gameplay input.
+    void beginPresentationPreparation(Renderer& renderer);
+    bool advancePresentationPreparation(Renderer& renderer);
+    const GameSession& session() const {
+        return session_;
+    }
+    float presentationPreparationProgress() const {
+        return preparationProgress_;
+    }
 
   private:
+    void restoreSavedPlayerProgress(SaveData& data);
+    enum class Preparation { terrain, resources, vegetation, world, hud, frame, fence, gpu, ready };
+    Preparation preparation_{Preparation::terrain};
+    float preparationProgress_{};
     enum class ViewMode { strategy, unitControl };
     RtsCamera camera_;
     ThirdPersonCamera thirdPersonCamera_;
@@ -59,10 +72,6 @@ class PlayState final : public GameState {
     int waterDebugMode_{0};
     bool powerDebug_{false};
     bool powerOverlayVisible_{false};
-    // This presentation capability is deliberately separate from exploration state. A future
-    // satellite-imagery upgrade can grant access without rewriting or destroying fog-of-war data.
-    bool satelliteImageryAvailable_{true};
-    bool satelliteRevealActive_{false};
     enum class PowerLinkMode { none, connect, disconnect };
     PowerLinkMode powerLinkMode_{PowerLinkMode::none};
     EntityId powerLinkSource_{0};
@@ -106,13 +115,22 @@ class PlayState final : public GameState {
     bool constructionPlacementMode_{false};
     std::string constructionRecipeId_{"construct.command_hub"};
     mutable std::optional<glm::vec2> pendingConstructionScreen_;
-    mutable std::optional<glm::vec3> pendingConstructionPosition_;
+    mutable std::optional<PlaceBuildingCommand> pendingConstructionIntent_;
+    float constructionRotationDegrees_{};
+    mutable TerrainPlacementCache constructionTerrainCache_;
+    mutable std::optional<Entity> constructionGhost_;
     mutable std::optional<glm::vec2> constructionCursorScreen_;
     mutable bool constructionPreviewValid_{false};
     mutable std::string constructionPreviewReason_;
+    mutable std::string constructionPreviewSummary_;
+    std::optional<std::uint64_t> pendingPlacementSequence_;
+    mutable bool pendingUnexploredPlacement_{};
+    std::string placementRejection_;
+    float placementRejectionRemaining_{};
     mutable GameplayParticlePresenter particlePresenter_;
 
     void setMouseCaptured(bool captured);
+    void cancelConstructionPlacement();
     void sanitizeEntityReferences();
     void initializeStartingView();
     [[nodiscard]] std::optional<glm::vec2> minimapWorldAt(float screenX, float screenY) const;

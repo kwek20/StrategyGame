@@ -1,18 +1,148 @@
+#include "reference/ResourceSiteMapReference.hpp"
 #include "world/ResourceSiteMap.hpp"
 
 #include <algorithm>
+#include <chrono>
+#include <cstdlib>
 #include <iostream>
 #include <limits>
+#include <random>
 #include <stdexcept>
+#include <string>
 
 namespace {
 void require(bool value, const char* message) {
     if (!value)
         throw std::runtime_error(message);
 }
+
+void compareReference() {
+    using namespace strategy;
+    for (unsigned seed = 0; seed < 16; ++seed) {
+        std::mt19937 random{seed};
+        const float extent = seed % 2 ? 127.5F : 64.F;
+        const auto unit = [&] { return static_cast<float>(random() % 10001) / 10000.F; };
+        std::vector<ResourceSiteSource> sources;
+        for (unsigned i = 0; i < 48; ++i) {
+            const auto field = i / 12;
+            const glm::vec2 center{(static_cast<float>(field % 2) - .5F) * extent * .5F,
+                                   (static_cast<float>(field / 2) - .5F) * extent * .5F};
+            sources.push_back({100 + i,
+                               center + glm::vec2{unit() * 12 - 6, unit() * 12 - 6},
+                               .2F + unit() * 4,
+                               static_cast<std::uint8_t>((i / 12) % 3),
+                               field});
+        }
+        // Bucket boundaries, exact link limits, coincident points and distinct field identities.
+        const std::vector<ResourceSiteSource> boundaries{{200, {-22, 0}, 1, 0, 0},
+                                                         {201, {0, 0}, 1, 0, 0},
+                                                         {202, {22, 0}, 1, 0, 0},
+                                                         {203, {-6, -6}, 1, 1, 99},
+                                                         {204, {0, -6}, 1, 1, 99},
+                                                         {205, {6.001F, -6}, 1, 1, 99},
+                                                         {206, {-.001F, -.001F}, 1, 1, 99},
+                                                         {207, {.001F, .001F}, 1, 1, 99},
+                                                         {208, {0, 0}, .01F, 2, 100},
+                                                         {209, {0, 0}, .01F, 2, 101}};
+        sources.insert(sources.end(), boundaries.begin(), boundaries.end());
+        sources.push_back({310, {-1e-8F, 12}, .7F, 1, 999});
+        sources.push_back({311, {6, 12}, .7F, 1, 999});
+        sources.push_back({312, {-1e-8F, -25}, .7F, 2, 0});
+        sources.push_back({313, {22, -25}, .7F, 2, 0});
+
+        if (seed == 0)
+            sources.push_back({300, {0, 0}, 256, 1, 0});
+        std::shuffle(sources.begin(), sources.end(), random);
+        ResourceSiteMap optimized;
+        strategy::test::ResourceSiteMapReference reference;
+        optimized.update(sources, extent);
+        reference.update(sources, extent);
+        require(optimized.pixels() == reference.pixels(),
+                "Optimized initial painting matches the frozen original byte for byte");
+        sources.erase(sources.begin() + 5);
+        sources.front().fieldId = 500;
+        sources.back().position += glm::vec2{7, -3};
+        sources.back().radius *= .7F;
+        optimized.update(sources, extent);
+        reference.update(sources, extent);
+        require(optimized.pixels() == reference.pixels(),
+                "Removal, movement and field edits retain original incremental pixels");
+        optimized.clear();
+        optimized.beginUpdate(sources, extent);
+        while (!optimized.advanceUpdate()) {
+        }
+        reference.clear();
+        reference.update(sources, extent);
+        require(optimized.pixels() == reference.pixels(),
+                "Sliced loading uses the same optimized image as the original painter");
+    }
+}
+
+bool benchmarkRequested() {
+#ifdef _WIN32
+    char* value = nullptr;
+    std::size_t length = 0;
+    _dupenv_s(&value, &length, "STRATEGY_RESOURCE_PAINT_BENCHMARK");
+    const bool enabled = value && *value;
+    std::free(value);
+    return enabled;
+#else
+    return std::getenv("STRATEGY_RESOURCE_PAINT_BENCHMARK") != nullptr;
+#endif
+}
+
+void benchmark() {
+    using namespace strategy;
+    std::vector<ResourceSiteSource> sources;
+    std::mt19937 random{31};
+    for (unsigned field = 0; field < 64; ++field)
+        for (unsigned node = 0; node < 12; ++node) {
+            const glm::vec2 center{(static_cast<float>(field % 8) - 3.5F) * 40,
+                                   (static_cast<float>(field / 8) - 3.5F) * 40};
+            const glm::vec2 offset{static_cast<float>(random() % 1401) / 100 - 7,
+                                   static_cast<float>(random() % 1401) / 100 - 7};
+            sources.push_back({field * 12 + node + 1,
+                               center + offset,
+                               .8F,
+                               static_cast<std::uint8_t>(field % 3),
+                               field + 1});
+        }
+    const auto timed = [](auto&& action) {
+        const auto start = std::chrono::steady_clock::now();
+        action();
+        return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start)
+            .count();
+    };
+    std::vector<double> oldCold, newCold, oldEdit, newEdit;
+    for (int run = 0; run < 3; ++run) {
+        test::ResourceSiteMapReference reference;
+        ResourceSiteMap optimized;
+        oldCold.push_back(timed([&] { reference.update(sources, 360); }));
+        newCold.push_back(timed([&] { optimized.update(sources, 360); }));
+        require(reference.pixels() == optimized.pixels(), "Benchmark initial images match");
+        auto edited = sources;
+        edited.erase(edited.begin() + 381);
+        oldEdit.push_back(timed([&] { reference.update(edited, 360); }));
+        newEdit.push_back(timed([&] { optimized.update(edited, 360); }));
+        require(reference.pixels() == optimized.pixels(), "Benchmark local edits match");
+        require(optimized.update(edited, 360).empty(), "Unchanged benchmark frames stay cached");
+    }
+    const auto median = [](auto values) {
+        std::sort(values.begin(), values.end());
+        return values[1];
+    };
+    std::cout << "PAINT BENCHMARK 768 nodes, 64 fields, 480x480 pixels; median of 3\n"
+              << "cold reference_ms=" << median(oldCold) << " optimized_ms=" << median(newCold)
+              << '\n'
+              << "one-node removal reference_ms=" << median(oldEdit)
+              << " optimized_ms=" << median(newEdit) << '\n';
+}
 } // namespace
 int strategyTestMain() {
     using namespace strategy;
+    compareReference();
+    if (benchmarkRequested())
+        benchmark();
     ResourceSiteMap map;
     {
         ResourceSiteMap oil;
@@ -49,6 +179,37 @@ int strategyTestMain() {
     const auto initial = map.update(sources, 480);
     const auto pixels = map.pixels();
     const auto revision = map.revision();
+    {
+        ResourceSiteMap sliced;
+        sliced.beginUpdate(sources, 480);
+        require(sliced.updateProgress() == 0,
+                "Starting preparation does not rasterize pixels synchronously");
+        std::size_t steps = 0;
+        while (!sliced.advanceUpdate())
+            ++steps;
+        require(steps > 1 && sliced.updateProgress() == 1 && sliced.pixels() == pixels,
+                "Tile-bounded preparation reproduces synchronous output exactly");
+        require(sliced.update(sources, 480).empty(),
+                "Prepared source identity survives entry into gameplay");
+        sliced.clear();
+        sliced.beginUpdate(sources, 480);
+        sliced.advanceUpdate();
+        auto replacement = sources;
+        replacement.pop_back();
+        sliced.beginUpdate(replacement, 240);
+        while (!sliced.advanceUpdate()) {
+        }
+        ResourceSiteMap expected;
+        expected.update(replacement, 240);
+        require(sliced.pixels() == expected.pixels(),
+                "Abandoned preparation cannot contaminate a new map");
+        sliced.beginUpdate(sources, 240);
+        sliced.advanceUpdate();
+        sliced.clear();
+        require(sliced.advanceUpdate() && sliced.side() == 0,
+                "Cancellation drops pending tile work immediately");
+    }
+
     require(!initial.empty() &&
                 std::any_of(pixels.begin(), pixels.end(), [](auto p) { return p != 0; }),
             "Sites rasterize a nonempty mask");

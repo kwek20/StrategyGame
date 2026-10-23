@@ -80,6 +80,7 @@ Model::Model(std::shared_ptr<ModelAsset> asset) {
                 (source.skinned ? glm::mat4{1.0F} : source.nodeTransform) *
                 glm::vec4{vertex.position, 1.0F};
             minimumY = std::min(minimumY, positioned.y);
+            boundingRadius_ = std::max(boundingRadius_, glm::length(glm::vec3{positioned}));
         }
         mesh.material.diffuse = source.material.diffuse;
         mesh.material.opacity = source.material.opacity;

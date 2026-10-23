@@ -30,11 +30,11 @@ std::vector<std::string> strings(const rapidjson::Value& object, const char* key
     return result;
 }
 
-TerrainTagMask terrainTags(const rapidjson::Value& object,
-                           const char* key,
-                           const std::string& context) {
+TerrainTagMask
+terrainTags(const rapidjson::Value& object, const char* key, const std::string& context) {
     TerrainTagMask result = 0;
-    if (!object.HasMember(key)) return result;
+    if (!object.HasMember(key))
+        return result;
     if (!object[key].IsArray())
         throw std::runtime_error(context + " requires an array field '" + key + "'");
     for (const auto& value : object[key].GetArray()) {
@@ -49,9 +49,7 @@ TerrainTagMask terrainTags(const rapidjson::Value& object,
     return result;
 }
 
-float requiredNumber(const rapidjson::Value& object,
-                     const char* key,
-                     const std::string& context) {
+float requiredNumber(const rapidjson::Value& object, const char* key, const std::string& context) {
     if (!object.HasMember(key) || !object[key].IsNumber())
         throw std::runtime_error(context + " requires numeric field '" + key + "'");
     return object[key].GetFloat();
@@ -59,11 +57,21 @@ float requiredNumber(const rapidjson::Value& object,
 
 void applyModifier(float& result, const GameplayModifier& modifier) {
     switch (modifier.operation) {
-    case ModifierOperation::add: result += modifier.value; break;
-    case ModifierOperation::multiply: result *= modifier.value; break;
-    case ModifierOperation::overrideValue: result = modifier.value; break;
-    case ModifierOperation::minimum: result = std::max(result, modifier.value); break;
-    case ModifierOperation::maximum: result = std::min(result, modifier.value); break;
+    case ModifierOperation::add:
+        result += modifier.value;
+        break;
+    case ModifierOperation::multiply:
+        result *= modifier.value;
+        break;
+    case ModifierOperation::overrideValue:
+        result = modifier.value;
+        break;
+    case ModifierOperation::minimum:
+        result = std::max(result, modifier.value);
+        break;
+    case ModifierOperation::maximum:
+        result = std::min(result, modifier.value);
+        break;
     }
 }
 } // namespace
@@ -108,11 +116,10 @@ void DefinitionRegistry::loadArchetypes(const std::filesystem::path& path,
     if (!data.HasMember(collection) || !data[collection].IsObject())
         throw std::runtime_error("Gameplay definition file has no '" + std::string(collection) +
                                  "' object: " + path.string());
-    const auto parsePlacement = [&](const rapidjson::Value& value,
-                                    const std::string& context) {
+    const auto parsePlacement = [&](const rapidjson::Value& value, const std::string& context) {
         TerrainPlacementProfile result;
-        if (!value.IsObject() || !value.HasMember("domains") ||
-            !value["domains"].IsArray() || value["domains"].Empty())
+        if (!value.IsObject() || !value.HasMember("domains") || !value["domains"].IsArray() ||
+            value["domains"].Empty())
             throw std::runtime_error(context + " requires a non-empty domains array");
         result.domains = 0;
         for (const auto& item : value["domains"].GetArray()) {
@@ -156,7 +163,46 @@ void DefinitionRegistry::loadArchetypes(const std::filesystem::path& path,
                     throw std::runtime_error(context +
                                              " requires nonnegative V2 support dimensions");
             result.maximumFoundationDepth = support["maximumFoundationDepth"].GetFloat();
+            if (support.HasMember("supportHeightTolerance")) {
+                const auto& tolerance = support["supportHeightTolerance"];
+                if (!tolerance.IsNumber() || !std::isfinite(tolerance.GetFloat()) ||
+                    tolerance.GetFloat() < 0 || tolerance.GetFloat() > 1)
+                    throw std::runtime_error(context + " has invalid supportHeightTolerance");
+                result.supportHeightTolerance = tolerance.GetFloat();
+            }
             result.waterClearance = support["waterClearance"].GetFloat();
+            if (support.HasMember("maximumTiltDegrees")) {
+                const auto& tilt = support["maximumTiltDegrees"];
+                if (!tilt.IsNumber() || !std::isfinite(tilt.GetFloat()) || tilt.GetFloat() < 0 ||
+                    tilt.GetFloat() > TerrainPlacementProfile::maximumAllowedTiltDegrees)
+                    throw std::runtime_error(context + " has invalid building tilt limit");
+                result.maximumBuildingTiltDegrees = tilt.GetFloat();
+            }
+            if (support.HasMember("leveling")) {
+                const auto& leveling = support["leveling"];
+                if (!leveling.IsObject())
+                    throw std::runtime_error(context + " requires a leveling object");
+                const auto dimension = [&](const char* key) {
+                    if (!leveling.HasMember(key) || !leveling[key].IsNumber() ||
+                        !std::isfinite(leveling[key].GetFloat()) || leveling[key].GetFloat() < 0 ||
+                        leveling[key].GetFloat() > 2)
+                        throw std::runtime_error(context + " has invalid leveling limits");
+                    return leveling[key].GetFloat();
+                };
+                result.levelingMaximumRelief = dimension("maximumRelief");
+                result.levelingMaximumCut = dimension("maximumCut");
+                result.levelingMaximumAverageCut = dimension("maximumAverageCut");
+                result.levelingMaximumFill = dimension("maximumFill");
+                result.levelingMaximumAverageEarthwork = dimension("maximumAverageEarthwork");
+                result.levelingBlendWidth = dimension("blendWidth");
+                if (result.levelingMaximumCut > result.levelingMaximumRelief ||
+                    result.levelingMaximumAverageCut > result.levelingMaximumCut ||
+                    result.levelingMaximumFill > result.levelingMaximumRelief ||
+                    (result.levelingMaximumFill > 0 &&
+                     result.levelingMaximumAverageEarthwork <= 0) ||
+                    result.levelingBlendWidth < Terrain::spacing * 2)
+                    throw std::runtime_error(context + " has incompatible leveling limits");
+            }
             result.minimumWaterDepth = support["minimumWaterDepth"].GetFloat();
             if (result.support == TerrainBuildingSupport::shore) {
                 if (!support.HasMember("wetFraction") || !support["wetFraction"].IsArray() ||
@@ -172,14 +218,6 @@ void DefinitionRegistry::loadArchetypes(const std::filesystem::path& path,
                 if (!result.shore->valid())
                     throw std::runtime_error(context + " has incompatible Shore area fractions");
             }
-            if (!support.HasMember("interactionUnit") || !support["interactionUnit"].IsString())
-                throw std::runtime_error(context + " requires a V2 interaction unit");
-            const auto* unit = archetype(EntityArchetypeId{support["interactionUnit"].GetString()});
-            if (!unit || unit->kind != EntityKind::unit)
-                throw std::runtime_error(context + " references an unknown V2 interacting unit");
-            result.interactionRadius = unit->collisionRadius;
-            result.interactionRange = unit->interactionMargin;
-            result.interactionDomains = unit->movement.domains;
         }
         return result;
     };
@@ -190,9 +228,7 @@ void DefinitionRegistry::loadArchetypes(const std::filesystem::path& path,
                                      path.string());
         defaultPlacement = parsePlacement(data["defaultPlacement"], "defaultPlacement");
     }
-    for (auto item = data[collection].MemberBegin();
-         item != data[collection].MemberEnd();
-         ++item) {
+    for (auto item = data[collection].MemberBegin(); item != data[collection].MemberEnd(); ++item) {
         EntityArchetype archetype;
         archetype.id = item->name.GetString();
         archetype.kind = kind;
@@ -201,52 +237,68 @@ void DefinitionRegistry::loadArchetypes(const std::filesystem::path& path,
             throw std::runtime_error("Invalid definition '" + archetype.id + "' in " +
                                      path.string());
         if (kind == EntityKind::building) {
-            if (!item->value.HasMember("descriptionKey") || !item->value["descriptionKey"].IsString() ||
-                !item->value.HasMember("requiredUpgrades") || !item->value["requiredUpgrades"].IsArray())
-                throw std::runtime_error("Building '" + archetype.id + "' requires descriptionKey and requiredUpgrades");
+            if (!item->value.HasMember("descriptionKey") ||
+                !item->value["descriptionKey"].IsString() ||
+                !item->value.HasMember("requiredUpgrades") ||
+                !item->value["requiredUpgrades"].IsArray())
+                throw std::runtime_error("Building '" + archetype.id +
+                                         "' requires descriptionKey and requiredUpgrades");
             archetype.descriptionKey = item->value["descriptionKey"].GetString();
             for (const auto& required : item->value["requiredUpgrades"].GetArray()) {
                 if (!required.IsString() || required.GetStringLength() == 0)
-                    throw std::runtime_error("Building '" + archetype.id + "' has invalid requiredUpgrades");
+                    throw std::runtime_error("Building '" + archetype.id +
+                                             "' has invalid requiredUpgrades");
                 archetype.requiredUpgrades.emplace_back(required.GetString());
             }
             std::sort(archetype.requiredUpgrades.begin(), archetype.requiredUpgrades.end());
-            if (std::adjacent_find(archetype.requiredUpgrades.begin(), archetype.requiredUpgrades.end()) != archetype.requiredUpgrades.end())
-                throw std::runtime_error("Building '" + archetype.id + "' has duplicate requiredUpgrades");
+            if (std::adjacent_find(archetype.requiredUpgrades.begin(),
+                                   archetype.requiredUpgrades.end()) !=
+                archetype.requiredUpgrades.end())
+                throw std::runtime_error("Building '" + archetype.id +
+                                         "' has duplicate requiredUpgrades");
         }
         if (!item->value.HasMember("collisionRadius") ||
             !item->value["collisionRadius"].IsNumber() ||
             item->value["collisionRadius"].GetFloat() < 0.0F)
             throw std::runtime_error("Definition '" + archetype.id +
-                                     "' requires a non-negative collisionRadius in " + path.string());
+                                     "' requires a non-negative collisionRadius in " +
+                                     path.string());
         archetype.collisionRadius = item->value["collisionRadius"].GetFloat();
         if (item->value.HasMember("footprint") && item->value["footprint"].IsObject()) {
             const auto& footprint = item->value["footprint"];
             TerrainFootprint definition;
             if (!footprint.HasMember("shape") || !footprint["shape"].IsString())
-                throw std::runtime_error("Definition '" + archetype.id + "' has invalid footprint shape");
+                throw std::runtime_error("Definition '" + archetype.id +
+                                         "' has invalid footprint shape");
             const std::string_view shape{footprint["shape"].GetString()};
-            if (shape == "rectangle") definition.shape = FootprintShape::rectangle;
-            else if (shape == "circle") definition.shape = FootprintShape::circle;
-            else throw std::runtime_error("Definition '" + archetype.id + "' has unsupported footprint shape");
+            if (shape == "rectangle")
+                definition.shape = FootprintShape::rectangle;
+            else if (shape == "circle")
+                definition.shape = FootprintShape::circle;
+            else
+                throw std::runtime_error("Definition '" + archetype.id +
+                                         "' has unsupported footprint shape");
             if (footprint.HasMember("halfExtents") && footprint["halfExtents"].IsArray() &&
                 footprint["halfExtents"].Size() == 2)
-                definition.halfExtents = {footprint["halfExtents"][0].GetFloat(), footprint["halfExtents"][1].GetFloat()};
+                definition.halfExtents = {footprint["halfExtents"][0].GetFloat(),
+                                          footprint["halfExtents"][1].GetFloat()};
             if (footprint.HasMember("radius") && footprint["radius"].IsNumber())
                 definition.radius = footprint["radius"].GetFloat();
             if (footprint.HasMember("edgeFalloff") && footprint["edgeFalloff"].IsNumber())
                 definition.edgeFalloff = footprint["edgeFalloff"].GetFloat();
-            if (footprint.HasMember("maximumTiltDegrees") && footprint["maximumTiltDegrees"].IsNumber())
+            if (footprint.HasMember("maximumTiltDegrees") &&
+                footprint["maximumTiltDegrees"].IsNumber())
                 definition.maximumTiltDegrees = footprint["maximumTiltDegrees"].GetFloat();
             if (definition.radius <= 0.0F || definition.halfExtents.x <= 0.0F ||
                 definition.halfExtents.y <= 0.0F || definition.edgeFalloff <= 0.0F ||
                 definition.maximumTiltDegrees < 0.0F || definition.maximumTiltDegrees > 10.0F)
-                throw std::runtime_error("Definition '" + archetype.id + "' has invalid footprint dimensions");
+                throw std::runtime_error("Definition '" + archetype.id +
+                                         "' has invalid footprint dimensions");
             archetype.footprint = definition;
         }
         if (item->value.HasMember("placement"))
-            archetype.placement = parsePlacement(
-                item->value["placement"], "Definition '" + archetype.id + "' placement");
+            archetype.placement = parsePlacement(item->value["placement"],
+                                                 "Definition '" + archetype.id + "' placement");
         if (item->value.HasMember("interactionMargin"))
             archetype.interactionMargin = requiredNumber(
                 item->value, "interactionMargin", "Definition '" + archetype.id + "'");
@@ -277,8 +329,8 @@ void DefinitionRegistry::loadArchetypes(const std::filesystem::path& path,
         if (item->value.HasMember("resourceType") && item->value["resourceType"].IsString())
             archetype.resourceType = item->value["resourceType"].GetString();
         if (item->value.HasMember("capacity"))
-            archetype.resourceCapacity = requiredNumber(
-                item->value, "capacity", "Definition '" + archetype.id + "'");
+            archetype.resourceCapacity =
+                requiredNumber(item->value, "capacity", "Definition '" + archetype.id + "'");
         if (item->value.HasMember("rawProductionPerTick")) {
             archetype.rawProductionPerTick = requiredNumber(
                 item->value, "rawProductionPerTick", "Definition '" + archetype.id + "'");
@@ -528,9 +580,8 @@ void DefinitionRegistry::loadArchetypes(const std::filesystem::path& path,
             const auto& battery = item->value["battery"];
             archetype.battery = BatteryDefinition{
                 requiredNumber(battery, "capacity", "Definition '" + archetype.id + "' battery"),
-                requiredNumber(battery,
-                               "movementDrainPerSecond",
-                               "Definition '" + archetype.id + "' battery"),
+                requiredNumber(
+                    battery, "movementDrainPerSecond", "Definition '" + archetype.id + "' battery"),
                 requiredNumber(
                     battery, "reserveThreshold", "Definition '" + archetype.id + "' battery")};
             if (archetype.battery->capacity <= 0.0F ||
@@ -543,16 +594,19 @@ void DefinitionRegistry::loadArchetypes(const std::filesystem::path& path,
         if (item->value.HasMember("repair")) {
             const auto& repair = item->value["repair"];
             if (!repair.IsObject())
-                throw std::runtime_error("Definition '" + archetype.id + "' has invalid repair values");
+                throw std::runtime_error("Definition '" + archetype.id +
+                                         "' has invalid repair values");
             archetype.repair = RepairDefinition{
                 requiredNumber(repair, "healthPerTick", "Repair '" + archetype.id + "'"),
                 requiredNumber(repair, "batteryPerTick", "Repair '" + archetype.id + "'")};
             if (!std::isfinite(archetype.repair->healthPerTick) ||
                 !std::isfinite(archetype.repair->batteryPerTick) ||
-                archetype.repair->healthPerTick <= 0.0F || archetype.repair->batteryPerTick <= 0.0F ||
-                !archetype.battery || !std::isfinite(archetype.battery->capacity) ||
+                archetype.repair->healthPerTick <= 0.0F ||
+                archetype.repair->batteryPerTick <= 0.0F || !archetype.battery ||
+                !std::isfinite(archetype.battery->capacity) ||
                 archetype.repair->batteryPerTick > archetype.battery->capacity)
-                throw std::runtime_error("Definition '" + archetype.id + "' has invalid repair values");
+                throw std::runtime_error("Definition '" + archetype.id +
+                                         "' has invalid repair values");
         }
         if (item->value.HasMember("powerDevice") && item->value["powerDevice"].IsString())
             archetype.powerDevice.emplace(item->value["powerDevice"].GetString());
@@ -577,15 +631,16 @@ void DefinitionRegistry::loadResources(const std::filesystem::path& path) {
     if (!data.HasMember("resources") || !data["resources"].IsObject())
         throw std::runtime_error("Resource definition file has no 'resources' object: " +
                                  path.string());
-    for (auto item = data["resources"].MemberBegin(); item != data["resources"].MemberEnd(); ++item) {
+    for (auto item = data["resources"].MemberBegin(); item != data["resources"].MemberEnd();
+         ++item) {
         if (!item->value.IsObject())
             throw std::runtime_error("Invalid resource definition in " + path.string());
         ResourceDefinition definition;
         definition.id = item->name.GetString();
         const auto& value = item->value;
         if (!value.HasMember("nameKey") || !value["nameKey"].IsString() ||
-            !value.HasMember("icon") || !value["icon"].IsString() ||
-            !value.HasMember("storage") || !value["storage"].IsString())
+            !value.HasMember("icon") || !value["icon"].IsString() || !value.HasMember("storage") ||
+            !value["storage"].IsString())
             throw std::runtime_error("Resource '" + definition.id +
                                      "' requires nameKey, icon, and storage");
         definition.nameKey = value["nameKey"].GetString();
@@ -600,17 +655,22 @@ void DefinitionRegistry::loadResources(const std::filesystem::path& path) {
         else if (storage == "network")
             definition.storage = ResourceStorageKind::network;
         else
-            throw std::runtime_error("Resource '" + definition.id +
-                                     "' has unknown storage kind '" + storage + "'");
+            throw std::runtime_error("Resource '" + definition.id + "' has unknown storage kind '" +
+                                     storage + "'");
         if (!value.HasMember("category") || !value["category"].IsString())
             throw std::runtime_error("Resource '" + definition.id + "' requires category");
         const std::string category = value["category"].GetString();
-        if (category == "raw") definition.category = ResourceCategory::raw;
-        else if (category == "processed") definition.category = ResourceCategory::processed;
-        else if (category == "strategic") definition.category = ResourceCategory::strategic;
-        else if (category == "infrastructure") definition.category = ResourceCategory::infrastructure;
-        else throw std::runtime_error("Resource '" + definition.id +
-                                      "' has unknown category '" + category + "'");
+        if (category == "raw")
+            definition.category = ResourceCategory::raw;
+        else if (category == "processed")
+            definition.category = ResourceCategory::processed;
+        else if (category == "strategic")
+            definition.category = ResourceCategory::strategic;
+        else if (category == "infrastructure")
+            definition.category = ResourceCategory::infrastructure;
+        else
+            throw std::runtime_error("Resource '" + definition.id + "' has unknown category '" +
+                                     category + "'");
         if ((definition.storage == ResourceStorageKind::cargo) !=
             (definition.category == ResourceCategory::raw))
             throw std::runtime_error("Resource '" + definition.id +
@@ -629,7 +689,8 @@ void DefinitionRegistry::loadResourceFields(const std::filesystem::path& path) {
     if (!data.HasMember("resourceFields") || !data["resourceFields"].IsObject())
         throw std::runtime_error("Missing resourceFields collection");
     for (auto item = data["resourceFields"].MemberBegin();
-         item != data["resourceFields"].MemberEnd(); ++item) {
+         item != data["resourceFields"].MemberEnd();
+         ++item) {
         if (!item->value.IsObject())
             throw std::runtime_error("Invalid resource field definition");
         ResourceFieldDefinition field;
@@ -643,7 +704,8 @@ void DefinitionRegistry::loadResourceFields(const std::filesystem::path& path) {
             throw std::runtime_error(context + " is incomplete");
         field.resourceType = ResourceId{value["resourceType"].GetString()};
         for (const auto& variant : value["variants"].GetArray()) {
-            if (!variant.IsString()) throw std::runtime_error(context + " has an invalid node variant");
+            if (!variant.IsString())
+                throw std::runtime_error(context + " has an invalid node variant");
             field.variants.push_back({ResourceArchetypeId{variant.GetString()}});
         }
         if (value.HasMember("terrainV2Composition")) {
@@ -757,10 +819,12 @@ void DefinitionRegistry::loadResourceFields(const std::filesystem::path& path) {
             if (!generation.HasMember(key) || !generation[key].IsArray())
                 throw std::runtime_error(context + " requires node inventory '" + key + "'");
             for (const auto& value : generation[key].GetArray()) {
-                if (!value.IsString()) throw std::runtime_error(context + " has invalid node inventory");
+                if (!value.IsString())
+                    throw std::runtime_error(context + " has invalid node inventory");
                 const ResourceArchetypeId node{value.GetString()};
-                if (std::none_of(field.variants.begin(), field.variants.end(),
-                    [&](const auto& variant) { return variant.node == node; }))
+                if (std::none_of(field.variants.begin(),
+                                 field.variants.end(),
+                                 [&](const auto& variant) { return variant.node == node; }))
                     throw std::runtime_error(context + " inventory references unknown variant");
                 output.push_back(node);
             }
@@ -770,16 +834,20 @@ void DefinitionRegistry::loadResourceFields(const std::filesystem::path& path) {
         settings.regionScale = requiredNumber(generation, "regionScale", context);
         settings.fieldsPerSquareChunk = requiredNumber(generation, "fieldsPerSquareChunk", context);
         settings.minimumNodeSpacing = requiredNumber(generation, "minimumNodeSpacing", context);
-        settings.minimumFieldSeparation = requiredNumber(generation, "minimumFieldSeparation", context);
+        settings.minimumFieldSeparation =
+            requiredNumber(generation, "minimumFieldSeparation", context);
         settings.localCapacityRadius = requiredNumber(generation, "localCapacityRadius", context);
         settings.maximumLocalCapacity = requiredNumber(generation, "maximumLocalCapacity", context);
-        settings.minimumExpansionTravelCost = requiredNumber(generation, "minimumExpansionTravelCost", context);
+        settings.minimumExpansionTravelCost =
+            requiredNumber(generation, "minimumExpansionTravelCost", context);
         settings.minimumAccessRatio = requiredNumber(generation, "minimumAccessRatio", context);
         settings.accessCostTolerance = requiredNumber(generation, "accessCostTolerance", context);
         settings.maximumSlope = requiredNumber(generation, "maximumSlopeDegrees", context);
         for (const auto key : {"placementAttemptsPerField", "maximumLayoutAttempts"})
-            if (!generation.HasMember(key) || !generation[key].IsUint() || generation[key].GetUint() == 0)
-                throw std::runtime_error(context + " requires positive unsigned field '" + key + "'");
+            if (!generation.HasMember(key) || !generation[key].IsUint() ||
+                generation[key].GetUint() == 0)
+                throw std::runtime_error(context + " requires positive unsigned field '" + key +
+                                         "'");
         settings.placementAttemptsPerField = generation["placementAttemptsPerField"].GetUint();
         settings.maximumLayoutAttempts = generation["maximumLayoutAttempts"].GetUint();
         if (!generation.HasMember("contested") || !generation["contested"].IsBool())
@@ -790,24 +858,26 @@ void DefinitionRegistry::loadResourceFields(const std::filesystem::path& path) {
         const auto finite = [](float value) { return std::isfinite(value); };
         if (settings.preferredBiomes.empty() || settings.expansionNodes.empty() ||
             !finite(settings.fieldsPerSquareChunk) || settings.fieldsPerSquareChunk <= 0 ||
-            settings.fieldsPerSquareChunk > 1 || !finite(settings.regionScale) || settings.regionScale <= 0 ||
-            !finite(settings.minimumMoisture) || !finite(settings.maximumMoisture) ||
-            settings.minimumMoisture < 0 || settings.maximumMoisture > 1 ||
-            settings.minimumMoisture > settings.maximumMoisture ||
+            settings.fieldsPerSquareChunk > 1 || !finite(settings.regionScale) ||
+            settings.regionScale <= 0 || !finite(settings.minimumMoisture) ||
+            !finite(settings.maximumMoisture) || settings.minimumMoisture < 0 ||
+            settings.maximumMoisture > 1 || settings.minimumMoisture > settings.maximumMoisture ||
             !finite(settings.minimumHeight) || !finite(settings.maximumHeight) ||
             settings.minimumHeight < 0 || settings.maximumHeight > 1 ||
             settings.minimumHeight > settings.maximumHeight ||
             !finite(settings.minimumFieldRadius) || !finite(settings.maximumFieldRadius) ||
-            settings.minimumFieldRadius <= 0 || settings.minimumFieldRadius > settings.maximumFieldRadius ||
+            settings.minimumFieldRadius <= 0 ||
+            settings.minimumFieldRadius > settings.maximumFieldRadius ||
             !finite(settings.minimumNodeSpacing) || settings.minimumNodeSpacing <= 0 ||
             !finite(settings.minimumFieldSeparation) || settings.minimumFieldSeparation < 0 ||
             !finite(settings.localCapacityRadius) || settings.localCapacityRadius <= 0 ||
             !finite(settings.maximumLocalCapacity) || settings.maximumLocalCapacity <= 0 ||
-            !finite(settings.minimumExpansionTravelCost) || settings.minimumExpansionTravelCost < 0 ||
-            !finite(settings.minimumAccessRatio) || settings.minimumAccessRatio <= 0 || settings.minimumAccessRatio > 1 ||
+            !finite(settings.minimumExpansionTravelCost) ||
+            settings.minimumExpansionTravelCost < 0 || !finite(settings.minimumAccessRatio) ||
+            settings.minimumAccessRatio <= 0 || settings.minimumAccessRatio > 1 ||
             !finite(settings.accessCostTolerance) || settings.accessCostTolerance < 0 ||
-            !finite(settings.maximumSlope) || settings.maximumSlope <= 0 || settings.maximumSlope > 90 ||
-            (settings.contested && !settings.startingNodes.empty()))
+            !finite(settings.maximumSlope) || settings.maximumSlope <= 0 ||
+            settings.maximumSlope > 90 || (settings.contested && !settings.startingNodes.empty()))
             throw std::runtime_error(context + " has invalid generation settings");
         if (resourceFields_.contains(field.id))
             throw std::runtime_error("Duplicate resource field '" + field.id + "'");
@@ -818,20 +888,23 @@ void DefinitionRegistry::loadResourceFields(const std::filesystem::path& path) {
 void DefinitionRegistry::loadConversions(const std::filesystem::path& path) {
     const auto data = document(path);
     if (!data.HasMember("conversions") || !data["conversions"].IsArray())
-        throw std::runtime_error("Conversion definitions require a conversions array: " + path.string());
+        throw std::runtime_error("Conversion definitions require a conversions array: " +
+                                 path.string());
     for (const auto& value : data["conversions"].GetArray()) {
         if (!value.IsObject() || !value.HasMember("id") || !value["id"].IsString() ||
             !value.HasMember("processor") || !value["processor"].IsString() ||
-            !value.HasMember("input") || !value["input"].IsString() ||
-            !value.HasMember("output") || !value["output"].IsString())
+            !value.HasMember("input") || !value["input"].IsString() || !value.HasMember("output") ||
+            !value["output"].IsString())
             throw std::runtime_error("Invalid resource conversion in " + path.string());
         ResourceConversionDefinition definition;
         definition.id = value["id"].GetString();
         definition.processor = BuildingArchetypeId{value["processor"].GetString()};
         definition.input = ResourceId{value["input"].GetString()};
         definition.output = ResourceId{value["output"].GetString()};
-        definition.outputPerInput = requiredNumber(value, "outputPerInput", "Conversion '" + definition.id + "'");
-        definition.requiredPower = requiredNumber(value, "requiredPower", "Conversion '" + definition.id + "'");
+        definition.outputPerInput =
+            requiredNumber(value, "outputPerInput", "Conversion '" + definition.id + "'");
+        definition.requiredPower =
+            requiredNumber(value, "requiredPower", "Conversion '" + definition.id + "'");
         if (value.HasMember("priority")) {
             if (!value["priority"].IsInt())
                 throw std::runtime_error("Conversion '" + definition.id +
@@ -858,7 +931,8 @@ std::vector<const ResourceDefinition*> DefinitionRegistry::enabledResources() co
 void DefinitionRegistry::loadWeapons(const std::filesystem::path& path) {
     auto data = document(path);
     if (!data.HasMember("weapons") || !data["weapons"].IsObject())
-        throw std::runtime_error("Weapon definition file has no 'weapons' object: " + path.string());
+        throw std::runtime_error("Weapon definition file has no 'weapons' object: " +
+                                 path.string());
     for (auto item = data["weapons"].MemberBegin(); item != data["weapons"].MemberEnd(); ++item) {
         if (!item->value.IsObject())
             throw std::runtime_error("Invalid weapon definition in " + path.string());
@@ -874,8 +948,8 @@ void DefinitionRegistry::loadWeapons(const std::filesystem::path& path) {
         static const std::unordered_set<std::string> damageTypes{
             "kinetic", "explosive", "incendiary", "electronic"};
         if (!damageTypes.contains(definition.damageType))
-            throw std::runtime_error("Weapon '" + definition.id +
-                                     "' has unknown damage type '" + definition.damageType + "'");
+            throw std::runtime_error("Weapon '" + definition.id + "' has unknown damage type '" +
+                                     definition.damageType + "'");
         for (const std::string& tag : strings(value, "tags"))
             definition.tags.insert(tag);
         definition.damage = requiredNumber(damage, "amount", "Weapon '" + definition.id + "'");
@@ -942,22 +1016,30 @@ void DefinitionRegistry::loadPowerDevices(const std::filesystem::path& path) {
             if (!item->value["priority"].IsString())
                 throw std::runtime_error("Power device priority must be low, medium, or high");
             const std::string priority = item->value["priority"].GetString();
-            if (priority == "low") definition.priority = PowerPriority::low;
-            else if (priority == "medium") definition.priority = PowerPriority::medium;
-            else if (priority == "high") definition.priority = PowerPriority::high;
-            else throw std::runtime_error("Power device priority must be low, medium, or high");
+            if (priority == "low")
+                definition.priority = PowerPriority::low;
+            else if (priority == "medium")
+                definition.priority = PowerPriority::medium;
+            else if (priority == "high")
+                definition.priority = PowerPriority::high;
+            else
+                throw std::runtime_error("Power device priority must be low, medium, or high");
         }
-        for (const float value : {definition.production, definition.consumption, definition.storage,
-                                 definition.connectionRange, definition.transferLimit, definition.chargePerTick,
-                                 definition.storageChargePerTick, definition.storageDischargePerTick})
+        for (const float value : {definition.production,
+                                  definition.consumption,
+                                  definition.storage,
+                                  definition.connectionRange,
+                                  definition.transferLimit,
+                                  definition.chargePerTick,
+                                  definition.storageChargePerTick,
+                                  definition.storageDischargePerTick})
             if (!std::isfinite(value))
-                throw std::runtime_error("Power device '" + definition.id + "' requires finite values");
+                throw std::runtime_error("Power device '" + definition.id +
+                                         "' requires finite values");
         if (definition.production < 0.0F || definition.consumption < 0.0F ||
-            definition.storage < 0.0F ||
-            definition.connectionRange < 0.0F ||
+            definition.storage < 0.0F || definition.connectionRange < 0.0F ||
             definition.transferLimit < 0.0F || definition.chargePerTick < 0.0F ||
-            definition.storageChargePerTick < 0.0F ||
-            definition.storageDischargePerTick < 0.0F)
+            definition.storageChargePerTick < 0.0F || definition.storageDischargePerTick < 0.0F)
             throw std::runtime_error("Power device '" + definition.id + "' has a negative value");
         if (definition.connectionRange > 0.0F && definition.maximumConnections == 0)
             throw std::runtime_error("Power device '" + definition.id +
@@ -990,9 +1072,15 @@ void DefinitionRegistry::loadRecipes(const std::filesystem::path& path) {
             definition.producer = value["producer"].GetString();
         }
         definition.durationTicks = value["durationTicks"].GetUint();
-        if (value.HasMember("constructionPower")) definition.constructionPower = requiredNumber(value, "constructionPower", "Recipe '" + definition.id + "'");
-        if (value.HasMember("workStep")) definition.workStep = requiredNumber(value, "workStep", "Recipe '" + definition.id + "'");
-        if (value.HasMember("dronePowerPerStep")) definition.dronePowerPerStep = requiredNumber(value, "dronePowerPerStep", "Recipe '" + definition.id + "'");
+        if (value.HasMember("constructionPower"))
+            definition.constructionPower =
+                requiredNumber(value, "constructionPower", "Recipe '" + definition.id + "'");
+        if (value.HasMember("workStep"))
+            definition.workStep =
+                requiredNumber(value, "workStep", "Recipe '" + definition.id + "'");
+        if (value.HasMember("dronePowerPerStep"))
+            definition.dronePowerPerStep =
+                requiredNumber(value, "dronePowerPerStep", "Recipe '" + definition.id + "'");
         for (const std::string& tag : strings(value, "tags"))
             definition.tags.insert(tag);
         const auto& product = value["product"];
@@ -1015,7 +1103,8 @@ void DefinitionRegistry::loadRecipes(const std::filesystem::path& path) {
         if (value.HasMember("cost")) {
             if (!value["cost"].IsObject())
                 throw std::runtime_error("Recipe '" + definition.id + "' has invalid cost");
-            for (auto cost = value["cost"].MemberBegin(); cost != value["cost"].MemberEnd(); ++cost) {
+            for (auto cost = value["cost"].MemberBegin(); cost != value["cost"].MemberEnd();
+                 ++cost) {
                 if (!cost->value.IsNumber() || cost->value.GetFloat() < 0.0F)
                     throw std::runtime_error("Recipe '" + definition.id + "' has invalid cost");
                 definition.cost.emplace(cost->name.GetString(), cost->value.GetFloat());
@@ -1025,8 +1114,9 @@ void DefinitionRegistry::loadRecipes(const std::filesystem::path& path) {
             definition.tags.contains("construction") &&
             (definition.constructionPower <= 0.0F || definition.workStep <= 0.0F ||
              definition.dronePowerPerStep <= 0.0F))
-            throw std::runtime_error("Construction recipe '" + definition.id +
-                                     "' requires positive constructionPower, workStep, and dronePowerPerStep");
+            throw std::runtime_error(
+                "Construction recipe '" + definition.id +
+                "' requires positive constructionPower, workStep, and dronePowerPerStep");
         if (!recipes_.emplace(definition.id, std::move(definition)).second)
             throw std::runtime_error("Duplicate recipe definition id '" +
                                      std::string(value["id"].GetString()) + "'");
@@ -1061,11 +1151,13 @@ const std::string& DefinitionRegistry::presentationIcon(PresentationId id) const
 
 void DefinitionRegistry::validateReferences() const {
     for (const auto& [id, entity] : entities_) {
-        if (entity.kind == EntityKind::building && !localizationKeys_.contains(entity.descriptionKey))
+        if (entity.kind == EntityKind::building &&
+            !localizationKeys_.contains(entity.descriptionKey))
             throw std::runtime_error("Building '" + id + "' references unknown descriptionKey");
         for (const auto& required : entity.requiredUpgrades)
             if (!upgrades_.contains(required))
-                throw std::runtime_error("Building '" + id + "' references unknown required upgrade '" + required + "'");
+                throw std::runtime_error(
+                    "Building '" + id + "' references unknown required upgrade '" + required + "'");
         if (!presentationIds_.contains(entity.presentation))
             throw std::runtime_error("Entity '" + id + "' references unknown presentation '" +
                                      entity.presentation + "'");
@@ -1095,9 +1187,11 @@ void DefinitionRegistry::validateReferences() const {
     for (const std::string& id : matchRules_.generatedResourceFields) {
         const auto found = resourceFields_.find(id);
         if (found == resourceFields_.end())
-            throw std::runtime_error("Generated resource list references invalid field '" + id + "'");
+            throw std::runtime_error("Generated resource list references invalid field '" + id +
+                                     "'");
         if (!resourceTypes_.contains(found->second.resourceType.value))
-            throw std::runtime_error("Resource field '" + id + "' references unknown resource type");
+            throw std::runtime_error("Resource field '" + id +
+                                     "' references unknown resource type");
         for (const ResourceNodeVariant& variant : found->second.variants) {
             const auto node = entities_.find(variant.node.value);
             if (node == entities_.end() || node->second.kind != EntityKind::resource ||
@@ -1141,14 +1235,15 @@ void DefinitionRegistry::validateReferences() const {
                 throw std::runtime_error("V2 harvest capacities must use a common quantum");
         for (const auto* inventory : {&settings.startingNodes, &settings.expansionNodes}) {
             float capacity = 0;
-            for (const auto& node : *inventory) capacity += entities_.at(node.value).resourceCapacity;
+            for (const auto& node : *inventory)
+                capacity += entities_.at(node.value).resourceCapacity;
             if (!found->second.terrainV2HarvestNodes.empty() &&
                 (std::fmod(capacity, smallestHarvest) != 0 || capacity / smallestHarvest > 128))
                 throw std::runtime_error("V2 field budget cannot be partitioned safely");
             if (!std::isfinite(capacity) || capacity > settings.maximumLocalCapacity)
-                throw std::runtime_error("Resource field '" + id + "' inventory exceeds local capacity limit");
+                throw std::runtime_error("Resource field '" + id +
+                                         "' inventory exceeds local capacity limit");
         }
-
     }
     for (const VegetationGenerationDefinition& vegetation : matchRules_.vegetation) {
         const auto found = entities_.find(vegetation.archetype);
@@ -1173,7 +1268,8 @@ void DefinitionRegistry::validateReferences() const {
         const rapidjson::Document atlas = document(atlasPath);
         if (atlas.HasMember("regions") && atlas["regions"].IsObject())
             for (auto member = atlas["regions"].MemberBegin();
-                 member != atlas["regions"].MemberEnd(); ++member)
+                 member != atlas["regions"].MemberEnd();
+                 ++member)
                 atlasIcons.emplace(member->name.GetString());
     }
     const auto iconExists = [&](const std::string& icon) {
@@ -1186,22 +1282,37 @@ void DefinitionRegistry::validateReferences() const {
     };
     for (const auto& [id, resource] : resourceTypes_) {
         if (!localizationKeys_.contains(resource.nameKey))
-            throw std::runtime_error("Resource '" + id +
-                                     "' references unknown localization key '" +
+            throw std::runtime_error("Resource '" + id + "' references unknown localization key '" +
                                      resource.nameKey + "'");
         if (!iconExists(resource.icon))
             throw std::runtime_error("Resource '" + id + "' references missing icon '" +
                                      resource.icon + "'");
     }
     for (const auto& [id, definition] : upgrades_) {
-        if (!definition.descriptionKey.empty() && !localizationKeys_.contains(definition.descriptionKey))
+        if (!definition.descriptionKey.empty() &&
+            !localizationKeys_.contains(definition.descriptionKey))
             throw std::runtime_error("Upgrade '" + id + "' references unknown descriptionKey");
         // Research recipes are validated when the recipe catalogue is present; fixture-specific
         // catalogues may intentionally omit unrelated upgrades.
         if (!localizationKeys_.contains(definition.nameKey))
             throw std::runtime_error("Upgrade '" + id + "' references unknown localization key");
         if (!iconExists(definition.icon))
-            throw std::runtime_error("Upgrade '" + id + "' references missing icon '" + definition.icon + "'");
+            throw std::runtime_error("Upgrade '" + id + "' references missing icon '" +
+                                     definition.icon + "'");
+        if (definition.satelliteCoverage != SatelliteCoverage::none) {
+            bool lowerCoverage = definition.satelliteCoverage == SatelliteCoverage::lowResolution;
+            for (const auto& prerequisite : definition.prerequisites) {
+                const auto* required = upgrade(prerequisite);
+                if (!required || required->satelliteCoverage >= definition.satelliteCoverage)
+                    throw std::runtime_error("Satellite research requires a lower coverage tier");
+                lowerCoverage = lowerCoverage || required->satelliteCoverage == SatelliteCoverage::lowResolution;
+            }
+            if (!lowerCoverage)
+                throw std::runtime_error("High-resolution satellite requires low-resolution research");
+            for (const auto& researcher : definition.allowedResearchers)
+                if (!buildingIds_.contains(researcher))
+                    throw std::runtime_error("Satellite research references unknown researcher");
+        }
         for (const auto& modifier : definition.modifiers)
             if (!modifier.target.entity.empty() && !entities_.contains(modifier.target.entity))
                 throw std::runtime_error("Upgrade '" + id + "' modifier targets unknown entity");
@@ -1215,9 +1326,9 @@ void DefinitionRegistry::validateReferences() const {
                                      definition.producer + "'");
         const bool validProduct = definition.product.kind == RecipeProductKind::unit
                                       ? unitIds_.contains(definition.product.id)
-                                      : definition.product.kind == RecipeProductKind::building
-                                            ? buildingIds_.contains(definition.product.id)
-                                            : resourceTypes_.contains(definition.product.id);
+                                  : definition.product.kind == RecipeProductKind::building
+                                      ? buildingIds_.contains(definition.product.id)
+                                      : resourceTypes_.contains(definition.product.id);
         if (!validProduct)
             throw std::runtime_error("Recipe '" + id + "' references unknown product '" +
                                      definition.product.id + "'");
@@ -1225,8 +1336,8 @@ void DefinitionRegistry::validateReferences() const {
             const std::string relationship = definition.producer + "\n" + definition.product.id;
             if (!productionRelationships.insert(relationship).second)
                 throw std::runtime_error("Duplicate producer/product recipe for '" +
-                                         definition.producer + "' and '" +
-                                         definition.product.id + "'");
+                                         definition.producer + "' and '" + definition.product.id +
+                                         "'");
         }
         for (const auto& [resource, amount] : definition.cost) {
             (void)amount;
@@ -1251,34 +1362,36 @@ void DefinitionRegistry::validateReferences() const {
         const auto output = resourceTypes_.find(definition.output.value);
         if (input == resourceTypes_.end() || input->second.storage != ResourceStorageKind::cargo)
             throw std::runtime_error("Conversion '" + id + "' input must be a cargo resource");
-        if (output == resourceTypes_.end() || output->second.storage != ResourceStorageKind::stockpile)
+        if (output == resourceTypes_.end() ||
+            output->second.storage != ResourceStorageKind::stockpile)
             throw std::runtime_error("Conversion '" + id + "' output must be a stockpile resource");
         const std::string relationship = definition.processor.value + "\n" + definition.input.value;
         if (!conversionRelationships.insert(relationship).second)
             throw std::runtime_error("Duplicate processor/input conversion for '" +
-                                     definition.processor.value + "' and '" + definition.input.value + "'");
+                                     definition.processor.value + "' and '" +
+                                     definition.input.value + "'");
     }
-    for (const auto& [source, groups] : {std::pair{"country", &countries_},
-                                        std::pair{"specialization", &specializations_}})
+    for (const auto& [source, groups] :
+         {std::pair{"country", &countries_}, std::pair{"specialization", &specializations_}})
         for (const auto& [group, modifiers] : *groups)
             for (const GameplayModifier& modifier : modifiers) {
                 const auto& target = modifier.target;
                 if (!target.entity.empty() && !entities_.contains(target.entity))
-                    throw std::runtime_error(std::string(source) + " '" + group +
-                                             "' modifier '" + modifier.id +
-                                             "' targets unknown entity '" + target.entity + "'");
+                    throw std::runtime_error(std::string(source) + " '" + group + "' modifier '" +
+                                             modifier.id + "' targets unknown entity '" +
+                                             target.entity + "'");
                 if (!target.producer.empty() && !buildingIds_.contains(target.producer))
-                    throw std::runtime_error(std::string(source) + " '" + group +
-                                             "' modifier '" + modifier.id +
-                                             "' targets unknown producer '" + target.producer + "'");
+                    throw std::runtime_error(std::string(source) + " '" + group + "' modifier '" +
+                                             modifier.id + "' targets unknown producer '" +
+                                             target.producer + "'");
                 for (const std::string& resource : target.resourceTypes)
                     if (!resourceTypes_.contains(resource))
                         throw std::runtime_error(std::string(source) + " '" + group +
                                                  "' modifier '" + modifier.id +
                                                  "' targets unknown resource '" + resource + "'");
                 for (const std::string& tag : target.weaponTags) {
-                    const bool known = std::any_of(
-                        weapons_.begin(), weapons_.end(), [&](const auto& entry) {
+                    const bool known =
+                        std::any_of(weapons_.begin(), weapons_.end(), [&](const auto& entry) {
                             return entry.second.tags.contains(tag);
                         });
                     if (!known)
@@ -1302,10 +1415,9 @@ void DefinitionRegistry::validateReferences() const {
                             return entry.second.tags.contains(tag);
                         });
                     if (!known)
-                        throw std::runtime_error(std::string(source) + " '" + group +
-                                                 "' modifier '" + modifier.id +
-                                                 "' targets unknown power-device tag '" + tag +
-                                                 "'");
+                        throw std::runtime_error(
+                            std::string(source) + " '" + group + "' modifier '" + modifier.id +
+                            "' targets unknown power-device tag '" + tag + "'");
                 }
             }
     for (const CountryDefinition& country : countryList_)
@@ -1335,10 +1447,26 @@ void DefinitionRegistry::loadUpgrades(const std::filesystem::path& path) {
         upgrade.id = value["id"].GetString();
         upgrade.researchRecipe = value["researchRecipe"].GetString();
         upgrade.maximumLevel = value["maximumLevel"].GetUint();
-        upgrade.affectsProducer = value.HasMember("affectsProducer") && value["affectsProducer"].IsBool() && value["affectsProducer"].GetBool();
+        upgrade.affectsProducer = value.HasMember("affectsProducer") &&
+                                  value["affectsProducer"].IsBool() &&
+                                  value["affectsProducer"].GetBool();
+        if (value.HasMember("satelliteCoverage")) {
+            if (!value["satelliteCoverage"].IsString())
+                throw std::runtime_error("Invalid satellite coverage");
+            const std::string coverage = value["satelliteCoverage"].GetString();
+            if (coverage == "lowResolution")
+                upgrade.satelliteCoverage = SatelliteCoverage::lowResolution;
+            else if (coverage == "highResolution")
+                upgrade.satelliteCoverage = SatelliteCoverage::highResolution;
+            else
+                throw std::runtime_error("Unknown satellite coverage: " + coverage);
+            if (upgrade.maximumLevel != 1 || !value["modifiers"].Empty() || upgrade.affectsProducer)
+                throw std::runtime_error("Satellite research must be a single player capability");
+        }
         upgrade.nameKey = value["nameKey"].GetString();
         if (value.HasMember("descriptionKey")) {
-            if (!value["descriptionKey"].IsString()) throw std::runtime_error("Invalid upgrade descriptionKey");
+            if (!value["descriptionKey"].IsString())
+                throw std::runtime_error("Invalid upgrade descriptionKey");
             upgrade.descriptionKey = value["descriptionKey"].GetString();
         }
         upgrade.icon = value["icon"].GetString();
@@ -1352,10 +1480,13 @@ void DefinitionRegistry::loadUpgrades(const std::filesystem::path& path) {
                 !item.HasMember("operation") || !item["operation"].IsString() ||
                 !item.HasMember("value") || !item["value"].IsNumber())
                 throw std::runtime_error("Invalid modifier in upgrade '" + upgrade.id + "'");
-            GameplayModifier modifier{item["id"].GetString(), parseStat(item["stat"].GetString()),
-                                      {}, parseOperation(item["operation"].GetString()),
+            GameplayModifier modifier{item["id"].GetString(),
+                                      parseStat(item["stat"].GetString()),
+                                      {},
+                                      parseOperation(item["operation"].GetString()),
                                       item["value"].GetFloat()};
-            if (item.HasMember("priority")) modifier.priority = item["priority"].GetInt();
+            if (item.HasMember("priority"))
+                modifier.priority = item["priority"].GetInt();
             if (item.HasMember("target") && item["target"].IsObject()) {
                 const auto& target = item["target"];
                 if (target.HasMember("entity") && target["entity"].IsString())
@@ -1373,9 +1504,7 @@ void DefinitionRegistry::loadUpgrades(const std::filesystem::path& path) {
 
 void DefinitionRegistry::loadRules(const std::filesystem::path& path) {
     const auto data = document(path);
-    const auto number = [&](const char* key) {
-        return requiredNumber(data, key, "Match rules");
-    };
+    const auto number = [&](const char* key) { return requiredNumber(data, key, "Match rules"); };
     matchRules_.terrainEdgeMargin = number("terrainEdgeMargin");
     matchRules_.minimumResourceHeight = number("minimumResourceHeight");
     matchRules_.maximumResourceHeight = number("maximumResourceHeight");
@@ -1388,8 +1517,7 @@ void DefinitionRegistry::loadRules(const std::filesystem::path& path) {
         data["unitLimit"].GetUint() == 0)
         throw std::runtime_error("Match rules require a positive unitLimit");
     matchRules_.unitLimit = data["unitLimit"].GetUint();
-    if (!data.HasMember("trainingUpgradeProduct") ||
-        !data["trainingUpgradeProduct"].IsString())
+    if (!data.HasMember("trainingUpgradeProduct") || !data["trainingUpgradeProduct"].IsString())
         throw std::runtime_error("Match rules require trainingUpgradeProduct");
     matchRules_.trainingUpgradeProduct = data["trainingUpgradeProduct"].GetString();
     matchRules_.buildPalette = strings(data, "buildPalette");
@@ -1397,9 +1525,8 @@ void DefinitionRegistry::loadRules(const std::filesystem::path& path) {
     if (!data.HasMember("vegetation") || !data["vegetation"].IsArray())
         throw std::runtime_error("Match rules require vegetation array");
     for (const auto& value : data["vegetation"].GetArray()) {
-        if (!value.IsObject() || !value.HasMember("archetype") ||
-            !value["archetype"].IsString() || !value.HasMember("stream") ||
-            !value["stream"].IsString())
+        if (!value.IsObject() || !value.HasMember("archetype") || !value["archetype"].IsString() ||
+            !value.HasMember("stream") || !value["stream"].IsString())
             throw std::runtime_error("Match rules contain invalid vegetation definition");
         VegetationGenerationDefinition vegetation;
         vegetation.archetype = value["archetype"].GetString();
@@ -1422,7 +1549,8 @@ void DefinitionRegistry::loadRules(const std::filesystem::path& path) {
             return value[name].GetUint();
         };
         const auto optionalField = [&](const char* name, float fallback) {
-            if (!value.HasMember(name)) return fallback;
+            if (!value.HasMember(name))
+                return fallback;
             if (!value[name].IsNumber())
                 throw std::runtime_error("Vegetation '" + vegetation.archetype +
                                          "' requires numeric " + name);
@@ -1458,7 +1586,8 @@ void DefinitionRegistry::loadRules(const std::filesystem::path& path) {
             vegetation.allowedSurfaces.emplace_back(surface.GetString());
         }
         const auto parseTerrainTags = [&](const char* name, TerrainTagMask& mask) {
-            if (!value.HasMember(name)) return;
+            if (!value.HasMember(name))
+                return;
             if (!value[name].IsArray())
                 throw std::runtime_error("Vegetation '" + vegetation.archetype +
                                          "' requires an array for " + name);
@@ -1486,9 +1615,8 @@ void DefinitionRegistry::loadRules(const std::filesystem::path& path) {
             vegetation.maximumMoisture < vegetation.minimumMoisture ||
             vegetation.minimumHeight < 0.0F || vegetation.maximumHeight > 1.0F ||
             vegetation.maximumHeight < vegetation.minimumHeight ||
-            vegetation.maximumSlopeDegrees < 0.0F ||
-            vegetation.maximumSlopeDegrees > 90.0F || vegetation.minimumSpacing < 0.0F ||
-            vegetation.minimumScale <= 0.0F ||
+            vegetation.maximumSlopeDegrees < 0.0F || vegetation.maximumSlopeDegrees > 90.0F ||
+            vegetation.minimumSpacing < 0.0F || vegetation.minimumScale <= 0.0F ||
             vegetation.maximumScale < vegetation.minimumScale)
             throw std::runtime_error("Vegetation '" + vegetation.archetype +
                                      "' has invalid ranges");
@@ -1507,7 +1635,8 @@ void DefinitionRegistry::loadRules(const std::filesystem::path& path) {
     if (!data.HasMember("startingResources") || !data["startingResources"].IsObject())
         throw std::runtime_error("Match rules require startingResources object");
     for (auto item = data["startingResources"].MemberBegin();
-         item != data["startingResources"].MemberEnd(); ++item) {
+         item != data["startingResources"].MemberEnd();
+         ++item) {
         if (!item->value.IsNumber() || item->value.GetFloat() < 0.0F)
             throw std::runtime_error("Starting resources must be non-negative numbers");
         matchRules_.startingResources.emplace(item->name.GetString(), item->value.GetFloat());
@@ -1616,7 +1745,8 @@ DefinitionRegistry::DefinitionRegistry(const std::filesystem::path& unitPath,
                                                  "'");
                     if (value.HasMember("priority")) {
                         if (!value["priority"].IsInt())
-                            throw std::runtime_error("Gameplay modifier priority must be an integer");
+                            throw std::runtime_error(
+                                "Gameplay modifier priority must be an integer");
                         modifier.priority = value["priority"].GetInt();
                     }
                     if (value.HasMember("target") && value["target"].IsObject()) {
@@ -1713,22 +1843,20 @@ float DefinitionRegistry::resolve(GameplayStat stat,
     }
     const WeaponDefinition* weaponDefinition =
         subjectIt->second.weapons.empty() ? nullptr : weapon(subjectIt->second.weapons.front());
-    const PowerDeviceDefinition* powerDefinition = subjectIt->second.powerDevice
-                                                        ? powerDevice(*subjectIt->second.powerDevice)
-                                                        : nullptr;
+    const PowerDeviceDefinition* powerDefinition =
+        subjectIt->second.powerDevice ? powerDevice(*subjectIt->second.powerDevice) : nullptr;
     const ResourceDefinition* resourceDefinition =
         resourceContext.empty() ? nullptr : resourceType(resourceContext);
     const auto applySource = [&](const auto& source, const std::string& id) {
         if (const auto found = source.find(id); found != source.end())
             for (const auto& modifier : found->second)
-                if (modifier.stat == stat &&
-                    matches(modifier,
-                            subjectIt->second,
-                            producerType,
-                            weaponDefinition,
-                            nullptr,
-                            resourceDefinition,
-                            powerDefinition))
+                if (modifier.stat == stat && matches(modifier,
+                                                     subjectIt->second,
+                                                     producerType,
+                                                     weaponDefinition,
+                                                     nullptr,
+                                                     resourceDefinition,
+                                                     powerDefinition))
                     applyModifier(result, modifier);
     };
     // Modifier layers are intentionally applied independently and in authoritative order.
@@ -1745,14 +1873,13 @@ float DefinitionRegistry::resolve(GameplayStat stat,
                                                      : left->id < right->id;
         });
         for (const GameplayModifier* modifier : ordered)
-            if (modifier->stat == stat &&
-                matches(*modifier,
-                        subjectIt->second,
-                        producerType,
-                        weaponDefinition,
-                        nullptr,
-                        resourceDefinition,
-                        powerDefinition))
+            if (modifier->stat == stat && matches(*modifier,
+                                                  subjectIt->second,
+                                                  producerType,
+                                                  weaponDefinition,
+                                                  nullptr,
+                                                  resourceDefinition,
+                                                  powerDefinition))
                 applyModifier(result, *modifier);
     };
     applyRuntimeLayer(layers.permanentUpgrades);
@@ -1882,13 +2009,14 @@ const ResourceConversionDefinition* DefinitionRegistry::conversion(ConversionId 
     return found == conversions_.end() ? nullptr : &found->second;
 }
 
-const ResourceConversionDefinition*
-DefinitionRegistry::conversionFor(BuildingArchetypeId processor, ResourceId input) const {
+const ResourceConversionDefinition* DefinitionRegistry::conversionFor(BuildingArchetypeId processor,
+                                                                      ResourceId input) const {
     const ResourceConversionDefinition* result = nullptr;
     for (const auto& [id, definition] : conversions_) {
         (void)id;
         if (definition.processor == processor && definition.input == input) {
-            if (result) throw std::runtime_error("Ambiguous resource conversion for processor/input");
+            if (result)
+                throw std::runtime_error("Ambiguous resource conversion for processor/input");
             result = &definition;
         }
     }
@@ -1903,47 +2031,56 @@ std::vector<const ResourceConversionDefinition*>
 DefinitionRegistry::conversionsForProcessor(BuildingArchetypeId processor) const {
     std::vector<const ResourceConversionDefinition*> result;
     for (const auto& [id, conversion] : conversions_)
-        if (conversion.processor == processor) result.push_back(&conversion);
+        if (conversion.processor == processor)
+            result.push_back(&conversion);
     std::sort(result.begin(), result.end(), [](const auto* left, const auto* right) {
-        if (left->priority != right->priority) return left->priority < right->priority;
+        if (left->priority != right->priority)
+            return left->priority < right->priority;
         return left->id < right->id;
     });
     return result;
 }
 
-const RecipeDefinition*
-DefinitionRegistry::productionRecipe(const std::string& producer,
-                                     const std::string& product) const {
+const RecipeDefinition* DefinitionRegistry::productionRecipe(const std::string& producer,
+                                                             const std::string& product) const {
     const RecipeDefinition* result = nullptr;
     for (const auto& [id, definition] : recipes_) {
         (void)id;
         if (definition.producer != producer || definition.product.id != product)
             continue;
         if (result != nullptr)
-            throw std::runtime_error("Multiple recipes produce '" + product + "' in '" +
-                                     producer + "'");
+            throw std::runtime_error("Multiple recipes produce '" + product + "' in '" + producer +
+                                     "'");
         result = &definition;
     }
     return result;
 }
 
-std::vector<const RecipeDefinition*> DefinitionRegistry::recipesForProducer(const std::string& producer) const {
+std::vector<const RecipeDefinition*>
+DefinitionRegistry::recipesForProducer(const std::string& producer) const {
     std::vector<const RecipeDefinition*> result;
     for (const auto& [id, recipe] : recipes_)
-        if (recipe.producer == producer &&
-            (recipe.product.kind == RecipeProductKind::unit ||
-             recipe.product.kind == RecipeProductKind::resource))
+        if (recipe.producer == producer && (recipe.product.kind == RecipeProductKind::unit ||
+                                            recipe.product.kind == RecipeProductKind::resource))
             result.push_back(&recipe);
-    std::sort(result.begin(), result.end(), [](const auto* a, const auto* b) { return a->id < b->id; });
+    std::sort(
+        result.begin(), result.end(), [](const auto* a, const auto* b) { return a->id < b->id; });
     return result;
 }
 
-std::vector<const UpgradeDefinition*> DefinitionRegistry::upgradesForResearcher(const std::string& researcher) const {
+std::vector<const UpgradeDefinition*>
+DefinitionRegistry::upgradesForResearcher(const std::string& researcher) const {
     std::vector<const UpgradeDefinition*> result;
     for (const auto& [id, upgrade] : upgrades_)
-        if (std::find(upgrade.allowedResearchers.begin(), upgrade.allowedResearchers.end(), researcher) != upgrade.allowedResearchers.end())
+        if (std::find(upgrade.allowedResearchers.begin(),
+                      upgrade.allowedResearchers.end(),
+                      researcher) != upgrade.allowedResearchers.end())
             result.push_back(&upgrade);
-    std::sort(result.begin(), result.end(), [](const auto* a, const auto* b) { return a->id < b->id; });
+    std::sort(result.begin(), result.end(), [](const auto* a, const auto* b) {
+        if (a->satelliteCoverage != b->satelliteCoverage)
+            return a->satelliteCoverage < b->satelliteCoverage;
+        return a->id < b->id;
+    });
     return result;
 }
 
@@ -1990,7 +2127,8 @@ void DefinitionRegistry::initializeEntity(Entity& entity) const {
     }
     if (type.movement.type == "flying") {
         entity.flight.emplace();
-        entity.flight.altitude = std::max(entity.transform.position.y, entity.flight.minimumAltitude);
+        entity.flight.altitude =
+            std::max(entity.transform.position.y, entity.flight.minimumAltitude);
         entity.transform.position.y = entity.flight.altitude;
     }
     if (type.battery) {
@@ -2004,11 +2142,9 @@ void DefinitionRegistry::initializeEntity(Entity& entity) const {
         entity.combat.emplace();
         entity.combat.damage = resolve(GameplayStat::attackDamage, {}, {}, type.id);
         entity.combat.range = resolve(GameplayStat::attackRange, {}, {}, type.id);
-        entity.combat.cooldownSeconds =
-            resolve(GameplayStat::attackCooldown, {}, {}, type.id);
+        entity.combat.cooldownSeconds = resolve(GameplayStat::attackCooldown, {}, {}, type.id);
     }
-    if (has("resource"))
-    {
+    if (has("resource")) {
         entity.resource.emplace();
         entity.resource.type = type.resourceType;
         entity.resource.remaining = type.rawProductionPerTick > 0.0F ? 0.0F : type.resourceCapacity;
@@ -2025,9 +2161,8 @@ void DefinitionRegistry::initializeEntity(Entity& entity) const {
             entity.power.connectionRange = device->connectionRange;
             entity.power.transferLimit = device->transferLimit;
             entity.power.maximumConnections = device->maximumConnections;
-            entity.power.state = device->consumption <= 0.0F
-                                     ? PowerOperationalState::powered
-                                     : PowerOperationalState::offline;
+            entity.power.state = device->consumption <= 0.0F ? PowerOperationalState::powered
+                                                             : PowerOperationalState::offline;
         }
     }
     if (has("production")) {

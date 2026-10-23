@@ -59,11 +59,14 @@ struct StartUpgradeCommand {
     EntityId entity{0};
     std::string upgradeId;
 };
+// Player-wide instant grant; the common command envelope reserves entity 0.
+struct AdvanceSatelliteCommand { EntityId entity{0}; };
 struct PlaceBuildingCommand {
     EntityId entity{0};
     std::string buildingId;
     glm::vec3 position{0.0F};
     std::vector<EntityId> builders;
+    float rotationDegrees{};
 };
 struct ConstructCommand { EntityId entity{0}; EntityId building{0}; };
 struct StopConstructionCommand { EntityId entity{0}; };
@@ -98,7 +101,8 @@ using CommandPayload = std::variant<PossessUnitCommand,
                                     SetPowerEnabledCommand,
                                     SetPowerDischargeEnabledCommand,
                                     SetPowerConsumptionEnabledCommand,
-                                    SetPowerOutputEnabledCommand>;
+                                    SetPowerOutputEnabledCommand,
+                                    AdvanceSatelliteCommand>;
 // Keep new commands appended so their serialized variant indices remain stable.
 
 struct PlayerCommand {

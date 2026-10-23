@@ -54,6 +54,10 @@ std::uint64_t authoritativeStateChecksum(const World& world,
         hash.value(foundation.influence);
         hash.value(foundation.sourceSlopeDegrees);
         hash.value(foundation.requiresSlab);
+        hash.value(foundation.levelsTerrain);
+        hash.value(foundation.levelingBlendWidth);
+        hash.value(foundation.levelingMaximumCut);
+        hash.value(foundation.levelingMaximumFill);
     }
     std::vector<const Player*> orderedPlayers;
     for (const Player& player : players.players()) orderedPlayers.push_back(&player);
@@ -63,6 +67,8 @@ std::uint64_t authoritativeStateChecksum(const World& world,
         hash.value(player->id); hash.text(player->countryId); hash.text(player->specializationId);
         hash.value(static_cast<std::uint64_t>(player->resources.size()));
         for (const auto& [id, amount] : player->resources) { hash.text(id); hash.value(amount); }
+        hash.value(static_cast<std::uint64_t>(player->researchedUpgrades.size()));
+        for (const auto& [id, level] : player->researchedUpgrades) { hash.text(id); hash.value(level); }
         for (auto discovered : player->discovered) hash.value(discovered);
     }
     std::vector<const Entity*> entities;

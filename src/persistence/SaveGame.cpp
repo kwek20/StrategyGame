@@ -6,6 +6,7 @@
 
 #include <cmath>
 #include <fstream>
+#include <glm/trigonometric.hpp>
 #include <rapidjson/document.h>
 #include <rapidjson/istreamwrapper.h>
 #include <rapidjson/ostreamwrapper.h>
@@ -114,6 +115,14 @@ void SaveGame::write(const std::filesystem::path& path,
         writer.Double(foundation.sourceSlopeDegrees);
         writer.Key("requiresSlab");
         writer.Bool(foundation.requiresSlab);
+        writer.Key("levelsTerrain");
+        writer.Bool(foundation.levelsTerrain);
+        writer.Key("levelingBlendWidth");
+        writer.Double(foundation.levelingBlendWidth);
+        writer.Key("levelingMaximumCut");
+        writer.Double(foundation.levelingMaximumCut);
+        writer.Key("levelingMaximumFill");
+        writer.Double(foundation.levelingMaximumFill);
         writer.EndObject();
     }
     writer.EndArray();
@@ -133,6 +142,13 @@ void SaveGame::write(const std::filesystem::path& path,
             for (const auto& [id, amount] : player.resources) {
                 writer.Key(id.c_str());
                 writer.Double(amount);
+            }
+            writer.EndObject();
+            writer.Key("researchedUpgrades");
+            writer.StartObject();
+            for (const auto& [id, level] : player.researchedUpgrades) {
+                writer.Key(id.c_str());
+                writer.Uint(level);
             }
             writer.EndObject();
             std::string explored;
@@ -467,6 +483,24 @@ SaveData SaveGame::read(const std::filesystem::path& path) {
         foundation.influence = number("influence");
         foundation.sourceSlopeDegrees = number("sourceSlopeDegrees");
         foundation.requiresSlab = item["requiresSlab"].GetBool();
+        if (item.HasMember("levelsTerrain")) {
+            if (!item["levelsTerrain"].IsBool())
+                throw std::runtime_error("Invalid foundation leveling flag");
+            foundation.levelsTerrain = item["levelsTerrain"].GetBool();
+            foundation.levelingBlendWidth = number("levelingBlendWidth");
+            foundation.levelingMaximumCut = number("levelingMaximumCut");
+            foundation.levelingMaximumFill = number("levelingMaximumFill");
+            if (foundation.levelingBlendWidth < Terrain::spacing * 2 ||
+                foundation.levelingBlendWidth > 2 || foundation.levelingMaximumCut < 0 ||
+                foundation.levelingMaximumCut > 2 || foundation.levelingMaximumFill < 0 ||
+                foundation.levelingMaximumFill > 2 ||
+                (foundation.levelsTerrain &&
+                 (result.terrainMode != TerrainMode::v2 ||
+                  glm::length(foundation.gradient) >
+                      std::tan(glm::radians(TerrainPlacementProfile::maximumAllowedTiltDegrees)) +
+                          1e-6F)))
+                throw std::runtime_error("Invalid foundation leveling dimensions");
+        }
         if (foundation.innerRadius < 0 || foundation.outerRadius <= 0 ||
             foundation.outerRadius < foundation.innerRadius || foundation.edgeFalloff < 0 ||
             foundation.influence < 0 || foundation.influence > 1 ||
@@ -482,6 +516,7 @@ SaveData SaveGame::read(const std::filesystem::path& path) {
             !player.HasMember("country") || !player["country"].IsString() ||
             !player.HasMember("specialization") || !player["specialization"].IsString() ||
             !player.HasMember("resources") || !player["resources"].IsObject() ||
+            !player.HasMember("researchedUpgrades") || !player["researchedUpgrades"].IsObject() ||
             !player.HasMember("discovered") || !player["discovered"].IsString() ||
             !player.HasMember("intelligence") || !player["intelligence"].IsArray())
             throw std::runtime_error("Invalid player in current save format");
@@ -502,6 +537,13 @@ SaveData SaveGame::read(const std::filesystem::path& path) {
             if (!resource->value.IsNumber() || resource->value.GetFloat() < 0.0F)
                 throw std::runtime_error("Invalid player resource amount");
             result.resources[index][resource->name.GetString()] = resource->value.GetFloat();
+        }
+        for (auto upgrade = player["researchedUpgrades"].MemberBegin();
+             upgrade != player["researchedUpgrades"].MemberEnd(); ++upgrade) {
+            if (!upgrade->value.IsUint() || upgrade->value.GetUint() == 0 ||
+                !result.researchedUpgrades[index].emplace(upgrade->name.GetString(),
+                                                         upgrade->value.GetUint()).second)
+                throw std::runtime_error("Invalid player research level");
         }
         const std::string cells = player["discovered"].GetString();
         result.discovered[index].reserve(cells.size());

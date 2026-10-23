@@ -150,6 +150,8 @@
       "workStep": 2,
       "dronePowerPerStep": 1,
       "tags": ["construction", "sensor", "information"]
-    }
+    },
+    {"id": "research.satellite_low_resolution", "product": {"building": "command_hub", "amount": 1}, "cost": {"alloy": 100}, "durationTicks": 900, "tags": ["research", "upgrade"]},
+    {"id": "research.satellite_high_resolution", "product": {"building": "command_hub", "amount": 1}, "cost": {"alloy": 250, "fuel": 100}, "durationTicks": 1800, "tags": ["research", "upgrade"]}
   ]
 }

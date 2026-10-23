@@ -1,5 +1,6 @@
 #include "render/ResourceSiteTexture.hpp"
 
+#include <chrono>
 #include <glad/glad.h>
 
 namespace strategy {
@@ -16,6 +17,32 @@ void ResourceSiteTexture::clear() {
 void ResourceSiteTexture::update(std::span<const ResourceSiteSource> sources, float extent) {
     const auto oldSide = map_.side();
     const auto updates = map_.update(sources, extent);
+    upload(oldSide, updates);
+}
+void ResourceSiteTexture::beginPreparation(std::span<const ResourceSiteSource> sources,
+                                           float extent) {
+    clear();
+    map_.beginUpdate(sources, extent);
+}
+bool ResourceSiteTexture::advancePreparation() {
+    // Advance whole tiles only. Batch cheap/empty tiles without imposing a frame per tile;
+    // yield between expensive tiles so loading input and progress continue to be serviced.
+    const auto started = std::chrono::steady_clock::now();
+    bool complete = false;
+    for (int tile = 0; tile < 16; ++tile) {
+        complete = map_.advanceUpdate();
+        if (complete || std::chrono::steady_clock::now() - started >= std::chrono::milliseconds(6))
+            break;
+    }
+    if (!complete)
+        return false;
+    if (!texture_) {
+        const ResourceSiteTile whole{0, 0, map_.side(), map_.side()};
+        upload(0, std::span{&whole, 1});
+    }
+    return true;
+}
+void ResourceSiteTexture::upload(int oldSide, std::span<const ResourceSiteTile> updates) {
     uploadedTiles_ = updates.size();
     if (updates.empty())
         return;

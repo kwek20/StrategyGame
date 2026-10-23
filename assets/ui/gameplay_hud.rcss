@@ -438,10 +438,14 @@ button:hover, button:focus {
 }
 #placement-reason {
     position: absolute;
-    width: 310dp;
+    width: 360dp;
     padding: 8dp 12dp;
     background-color: #160c09ee;
     border: 2dp #d95a38;
     color: #ffe4d7;
     font-size: 12dp;
+    white-space: pre-wrap;
+    max-width: 85vw;
+    pointer-events: none;
 }
+#placement-reason.valid { border-color: #69c4ad; background-color: #071b1aee; }

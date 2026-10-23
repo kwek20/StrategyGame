@@ -20,6 +20,8 @@ uniform sampler2D resourceSiteMap;
 uniform bool useResourceSites;
 uniform bool useExploration;
 uniform bool useFoundationTexture;
+uniform bool useScaffoldMaterial;
+uniform float foundationProgress;
 uniform bool terrainDebug;
 uniform bool regionalStyle;
 uniform bool boundaryPresentation;
@@ -78,6 +80,34 @@ void main() {
 
     float explored = useExploration
         ? texture(explorationMap, worldPosition.xz / explorationExtent + 0.5).r : 1.0;
+    if (useScaffoldMaterial) {
+        // Static member stages: progress reveals steel without moving the floor or uploading meshes.
+        float reveal = smoothstep(traversalClass, traversalClass + 0.06, foundationProgress);
+        float grain = fract(sin(dot(floor(worldPosition * 80.0), vec3(12.9898, 78.233, 31.417))) * 43758.5453);
+        if (foundationProgress <= 0.0 || grain > reveal) discard;
+        vec3 n = normalize(vertexNormal);
+        vec2 uv = abs(n.y) > 0.7 ? worldPosition.xz
+                  : abs(n.x) > abs(n.z) ? worldPosition.zy : worldPosition.xy;
+        float wear = terrainNoise(uv * 18.0);
+        vec3 metal = vertexColor * mix(0.88, 1.12, wear);
+        float rust = smoothstep(0.75, 0.9, terrainNoise(uv * 5.0));
+        metal = mix(metal, vec3(0.20, 0.105, 0.045), rust * 0.24);
+        if (vertexColor.r > 0.4 && vertexColor.b < 0.1) {
+            float stripe = step(0.5, fract((uv.x + uv.y) * 5.0));
+            metal = mix(vec3(0.045), vertexColor, stripe);
+        }
+        vec3 light = normalize(vec3(-0.45, 0.82, 0.35));
+        vec3 halfDirection = normalize(light + normalize(cameraPosition - worldPosition));
+        vec3 lit = metal * (0.45 + max(dot(n, light), 0.0) * 0.65);
+        lit += vec3(0.06) * pow(max(dot(n, halfDirection), 0.0), 40.0);
+        float depth = max(localWaterSurfaceHeight - worldPosition.y, 0.0);
+        lit = mix(lit, lit * vec3(0.38, 0.65, 0.70), waterCoverage * smoothstep(0.0, 2.8, depth) * 0.65);
+        lit = pow(max(lit, vec3(0.0)), vec3(1.0 / 2.2));
+        float fog = smoothstep(fogRange.x, fogRange.y, distance(cameraPosition.xz, worldPosition.xz));
+        lit = mix(lit, vec3(0.32, 0.36, 0.38), fog * 0.72);
+        outColor = vec4(explored < 0.12 ? vec3(0.008, 0.012, 0.018) : explored < 0.75 ? lit * 0.42 : lit, 1.0);
+        return;
+    }
     vec4 site = vec4(0.0);
     if (useResourceSites && regionalStyle && !useFoundationTexture && !boundaryPresentation) {
         site = texture(resourceSiteMap, worldPosition.xz / explorationExtent + 0.5);

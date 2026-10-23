@@ -6,6 +6,7 @@
 #include <array>
 #include <cmath>
 #include <glm/geometric.hpp>
+#include <limits>
 #include <stdexcept>
 
 namespace strategy {
@@ -237,15 +238,22 @@ float TerrainTerraces::surfaceAt(glm::vec2 position) const {
                     : corner + sz * (vertical - corner) + sx * (center - vertical);
 }
 bool TerrainTerraces::crossesCliff(glm::vec2 start, glm::vec2 end) const {
+    return cliffDrop(start, end, true) > 0;
+}
+float TerrainTerraces::maximumCliffDrop(glm::vec2 start, glm::vec2 end) const {
+    return cliffDrop(start, end, false);
+}
+float TerrainTerraces::cliffDrop(glm::vec2 start, glm::vec2 end, bool firstOnly) const {
     const glm::vec2 a = (start + glm::vec2{extent_ * 0.5F}) / settings_.side;
     const glm::vec2 b = (end + glm::vec2{extent_ * 0.5F}) / settings_.side;
     if (a.x < 0 || a.y < 0 || b.x < 0 || b.y < 0 || a.x >= side_ || a.y >= side_ || b.x >= side_ ||
         b.y >= side_)
-        return true;
+        return std::numeric_limits<float>::infinity();
     const auto crossing = [&](bool horizontal) {
         const float from = horizontal ? a.x : a.y, to = horizontal ? b.x : b.y;
         if (std::abs(to - from) < 1e-7F)
-            return false;
+            return 0.0F;
+        float drop = 0;
         const int low = std::max(1, static_cast<int>(std::ceil(std::min(from, to))));
         const int high = std::min(side_ - 1, static_cast<int>(std::floor(std::max(from, to))));
         for (int boundary = low; boundary <= high; ++boundary) {
@@ -256,12 +264,20 @@ bool TerrainTerraces::crossesCliff(glm::vec2 start, glm::vec2 end) const {
                 const int along = static_cast<int>(std::floor(other + epsilon));
                 const auto& cell = horizontal ? cells_[index(boundary - 1, along)]
                                               : cells_[index(along, boundary - 1)];
-                if ((horizontal ? cell.east : cell.south) == TerrainEdgeKind::cliff)
-                    return true;
+                if ((horizontal ? cell.east : cell.south) == TerrainEdgeKind::cliff) {
+                    const auto& otherCell = horizontal ? cells_[index(boundary, along)]
+                                                       : cells_[index(along, boundary)];
+                    drop = std::max(drop, std::abs(cell.elevation - otherCell.elevation));
+                    if (firstOnly)
+                        return drop;
+                }
             }
         }
-        return false;
+        return drop;
     };
-    return crossing(true) || crossing(false);
+    const float horizontalDrop = crossing(true);
+    if (firstOnly && horizontalDrop > 0)
+        return horizontalDrop;
+    return std::max(horizontalDrop, crossing(false));
 }
 } // namespace strategy

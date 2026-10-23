@@ -75,6 +75,7 @@ std::vector<std::byte> CommandCodec::encode(const PlayerCommand& command) {
             write(result,payload.position.x); write(result,payload.position.y); write(result,payload.position.z);
             write(result, static_cast<std::uint32_t>(payload.builders.size()));
             for (EntityId builder : payload.builders) write(result, builder);
+            write(result, payload.rotationDegrees);
         }
         else if constexpr (std::is_same_v<T, ConstructCommand>) write(result, payload.building);
         else if constexpr (std::is_same_v<T, RepairCommand>) write(result, payload.target);
@@ -127,6 +128,8 @@ std::optional<PlayerCommand> CommandCodec::decode(std::span<const std::byte> inp
             if (!read(input, builder)) return std::nullopt;
             value.builders.push_back(builder);
         }
+        if (!read(input, value.rotationDegrees))
+            return std::nullopt;
         result.payload=std::move(value); break;
     }
     case 9: { EntityId building{}; if(!read(input,building)) return std::nullopt; result.payload=ConstructCommand{entity,building}; break; }
@@ -149,6 +152,11 @@ std::optional<PlayerCommand> CommandCodec::decode(std::span<const std::byte> inp
     case 23: { if(input.empty()) return std::nullopt; const bool enabled=input.front()!=std::byte{0}; input=input.subspan(1); result.payload=SetPowerDischargeEnabledCommand{entity,enabled}; break; }
     case 24: { if(input.empty()) return std::nullopt; const bool enabled=input.front()!=std::byte{0}; input=input.subspan(1); result.payload=SetPowerConsumptionEnabledCommand{entity,enabled}; break; }
     case 25: { if(input.empty()) return std::nullopt; const bool enabled=input.front()!=std::byte{0}; input=input.subspan(1); result.payload=SetPowerOutputEnabledCommand{entity,enabled}; break; }
+    case 26: {
+        if (entity != 0) return std::nullopt;
+        result.payload = AdvanceSatelliteCommand{};
+        break;
+    }
     default: return std::nullopt;
     }
     return input.empty() ? std::optional<PlayerCommand>{std::move(result)} : std::nullopt;

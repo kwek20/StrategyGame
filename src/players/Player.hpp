@@ -28,6 +28,8 @@ struct Player {
     std::string countryId{"unassigned"};
     std::string specializationId{"unassigned"};
     std::map<std::string, float> resources;
+    // Player research survives the loss of its original researcher.
+    std::map<std::string, std::uint32_t> researchedUpgrades;
     std::vector<std::uint8_t> discovered =
         std::vector<std::uint8_t>(explorationCells * explorationCells, 0);
     std::vector<std::uint8_t> visible =

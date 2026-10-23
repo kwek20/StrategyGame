@@ -246,7 +246,8 @@ Building and upgrade buttons reveal a compact, wrapped information box after hal
 continuous hover, including disabled buttons. It shows name, resource cost, power consumption,
 description, required upgrades, and any unmet upgrade/resource condition. Construction work power
 is shown separately from ongoing grid consumption. Research buttons show the research building's
-power demand; selecting several researchers shows their combined resource cost.
+power demand; selecting several researchers shows their combined resource cost. Player-wide
+satellite research is purchased once, including when multiple command hubs are selected.
 Moving within the same button keeps the hover timer running; the pointer need not stop.
 Actions with no resource cost omit the cost line.
 
@@ -257,6 +258,33 @@ enemy upgrades, and unfinished buildings do not satisfy a requirement. Losing th
 building blocks new construction until another qualifies; existing buildings remain intact.
 The same rule is enforced by authoritative placement and building-upgrade/production commands.
 Editor placement remains unrestricted.
+
+### Satellite research
+
+Satellite coverage is a permanent, owner-only player capability researched at a command hub.
+Low-resolution satellite explores every map cell on completion, permitting distant placement
+without requiring the drone to scout first. Resources and decoration remain visible on explored
+ground at the same dim lighting as remembered terrain; resources can be selected and targeted
+and appear as muted minimap markers. This applies to ordinary explored territory as well as
+low-resolution satellite exploration. It does not reveal live enemies outside normal vision.
+High-resolution satellite requires completed low-resolution research and continuously reveals
+the whole map, including enemy movement and current intelligence. Coverage survives losing the
+research hub and is restored on load before rendering, including F9 quickload. Both load paths
+restore the saved player's research, resources and exploration rather than retaining current progress.
+
+Initial tuning is 100 Alloy / 30 seconds for low resolution, then 250 Alloy + 100 Fuel /
+60 seconds for high resolution. These costs and times live in research recipe definitions and
+remain provisional. Research uses the normal production queue and power rules; queued research
+does not grant coverage. Duplicate purchases are prevented across the player's hubs, and queued
+cancellation uses the normal reserved-cost refund.
+
+The hub retains both paid research actions and their requirements. The top-bar SAT button is
+an instant, free shortcut: first click grants low resolution, second grants high resolution;
+if low resolution is already owned, its next click grants high resolution. Further clicks do
+nothing. It does not require a hub or change selection/camera. A queued purchase of the granted
+tier is removed and its reserved costs refunded. The top button reports SAT, SAT LOW or SAT HIGH.
+Exploration and live vision come from the simulation, so preview, click acceptance, fog, picking
+and the minimap use the same player state.
 
 Each applicable building has:
 

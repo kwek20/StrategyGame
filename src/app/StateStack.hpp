@@ -22,6 +22,10 @@ class StateStack final {
                             std::make_unique<State>(context_, std::forward<Args>(args)...)});
     }
 
+    // Transfer a fully prepared state without reconstructing it at activation.
+    void replace(std::unique_ptr<GameState> state) {
+        pending_.push_back({Action::replace, std::move(state)});
+    }
     void pop();
     void clear();
     void applyPendingChanges();

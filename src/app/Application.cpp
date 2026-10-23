@@ -279,6 +279,46 @@ int Application::run() {
         states_->applyPendingChanges();
     };
 
+    const auto prepareMatchPresentation = [this](PlayState& prepared) {
+        const auto started = Clock::now();
+        double longestStep = 0;
+        prepared.beginPresentationPreparation(*renderer_);
+        bool ready = false;
+        while (running_ && !ready) {
+            SDL_Event event{};
+            while (SDL_PollEvent(&event)) {
+                if (event.type == SDL_EVENT_QUIT)
+                    running_ = false;
+                if (!running_ ||
+                    (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE)) {
+                    renderer_->cancelPresentationPreparation();
+                    return false;
+                }
+            }
+            int width = 1, height = 1;
+            SDL_GetWindowSizeInPixels(window_, &width, &height);
+            renderer_->beginProfileFrame();
+            renderer_->beginFrame(width, height);
+            const auto step = Clock::now();
+            ready = prepared.advancePresentationPreparation(*renderer_);
+            const double stepMilliseconds =
+                std::chrono::duration<double, std::milli>(Clock::now() - step).count();
+            longestStep = std::max(longestStep, stepMilliseconds);
+            renderer_->recordProfile("loading.presentation", stepMilliseconds);
+            renderer_->drawLoadingScreen(.8F + .19F * prepared.presentationPreparationProgress(),
+                                         Text::get("loading.presentation"));
+            renderer_->endFrame();
+            SDL_GL_SwapWindow(window_);
+        }
+        logger_->info(
+            "match_loading",
+            "Presentation prepared in " +
+                std::to_string(
+                    std::chrono::duration<double, std::milli>(Clock::now() - started).count()) +
+                " ms; longest preparation step " + std::to_string(longestStep) + " ms");
+        return ready;
+    };
+
     while (running_) {
         renderer_->finishLoadingScreen();
         SDL_Event event{};
@@ -378,44 +418,28 @@ int Application::run() {
                     restoreMatchSetupAfterLoading();
                     continue;
                 }
-                renderer_->stageGeneratedTerrain(prepared.terrain(),
-                                                 prepared.terrainSeed(),
-                                                 prepared.mapChunksPerSide(),
-                                                 prepared.world().foundations());
-                while (!renderer_->terrainUploadFinished()) {
-                    showLoading(0.68F + renderer_->terrainUploadProgress() * 0.16F,
-                                Text::get("loading.terrain_upload"));
-                    SDL_Event loadingEvent{};
-                    while (SDL_PollEvent(&loadingEvent)) {
-                        if (loadingEvent.type == SDL_EVENT_QUIT) {
-                            running_ = false;
-                            cancelled = true;
-                        } else if (loadingEvent.type == SDL_EVENT_KEY_DOWN &&
-                                   loadingEvent.key.key == SDLK_ESCAPE) {
-                            cancelled = true;
-                        }
-                    }
-                    if (cancelled) {
-                        renderer_->cancelTerrainUpload();
-                        break;
-                    }
-                }
-                if (cancelled) {
+                preloadAssets("match", 0.68F, 0.12F);
+                auto preparedPlay = std::make_unique<PlayState>(
+                    *stateContext_, std::move(setup), std::move(prepared));
+                if (!prepareMatchPresentation(*preparedPlay)) {
+                    preparedPlay.reset();
                     if (!running_)
                         break;
                     restoreMatchSetupAfterLoading();
                     continue;
                 }
-                preloadAssets("match", 0.84F, 0.12F);
-                showLoading(0.98F, Text::get("loading.finalize"));
                 if (!waitForLoadingConfirmation()) {
+                    preparedPlay.reset();
                     if (!running_)
                         break;
                     restoreMatchSetupAfterLoading();
                     continue;
                 }
                 fadeOutCompletedLoading();
-                states_->replace<PlayState>(std::move(setup), std::move(prepared));
+                states_->replace(std::move(preparedPlay));
+                previous = Clock::now();
+                fpsStart = previous;
+                frames = 0;
                 stateContext_->audio.setAmbient(AudioCue::gameAmbient);
             } catch (const WorldGenerationCancelled&) {
                 logger_->info("world_generation",
@@ -429,6 +453,7 @@ int Application::run() {
                                std::string{error.what()} +
                                    (generationLogged ? std::string{}
                                                      : "\n" + generationProgress.diagnostics()));
+                renderer_->cancelPresentationPreparation();
                 renderer_->finishLoadingScreen();
                 states_->replace<MatchSetupState>(true);
             }
@@ -456,26 +481,67 @@ int Application::run() {
                 const GameConfig config = GameConfig::load(stateContext_->configPath);
                 SaveData data = SaveGame::read(config.savePath());
                 showLoading(0.30F, Text::get("loading.terrain"));
-                renderer_->regenerateTerrain(data.terrainSeed,
-                                             data.mapChunksPerSide,
-                                             TerrainLayoutId{data.terrainLayout},
-                                             data.terrainMode,
-                                             data.terrainRepairLevel);
-                showLoading(0.36F, Text::get("loading.world"));
-                preloadAssets("match", 0.40F, 0.52F);
-                showLoading(0.94F, Text::get("loading.finalize"));
+                preloadAssets("match", 0.30F, 0.48F);
+                showLoading(0.79F, Text::get("loading.world"));
+                WorldGenerationProgress restoreProgress;
+                auto restoring = std::async(
+                    std::launch::async, [this, data = std::move(data), &restoreProgress]() mutable {
+                        return std::make_unique<PlayState>(
+                            *stateContext_, std::move(data), &restoreProgress);
+                    });
+                bool cancelled = false;
+                while (restoring.wait_for(std::chrono::milliseconds(0)) !=
+                       std::future_status::ready) {
+                    showLoading(.79F, Text::get("loading.world"));
+                    SDL_Event restoreEvent{};
+                    while (SDL_PollEvent(&restoreEvent)) {
+                        if (restoreEvent.type == SDL_EVENT_QUIT)
+                            running_ = false;
+                        if (!running_ ||
+                            (restoreEvent.type == SDL_EVENT_KEY_DOWN && restoreEvent.key.key == SDLK_ESCAPE))
+                            cancelled = true;
+                    }
+                    if (cancelled)
+                        restoreProgress.requestCancellation();
+                    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+                }
+                auto preparedPlay = restoring.get();
+                if (cancelled) {
+                    preparedPlay.reset();
+                    if (!running_)
+                        break;
+                    restoreMainMenuAfterLoading();
+                    continue;
+                }
+                if (!prepareMatchPresentation(*preparedPlay)) {
+                    preparedPlay.reset();
+                    if (!running_)
+                        break;
+                    restoreMainMenuAfterLoading();
+                    continue;
+                }
                 if (!waitForLoadingConfirmation()) {
+                    preparedPlay.reset();
                     if (!running_)
                         break;
                     restoreMainMenuAfterLoading();
                     continue;
                 }
                 fadeOutCompletedLoading();
-                states_->replace<PlayState>(std::move(data));
+                states_->replace(std::move(preparedPlay));
+                previous = Clock::now();
+                fpsStart = previous;
+                frames = 0;
                 stateContext_->audio.setAmbient(AudioCue::gameAmbient);
+            } catch (const WorldGenerationCancelled&) {
+                if (!running_)
+                    break;
+                restoreMainMenuAfterLoading();
+                continue;
             } catch (const std::exception& error) {
                 logger_->error("persistence",
                                std::string("Could not load from main menu: ") + error.what());
+                renderer_->cancelPresentationPreparation();
                 renderer_->finishLoadingScreen();
                 states_->replace<StartMenuState>(Text::get("menu.load_failed"));
             }

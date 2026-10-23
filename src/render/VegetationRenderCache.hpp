@@ -36,7 +36,10 @@ class VegetationRenderCache final {
     using PrepareTransform =
         std::function<glm::mat4(const VegetationInstance&, const EntityDefinition*, float)>;
 
-    void beginFrame(const VegetationField& field);
+    void resetFrameStats() {
+        stats_ = {};
+    }
+    void beginFrame(const VegetationField& field, bool resetStats = true);
     const std::map<std::string, Batch>& prepareChunk(std::size_t index,
                                                      const VegetationChunk& source,
                                                      const ResourceManager& resources,

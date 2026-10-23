@@ -89,6 +89,7 @@ void TerrainGenerationPipeline::assembleV2(Terrain& terrain,
                                            const TerrainGenerationDefinitions& definitions,
                                            TerrainV2Landscape landscape,
                                            WorldGenerationProgress* progress) {
+    terrain.placementRevision_ = Terrain::nextPlacementRevision();
     terrain.v2_ = std::move(landscape);
     terrain.mode_ = TerrainMode::v2;
     terrain.heights_.resize(static_cast<std::size_t>(Terrain::vertexCount) * Terrain::vertexCount);

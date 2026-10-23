@@ -45,6 +45,20 @@ glm::vec3 Navigation::positionOf(int x, int z) const {
             -map_.halfExtent() + (static_cast<float>(z) + 0.5F) * cellSize};
 }
 
+void Navigation::refreshTerrainHeights(const Terrain& terrain, const TerrainFoundation* cut) {
+    // Bounded dry-land cuts preserve the canonical cliff/water mask; only path rise costs change.
+    const float reach = cut ? cut->outerRadius + cut->levelingBlendWidth + Terrain::spacing * 3 : 0;
+    const int x0 = cut ? gridCoordinate(cut->center.x - reach) : 0;
+    const int x1 = cut ? gridCoordinate(cut->center.x + reach) : side_ - 1;
+    const int z0 = cut ? gridCoordinate(cut->center.z - reach) : 0;
+    const int z1 = cut ? gridCoordinate(cut->center.z + reach) : side_ - 1;
+    for (int z = z0; z <= z1; ++z)
+        for (int x = x0; x <= x1; ++x) {
+            const auto p = positionOf(x, z);
+            heights_[indexOf(x, z)] = terrain.heightAt(p.x, p.z);
+        }
+}
+
 void Navigation::rebuildTerrain(const Terrain& terrain, std::uint32_t mapChunksPerSide,
                                 WorldGenerationProgress* progress) {
     if (progress) progress->report(WorldGenerationPhase::navigation, 0.0F);

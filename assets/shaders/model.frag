@@ -17,11 +17,16 @@ uniform sampler2D explorationMap;
 uniform float explorationExtent;
 out vec4 outColor;
 void main() {
+    float staticVisibility = 1.0;
     if (visibilityMode != 0) {
         vec2 explorationUv = worldPosition.xz / explorationExtent + 0.5;
         float visibility = texture(explorationMap, explorationUv).r;
-        if ((visibilityMode > 0 && visibility < 0.68) ||
-            (visibilityMode < 0 && visibility >= 0.68)) discard;
+        if (visibilityMode == 2) {
+            // Static landscape shares terrain exploration, independently of live unit vision.
+            if (visibility < 0.12) discard;
+            staticVisibility = visibility < 0.75 ? 0.42 : 1.0;
+        } else if ((visibilityMode > 0 && visibility < 0.68) ||
+                   (visibilityMode < 0 && visibility >= 0.68)) discard;
     }
     vec3 lightDirection = normalize(vec3(-0.45, 0.82, 0.35));
     vec3 normal = normalize(worldNormal);
@@ -40,5 +45,5 @@ void main() {
     float fog = smoothstep(fogRange.x,
                            fogRange.y,
                            distance(cameraPosition.xz, worldPosition.xz));
-    outColor = vec4(mix(color, vec3(0.32, 0.36, 0.38), fog * 0.72), base.a);
+    outColor = vec4(mix(color, vec3(0.32, 0.36, 0.38), fog * 0.72) * staticVisibility, base.a);
 }

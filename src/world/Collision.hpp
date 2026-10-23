@@ -19,6 +19,10 @@ class World;
                                         EntityArchetypeId archetype,
                                         glm::vec2 position,
                                         float rotationDegrees = 0.0F);
+[[nodiscard]] EntityId firstPlacementBlocker(const World& world,
+                                             const DefinitionRegistry& definitions,
+                                             const SpatialShape& shape,
+                                             EntityId ignored = 0);
 [[nodiscard]] bool overlapsObject(const World& world,
                                   const DefinitionRegistry& definitions,
                                   const SpatialShape& shape,

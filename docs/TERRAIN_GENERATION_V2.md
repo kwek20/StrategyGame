@@ -460,23 +460,60 @@ proposed definition capabilities; restoring water alone does not implement those
 
 Clip the actual rotated or circular footprint against final terrain triangles and water coverage.
 Measure area in the horizontal footprint plane, not sloping surface area or a count of cells.
-A partially wet tile contributes its actual dry flat supported area; it is not counted wholly as
+A partially wet tile contributes its actual dry base-supported area; it is not counted wholly as
 supported or unsupported.
 
-For Land buildings, let A be total footprint area and S the area of the connected flat dry support
-region at the placement plane. Require S > 2A/3. The remainder U = A - S must be strictly less than
-A/3. Water within partially wet tiles, lower ground, ramps and cliff transitions all contribute to
-this combined remainder. Count overlapping reasons once. Separate support islands cannot be added
-together to satisfy the connected-support requirement. Traversable ramps and water are not flat
-support. Exactly one third unsupported rejects; numeric tolerances must not turn that boundary into
-an accepted placement. Fully wet tile overlap still rejects regardless of the area ratio.
+For Land buildings, distinguish shallow **floor contact** from **foundation bearing**.
+Floor contact is dry ground within `supportHeightTolerance` of the placement plane (currently
+0.25 world units). Bearing extends down a continuous dry hillside to ground reachable within
+`maximumFoundationDepth` (currently 6 units). A local ramp triangle can be steeper than the
+building's tilt cap without losing footing eligibility. Canonical cliff faces remain barriers;
+a cliff shelf is not part of another shelf merely because its ground lies below the building.
+
+Let A be the footprint area and S the largest connected dry bearing region that also contains
+positive-area floor contact. Require **S >= A/2**, including equality. The combined unsupported
+remainder U = A - S may cover at most half the footprint. Water and disconnected lower shelves
+contribute once to this remainder. Positive-length dry edge intervals establish connectivity;
+corner-only contact and unrelated support islands cannot be added together. Fully wet tile
+overlap still rejects Land regardless of the ratio. The support overlay and displayed percentage
+refer to this selected dry bearing region; shallow contact is tracked separately to select the
+base or scaffold geometry.
 
 ### Placement plane and foundations
 
-Choose a horizontal plane that does not intersect terrain anywhere beneath the footprint. The floor
-must also clear the highest overlapping water surface by a definition-backed clearance. The dry
-support region must reach this plane: raising an ordinary Land building entirely onto stilts cannot
-bypass the support rule and would require a separate placement contract.
+For dry Land placement, rank the bounded plans in this order:
+
+1. A natural fit, with at most 10 degrees total tilt and ordinary base concealment of up to
+   0.1 units. Do not move soil when this already avoids exposed metal supports.
+2. Small cut-and-fill grading around the fitted plane, without a raised scaffold.
+3. Bounded grading with partial metal supports. Prefer a shorter exposed foundation over a
+   taller ungraded one when the adjustment meets the earthwork budget.
+4. An ungraded scaffold where grading cannot improve the plan within its limits.
+
+Do not accept the first legal metal frame before testing feasible scaffold-free plans. Continue
+using the candidate residual bounds to avoid searching worse slopes that cannot improve the
+support class. Retain at least half connected dry bearing and the maximum foundation depth in
+all tiers. Grading preserves a suitable natural fitted angle; it does not force every pad level.
+
+Fit direction considers dominant/mean gradients and a least-squares fit over the largest
+continuous dry patch, using canonical cliff boundaries to separate unrelated shelves. Rank the
+bounded candidates by residual relief. Small steep ramp triangles must not hide the overall
+hillside from this fit. Cap the gradient vector magnitude at 10 degrees, not pitch and roll
+separately. Footprint rotation changes heading without increasing total tilt. Cliffs, reachable
+foundation depth and protected earthwork remain independent of that angle cap.
+
+Choose grading intercepts near the area-weighted average residual surface height, retaining the
+median and shallow raised alternatives. The floor must clear the resulting surface **relative to
+that slope**; an ungraded fallback stays above the highest remaining surface.
+Measure support gaps, excavation relief and foundation depth relative to the same plane at each
+location. Outside the explicit grading allowance, preserve the original terrain. Preview, accepted
+building, scaffold deck and saved foundation share the exact plane normal. Shallow gaps receive
+a small base; there is no unnecessary deep scaffold on a matching natural slope.
+
+Water-overlapping Land placement and Water/Shore contracts retain their horizontal water-clearance
+plane. The floor must clear the highest overlapping water surface by a definition-backed clearance.
+The dry support region must reach the plane within the shallow base tolerance: raising an ordinary
+Land building entirely onto stilts cannot bypass the support rule.
 
 Foundations extend to existing ground or submerged bed. Each building declares its maximum supported
 drop, measured from the placement plane to the ground/bed at its required support locations,
@@ -484,31 +521,51 @@ including submerged portions. Reject when required foundation depth exceeds that
 unsupported footprint area is small. Foundation layout must provide support for accepted overhang;
 it cannot simply omit deep portions to evade the depth check.
 
-Construction, demolition, upgrades and loading do not alter elevations, transition geometry,
-river beds or water surfaces. Foundations do not flatten terrain or displace water.
+Present V2 foundations as weathered dark metal scaffolds: a thin capped steel platform within the
+footprint, short feet over shallow gaps, and bed-anchored columns with X-braced exposed bays over
+larger drops. Keep rust and hazard markings restrained. Supported ground needs no visible forest
+of columns; floating buildings do not receive bed foundations. Preview and completed construction
+share the same structure. Construction reveals feet and columns, then braces, frame and deck,
+without moving the building's floor. Cache the static mesh and reveal members through progress;
+construction ticks must not recreate or upload its geometry.
 
-Water buildings do not use the Land two-thirds rule. Definitions specify minimum water depth and
+Bounded dry-land grading is an explicit exception to immutable generated terrain. For shallow
+residual relief of at most 0.75 units, permit cut-and-fill toward the selected plane. Keep maximum
+cut at 0.6 units and excavation volume, including the feathered border, at footprint area times
+0.1 units. Add a maximum fill of 0.5 units and a combined cut-plus-fill budget of footprint area
+times 0.15 units. Both positive and negative movements count; filling is not free earthwork.
+Larger residual slopes retain cut-only scaffold fallbacks. Water, real cliff transitions and
+neighbouring foundations remain protected, including their incident support vertices. Blend the
+pad into surrounding ground and recompute exact contact, bearing and depth on the proposed raster.
+
+Preview the complete adjustment without mutating simulation state. Commit only on successful
+placement, independently of construction progress. Store the accepted plane and cut/fill limits
+with its foundation. Cancellation or destruction rebuilds the edited regions from the original
+base and remaining operations. Overlapping edits compose by strongest absolute displacement from
+the base, with cuts winning exact ties; replay in stable entity-ID order to avoid floating-point
+ordering differences. Loading and construction never accumulate soil movement. The save schema
+remains format 1 and generation revision 7; the new fill field is required in current grading
+records. No compatibility reader or migration is added for older development saves.
+
+Water buildings do not use the Land half-support rule. Definitions specify minimum water depth and
 whether the building floats or uses bed foundations. Bed-supported Water buildings also declare a
 maximum foundation depth; floating structures have their own draft/clearance requirements. Shore
 definitions specify their dry/wet requirements, support rule and foundation limits explicitly.
 
-### Reachable perimeter interaction
+### Perimeter interaction and placement freedom
 
-Buildings have no designated entrances: units can interact from any side. Require at least one
-sufficiently wide perimeter segment with space for the relevant unit to stand, interact and leave.
-Validate actual unit clearance, interaction reach and a connection to the intended movement domain;
-a single reachable point is insufficient. Width and clearance derive from the relevant unit and
-interaction definition. Water buildings validate access for their intended interacting units.
-
-Perform the final access and required-route checks with building and foundation collision geometry
-included. Foundations must not obstruct the accepted interaction segment or required traffic.
+Buildings have no designated entrances: units can interact from any side. Restricted perimeter
+access does not block player placement and does not produce a placement warning. Players may
+build wherever the footprint, support, foundation, terrain/water and occupancy rules allow.
+Unit clearance, interaction reach and routes remain runtime navigation concerns. Generation-time
+opening and required-route checks still protect playable starts and resource access.
 An overhanging floor does not create a navigable bridge unless an explicit building behavior supports
-it. Report tile eligibility, support ratio, foundation depth and interaction access as distinct
-placement failure reasons.
+it. Report tile eligibility, support ratio and foundation depth as distinct placement failure reasons.
 
 Validate the minimum early building plan independently at every start while varying outlines,
 scenery and approach directions. Record extra capacity without requiring equal capacity across
-players. Generation-time shaping is allowed; construction-time terraforming is not.
+players. Generation-time shaping is allowed. Construction-time edits are restricted to the bounded
+dry-ground levelling contract above.
 
 ## 8. Resource distribution and cluster flair
 
@@ -948,8 +1005,8 @@ replacement. Never regenerate old buildings onto different terrain.
    resolve permitted beds/banks and water surfaces against Layer B. Implement broad ramps, cliffs,
    wet/dry edges and supported crossings. Verify applicable depth, flow and per-domain clearance.
 5. **Openings:** validate the proposed joint opening build plan at each start, usable exits, island self-sufficiency
-   and strict immutable foundations. Validate placement types, clipped support area, foundation
-   depth and perimeter access; exclude layout/settings combinations requiring unavailable transport before generation.
+   and bounded levelling with cliff foundations. Validate placement types, clipped support area, foundation
+   depth; exclude layout/settings combinations requiring unavailable transport before generation.
 6. **Required-resource repair and clusters:** implement bounded placement attempts, transactional
    terrain/water/access repairs and recipe-specific constructive fallbacks. Force ordinary placement
    failures in tests and verify complete inventories for the original seed. Then enlarge cluster
@@ -972,12 +1029,12 @@ A failed stage returns to implementation. Visual approval cannot excuse unusable
 | Dry independence | No water-driven shaping or reservations; empty wet fields; changing inactive hydrology settings leaves authoritative dry generation unchanged |
 | Hydrology | When active: connected coverage, non-increasing river levels, consistent confluences/outlets, coherent lake/ocean levels, no flooded openings |
 | Water layouts | Adequate dry opening space at each start, valid required crossings, accessible allocated fields and supported cross-island progression; no cross-player route equality |
-| Buildings | Joint early building layouts; Land/Water/Shore eligibility; actual clipped connected support; combined overhang thresholds; depth limits; reachable perimeter with foundation collision |
+| Buildings | Joint early building layouts; Land/Water/Shore eligibility; actual clipped connected support; combined overhang thresholds; depth limits; placement independent of perimeter access |
 | Resources | Fixed opening allocations, abundance-controlled additional field counts, site eligibility, gathering/delivery access and intended-player opening access; totals/node tuning deferred |
 | Economy | More small nodes introduce no unreviewed opening throughput advantage; compare actual gathering and delivery |
 | Starting guarantee | Fixed per-player opening Scrap/Oil inventories and nearby practical availability; independently usable starts; expansions and other strategic advantages need not be equal |
 | Rendering | Reviewed pan/orbit/zoom clips at shores, confluences, estuaries, ramps, cliffs, peaks, foundations and every map edge; no gaps, grey flashes, water seams or disappearing chunks |
-| Reliability | Every seed succeeds for supported setups; deterministic repairs/fallback, clean cancellation, no partial world, immutable post-generation terrain, saves and V1/V2 restoration |
+| Reliability | Every seed succeeds for supported setups; deterministic repairs/fallback, clean cancellation, no partial world, bounded reversible placement cuts, saves and V1/V2 restoration |
 | Cost | Compare generation time, bounded attempts, repair area, fallback frequency, triangle/node counts and frame times with the baseline |
 
 Begin with the six layouts and 10/15/20 sizes, two and four players where supported, low/normal/high
@@ -995,12 +1052,12 @@ lakes, rivers, confluences, estuaries, cliffs at shores,
 quantization-induced dams, valid/invalid crossings, narrow channels and island openings. Test that
 water visuals and navigation agree, disabling water clears all wet fields, and saves restore the
 same water geometry and classifications. Include rotated footprints and resources beside banks. Verify combined cliff/water overhang below,
-exactly at and above one third; validate interaction access from any usable building side. Test
+exactly at and above one half; verify restricted perimeter access does not block placement. Test
 Land rejection on fully wet tiles even below the overhang allowance, Water rejection on dry/partly
 wet tiles, boundary-only contact, disconnected support patches, water clearance, and foundation
-depth just below/at/above its configured maximum. Include narrow perimeter access, valid access
-from different sides, floating versus bed-supported water structures where implemented, and
-foundations obstructing previously usable interaction space or routes. Test
+depth just below/at/above its configured maximum. Include floating versus bed-supported water
+structures where implemented. Verify runtime routing handles unavailable interaction space
+without adding a placement gate. Test
 openings in varied non-corner locations, open fields, single passages and multiple passages without
 prescribed counts. Reject blocked required connectivity, including undersized gaps, and verify
 scenery clearing when implemented. Future removal must not mask current essential-access failures.

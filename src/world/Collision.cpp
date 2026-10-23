@@ -40,10 +40,10 @@ SpatialShape spatialShape(const DefinitionRegistry& definitions, const Entity& e
                         entity.transform.rotationDegrees.y);
 }
 
-bool overlapsObject(const World& world,
-                    const DefinitionRegistry& definitions,
-                    const SpatialShape& shape,
-                    EntityId ignored) {
+EntityId firstPlacementBlocker(const World& world,
+                               const DefinitionRegistry& definitions,
+                               const SpatialShape& shape,
+                               EntityId ignored) {
     for (const Entity& entity : world.entities()) {
         if (entity.id == ignored || entity.flight ||
             (entity.resource && entity.resource.remaining <= 0.0F))
@@ -52,9 +52,16 @@ bool overlapsObject(const World& world,
         if (definition && definition->collisionRadius <= 0.0F)
             continue;
         if (overlaps(shape, spatialShape(definitions, entity)))
-            return true;
+            return entity.id;
     }
-    return false;
+    return 0;
+}
+
+bool overlapsObject(const World& world,
+                    const DefinitionRegistry& definitions,
+                    const SpatialShape& shape,
+                    EntityId ignored) {
+    return firstPlacementBlocker(world, definitions, shape, ignored) != 0;
 }
 
 bool overlapsObject(const World& world,
