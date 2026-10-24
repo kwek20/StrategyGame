@@ -67,8 +67,13 @@ struct PlaceBuildingCommand {
     glm::vec3 position{0.0F};
     std::vector<EntityId> builders;
     float rotationDegrees{};
+    bool queueBuilders{};
 };
-struct ConstructCommand { EntityId entity{0}; EntityId building{0}; };
+struct ConstructCommand {
+    EntityId entity{0};
+    EntityId building{0};
+    bool queued{};
+};
 struct StopConstructionCommand { EntityId entity{0}; };
 struct CancelConstructionCommand { EntityId entity{0}; };
 struct RepairCommand { EntityId entity{0}; EntityId target{0}; };

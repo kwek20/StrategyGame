@@ -232,6 +232,11 @@ void SaveGame::write(const std::filesystem::path& path,
             writer.Uint(static_cast<unsigned>(entity.unitControl.order));
             writer.Key("orderTarget");
             writer.Uint64(entity.unitControl.orderTarget);
+            writer.Key("constructionQueue");
+            writer.StartArray();
+            for (auto target : entity.unitControl.constructionQueue)
+                writer.Uint64(target);
+            writer.EndArray();
             writer.EndObject();
         }
         if (entity.gatherer) {
@@ -613,7 +618,9 @@ SaveData SaveGame::read(const std::filesystem::path& path) {
                     !item.HasMember("destination") || !item["destination"].IsArray() ||
                     !item.HasMember("hasDestination") || !item["hasDestination"].IsBool() ||
                     !item.HasMember("order") || !item["order"].IsUint() ||
-                    !item.HasMember("orderTarget") || !item["orderTarget"].IsUint64())
+                    !item.HasMember("orderTarget") || !item["orderTarget"].IsUint64() ||
+                    !item.HasMember("constructionQueue") || !item["constructionQueue"].IsArray() ||
+                    item["constructionQueue"].Size() > 1024)
                     throw std::runtime_error("Invalid unit component");
                 entity.unitControl.directlyControllable = item["directlyControllable"].GetBool();
                 entity.unitControl.directInput = {item["directInput"][0].GetFloat(),
@@ -623,6 +630,11 @@ SaveData SaveGame::read(const std::filesystem::path& path) {
                 entity.unitControl.hasStrategicDestination = item["hasDestination"].GetBool();
                 entity.unitControl.order = static_cast<UnitOrderKind>(item["order"].GetUint());
                 entity.unitControl.orderTarget = item["orderTarget"].GetUint64();
+                for (const auto& target : item["constructionQueue"].GetArray()) {
+                    if (!target.IsUint64() || target.GetUint64() == 0)
+                        throw std::runtime_error("Invalid construction queue target");
+                    entity.unitControl.constructionQueue.push_back(target.GetUint64());
+                }
                 if (item["order"].GetUint() > static_cast<unsigned>(UnitOrderKind::stranded))
                     throw std::runtime_error("Invalid unit order");
             }

@@ -33,13 +33,13 @@ int strategyTestMain() {
     config.musicVolume = 0.4F;
     config.effectsVolume = 0.9F;
     config.muted = true;
-    config.keybinds["forward"] = 42;
+    config.keybinds.values["forward"][0] = {strategy::BindingDevice::key, 42};
     config.write(configPath);
     const strategy::GameConfig settingsRoundTrip = strategy::GameConfig::load(configPath);
     valid = valid && settingsRoundTrip.resolutionWidth == 1920 &&
             settingsRoundTrip.resolutionHeight == 1080 && settingsRoundTrip.fullscreen &&
             settingsRoundTrip.uiScale == 1.3F &&
-            settingsRoundTrip.keybinds.at("forward") == 42 &&
+            settingsRoundTrip.keybinds.values.at("forward")[0].code == 42 &&
             settingsRoundTrip.masterVolume == 0.7F && settingsRoundTrip.musicVolume == 0.4F &&
             settingsRoundTrip.effectsVolume == 0.9F && settingsRoundTrip.muted;
 

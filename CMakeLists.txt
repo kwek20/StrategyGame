@@ -63,6 +63,10 @@ add_library(strategy_localization STATIC src/localization/Text.cpp)
 strategy_target(strategy_localization)
 target_link_libraries(strategy_localization PUBLIC strategy_core RapidJSON)
 
+add_library(strategy_input STATIC src/input/KeyBindings.cpp)
+strategy_target(strategy_input)
+target_link_libraries(strategy_input PUBLIC strategy_core SDL3::SDL3 PRIVATE strategy_localization)
+
 add_library(strategy_players STATIC
     src/players/PlayerRegistry.cpp
 )
@@ -91,6 +95,7 @@ target_link_libraries(strategy_terrain PUBLIC strategy_core RapidJSON)
 add_library(strategy_world STATIC
     src/world/World.cpp
     src/world/Collision.cpp
+    src/world/PowerPlacement.cpp
     src/world/Navigation.cpp
     src/world/SpatialShape.cpp
     src/world/WorldGeneration.cpp
@@ -137,7 +142,7 @@ add_library(strategy_persistence STATIC
 )
 strategy_target(strategy_persistence)
 target_link_libraries(strategy_persistence
-    PUBLIC strategy_gameplay strategy_players strategy_world RapidJSON
+    PUBLIC strategy_gameplay strategy_players strategy_world strategy_input RapidJSON
 )
 
 add_library(strategy_audio STATIC src/audio/AudioSystem.cpp)
@@ -316,6 +321,21 @@ if(STRATEGY_BUILD_TESTS)
     set_tests_properties(drone_reliability PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
     add_executable(power_grid_system_tests tests/PowerGridSystemTests.cpp)
+    add_executable(key_bindings_tests tests/KeyBindingsTests.cpp)
+    strategy_target(key_bindings_tests)
+    target_link_libraries(key_bindings_tests PRIVATE strategy_persistence)
+    add_test(NAME key_bindings COMMAND key_bindings_tests)
+    set_tests_properties(key_bindings PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+    add_executable(construction_queue_tests tests/ConstructionQueueTests.cpp)
+    strategy_target(construction_queue_tests)
+    target_link_libraries(construction_queue_tests PRIVATE strategy_simulation strategy_persistence)
+    add_test(NAME construction_queue COMMAND construction_queue_tests)
+    set_tests_properties(construction_queue PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+    add_executable(power_placement_tests tests/PowerPlacementTests.cpp)
+    strategy_target(power_placement_tests)
+    target_link_libraries(power_placement_tests PRIVATE strategy_simulation)
+    add_test(NAME power_placement COMMAND power_placement_tests)
+    set_tests_properties(power_placement PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
     strategy_target(power_grid_system_tests)
     target_link_libraries(power_grid_system_tests
         PRIVATE strategy_gameplay strategy_simulation strategy_world
@@ -437,6 +457,20 @@ if(STRATEGY_BUILD_TESTS)
         $<$<CONFIG:Debug>:STRATEGY_EXPECT_SHADER_HOT_RELOAD=1>)
     target_link_libraries(renderer_integration_tests PRIVATE strategy_render strategy_simulation strategy_states)
     add_test(NAME explored_static_visibility COMMAND renderer_integration_tests)
+    add_test(NAME navigation_keybind_controls COMMAND renderer_integration_tests)
+    set_tests_properties(navigation_keybind_controls PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" ENVIRONMENT "STRATEGY_RENDER_CASE=navigation_keys")
+    add_test(NAME repeat_placement_controls COMMAND renderer_integration_tests)
+    set_tests_properties(repeat_placement_controls PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" ENVIRONMENT "STRATEGY_RENDER_CASE=repeat_placement")
+    add_test(NAME keybind_settings_controls COMMAND renderer_integration_tests)
+    set_tests_properties(keybind_settings_controls PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" ENVIRONMENT "STRATEGY_RENDER_CASE=keybind_settings")
+    add_test(NAME power_building_visuals COMMAND renderer_integration_tests)
+    set_tests_properties(power_building_visuals PROPERTIES
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        ENVIRONMENT "STRATEGY_RENDER_CASE=power_buildings")
+    add_test(NAME power_placement_controls COMMAND renderer_integration_tests)
+    set_tests_properties(power_placement_controls PROPERTIES
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        ENVIRONMENT "STRATEGY_RENDER_CASE=power_placement")
     set_tests_properties(explored_static_visibility PROPERTIES
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
         ENVIRONMENT "STRATEGY_RENDER_CASE=explored_static")
@@ -458,6 +492,9 @@ if(STRATEGY_BUILD_TESTS)
         resource_delivery_tests
         drone_reliability_tests
         power_grid_system_tests
+        power_placement_tests
+        key_bindings_tests
+        construction_queue_tests
         spatial_shape_tests
         vegetation_tests
         resource_field_generation_tests

@@ -53,7 +53,7 @@
       "generator": "continental_v1",
       "shape": "central_water",
       "hydrologyEnabled": true,
-      "parameters": { "featureStrength": 0.28, "featureRadius": 0.36 },
+      "parameters": { "featureStrength": 0.28, "featureRadius": 0.322 },
       "enabledBiomes": []
     },
     {

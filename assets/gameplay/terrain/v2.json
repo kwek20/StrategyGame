@@ -132,8 +132,8 @@
       "water": {
         "feature": "central_lake",
         "coverage": [
-          0.17,
-          0.23
+          0.136,
+          0.184
         ],
         "level": 15,
         "depth": 4,

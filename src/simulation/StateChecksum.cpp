@@ -81,11 +81,17 @@ std::uint64_t authoritativeStateChecksum(const World& world,
         hash.vector(entity->transform.rotationDegrees); hash.vector(entity->transform.scale);
         hash.value(entity->authority.owner); hash.value(entity->authority.directController);
         hash.value(static_cast<bool>(entity->health)); if(entity->health){hash.value(entity->health.current);hash.value(entity->health.maximum);}
-        hash.value(static_cast<bool>(entity->vision)); if(entity->vision) hash.value(entity->vision.sightRange);
+        hash.value(static_cast<bool>(entity->vision)); if(entity->vision) { hash.value(entity->vision.sightRange); hash.value(entity->vision.heightBonus); }
         hash.value(static_cast<bool>(entity->unitControl)); if(entity->unitControl){
             hash.value(entity->unitControl.directlyControllable); hash.value(entity->unitControl.directInput.x); hash.value(entity->unitControl.directInput.y);
             hash.value(entity->unitControl.running); hash.vector(entity->unitControl.strategicDestination); hash.value(entity->unitControl.hasStrategicDestination);
-            hash.value(entity->unitControl.movementSpeed); hash.value(entity->unitControl.order); hash.value(entity->unitControl.orderTarget); }
+            hash.value(entity->unitControl.movementSpeed);
+            hash.value(entity->unitControl.order);
+            hash.value(entity->unitControl.orderTarget);
+            hash.value(static_cast<std::uint64_t>(entity->unitControl.constructionQueue.size()));
+            for (auto target : entity->unitControl.constructionQueue)
+                hash.value(target);
+        }
         hash.value(static_cast<bool>(entity->gatherer)); if(entity->gatherer){hash.text(entity->gatherer.carriedResource);hash.value(entity->gatherer.carriedAmount);hash.value(entity->gatherer.carryCapacity);hash.value(entity->gatherer.gatherPerSecond);hash.value(entity->gatherer.sourceTarget);hash.value(entity->gatherer.deliveryTarget);hash.value(entity->gatherer.preferredProcessor);hash.text(entity->gatherer.preferredOutput);hash.value(entity->gatherer.repeatGathering);hash.value(entity->gatherer.waitingForProcessor);}
         hash.value(static_cast<bool>(entity->flight)); if(entity->flight){hash.value(entity->flight.altitude);hash.value(entity->flight.verticalSpeed);hash.value(entity->flight.minimumAltitude);hash.value(entity->flight.maximumAltitude);}
         hash.value(static_cast<bool>(entity->battery)); if(entity->battery){hash.value(entity->battery.charge);hash.value(entity->battery.capacity);hash.value(entity->battery.movementDrainPerSecond);hash.value(entity->battery.reserveThreshold);hash.value(entity->battery.returningToCharge);hash.value(entity->battery.hasSuspendedOrder);hash.value(entity->battery.suspendedOrder);hash.value(entity->battery.suspendedTarget);hash.vector(entity->battery.suspendedDestination);hash.value(entity->battery.suspendedHasDestination);hash.value(entity->battery.chargerTarget);hash.value(entity->battery.recoveryReason);}

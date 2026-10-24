@@ -237,6 +237,42 @@ quality tests. Vegetation expansion and tuning remain deferred as well.
 
 ## Current implemented gameplay contracts
 
+### Action bindings, Settings and construction queues (2026-10-24)
+
+`docs/CONTROLS.md` defines the current controls. `strategy_input` owns the shared context-aware
+`KeyBindings` catalogue; gameplay and editor consumers must not introduce new hardcoded action keys.
+Bindings support two slots, chords, mouse buttons, held modifiers and wheel actions where valid.
+Settings has Video/Audio/Keybinds tabs, searchable/filterable binding capture, explicit conflict
+replacement, category/all resets and WASD+Alt / Arrows+Grid presets. Apply saves without closing;
+`StateContext::settingsRevision` reloads Play's cached configuration once and clears held input.
+HUD hints use configured labels. Fixed menu navigation remains separate.
+
+Shift repeats placement, Ctrl locks power range, and both can be held together. The final plain
+click appends within the active batch and closes placement. `UnitComponent::constructionQueue`
+is authoritative FIFO state, persists in format 1, and participates in checksums. Recharge retains
+it; accepted explicit replacement orders clear it. Cancelled/completed targets are removed/skipped.
+The new save field is required under the existing in-place pre-release schema policy. Wire codec
+version 10 adds queue flags to Place/Construct without changing variant indices. Unconnected power
+buildings retry automatic connection on completion, so sequential poles can extend a grid.
+
+
+### Power-placement assistance (2026-10-23)
+
+Holding the configured range-lock input (Ctrl by default) while placing a power device latches the first eligible endpoint encountered in
+range and clamps the ghost to its horizontal connection radius. Releasing the range-lock input restores free
+placement. A disabled, destroyed, non-operational or full endpoint releases the lock; the range-lock input must
+be released before acquiring another. Terrain, occupancy, exploration and costs still validate
+normally. The click captures its modifier and uses the same assistance as the preview, including
+when the modifier is released before the click is rendered or committed.
+
+`world/PowerPlacement` owns shared endpoint eligibility, nearest selection (stable-ID tie breaks),
+range clamping and transient assistance state. Automatic construction connections use the same
+selector. The range is the smaller device range. Placement shows the latched endpoint's boundary
+(otherwise the nearest eligible device's boundary), the predicted actual nearest connection,
+range remaining, free slots and a supply caveat. Maintaining a link does not guarantee grid supply.
+The assistance does not change commands or save data. Focused checks: `power_placement` and
+`power_placement_controls`; the latter isolates the input/render/commit path in the renderer harness.
+
 ### Satellite coverage (2026-10-23)
 
 The former presentation-only SAT reveal is replaced by player-owned research. Command hubs offer

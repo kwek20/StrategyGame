@@ -12,6 +12,7 @@
 #include "terrain/FoundationOrientation.hpp"
 #include "terrain/SurfaceGeometry.hpp"
 #include "ui/EntityHudModel.hpp"
+#include "world/PowerPlacement.hpp"
 #include "world/Vegetation.hpp"
 #include "world/World.hpp"
 #include "world/WorldGeneration.hpp"
@@ -1171,7 +1172,8 @@ void Renderer::drawEntityModels(std::span<const Entity> entities,
     glUniform1f(shaders_.uniform(modelProgram_, "explorationExtent"), activeWorldExtent());
 
     for (const Entity& entity : entities) {
-        if (entity.resource && entity.resource.remaining <= 0.0F)
+        if (entity.kind == EntityKind::resource && entity.resource &&
+            entity.resource.remaining <= 0.0F)
             continue;
         if (entity.resource && entity.resource.fieldId != 0)
             continue; // Persistent field nodes use the shared instanced buffers below.
@@ -1226,7 +1228,9 @@ void Renderer::drawEntityModels(std::span<const Entity> entities,
                               animationSeconds,
                               tint,
                               player ? (entity.resource || entity.kind == EntityKind::decoration ? 2
-                                        : entity.authority.owner != player->id ? 1 : 0) : 0});
+                                        : entity.authority.owner != player->id                   ? 1
+                                                                               : 0)
+                                     : 0});
     }
     flushModelCommands(camera);
 }
@@ -1372,6 +1376,7 @@ void Renderer::drawWorld(const World& world,
                 {modelHandle(known.modelKey), rememberedMaterial_, transform, {}, 0.0, tint, -1});
         }
     flushModelCommands(camera);
+    drawPowerCables(world, camera, player);
     std::vector<glm::vec2> healthBack, healthDamage, healthRemaining, constructionProgress;
     for (const Entity& entity : world.entities()) {
         const bool constructing = entity.construction && !isOperational(entity) &&
@@ -1583,7 +1588,7 @@ void Renderer::drawVisionRanges(const CameraView& camera, const Entity* entity) 
     const float elevation = terrain_.entityBaseHeight(
         entity->id, entity->transform.position.x, entity->transform.position.z);
     const float base = entity->vision.sightRange;
-    const float effective = effectiveSightRange(base, elevation);
+    const float effective = effectiveSightRange(base, elevation, entity->vision.heightBonus);
     constexpr int segments = 128;
     const auto drawCircle = [&](float radius, glm::vec3 color, float heightOffset) {
         std::vector<TerrainVertex> vertices;
@@ -2017,7 +2022,7 @@ void Renderer::drawDetailedDebugHud(const CameraView& camera,
             entity->id, entity->transform.position.x, entity->transform.position.z);
         lines.push_back("  terrainHeight: " + number(elevation));
         lines.push_back("  effectiveRange [height modified]: " +
-                        number(effectiveSightRange(entity->vision.sightRange, elevation)));
+                        number(effectiveSightRange(entity->vision.sightRange, elevation, entity->vision.heightBonus)));
         lines.push_back("  circles: cyan=unit range, yellow=height modified");
     }
     drawDiagnosticPanel(lines, {0.20F, 0.82F, 0.94F}, 1160.0F);
@@ -2310,50 +2315,46 @@ void Renderer::drawBuildingPlacementPreview(glm::vec2 center,
     glBindVertexArray(0);
 }
 
-void Renderer::drawPowerPlacementConnection(const World& world,
-                                            const CameraView& camera,
-                                            PlayerId owner,
-                                            const Entity& placementPreview) const {
-    if (!placementPreview.power || placementPreview.power.connectionRange <= 0.0F ||
-        placementPreview.power.maximumConnections == 0)
+void Renderer::drawPowerPlacementConnection(const CameraView& camera,
+                                            const Entity& placementPreview,
+                                            const Entity& endpoint,
+                                            const Entity& rangeAnchor) const {
+    const PlayerId owner = placementPreview.authority.owner;
+    const float range = powerPlacementRange(placementPreview, rangeAnchor, owner);
+    if (range <= 0.0F)
         return;
-    const Entity* nearest = nullptr;
-    float nearestDistanceSquared = std::numeric_limits<float>::max();
-    for (const Entity& entity : world.entities()) {
-        if (entity.authority.owner != owner || !entity.power || !entity.power.enabled ||
-            !isOperational(entity) || entity.power.connectionRange <= 0.0F ||
-            entity.power.maximumConnections == 0 ||
-            entity.power.connections.size() >= entity.power.maximumConnections)
-            continue;
-        const float dx = entity.transform.position.x - placementPreview.transform.position.x;
-        const float dz = entity.transform.position.z - placementPreview.transform.position.z;
-        const float distanceSquared = dx * dx + dz * dz;
-        const float range =
-            std::min(entity.power.connectionRange, placementPreview.power.connectionRange);
-        if (distanceSquared <= range * range && distanceSquared < nearestDistanceSquared) {
-            nearest = &entity;
-            nearestDistanceSquared = distanceSquared;
-        }
-    }
-    if (!nearest)
-        return;
-
+    const float endpointRange = powerPlacementRange(placementPreview, endpoint, owner);
+    const glm::vec2 delta{placementPreview.transform.position.x - endpoint.transform.position.x,
+                          placementPreview.transform.position.z - endpoint.transform.position.z};
+    const bool connected =
+        endpointRange > 0.0F && glm::dot(delta, delta) <= endpointRange * endpointRange;
     renderGraph_.enter(RenderPassKind::overlay);
     constexpr int samples = 32;
     std::vector<TerrainVertex> line;
-    line.reserve((samples - 1) * 2);
-    const glm::vec3 color{0.16F, 1.0F, 0.36F};
-    for (int index = 0; index < samples - 1; ++index) {
-        for (int endpoint : {index, index + 1}) {
-            const float amount = static_cast<float>(endpoint) / static_cast<float>(samples - 1);
-            const glm::vec3 position =
-                glm::mix(placementPreview.transform.position, nearest->transform.position, amount);
-            line.push_back(
-                {{position.x, terrain_.heightAt(position.x, position.z) + 0.42F, position.z},
-                 {0, 1, 0},
-                 color});
-        }
-    }
+    line.reserve(320);
+    const glm::vec3 color =
+        connected ? glm::vec3{0.16F, 1.0F, 0.36F} : glm::vec3{1.0F, 0.65F, 0.18F};
+    const auto appendVertex = [&](float x, float z) {
+        line.push_back({{x, terrain_.heightAt(x, z) + 0.42F, z}, {0, 1, 0}, color});
+    };
+    const auto circle = [&](glm::vec3 center, float radius, int segments) {
+        for (int i = 0; i < segments; ++i)
+            for (int edge : {i, i + 1}) {
+                const float angle = glm::two_pi<float>() * edge / segments;
+                appendVertex(center.x + std::cos(angle) * radius,
+                             center.z + std::sin(angle) * radius);
+            }
+    };
+    circle(rangeAnchor.transform.position, range, 96);
+    circle(endpoint.transform.position, 1.0F, 16);
+    if (connected)
+        for (int index = 0; index < samples - 1; ++index)
+            for (int edge : {index, index + 1}) {
+                const auto position = glm::mix(placementPreview.transform.position,
+                                               endpoint.transform.position,
+                                               static_cast<float>(edge) / (samples - 1));
+                appendVertex(position.x, position.z);
+            }
     shaders_.use(powerOverlayProgram_);
     const glm::mat4 viewProjection = camera.viewProjection();
     glUniformMatrix4fv(shaders_.uniform(powerOverlayProgram_, "viewProjection"),
@@ -2386,6 +2387,103 @@ void Renderer::drawPowerPlacementConnection(const World& world,
     glDrawArrays(GL_LINES, 0, static_cast<GLsizei>(line.size()));
     glLineWidth(1.0F);
     glDepthMask(GL_TRUE);
+    glDisableVertexAttribArray(2);
+    glBindVertexArray(0);
+}
+
+void Renderer::drawPowerCables(const World& world,
+                               const CameraView& camera,
+                               const Player* player) const {
+    // Actual world geometry: terrain and models occlude the cable naturally. Diagnostic
+    // flow lines remain a separate overlay. Never reveal an enemy's hidden network.
+    if (!player)
+        return;
+    std::vector<TerrainVertex> vertices;
+    constexpr int segments = 12;
+    const auto attachment = [&](const Entity& entity) {
+        const auto* definition = resources_.entityDefinition(entity.renderId());
+        const float height = definition ? definition->selectionHeight * 0.8F : 2.0F;
+        return glm::vec3{entity.transform.position.x,
+                         terrain_.entityBaseHeight(
+                             entity.id, entity.transform.position.x, entity.transform.position.z) +
+                             height,
+                         entity.transform.position.z};
+    };
+    for (const auto& source : world.entities()) {
+        if (!source.power || source.authority.owner != player->id)
+            continue;
+        for (EntityId id : source.power.connections) {
+            if (id <= source.id)
+                continue;
+            const auto* target = world.findEntity(id);
+            if (!target || !target->power || target->authority.owner != player->id)
+                continue;
+            const glm::vec3 start = attachment(source), end = attachment(*target);
+            const float distance = glm::length(end - start);
+            if (distance < 0.01F ||
+                !visibleSphere(camera.viewProjection(), (start + end) * 0.5F, distance * 0.5F + 2))
+                continue;
+            const bool planned = !isOperational(source) || !isOperational(*target);
+            const glm::vec3 color =
+                planned ? glm::vec3{0.22F, 0.48F, 0.53F} : glm::vec3{0.19F, 0.17F, 0.12F};
+            const auto point = [&](float t) {
+                auto position = glm::mix(start, end, t);
+                position.y -= std::min(distance * 0.05F, 1.2F) * 4 * t * (1 - t);
+                return position;
+            };
+            for (int segment = 0; segment < segments; ++segment) {
+                if (planned && segment % 2)
+                    continue;
+                const auto a = point(static_cast<float>(segment) / segments);
+                const auto b = point(static_cast<float>(segment + 1) / segments);
+                const auto direction = glm::normalize(b - a);
+                const auto reference =
+                    std::abs(direction.y) > 0.95F ? glm::vec3{1, 0, 0} : glm::vec3{0, 1, 0};
+                const auto side = glm::normalize(glm::cross(direction, reference)) * 0.09F;
+                const auto up = glm::normalize(glm::cross(direction, side)) * 0.09F;
+                const std::array<glm::vec3, 4> offsets{side, up, -side, -up};
+                for (int face = 0; face < 4; ++face) {
+                    const auto u = offsets[face], v = offsets[(face + 1) % 4];
+                    const auto shade = color * (face % 2 ? 0.75F : 1.0F);
+                    for (const auto position : {a + u, b + u, b + v, a + u, b + v, a + v})
+                        vertices.push_back({position, {0, 1, 0}, shade});
+                }
+            }
+        }
+    }
+    if (vertices.empty())
+        return;
+    shaders_.use(powerOverlayProgram_);
+    const auto matrix = camera.viewProjection();
+    glUniformMatrix4fv(shaders_.uniform(powerOverlayProgram_, "viewProjection"),
+                       1,
+                       GL_FALSE,
+                       glm::value_ptr(matrix));
+    glUniform1i(shaders_.uniform(powerOverlayProgram_, "clipPlacementDisk"), 0);
+    glUniform1f(shaders_.uniform(powerOverlayProgram_, "overlayAlpha"), 1.0F);
+    glBindVertexArray(hudVao_);
+    glBindBuffer(GL_ARRAY_BUFFER, hudVbo_);
+    glBufferData(GL_ARRAY_BUFFER,
+                 static_cast<GLsizeiptr>(vertices.size() * sizeof(TerrainVertex)),
+                 vertices.data(),
+                 GL_DYNAMIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(0,
+                          3,
+                          GL_FLOAT,
+                          GL_FALSE,
+                          sizeof(TerrainVertex),
+                          reinterpret_cast<void*>(offsetof(TerrainVertex, position)));
+    glVertexAttribPointer(2,
+                          3,
+                          GL_FLOAT,
+                          GL_FALSE,
+                          sizeof(TerrainVertex),
+                          reinterpret_cast<void*>(offsetof(TerrainVertex, color)));
+    glDisable(GL_CULL_FACE);
+    glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(vertices.size()));
+    glEnable(GL_CULL_FACE);
     glDisableVertexAttribArray(2);
     glBindVertexArray(0);
 }
@@ -3146,7 +3244,7 @@ void Renderer::drawStrategyHud(const World& world,
                 }
             }
     for (const Entity& entity : world.entities()) {
-        if (entity.resource && entity.resource.remaining <= 0)
+        if (entity.kind == EntityKind::resource && entity.resource && entity.resource.remaining <= 0)
             continue;
         bool rememberedResource = false;
         if (player && entity.authority.owner != player->id) {
@@ -3480,7 +3578,7 @@ EntityId Renderer::pickEntity(float pixelX,
     for (const Entity& entity : world.entities()) {
         if (entity.kind == EntityKind::decoration)
             continue;
-        if (entity.resource && entity.resource.remaining <= 0.0F)
+        if (entity.kind == EntityKind::resource && entity.resource && entity.resource.remaining <= 0.0F)
             continue;
         glm::vec3 pickPosition = entity.transform.position;
         if (player && entity.authority.owner != player->id) {
@@ -3551,7 +3649,7 @@ void Renderer::drawEntityOutline(const World& world,
         const glm::ivec2 cell = activeMapArea().gridCell({shown.position.x, shown.position.z},
                                                          Player::explorationCells);
         const auto index = static_cast<std::size_t>(cell.y * Player::explorationCells + cell.x);
-        if (entity->resource && (!player->discovered[index] || entity->resource.remaining <= 0))
+        if (entity->resource && (!player->discovered[index] || (entity->kind == EntityKind::resource && entity->resource.remaining <= 0)))
             return;
         if (!player->visible[index] && !entity->resource) {
             const auto known =

@@ -12,7 +12,7 @@ struct TerrainV2Landscape {
 
 class TerrainV2Generator final {
   public:
-    static constexpr std::uint32_t revision = 7;
+    static constexpr std::uint32_t revision = 8;
     static TerrainV2Landscape generate(std::uint32_t seed,
                                        TerrainV2Recipe recipe,
                                        const TerrainGeneratorDefinition& fields,

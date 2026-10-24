@@ -126,35 +126,43 @@ void BuildState::activateMenu(std::string_view id) {
 }
 
 void BuildState::handleEvent(const SDL_Event& event) {
+    input_.observe(event);
+    const auto pressed = [&](std::string_view action) {
+        return config_.keybinds.matches(action, event, InputContext::editor);
+    };
+    const auto released = [&](std::string_view action) {
+        return config_.keybinds.matches(action, event, InputContext::editor, true);
+    };
+
     context_.renderer->handleUiEvent(event);
     if (const auto action = context_.renderer->takeUiAction()) {
         activateMenu(*action);
         return;
     }
 
+    if (pressed("editor_exit")) {
+        activateMenu("build.exit");
+        return;
+    }
+    if (pressed("editor_team")) {
+        activateMenu("build.team");
+        return;
+    }
+    for (int i = 0; i < 9; ++i)
+        if (pressed("editor_slot_" + std::to_string(i + 1))) {
+            if (static_cast<std::size_t>(i) < gameplay_.matchRules().buildPalette.size())
+                activateMenu("build.palette." + gameplay_.matchRules().buildPalette[i]);
+            return;
+        }
+    if (pressed("editor_undo")) {
+        activateMenu("build.undo");
+        return;
+    }
+    if (pressed("editor_save")) {
+        activateMenu("build.save");
+        return;
+    }
     if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat) {
-        if (event.key.key == SDLK_ESCAPE) {
-            activateMenu("build.exit");
-            return;
-        }
-        if (event.key.key == SDLK_T) {
-            activateMenu("build.team");
-            return;
-        }
-        if (event.key.key >= SDLK_1 && event.key.key <= SDLK_9) {
-            const std::size_t index = static_cast<std::size_t>(event.key.key - SDLK_1);
-            if (index < gameplay_.matchRules().buildPalette.size())
-                activateMenu("build.palette." + gameplay_.matchRules().buildPalette[index]);
-            return;
-        }
-        if (event.key.key == SDLK_BACKSPACE) {
-            activateMenu("build.undo");
-            return;
-        }
-        if (event.key.key == SDLK_F5) {
-            activateMenu("build.save");
-            return;
-        }
         if (event.key.key == SDLK_TAB) {
             context_.renderer->focusUi((SDL_GetModState() & SDL_KMOD_SHIFT) ? -1 : 1);
             return;
@@ -182,23 +190,25 @@ void BuildState::handleEvent(const SDL_Event& event) {
     if ((event.type == SDL_EVENT_MOUSE_BUTTON_DOWN || event.type == SDL_EVENT_MOUSE_BUTTON_UP) &&
         event.button.button == SDL_BUTTON_LEFT && context_.renderer->pointerOverUi())
         return;
-    if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_LEFT) {
-        pendingPlacement_ = glm::vec2{event.button.x, event.button.y};
+    if (pressed("place")) {
+        pendingPlacement_ = event.type == SDL_EVENT_MOUSE_BUTTON_DOWN
+                                ? glm::vec2{event.button.x, event.button.y}
+                                : hoverPosition_;
         return;
     }
-    if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_MIDDLE) {
+    if (pressed("camera_orbit")) {
         orbiting_ = true;
         return;
     }
-    if (event.type == SDL_EVENT_MOUSE_BUTTON_UP && event.button.button == SDL_BUTTON_MIDDLE) {
+    if (released("camera_orbit")) {
         orbiting_ = false;
         return;
     }
-    if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_RIGHT) {
+    if (pressed("camera_pan")) {
         mousePanning_ = true;
         return;
     }
-    if (event.type == SDL_EVENT_MOUSE_BUTTON_UP && event.button.button == SDL_BUTTON_RIGHT) {
+    if (released("camera_pan")) {
         mousePanning_ = false;
         return;
     }
@@ -216,42 +226,18 @@ void BuildState::handleEvent(const SDL_Event& event) {
             hoverPosition_ = glm::vec2{event.motion.x, event.motion.y};
         return;
     }
-    if (event.type == SDL_EVENT_MOUSE_WHEEL) {
-        if (context_.renderer->pointerOverUi())
-            return;
-        camera_.zoom(event.wheel.y);
-        return;
-    }
-    if (event.type != SDL_EVENT_KEY_DOWN && event.type != SDL_EVENT_KEY_UP)
-        return;
-    const bool pressed = event.type == SDL_EVENT_KEY_DOWN;
-    switch (event.key.key) {
-    case SDLK_W:
-        forward_ = pressed;
-        break;
-    case SDLK_S:
-        backward_ = pressed;
-        break;
-    case SDLK_A:
-        left_ = pressed;
-        break;
-    case SDLK_D:
-        right_ = pressed;
-        break;
-    case SDLK_LSHIFT:
-        leftShift_ = pressed;
-        acceleratedCamera_ = leftShift_ || rightShift_;
-        break;
-    case SDLK_RSHIFT:
-        rightShift_ = pressed;
-        acceleratedCamera_ = leftShift_ || rightShift_;
-        break;
-    default:
-        break;
+    if (pressed("zoom_in") || pressed("zoom_out")) {
+        if (!context_.renderer->pointerOverUi())
+            camera_.zoom(pressed("zoom_in") ? 1.F : -1.F);
     }
 }
 
 void BuildState::update(float deltaSeconds) {
+    forward_ = config_.keybinds.held("forward", input_);
+    backward_ = config_.keybinds.held("backward", input_);
+    left_ = config_.keybinds.held("left", input_);
+    right_ = config_.keybinds.held("right", input_);
+    acceleratedCamera_ = config_.keybinds.held("camera_fast", input_);
     camera_.pan(float(forward_) - float(backward_),
                 float(right_) - float(left_),
                 deltaSeconds,

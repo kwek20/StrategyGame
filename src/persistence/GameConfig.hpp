@@ -1,9 +1,10 @@
 #pragma once
 
+#include "input/KeyBindings.hpp"
+
 #include <cstdint>
 #include <filesystem>
 #include <string>
-#include <unordered_map>
 
 namespace strategy {
 
@@ -19,15 +20,7 @@ struct GameConfig {
     float musicVolume{0.8F};
     float effectsVolume{1.0F};
     bool muted{false};
-    std::unordered_map<std::string, std::int32_t> keybinds{{"forward", 119},
-                                                           {"backward", 115},
-                                                           {"left", 97},
-                                                           {"right", 100},
-                                                           {"debug", 1073741884},
-                                                           {"terrain_debug", 1073741885},
-                                                           {"water_debug", 1073741887},
-                                                           {"power_debug", 1073741888},
-                                                           {"pause", 27}};
+    KeyBindings keybinds;
 
     [[nodiscard]] static GameConfig load(const std::filesystem::path& path);
     void write(const std::filesystem::path& path) const;

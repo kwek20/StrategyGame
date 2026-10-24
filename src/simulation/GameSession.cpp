@@ -101,6 +101,41 @@ std::uint64_t GameSession::stateChecksum() const {
                                       terrain_.fingerprint());
 }
 
+void GameSession::orderConstruction(Entity& builder, Entity& building, bool queued) {
+    if (!builder.unitControl || !builder.flight || !builder.battery)
+        return;
+    auto& unit = builder.unitControl;
+    const bool busy = unit.order == UnitOrderKind::construct ||
+                      (builder.battery.returningToCharge && builder.battery.hasSuspendedOrder &&
+                       builder.battery.suspendedOrder == UnitOrderKind::construct);
+    if (queued && busy) {
+        if (unit.constructionQueue.size() < 1024 && unit.orderTarget != building.id &&
+            std::find(unit.constructionQueue.begin(), unit.constructionQueue.end(), building.id) ==
+                unit.constructionQueue.end())
+            unit.constructionQueue.push_back(building.id);
+        return;
+    }
+    if (!queued)
+        unit.constructionQueue.clear();
+    clearGatherLoop(builder);
+    builder.transient.navigationPath.clear();
+    builder.transient.navigationWaypoint = 0;
+    if (builder.battery.returningToCharge) {
+        builder.battery.hasSuspendedOrder = true;
+        builder.battery.suspendedOrder = UnitOrderKind::construct;
+        builder.battery.suspendedTarget = building.id;
+        builder.battery.suspendedDestination = building.transform.position;
+        builder.battery.suspendedHasDestination = true;
+    } else {
+        unit.order = UnitOrderKind::construct;
+        unit.orderTarget = building.id;
+        unit.strategicDestination = building.transform.position;
+        unit.hasStrategicDestination = true;
+        if (builder.battery.charge <= 0)
+            beginRecharge(builder);
+    }
+}
+
 void GameSession::beginRecharge(Entity& entity) {
     if (!entity.unitControl || !entity.battery || entity.battery.returningToCharge)
         return;
@@ -689,6 +724,7 @@ void GameSession::apply(const PlayerCommand& command) {
                     return;
                 }
                 clearGatherLoop(*entity);
+                entity->unitControl.constructionQueue.clear();
                 entity->unitControl.order = UnitOrderKind::move;
                 entity->unitControl.orderTarget = 0;
                 entity->unitControl.strategicDestination = payload.destination;
@@ -747,6 +783,7 @@ void GameSession::apply(const PlayerCommand& command) {
                     }
                     entity->unitControl.order = UnitOrderKind::gather;
                     entity->unitControl.orderTarget = resource->id;
+                    entity->unitControl.constructionQueue.clear();
                     entity->gatherer.sourceTarget = resource->id;
                     entity->gatherer.preferredProcessor = payload.processor;
                     if (payload.processor != 0) {
@@ -775,6 +812,7 @@ void GameSession::apply(const PlayerCommand& command) {
                     !gameplay_.acceptsResource(BuildingArchetypeId{processor->archetype.value},
                                                ResourceId{entity->gatherer.carriedResource}))
                     return;
+                entity->unitControl.constructionQueue.clear();
                 entity->gatherer.preferredProcessor = processor->id;
                 if (const auto* conversion = gameplay_.conversionFor(
                         BuildingArchetypeId{processor->archetype.value},
@@ -867,6 +905,7 @@ void GameSession::apply(const PlayerCommand& command) {
                     entity->unitControl.directlyControllable && target && target->health &&
                     target->authority.owner != 0 && target->authority.owner != command.player) {
                     clearGatherLoop(*entity);
+                    entity->unitControl.constructionQueue.clear();
                     entity->unitControl.order = UnitOrderKind::attack;
                     entity->unitControl.orderTarget = target->id;
                     entity->transient.navigationPath.clear();
@@ -956,31 +995,16 @@ void GameSession::apply(const PlayerCommand& command) {
                     if (!builder || builder->authority.owner != command.player ||
                         !builder->flight || !builder->battery || !builder->unitControl)
                         continue;
-                    clearGatherLoop(*builder);
-                    builder->unitControl.order = UnitOrderKind::construct;
-                    builder->unitControl.orderTarget = building.id;
-                    builder->unitControl.strategicDestination = building.transform.position;
-                    builder->unitControl.hasStrategicDestination = true;
-                    builder->transient.navigationPath.clear();
-                    builder->transient.navigationWaypoint = 0;
-                    if (builder->battery.charge <= 0.0F)
-                        beginRecharge(*builder);
+                    orderConstruction(*builder, building, payload.queueBuilders);
                 }
             } else if constexpr (std::is_same_v<Type, ConstructCommand>) {
                 Entity* building = world_.findEntity(payload.building);
-                if (entity->battery && entity->battery.charge <= 0.0F) {
-                    beginRecharge(*entity);
-                    return;
-                }
-                if (entity->flight && entity->battery && building && building->construction &&
-                    !isOperational(*building) && !entity->battery.returningToCharge) {
-                    clearGatherLoop(*entity);
-                    entity->unitControl.order = UnitOrderKind::construct;
-                    entity->unitControl.orderTarget = building->id;
-                    entity->unitControl.strategicDestination = building->transform.position;
-                    entity->unitControl.hasStrategicDestination = true;
-                }
+                if (entity->unitControl && entity->flight && entity->battery && building &&
+                    building->authority.owner == command.player && building->construction &&
+                    !isOperational(*building))
+                    orderConstruction(*entity, *building, payload.queued);
             } else if constexpr (std::is_same_v<Type, StopConstructionCommand>) {
+                entity->unitControl.constructionQueue.clear();
                 stopUnit(*entity);
             } else if constexpr (std::is_same_v<Type, CancelConstructionCommand>) {
                 if (!entity->construction || isOperational(*entity))
@@ -992,12 +1016,20 @@ void GameSession::apply(const PlayerCommand& command) {
                         player->resources[resource] += amount;
                 }
                 const EntityId cancelled = entity->id;
-                for (Entity& builder : world_.entities())
+                for (Entity& builder : world_.entities()) {
+                    std::erase(builder.unitControl.constructionQueue, cancelled);
+                    if (builder.battery.hasSuspendedOrder &&
+                        builder.battery.suspendedTarget == cancelled) {
+                        builder.battery.hasSuspendedOrder = false;
+                        builder.battery.suspendedOrder = UnitOrderKind::idle;
+                        builder.battery.suspendedTarget = 0;
+                    }
                     if (builder.unitControl && builder.unitControl.orderTarget == cancelled) {
                         builder.unitControl.order = UnitOrderKind::idle;
                         builder.unitControl.orderTarget = 0;
                         builder.unitControl.hasStrategicDestination = false;
                     }
+                }
                 std::erase_if(world_.foundations(), [cancelled](const TerrainFoundation& foundation) {
                     return foundation.sourceEntity == cancelled;
                 });
@@ -1019,6 +1051,7 @@ void GameSession::apply(const PlayerCommand& command) {
                 if (entity->flight && target && target->health && entity->battery &&
                     !entity->battery.returningToCharge) {
                     clearGatherLoop(*entity);
+                    entity->unitControl.constructionQueue.clear();
                     entity->unitControl.order = UnitOrderKind::repair;
                     entity->unitControl.orderTarget = target->id;
                     entity->unitControl.strategicDestination = target->transform.position;
@@ -1053,6 +1086,7 @@ void GameSession::apply(const PlayerCommand& command) {
                 if (entity->flight && entity->battery && entity->unitControl)
                     beginRecharge(*entity);
             } else if constexpr (std::is_same_v<Type, StopUnitCommand>) {
+                entity->unitControl.constructionQueue.clear();
                 stopUnit(*entity);
             }
         },
@@ -1084,6 +1118,26 @@ void GameSession::simulateTick() {
                 entity.resource.remaining = std::min(
                     type->resourceCapacity,
                     entity.resource.remaining + type->rawProductionPerTick);
+        }
+        if (entity.unitControl) {
+            auto& unit = entity.unitControl;
+            if (unit.order == UnitOrderKind::construct) {
+                const auto* target = world_.findEntity(unit.orderTarget);
+                if (!target || isOperational(*target) || !target->construction) {
+                    unit.order = UnitOrderKind::idle;
+                    unit.orderTarget = 0;
+                    unit.hasStrategicDestination = false;
+                }
+            }
+            while (unit.order == UnitOrderKind::idle && !unit.constructionQueue.empty()) {
+                const auto next = unit.constructionQueue.front();
+                unit.constructionQueue.pop_front();
+                auto* target = world_.findEntity(next);
+                if (target && target->authority.owner == entity.authority.owner &&
+                    target->construction && !isOperational(*target) &&
+                    target->construction.state != BuildingLifecycleState::destroyed)
+                    orderConstruction(entity, *target, true);
+            }
         }
         // Battery exhaustion is an authoritative recovery trigger even while the drone is idle.
         // Commands and movement also call beginRecharge immediately, but this guard closes every
@@ -1294,8 +1348,20 @@ void GameSession::simulateTick() {
                             }
                             if (target->construction.powerProgress >= target->construction.powerRequired) {
                                 target->construction.state = BuildingLifecycleState::operational;
-                                if (target->power)
+                                if (target->power) {
+                                    if (target->power.connections.empty())
+                                        if (const auto endpoint =
+                                                powerGridSystem_.connectNearestForPlacement(
+                                                    world_, target->authority.owner, target->id))
+                                            powerEvents_.push_back(
+                                                {PowerEventKind::connectionCreated,
+                                                 tick_,
+                                                 target->authority.owner,
+                                                 target->id,
+                                                 endpoint,
+                                                 0});
                                     powerGridSystem_.markDirty(target->authority.owner);
+                                }
                                 if (target->health) target->health.current = target->health.maximum;
                                 entity.unitControl.order=UnitOrderKind::idle; entity.unitControl.orderTarget=0; entity.unitControl.hasStrategicDestination=false;
                             }
@@ -1845,7 +1911,7 @@ void GameSession::updateExploration() {
             const float elevation =
                 terrain_.heightAt(entity.transform.position.x, entity.transform.position.z);
             const float radius =
-                effectiveSightRange(stat(entity, GameplayStat::sightRange), elevation) * powerFactor;
+                effectiveSightRange(stat(entity, GameplayStat::sightRange), elevation, entity.vision.heightBonus) * powerFactor;
             const glm::ivec2 center = map.gridCell(
                 {entity.transform.position.x, entity.transform.position.z},
                 Player::explorationCells);

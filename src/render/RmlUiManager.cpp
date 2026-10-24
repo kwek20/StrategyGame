@@ -4,6 +4,7 @@
 
 #include <RmlUi/Core.h>
 #include <RmlUi/Core/ElementDocument.h>
+#include <RmlUi/Core/Elements/ElementFormControl.h>
 #include <RmlUi/Core/Elements/ElementFormControlInput.h>
 #include <RmlUi/Core/EventListener.h>
 #include <RmlUi/Core/RenderInterface.h>
@@ -357,6 +358,10 @@ class RmlUiManager::Impl final : public Rml::EventListener {
     }
 
     void handleEvent(const SDL_Event& event) {
+        if ((event.type == SDL_EVENT_MOUSE_BUTTON_DOWN ||
+             event.type == SDL_EVENT_MOUSE_BUTTON_UP) &&
+            event.button.button > SDL_BUTTON_RIGHT)
+            return;
         if (screens_.empty())
             return;
         const int modifiers = modifierState();
@@ -391,6 +396,20 @@ class RmlUiManager::Impl final : public Rml::EventListener {
                                        static_cast<int>(event.wheel.mouse_y * density),
                                        modifiers);
             context_->ProcessMouseWheel({-event.wheel.x, -event.wheel.y}, modifiers);
+        } else if (event.type == SDL_EVENT_TEXT_INPUT) {
+            if (const auto* focused = context_->GetFocusElement();
+                focused && focused->GetTagName() == "input")
+                context_->ProcessTextInput(event.text.text);
+        } else if (event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP) {
+            const auto* focused = context_->GetFocusElement();
+            if (focused && event.key.key != SDLK_TAB &&
+                (focused->GetTagName() == "input" || focused->GetTagName() == "select")) {
+                const auto key = keyIdentifier(event.key.key);
+                if (event.type == SDL_EVENT_KEY_DOWN)
+                    context_->ProcessKeyDown(key, modifiers);
+                else
+                    context_->ProcessKeyUp(key, modifiers);
+            }
         }
     }
 
@@ -461,14 +480,14 @@ class RmlUiManager::Impl final : public Rml::EventListener {
     }
 
     void setValue(const std::string& id, const std::string& value) {
-        if (auto* input = dynamic_cast<Rml::ElementFormControlInput*>(elementById(id)))
+        if (auto* input = dynamic_cast<Rml::ElementFormControl*>(elementById(id)))
             input->SetValue(value);
         else
             setText(id, value);
     }
 
     std::string value(const std::string& id) const {
-        if (auto* input = dynamic_cast<Rml::ElementFormControlInput*>(elementById(id)))
+        if (auto* input = dynamic_cast<Rml::ElementFormControl*>(elementById(id)))
             return input->GetValue();
         return {};
     }
@@ -516,16 +535,18 @@ class RmlUiManager::Impl final : public Rml::EventListener {
         const auto& actions = screens_.back().definition.actionIds;
         while (element) {
             const std::string id = element->GetId();
+            auto& screen = screens_.back();
+            const auto focused = std::find(
+                screen.definition.focusOrder.begin(), screen.definition.focusOrder.end(), id);
+            if (focused != screen.definition.focusOrder.end())
+                screen.focusIndex =
+                    static_cast<int>(focused - screen.definition.focusOrder.begin());
             if (std::find(actions.begin(), actions.end(), id) != actions.end()) {
-                auto& screen = screens_.back();
-                const auto focused = std::find(
-                    screen.definition.focusOrder.begin(), screen.definition.focusOrder.end(), id);
-                if (focused != screen.definition.focusOrder.end())
-                    screen.focusIndex =
-                        static_cast<int>(focused - screen.definition.focusOrder.begin());
                 pendingAction_ = id;
                 return;
             }
+            if (focused != screen.definition.focusOrder.end())
+                return;
             element = element->GetParentNode();
         }
     }
@@ -539,6 +560,41 @@ class RmlUiManager::Impl final : public Rml::EventListener {
         std::unordered_map<std::string, std::pair<std::string, std::string>> markupCache;
     };
 
+    static Rml::Input::KeyIdentifier keyIdentifier(SDL_Keycode key) {
+        using namespace Rml::Input;
+        if (key >= SDLK_A && key <= SDLK_Z)
+            return static_cast<KeyIdentifier>(KI_A + key - SDLK_A);
+        if (key >= SDLK_0 && key <= SDLK_9)
+            return static_cast<KeyIdentifier>(KI_0 + key - SDLK_0);
+        switch (key) {
+        case SDLK_BACKSPACE:
+            return KI_BACK;
+        case SDLK_DELETE:
+            return KI_DELETE;
+        case SDLK_RETURN:
+            return KI_RETURN;
+        case SDLK_SPACE:
+            return KI_SPACE;
+        case SDLK_LEFT:
+            return KI_LEFT;
+        case SDLK_RIGHT:
+            return KI_RIGHT;
+        case SDLK_UP:
+            return KI_UP;
+        case SDLK_DOWN:
+            return KI_DOWN;
+        case SDLK_HOME:
+            return KI_HOME;
+        case SDLK_END:
+            return KI_END;
+        case SDLK_TAB:
+            return KI_TAB;
+        case SDLK_ESCAPE:
+            return KI_ESCAPE;
+        default:
+            return KI_UNKNOWN;
+        }
+    }
     static int modifierState() {
         const SDL_Keymod modifiers = SDL_GetModState();
         int result = 0;

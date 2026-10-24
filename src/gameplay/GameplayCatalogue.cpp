@@ -530,6 +530,11 @@ void DefinitionRegistry::loadArchetypes(const std::filesystem::path& path,
             archetype.stats[GameplayStat::health] = item->value["health"].GetFloat();
         if (item->value.HasMember("vision") && item->value["vision"].IsObject()) {
             const auto& vision = item->value["vision"];
+            if (vision.HasMember("heightBonus")) {
+                if (!vision["heightBonus"].IsBool())
+                    throw std::runtime_error("Vision heightBonus must be a boolean");
+                archetype.visionHeightBonus = vision["heightBonus"].GetBool();
+            }
             archetype.stats[GameplayStat::sightRange] =
                 requiredNumber(vision, "range", "Definition '" + archetype.id + "' vision");
         }
@@ -2112,6 +2117,7 @@ void DefinitionRegistry::initializeEntity(Entity& entity) const {
     if (has("vision")) {
         entity.vision.emplace();
         entity.vision.sightRange = value(GameplayStat::sightRange, entity.vision.sightRange);
+        entity.vision.heightBonus = type.visionHeightBonus;
     }
     if (has("unit")) {
         entity.unitControl.emplace();

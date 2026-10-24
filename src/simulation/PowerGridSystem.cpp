@@ -2,14 +2,15 @@
 
 #include "gameplay/DefinitionRegistry.hpp"
 #include "players/PlayerRegistry.hpp"
+#include "world/PowerPlacement.hpp"
 #include "world/World.hpp"
 
 #include <algorithm>
+#include <glm/geometric.hpp>
+#include <glm/vec2.hpp>
 #include <limits>
 #include <map>
 #include <utility>
-#include <glm/geometric.hpp>
-#include <glm/vec2.hpp>
 
 namespace strategy {
 
@@ -112,33 +113,12 @@ EntityId PowerGridSystem::connectNearestForPlacement(World& world,
                                                      PlayerId player,
                                                      EntityId sourceId) {
     Entity* source = world.findEntity(sourceId);
-    if (!source || source->authority.owner != player || !source->power ||
-        !source->power.enabled || source->power.connectionRange <= 0.0F ||
-        source->power.maximumConnections == 0 ||
-        source->power.connections.size() >= source->power.maximumConnections)
+    if (!source)
         return 0;
-    const glm::vec2 sourcePosition{source->transform.position.x, source->transform.position.z};
-    Entity* nearest = nullptr;
-    float nearestDistanceSquared = std::numeric_limits<float>::max();
-    for (Entity& candidate : world.entities()) {
-        if (candidate.id == sourceId || candidate.authority.owner != player || !candidate.power ||
-            !candidate.power.enabled || !isOperational(candidate) ||
-            candidate.power.connectionRange <= 0.0F || candidate.power.maximumConnections == 0 ||
-            candidate.power.connections.size() >= candidate.power.maximumConnections)
-            continue;
-        const glm::vec2 candidatePosition{candidate.transform.position.x,
-                                          candidate.transform.position.z};
-        const glm::vec2 delta = sourcePosition - candidatePosition;
-        const float distanceSquared = glm::dot(delta, delta);
-        const float range = std::min(source->power.connectionRange,
-                                     candidate.power.connectionRange);
-        if (distanceSquared > range * range ||
-            (nearest && distanceSquared == nearestDistanceSquared && candidate.id > nearest->id))
-            continue;
-        nearest = &candidate;
-        nearestDistanceSquared = distanceSquared;
-    }
-    if (!nearest) return 0;
+    const Entity* selected = findPowerPlacementTarget(world, player, *source);
+    if (!selected)
+        return 0;
+    Entity* nearest = world.findEntity(selected->id);
     source->power.connections.insert(
         std::lower_bound(source->power.connections.begin(), source->power.connections.end(), nearest->id),
         nearest->id);

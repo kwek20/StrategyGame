@@ -1,131 +1,267 @@
+/* Settings tabs and searchable, scrollable key bindings. */
 body {
     color: #edf6da;
 }
+
 #shell {
     left: 8%;
     top: 4%;
     width: 84%;
     height: 92%;
-    animation: .35s quadratic-out settings-enter;
 }
 
 h1 {
     margin: 0;
-    height: 48dp;
-    font-size: 34dp;
+    height: 34dp;
+    font-size: 26dp;
     color: #fff8c9;
 }
-.rule {
-    margin-bottom: 14dp;
-}
-.columns {
-    overflow: hidden;
-}
-.column {
-    width: 48%;
-}
-.controls {
-    width: 48%;
-}
-h2 {
-    height: 28dp;
-    margin: 3dp 0 6dp;
-    color: #63d8f4;
-    font-size: 20dp;
-}
-.setting-row {
-    height: 56dp;
-    min-height: 56dp;
-    margin-bottom: .35vh;
+
+#settings-tabs {
     display: flex;
-    flex-direction: column;
-}
-.label {
-    height: 18dp;
-    min-height: 18dp;
-    margin-left: .5%;
-    color: #b6ced6;
-    font-size: 11dp;
-    letter-spacing: .4dp;
-}
-.wide {
-    height: 3.2vh;
+    gap: 12dp;
+    height: 32dp;
     min-height: 32dp;
-    width: 100%;
-    color: #f2f8dd;
-    font-size: 14dp;
-    font-weight: 700;
-}
-#binding-list {
-    display: flex;
-    flex-direction: column;
-    gap: .45vh;
-}
-.binding-row {
-    height: auto;
-    min-height: 40dp;
-    display: flex;
-    align-items: center;
-    gap: 2%;
-}
-.binding-label {
-    flex: 1;
-    min-width: 0;
-    color: #edf6da;
-    font-size: 12dp;
-    font-weight: 700;
-    overflow: hidden;
-    white-space: normal;
-}
-.binding {
-    width: 76dp;
-    min-width: 76dp;
-    flex: 0 0 76dp;
-    height: 3.2vh;
-    min-height: 32dp;
-    padding: 0 2%;
-    color: #f2f8dd;
-    font-size: 12dp;
-    font-weight: 700;
-    background-color: transparent;
-    border-width: 0;
-    decorator: none;
-    cursor: pointer;
-}
-.keycap {
-    width: 60dp;
-    height: 22dp;
-    line-height: 22dp;
-    padding: 0 6dp;
-    background-color: #07171e;
-    border: 1dp #249bb7;
-    color: #82e4f7;
-    text-align: center;
-    font-size: 11dp;
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-}
-.binding:hover,.binding:focus {
-    background-color: transparent;
-    outline: 0;
-}
-.binding:hover .keycap,.binding:focus .keycap {
-    background-color: #12323b;
-    border-color: #54d7f2;
-    color: #ffffff;
-}
-.footer {
-    margin-top: 7dp;
+    margin-bottom: 6dp;
 }
 
-@keyframes settings-enter {
-    from {
-        opacity: 0;
-        top: 7%;
-    }
-    to {
-        opacity: 1;
-        top: 4%;
-    }
+.tab {
+    flex: 1;
+    color: #9db8c4;
+    background-color: #0a1b24;
+    border: 1dp #36505a;
+    font-size: 15dp;
+    font-weight: bold;
+    cursor: pointer;
+    text-align: center;
+    line-height: 30dp;
+}
+
+.tab.active {
+    color: #fff8c9;
+    background-color: #17343e;
+    border-color: #61d3e7;
+}
+
+#settings-content {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.settings-page {
+    width: 100%;
+    height: 100%;
+    display: none;
+}
+
+#page-video, #page-audio {
+    overflow-y: auto;
+}
+
+h2 {
+    font-size: 20dp;
+    color: #63d8f4;
+    margin: 10dp 0;
+}
+
+p {
+    color: #a7bdc7;
+    margin: 0 0 22dp;
+    font-size: 13dp;
+}
+
+.setting-row {
+    display: flex;
+    align-items: center;
+    gap: 20dp;
+    height: 54dp;
+    width: 90%;
+    max-width: 720dp;
+}
+
+.label {
+    width: 48%;
+    font-size: 15dp;
+}
+
+.selector {
+    flex: 1;
+    height: 38dp;
+}
+
+.wide {
+    flex: 1;
+    height: 38dp;
+    color: #f1f7de;
+}
+
+#page-keybinds {
+    display: flex;
+    flex-direction: column;
+}
+
+#binding-toolbar {
+    display: flex;
+    gap: 8dp;
+    height: 30dp;
+    min-height: 30dp;
+    margin-bottom: 4dp;
+}
+
+#keybind-search {
+    flex: 1;
+    min-width: 100dp;
+    padding: 7dp;
+    background-color: #07171e;
+    border: 1dp #42616b;
+    color: #eaf6eb;
+    font-size: 13dp;
+}
+
+#keybind-category {
+    width: 155dp;
+    background-color: #102832;
+    color: #eaf6eb;
+    font-size: 13dp;
+}
+
+.utility {
+    min-width: 90dp;
+    padding: 6dp 10dp;
+    color: #d8f5fa;
+    background-color: #102832;
+    border: 1dp #42616b;
+    font-size: 11dp;
+    cursor: pointer;
+}
+
+.utility:hover, .utility:focus {
+    border-color: #6bd3e8;
+    background-color: #1a3c46;
+}
+
+.utility.danger {
+    color: #ffbd9a;
+}
+
+#binding-columns {
+    height: 18dp;
+    min-height: 18dp;
+    display: flex;
+    color: #80a8b7;
+    font-size: 11dp;
+}
+
+#binding-columns span {
+    width: 24%;
+}
+
+#binding-columns .action-heading {
+    width: 52%;
+}
+
+#binding-list {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding-right: 8dp;
+    background-color: #07151b88;
+}
+
+.binding-row {
+    display: flex;
+    align-items: center;
+    min-height: 36dp;
+    border-bottom: 1dp #25404a;
+    padding: 3dp 7dp;
+    gap: 8dp;
+}
+
+.binding-label {
+    width: 52%;
+    min-width: 0;
+}
+
+.binding-title {
+    font-size: 13dp;
+    color: #edf6da;
+}
+
+.binding-context {
+    font-size: 10dp;
+    color: #7ea3b1;
+    margin-top: 3dp;
+}
+
+.binding {
+    width: 24%;
+    min-width: 0;
+    height: 30dp;
+    padding: 3dp;
+    color: #b7e9f5;
+    background-color: #0e2630;
+    border: 1dp #365a68;
+    font-size: 12dp;
+    text-align: center;
+    cursor: pointer;
+    overflow: hidden;
+    line-height: 24dp;
+}
+
+.binding:hover, .binding:focus {
+    border-color: #71def0;
+}
+
+.binding.capturing {
+    border-color: #f7d474;
+    color: #f7d474;
+}
+
+#binding-capture {
+    min-height: 16dp;
+    padding: 3dp 0;
+}
+
+#binding-status {
+    color: #bad3d8;
+    font-size: 11dp;
+    white-space: pre-wrap;
+}
+
+#capture-actions {
+    display: flex;
+    gap: 8dp;
+    margin-top: 5dp;
+}
+
+#binding-reset {
+    height: 26dp;
+    min-height: 26dp;
+    display: flex;
+    gap: 10dp;
+}
+
+#settings-note {
+    color: #85a7b3;
+    font-size: 10dp;
+    margin-top: 6dp;
+    min-height: 14dp;
+}
+
+.footer {
+    min-height: 38dp;
+    margin-top: 4dp;
+    height: 38dp;
+}
+
+.form-content {
+    left: 15%;
+    right: 15%;
+    top: 10%;
+    bottom: 10%;
+}
+
+.footer .form-action {
+    height: 36dp;
 }

@@ -21,6 +21,7 @@ struct StateContext {
     DefinitionRegistry& definitions;
     std::filesystem::path configPath;
     Renderer* renderer{};
+    std::uint64_t settingsRevision{};
 };
 
 using MatchSetupOptions = MatchSetupProfile;

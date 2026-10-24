@@ -122,12 +122,13 @@
       "presentation": "alloy_processor",
       "collisionRadius": 5.0,
       "footprint": { "shape": "rectangle", "halfExtents": [5.0, 4.0], "edgeFalloff": 2.5, "maximumTiltDegrees": 10.0 },
-        "components": ["health", "processor"],
+        "components": ["vision", "health", "processor"],
         "processorCapacity": 400,
       "availableUpgrades": [],
       "tags": ["building", "processor", "economic", "alloy-processing"],
       "health": 600,
       "powerDevice": "alloy_processor",
+      "vision": { "range": 10 },
       "stats": {}
     },
     "fuel_processor": {
@@ -137,12 +138,13 @@
       "presentation": "fuel_processor",
       "collisionRadius": 5.0,
       "footprint": { "shape": "rectangle", "halfExtents": [5.0, 4.0], "edgeFalloff": 2.5, "maximumTiltDegrees": 10.0 },
-        "components": ["health", "processor"],
+        "components": ["vision", "health", "processor"],
         "processorCapacity": 400,
       "availableUpgrades": [],
       "tags": ["building", "processor", "economic", "fuel-processing"],
       "health": 600,
       "powerDevice": "fuel_processor",
+      "vision": { "range": 10 },
       "stats": {}
     },
     "synthetic_mine": {
@@ -155,11 +157,12 @@
       "resourceType": "synthetic",
       "capacity": 100,
       "rawProductionPerTick": 0.1,
-      "components": ["health", "resource"],
+      "components": ["vision", "health", "resource"],
       "availableUpgrades": [],
       "tags": ["building", "economic", "synthetic-producer"],
       "health": 550,
       "powerDevice": "synthetic_mine",
+      "vision": { "range": 10 },
       "stats": {}
     },
     "basic_generator": {
@@ -184,10 +187,11 @@
       "presentation": "storage_silo",
       "collisionRadius": 4.5,
       "footprint": { "shape": "circle", "radius": 4.0, "halfExtents": [4.0, 4.0], "edgeFalloff": 2.0, "maximumTiltDegrees": 10.0 },
-      "components": ["health"],
+      "components": ["vision", "health"],
       "availableUpgrades": [],
       "tags": ["building", "storage", "resource-dropoff"],
       "health": 550,
+      "vision": { "range": 10 },
       "stats": {}
     },
     "electricity_pole": {
@@ -197,11 +201,12 @@
       "presentation": "electricity_pole",
       "collisionRadius": 1.5,
       "footprint": { "shape": "circle", "radius": 1.25, "halfExtents": [1.25, 1.25], "edgeFalloff": 1.0, "maximumTiltDegrees": 10.0 },
-      "components": ["health"],
+      "components": ["vision", "health"],
       "availableUpgrades": [],
       "tags": ["building", "power", "relay"],
       "health": 250,
       "powerDevice": "basic_relay",
+      "vision": { "range": 2, "heightBonus": false },
       "stats": {}
     },
     "charging_pad": {
@@ -226,11 +231,12 @@
       "presentation": "resource_extractor",
       "collisionRadius": 5.0,
       "footprint": { "shape": "circle", "radius": 4.5, "halfExtents": [4.5, 4.5], "edgeFalloff": 2.5, "maximumTiltDegrees": 10.0 },
-      "components": ["health", "production"],
+      "components": ["vision", "health", "production"],
       "availableUpgrades": [],
       "tags": ["building", "economic", "extractor", "production"],
       "health": 550,
       "powerDevice": "resource_extractor",
+      "vision": { "range": 10 },
       "stats": { "productionSpeed": 1 }
     },
     "drone_factory": {
@@ -242,11 +248,12 @@
       "footprint": { "shape": "rectangle", "halfExtents": [7.0, 5.5], "edgeFalloff": 3.0, "maximumTiltDegrees": 10.0 },
       "interactionMargin": 0.9,
       "spawn": { "clearance": 0.6, "candidateCount": 16 },
-      "components": ["health", "production", "upgrades"],
+      "components": ["vision", "health", "production", "upgrades"],
       "availableUpgrades": [],
       "tags": ["building", "factory", "production", "drone"],
       "health": 800,
       "powerDevice": "drone_factory",
+      "vision": { "range": 10 },
       "stats": { "productionSpeed": 1, "researchTime": 10 }
     },
     "sensor_tower": {

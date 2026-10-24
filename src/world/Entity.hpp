@@ -51,10 +51,11 @@ enum class EntityKind : std::uint8_t { decoration, unit, building, resource };
 
 struct VisionComponent {
     float sightRange{0.0F};
+    bool heightBonus{true};
 };
 
-inline float effectiveSightRange(float resolvedRange, float terrainHeight) {
-    return resolvedRange + std::max(0.0F, terrainHeight) * 0.8F;
+inline float effectiveSightRange(float resolvedRange, float terrainHeight, bool heightBonus = true) {
+    return resolvedRange + (heightBonus ? std::max(0.0F, terrainHeight) * 0.8F : 0.0F);
 }
 
 struct UnitComponent {
@@ -66,6 +67,7 @@ struct UnitComponent {
     float movementSpeed{0.0F};
     UnitOrderKind order{UnitOrderKind::idle};
     EntityId orderTarget{0};
+    std::deque<EntityId> constructionQueue;
 };
 
 struct Health {

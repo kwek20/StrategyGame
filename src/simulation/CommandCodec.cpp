@@ -38,7 +38,7 @@ bool readString(std::span<const std::byte>& input, std::string& value) {
 
 std::vector<std::byte> CommandCodec::encode(const PlayerCommand& command) {
     std::vector<std::byte> result;
-    result.push_back(std::byte{9});
+    result.push_back(std::byte{10});
     write(result, command.player);
     write(result, command.sequence);
     result.push_back(static_cast<std::byte>(command.payload.index()));
@@ -76,16 +76,20 @@ std::vector<std::byte> CommandCodec::encode(const PlayerCommand& command) {
             write(result, static_cast<std::uint32_t>(payload.builders.size()));
             for (EntityId builder : payload.builders) write(result, builder);
             write(result, payload.rotationDegrees);
-        }
-        else if constexpr (std::is_same_v<T, ConstructCommand>) write(result, payload.building);
-        else if constexpr (std::is_same_v<T, RepairCommand>) write(result, payload.target);
+            result.push_back(payload.queueBuilders ? std::byte{1} : std::byte{0});
+        } else if constexpr (std::is_same_v<T, ConstructCommand>) {
+            write(result, payload.building);
+            result.push_back(payload.queued ? std::byte{1} : std::byte{0});
+        } else if constexpr (std::is_same_v<T, RepairCommand>)
+            write(result, payload.target);
         else if constexpr (std::is_same_v<T, CancelProductionCommand>) write(result, payload.queueIndex);
     }, command.payload);
     return result;
 }
 
 std::optional<PlayerCommand> CommandCodec::decode(std::span<const std::byte> input) {
-    if (input.empty() || input.front() != std::byte{9}) return std::nullopt;
+    if (input.empty() || input.front() != std::byte{10})
+        return std::nullopt;
     input = input.subspan(1);
     PlayerCommand result;
     if (!read(input, result.player) || !read(input, result.sequence) || input.empty()) return std::nullopt;
@@ -130,9 +134,21 @@ std::optional<PlayerCommand> CommandCodec::decode(std::span<const std::byte> inp
         }
         if (!read(input, value.rotationDegrees))
             return std::nullopt;
+        if (input.empty() || std::to_integer<unsigned>(input.front()) > 1)
+            return std::nullopt;
+        value.queueBuilders = input.front() == std::byte{1};
+        input = input.subspan(1);
         result.payload=std::move(value); break;
     }
-    case 9: { EntityId building{}; if(!read(input,building)) return std::nullopt; result.payload=ConstructCommand{entity,building}; break; }
+    case 9: {
+        EntityId building{};
+        if (!read(input, building) || input.empty() || std::to_integer<unsigned>(input.front()) > 1)
+            return std::nullopt;
+        const bool queued = input.front() == std::byte{1};
+        input = input.subspan(1);
+        result.payload = ConstructCommand{entity, building, queued};
+        break;
+    }
     case 10: result.payload=StopConstructionCommand{entity}; break;
     case 11: result.payload=CancelConstructionCommand{entity}; break;
     case 12: { EntityId target{}; if(!read(input,target)) return std::nullopt; result.payload=RepairCommand{entity,target}; break; }

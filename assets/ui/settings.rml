@@ -1,157 +1,143 @@
 <rml>
     <head>
-        <link type="text/rcss" href="common_base.rcss"/>
-        <link type="text/rcss" href="common_buttons.rcss"/>
-        <link type="text/template" href="form_panel.rml"/>
+        <link type="text/rcss" href="common_base.rcss" />
+        <link type="text/rcss" href="common_buttons.rcss" />
+        <link type="text/template" href="form_panel.rml" />
+        <link type="text/rcss" href="settings.rcss" />
         <title>Settings</title>
-        <link type="text/rcss" href="settings.rcss"/>
     </head>
     <body template="form-panel">
         <h1 id="settings-title">SETTINGS</h1>
-        <div class="panel-rule rule"/>
-        <div class="columns">
-            <div class="column">
-                <h2 id="settings-video">VIDEO</h2>
+        <div id="settings-tabs">
+            <button id="settings.tab.video" class="tab">VIDEO</button>
+            <button id="settings.tab.audio" class="tab">AUDIO</button>
+            <button id="settings.tab.keybinds" class="tab">KEYBINDS</button>
+        </div>
+        <div id="settings-content">
+            <section id="page-video" class="settings-page">
+                <h2 id="settings-display">DISPLAY</h2>
+                <p id="settings-video-help">Adjust the display and interface size.</p>
                 <div class="setting-row">
-                    <span id="resolution-label" class="label"/>
+                    <span id="resolution-label" class="label">Resolution</span>
                     <div id="settings.resolution" class="selector">
                         <button id="settings.resolution.left" class="art-button selector-button">
                             <span>-</span>
                         </button>
-                        <span id="settings.resolution.value" class="selector-value"/>
+                        <span id="settings.resolution.value" class="selector-value" />
                         <button id="settings.resolution.right" class="art-button selector-button">
                             <span>+</span>
                         </button>
                     </div>
                 </div>
                 <div class="setting-row">
-                    <span id="fullscreen-label" class="label"/>
+                    <span id="fullscreen-label" class="label">Fullscreen</span>
                     <button id="settings.fullscreen" class="art-button wide">
-                        <span id="settings.fullscreen.value"/>
+                        <span id="settings.fullscreen.value" />
                     </button>
                 </div>
                 <div class="setting-row">
-                    <span id="ui-scale-label" class="label"/>
+                    <span id="ui-scale-label" class="label">Interface scale</span>
                     <div id="settings.ui_scale" class="selector">
                         <button id="settings.ui_scale.left" class="art-button selector-button">
                             <span>-</span>
                         </button>
-                        <span id="settings.ui_scale.value" class="selector-value"/>
+                        <span id="settings.ui_scale.value" class="selector-value" />
                         <button id="settings.ui_scale.right" class="art-button selector-button">
                             <span>+</span>
                         </button>
                     </div>
                 </div>
-                <h2 id="settings-audio">AUDIO</h2>
+            </section>
+            <section id="page-audio" class="settings-page">
+                <h2 id="settings-audio-title">AUDIO</h2>
+                <p id="settings-audio-help">Balance music and gameplay sounds.</p>
                 <div class="setting-row">
-                    <span id="master-label" class="label"/>
+                    <span id="master-label" class="label">Master volume</span>
                     <div id="settings.master" class="selector">
                         <button id="settings.master.left" class="art-button selector-button">
                             <span>-</span>
                         </button>
-                        <span id="settings.master.value" class="selector-value"/>
+                        <span id="settings.master.value" class="selector-value" />
                         <button id="settings.master.right" class="art-button selector-button">
                             <span>+</span>
                         </button>
                     </div>
                 </div>
                 <div class="setting-row">
-                    <span id="music-label" class="label"/>
+                    <span id="music-label" class="label">Music volume</span>
                     <div id="settings.music" class="selector">
                         <button id="settings.music.left" class="art-button selector-button">
                             <span>-</span>
                         </button>
-                        <span id="settings.music.value" class="selector-value"/>
+                        <span id="settings.music.value" class="selector-value" />
                         <button id="settings.music.right" class="art-button selector-button">
                             <span>+</span>
                         </button>
                     </div>
                 </div>
                 <div class="setting-row">
-                    <span id="effects-label" class="label"/>
+                    <span id="effects-label" class="label">Effects volume</span>
                     <div id="settings.effects" class="selector">
                         <button id="settings.effects.left" class="art-button selector-button">
                             <span>-</span>
                         </button>
-                        <span id="settings.effects.value" class="selector-value"/>
+                        <span id="settings.effects.value" class="selector-value" />
                         <button id="settings.effects.right" class="art-button selector-button">
                             <span>+</span>
                         </button>
                     </div>
                 </div>
                 <div class="setting-row">
-                    <span id="mute-label" class="label"/>
+                    <span id="mute-label" class="label">Mute audio</span>
                     <button id="settings.muted" class="art-button wide">
-                        <span id="settings.muted.value"/>
+                        <span id="settings.muted.value" />
                     </button>
                 </div>
-            </div>
-            <div class="column controls">
-                <h2 id="settings-controls">CONTROLS</h2>
-                <div id="binding-list">
-                    <div class="binding-row">
-                        <span id="bind.forward.label" class="binding-label"/>
-                        <button id="settings.bind.forward" class="binding">
-                            <span id="bind.forward.value" class="keycap"/>
-                        </button>
-                    </div>
-                    <div class="binding-row">
-                        <span id="bind.backward.label" class="binding-label"/>
-                        <button id="settings.bind.backward" class="binding">
-                            <span id="bind.backward.value" class="keycap"/>
-                        </button>
-                    </div>
-                    <div class="binding-row">
-                        <span id="bind.left.label" class="binding-label"/>
-                        <button id="settings.bind.left" class="binding">
-                            <span id="bind.left.value" class="keycap"/>
-                        </button>
-                    </div>
-                    <div class="binding-row">
-                        <span id="bind.right.label" class="binding-label"/>
-                        <button id="settings.bind.right" class="binding">
-                            <span id="bind.right.value" class="keycap"/>
-                        </button>
-                    </div>
-                    <div class="binding-row">
-                        <span id="bind.debug.label" class="binding-label"/>
-                        <button id="settings.bind.debug" class="binding">
-                            <span id="bind.debug.value" class="keycap"/>
-                        </button>
-                    </div>
-                    <div class="binding-row">
-                        <span id="bind.terrain_debug.label" class="binding-label"/>
-                        <button id="settings.bind.terrain_debug" class="binding">
-                            <span id="bind.terrain_debug.value" class="keycap"/>
-                        </button>
-                    </div>
-                    <div class="binding-row">
-                        <span id="bind.water_debug.label" class="binding-label"/>
-                        <button id="settings.bind.water_debug" class="binding">
-                            <span id="bind.water_debug.value" class="keycap"/>
-                        </button>
-                    </div>
-                    <div class="binding-row">
-                        <span id="bind.power_debug.label" class="binding-label"/>
-                        <button id="settings.bind.power_debug" class="binding">
-                            <span id="bind.power_debug.value" class="keycap"/>
-                        </button>
-                    </div>
-                    <div class="binding-row">
-                        <span id="bind.pause.label" class="binding-label"/>
-                        <button id="settings.bind.pause" class="binding">
-                            <span id="bind.pause.value" class="keycap"/>
-                        </button>
+            </section>
+            <section id="page-keybinds" class="settings-page">
+                <div id="binding-toolbar">
+                    <input id="keybind-search" type="text" placeholder="Search actions or keys" />
+                    <select id="keybind-category">
+                        <option id="keybind.option.all" value="">All categories</option>
+                        <option id="keybind.option.camera" value="camera">Camera</option>
+                        <option id="keybind.option.selection" value="selection">Selection</option>
+                        <option id="keybind.option.building" value="building">Building</option>
+                        <option id="keybind.option.orders" value="orders">Orders</option>
+                        <option id="keybind.option.direct" value="direct">Direct</option>
+                        <option id="keybind.option.interface" value="interface">Interface</option>
+                        <option id="keybind.option.diagnostics" value="diagnostics">Diagnostics</option>
+                        <option id="keybind.option.editor" value="editor">Editor</option>
+                    </select>
+                    <button id="settings.preset.default" class="utility">WASD + ALT</button>
+                    <button id="settings.preset.grid" class="utility">ARROWS + GRID</button>
+                </div>
+                <div id="binding-columns">
+                    <span id="keybind-action-heading" class="action-heading">ACTION / CONTEXT</span>
+                    <span id="keybind-primary-heading">PRIMARY</span>
+                    <span id="keybind-secondary-heading">SECONDARY</span>
+                </div>
+                <div id="binding-list" />
+                <div id="binding-capture">
+                    <div id="binding-status" />
+                    <div id="capture-actions">
+                        <button id="settings.capture.replace" class="utility danger">REPLACE CONFLICTS</button>
+                        <button id="settings.capture.clear" class="utility">CLEAR SELECTED</button>
+                        <button id="settings.capture.cancel" class="utility">CANCEL CAPTURE</button>
                     </div>
                 </div>
-            </div>
+                <div id="binding-reset">
+                    <button id="settings.reset.category" class="utility">RESET CATEGORY</button>
+                    <button id="settings.reset.all" class="utility">RESET ALL BINDINGS</button>
+                </div>
+            </section>
         </div>
+        <div id="settings-note">Apply saves changes immediately. Back discards unapplied changes.</div>
         <div class="form-actions footer">
             <button id="settings.cancel" class="art-button form-action danger">
-                <span id="cancel-label"/>
+                <span id="cancel-label">BACK</span>
             </button>
             <button id="settings.apply" class="art-button form-action primary">
-                <span id="apply-label"/>
+                <span id="apply-label">APPLY</span>
             </button>
         </div>
     </body>

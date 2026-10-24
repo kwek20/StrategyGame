@@ -141,6 +141,7 @@ class GameSession final {
 
     void simulateTick();
     void apply(const PlayerCommand& command);
+    void orderConstruction(Entity& builder, Entity& building, bool queued);
     void beginRecharge(Entity& entity);
     void finishRecharge(Entity& entity);
     void stopUnit(Entity& entity);

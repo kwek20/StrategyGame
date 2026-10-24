@@ -11,6 +11,7 @@
 #include "ui/PlacementFeedback.hpp"
 #include "world/Collision.hpp"
 #include "world/MapArea.hpp"
+#include "world/PowerPlacement.hpp"
 
 #include <SDL3/SDL.h>
 #include <algorithm>
@@ -426,7 +427,9 @@ void PlayState::updateGameplayHud(Renderer& renderer, const Player* player) cons
     const bool sameType = selected && isHomogeneousSelection(session_.world(), selectedUnits_, selected->archetype.value);
     if (viewMode_ == ViewMode::unitControl && selected) {
         hud = EntityHudModelBuilder::build(session_.world(), selected->id, {}, context_.definitions);
-        hud->footer = Text::get("unit.escape");
+        hud->footer =
+            Text::format("keybind.direct_hint",
+                         {config_.keybinds.label("possess"), config_.keybinds.label("pause")});
     } else if (selectedResourceField_ && selected) {
         hud = EntityHudModelBuilder::build(
             session_.world(), selectedEntity_, selectedUnits_, context_.definitions, true);
@@ -496,7 +499,10 @@ void PlayState::updateGameplayHud(Renderer& renderer, const Player* player) cons
                 if (hudShortcuts_.size() < 12) {
                     const auto index = hudShortcuts_.size();
                     hudShortcuts_.push_back(action.enabled ? id : std::string{});
-                    entity << "<span class='action-hotkey'>Alt+" << "1234567890-="[index] << "</span>";
+                    entity << "<span class='action-hotkey'>"
+                           << escapeRml(
+                                  config_.keybinds.label("action_" + std::to_string(index + 1)))
+                           << "</span>";
                 }
                 entity << "<div class='tooltip'><b>"
                        << escapeRml(action.name) << "</b><br/>" << escapeRml(action.description);
@@ -545,7 +551,12 @@ void PlayState::updateGameplayHud(Renderer& renderer, const Player* player) cons
                                                                 : Text::get("placement.ready");
     if (!constructionPreviewSummary_.empty())
         placementMessage += "\n" + constructionPreviewSummary_;
-    placementMessage += "\n" + Text::get("placement.controls");
+    placementMessage += "\n" + Text::format("placement.controls",
+                                            {config_.keybinds.label("place"),
+                                             config_.keybinds.label("repeat_build"),
+                                             config_.keybinds.label("rotate_building"),
+                                             config_.keybinds.label("cancel_placement"),
+                                             config_.keybinds.label("camera_pan")});
     renderer.setUiText("placement-reason", escapeRml(placementMessage));
     renderer.setUiAttribute(
         "placement-reason",
@@ -574,6 +585,7 @@ void PlayState::setPaused(bool paused) {
     if (paused_ == paused)
         return;
     paused_ = paused;
+    input_.clear();
     if (paused_) {
         pauseScreen_ =
             context_.renderer->pushUiScreen({"assets/ui/pause_menu.rml",
@@ -591,7 +603,11 @@ void PlayState::setPaused(bool paused) {
 }
 
 void PlayState::cancelConstructionPlacement() {
+    if (constructionPlacementMode_)
+        constructionRotations_[constructionRecipeId_] = constructionRotationDegrees_;
     constructionPlacementMode_ = false;
+    constructionBatchActive_ = false;
+    pendingRepeatPlacement_ = false;
     pendingConstructionScreen_.reset();
     pendingConstructionIntent_.reset();
     pendingPlacementSequence_.reset();
@@ -602,12 +618,41 @@ void PlayState::cancelConstructionPlacement() {
     constructionTerrainCache_.clear();
     constructionGhost_.reset();
     constructionRotationDegrees_ = 0;
+    constructionPowerAssist_ = {};
+    pendingConstructionRangeLock_ = false;
+}
+
+glm::vec3 PlayState::assistedConstructionPosition(glm::vec3 position, bool lockRange) const {
+    const auto* recipe = context_.definitions.recipe(RecipeId{constructionRecipeId_});
+    if (!recipe || recipe->product.kind != RecipeProductKind::building)
+        return position;
+    const auto& buildingId = recipe->product.id;
+    if (!constructionGhost_ || constructionGhost_->archetype.value != buildingId) {
+        constructionGhost_.emplace();
+        auto& ghost = *constructionGhost_;
+        ghost.id = std::numeric_limits<EntityId>::max();
+        ghost.archetype = EntityArchetypeId{buildingId};
+        ghost.presentation = PresentationId{buildingId};
+        ghost.authority.owner = localPlayer_;
+        context_.definitions.initializeEntity(ghost);
+        ghost.construction.emplace();
+        ghost.construction.state = BuildingLifecycleState::planned;
+    }
+    auto& ghost = *constructionGhost_;
+    ghost.transform.position = position;
+    ghost.transform.rotationDegrees.y = constructionRotationDegrees_;
+    position = constructionPowerAssist_.position(session_.world(), localPlayer_, ghost, lockRange);
+    ghost.transform.position = position;
+    return position;
 }
 
 EntityHudModel PlayState::buildConstructionHudModel(const Entity& selected,
                                                     const Player* player) const {
     EntityHudModel hud = EntityHudModelBuilder::build(
         session_.world(), selected.id, selectedUnits_, context_.definitions);
+    if (!selected.unitControl.constructionQueue.empty())
+        hud.stats.push_back({Text::get("keybind.queued_buildings"),
+                             std::to_string(selected.unitControl.constructionQueue.size())});
     appendSyntheticRoutes(hud,
                           session_.world(),
                           context_.definitions,
@@ -767,29 +812,16 @@ EntityHudModel PlayState::buildEntityActionHudModel(const Entity& selected,
         hud.actions.push_back(std::move(action));
     }
     if (selected.power) {
-        HudActionModel connect;
-        connect.id = "power.connect";
-        connect.name = Text::get("power.action.connect");
-        connect.description = Text::get("power.action.connect.description");
-        connect.icon = "action_power_connect";
-        connect.cost = Text::get("entity_hud.free");
-        connect.enabled = targets.size() == 1 && isOperational(selected) &&
-                          selected.power.enabled &&
-                          selected.power.connections.size() < selected.power.maximumConnections;
-        if (!connect.enabled)
-            connect.disabledReason = Text::get("entity_hud.action_unavailable");
-        hud.actions.push_back(std::move(connect));
-
-        HudActionModel disconnect;
-        disconnect.id = "power.disconnect";
-        disconnect.name = Text::get("power.action.disconnect");
-        disconnect.description = Text::get("power.action.disconnect.description");
-        disconnect.icon = "action_power_disconnect";
-        disconnect.cost = Text::get("entity_hud.free");
-        disconnect.enabled = targets.size() == 1 && !selected.power.connections.empty();
-        if (!disconnect.enabled)
-            disconnect.disabledReason = Text::get("entity_hud.action_unavailable");
-        hud.actions.push_back(std::move(disconnect));
+        HudActionModel connection;
+        connection.id = "power.connection";
+        connection.name = Text::get("power.action.connection");
+        connection.description = Text::get("power.action.connection.description");
+        connection.icon = "action_power_connect";
+        connection.cost = Text::get("entity_hud.free");
+        connection.enabled = targets.size() == 1;
+        if (!connection.enabled)
+            connection.disabledReason = Text::get("entity_hud.action_unavailable");
+        hud.actions.push_back(std::move(connection));
 
         HudActionModel priority;
         priority.id = "power.priority";
@@ -827,19 +859,6 @@ EntityHudModel PlayState::buildEntityActionHudModel(const Entity& selected,
             control.enabled = true;
             hud.actions.push_back(std::move(control));
         }
-        if (selected.power.storageCapacity > 0.0F) {
-            HudActionModel discharge;
-            discharge.id = "power.discharge";
-            discharge.name = selected.power.dischargeEnabled
-                                 ? Text::get("power.action.discharge.disable")
-                                 : Text::get("power.action.discharge.enable");
-            discharge.description = Text::get("power.action.discharge.description");
-            discharge.icon =
-                selected.power.dischargeEnabled ? "status_powered" : "status_unpowered";
-            discharge.cost = Text::get("entity_hud.free");
-            discharge.enabled = true;
-            hud.actions.push_back(std::move(discharge));
-        }
     }
     appendSyntheticRoutes(hud, session_.world(), context_.definitions, localPlayer_, targets);
     return hud;
@@ -868,7 +887,7 @@ bool PlayState::handleGameplayHudAction(const std::string& action) {
     if (action.starts_with("selection.")) {
         selectedResourceField_ = {};
         const std::string chosen = action.substr(10);
-        const bool removeType = (SDL_GetModState() & SDL_KMOD_SHIFT) != 0;
+        const bool removeType = config_.keybinds.held("selection_add", input_);
         selectedUnits_.erase(std::remove_if(selectedUnits_.begin(), selectedUnits_.end(), [&](EntityId id) {
             const Entity* entity = session_.world().findEntity(id);
             return !entity || (removeType ? entity->archetype.value == chosen : entity->archetype.value != chosen);
@@ -891,11 +910,16 @@ bool PlayState::handleGameplayHudAction(const std::string& action) {
     const auto targets = actionTargets(selectedEntity_, selectedUnits_);
     if (selected->archetype.value == "construction_drone" && !id.starts_with("delivery-output:")) {
         cancelConstructionPlacement();
-        constructionRecipeId_ = id; constructionPlacementMode_ = true; return true;
+        constructionRecipeId_ = id;
+        constructionRotationDegrees_ = constructionRotations_[id];
+        constructionPlacementMode_ = true;
+        return true;
     }
-    if (id == "power.connect" || id == "power.disconnect") {
-        powerLinkMode_ = id == "power.connect" ? PowerLinkMode::connect : PowerLinkMode::disconnect;
-        powerLinkSource_ = selected->id; powerOverlayVisible_ = true; return true;
+    if (id == "power.connection") {
+        powerLinkMode_ = PowerLinkMode::toggle;
+        powerLinkSource_ = selected->id;
+        powerOverlayVisible_ = true;
+        return true;
     }
     if (id == "power.priority") {
         const PowerPriority current = selected->power ? selected->power->priority : PowerPriority::medium;
@@ -914,11 +938,6 @@ bool PlayState::handleGameplayHudAction(const std::string& action) {
         for (EntityId target : targets)
             if (consumption) session_.submit({localPlayer_, nextCommandSequence_++, SetPowerConsumptionEnabledCommand{target, enabled}});
             else session_.submit({localPlayer_, nextCommandSequence_++, SetPowerOutputEnabledCommand{target, enabled}});
-        return true;
-    }
-    if (id == "power.discharge") {
-        const bool enabled = selected->power && !selected->power->dischargeEnabled;
-        for (EntityId target : targets) session_.submit({localPlayer_, nextCommandSequence_++, SetPowerDischargeEnabledCommand{target, enabled}});
         return true;
     }
     if (id.starts_with("delivery-output:")) {
@@ -942,11 +961,119 @@ bool PlayState::handleGameplayHudAction(const std::string& action) {
     return true;
 }
 
-void PlayState::handleEvent(const SDL_Event& event) {
-    const auto bound = [this](const char* action, SDL_Keycode fallback) {
-        const auto found = config_.keybinds.find(action);
-        return found == config_.keybinds.end() ? fallback : static_cast<SDL_Keycode>(found->second);
+void PlayState::handleSelectionShortcut(std::string_view action) {
+    const auto select = [&](std::vector<EntityId> ids, bool focus) {
+        std::erase_if(ids, [&](EntityId id) {
+            const auto* e = session_.world().findEntity(id);
+            return !e || e->authority.owner != localPlayer_;
+        });
+        if (ids.empty())
+            return;
+        selectedResourceField_ = {};
+        selectedEntity_ = ids.front();
+        selectedUnits_ = std::move(ids);
+        if (selectedUnits_.size() == 1)
+            selectedUnits_.clear();
+        if (focus)
+            camera_.focusAt(session_.world().findEntity(selectedEntity_)->transform.position);
     };
+    std::vector<EntityId> selected = selectedUnits_;
+    if (selected.empty() && selectedEntity_)
+        selected.push_back(selectedEntity_);
+    if (action.starts_with("assign_group_")) {
+        const auto index = std::stoul(std::string{action.substr(13)}) - 1;
+        std::erase_if(selected, [&](auto id) {
+            const auto* e = session_.world().findEntity(id);
+            return !e || e->authority.owner != localPlayer_ ||
+                   (!e->unitControl && !e->construction);
+        });
+        controlGroups_.at(index) = std::move(selected);
+        return;
+    }
+    if (action.starts_with("group_")) {
+        select(controlGroups_.at(std::stoul(std::string{action.substr(6)}) - 1), false);
+        return;
+    }
+    if (action == "stop") {
+        for (auto id : selected)
+            session_.submit({localPlayer_, nextCommandSequence_++, StopUnitCommand{id}});
+        return;
+    }
+    if (action == "focus_hub") {
+        for (const auto& entity : session_.world().entities())
+            if (entity.authority.owner == localPlayer_ && entity.archetype.value == "command_hub") {
+                select({entity.id}, true);
+                return;
+            }
+    }
+    if (action == "idle_drone" || action == "all_idle_drones") {
+        std::vector<EntityId> idle;
+        for (const auto& e : session_.world().entities())
+            if (e.authority.owner == localPlayer_ && e.archetype.value == "construction_drone" &&
+                e.unitControl.order == UnitOrderKind::idle && !e.battery.returningToCharge &&
+                e.unitControl.constructionQueue.empty())
+                idle.push_back(e.id);
+        std::sort(idle.begin(), idle.end());
+        if (action == "all_idle_drones")
+            select(idle, false);
+        else if (!idle.empty()) {
+            const auto next = std::upper_bound(idle.begin(), idle.end(), selectedEntity_);
+            select({next == idle.end() ? idle.front() : *next}, true);
+        }
+    }
+    if (action == "copy_building") {
+        const auto* building = session_.world().findEntity(hoveredEntity_);
+        if (!building || building->authority.owner != localPlayer_ || !building->construction ||
+            !context_.definitions.recipe(RecipeId{"construct." + building->archetype.value}))
+            return;
+        const auto recipe = "construct." + building->archetype.value;
+        const auto rotation = building->transform.rotationDegrees.y;
+        EntityId builder{};
+        float best = std::numeric_limits<float>::max();
+        for (const auto& e : session_.world().entities())
+            if (e.authority.owner == localPlayer_ && e.archetype.value == "construction_drone") {
+                const float distance =
+                    glm::length(e.transform.position - building->transform.position);
+                if (distance < best) {
+                    best = distance;
+                    builder = e.id;
+                }
+            }
+        if (builder) {
+            cancelConstructionPlacement();
+            select({builder}, false);
+            constructionRecipeId_ = recipe;
+            constructionRotationDegrees_ = rotation;
+            constructionPlacementMode_ = true;
+            constructionCursorScreen_ = pointerScreen_;
+        }
+    }
+}
+
+void PlayState::handleEvent(const SDL_Event& event) {
+    input_.observe(event);
+    if (event.type == SDL_EVENT_WINDOW_FOCUS_LOST)
+        mousePanning_ = orbiting_ = draggingSelection_ = false;
+    const InputContext inputContext = constructionPlacementMode_           ? InputContext::placement
+                                      : viewMode_ == ViewMode::unitControl ? InputContext::direct
+                                                                           : InputContext::strategy;
+    const auto pressed = [&](std::string_view action) {
+        return config_.keybinds.matches(action, event, inputContext);
+    };
+    const auto released = [&](std::string_view action) {
+        return config_.keybinds.matches(action, event, inputContext, true);
+    };
+    if (paused_) {
+        if (pressed("pause"))
+            setPaused(false);
+        else
+            handlePauseEvent(event);
+        return;
+    }
+    const bool mouseEvent =
+        event.type == SDL_EVENT_MOUSE_BUTTON_DOWN || event.type == SDL_EVENT_MOUSE_BUTTON_UP;
+    const glm::vec2 eventPoint =
+        mouseEvent ? glm::vec2{event.button.x, event.button.y} : pointerScreen_;
     if (event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP)
         inputWindowId_ = event.key.windowID;
     else if (event.type == SDL_EVENT_MOUSE_MOTION)
@@ -955,8 +1082,7 @@ void PlayState::handleEvent(const SDL_Event& event) {
         inputWindowId_ = event.button.windowID;
     else if (event.type == SDL_EVENT_MOUSE_WHEEL)
         inputWindowId_ = event.wheel.windowID;
-    if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
-        event.key.key == bound("debug", SDLK_F3)) {
+    if (pressed("debug")) {
         detailedDebug_ = !detailedDebug_;
         if (detailedDebug_) {
             terrainDebug_ = false;
@@ -965,8 +1091,7 @@ void PlayState::handleEvent(const SDL_Event& event) {
         }
         return;
     }
-    if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
-        event.key.key == bound("terrain_debug", SDLK_F4)) {
+    if (pressed("terrain_debug")) {
         terrainDebug_ = !terrainDebug_;
         if (terrainDebug_) {
             detailedDebug_ = false;
@@ -975,8 +1100,7 @@ void PlayState::handleEvent(const SDL_Event& event) {
         }
         return;
     }
-    if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
-        event.key.key == bound("water_debug", SDLK_F6)) {
+    if (pressed("water_debug")) {
         waterDebugMode_ = (waterDebugMode_ + 1) % 4;
         if (waterDebugMode_ != 0) {
             detailedDebug_ = false;
@@ -985,8 +1109,7 @@ void PlayState::handleEvent(const SDL_Event& event) {
         }
         return;
     }
-    if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
-        event.key.key == bound("power_debug", SDLK_F7)) {
+    if (pressed("power_debug")) {
         powerDebug_ = !powerDebug_;
         if (powerDebug_) {
             detailedDebug_ = false;
@@ -995,7 +1118,7 @@ void PlayState::handleEvent(const SDL_Event& event) {
         }
         return;
     }
-    if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat && event.key.key == SDLK_F5) {
+    if (pressed("quick_save")) {
         try {
             SaveGame::write(config_.savePath(),
                             session_.terrainSeed(),
@@ -1012,7 +1135,7 @@ void PlayState::handleEvent(const SDL_Event& event) {
         }
         return;
     }
-    if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat && event.key.key == SDLK_F9) {
+    if (pressed("quick_load")) {
         try {
             SaveData data = SaveGame::read(config_.savePath());
             pendingTerrainSeed_ = data.terrainSeed;
@@ -1037,7 +1160,7 @@ void PlayState::handleEvent(const SDL_Event& event) {
         }
         return;
     }
-    if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat && event.key.key == SDLK_DELETE) {
+    if (pressed("cancel_construction")) {
         if (Entity* selected = session_.world().findEntity(selectedEntity_);
             selected && selected->authority.owner == localPlayer_ && selected->construction &&
             !isOperational(*selected)) {
@@ -1048,7 +1171,7 @@ void PlayState::handleEvent(const SDL_Event& event) {
         }
         return;
     }
-    if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat && event.key.key == SDLK_P) {
+    if (pressed("possess")) {
         if (possessedEntity_ != 0) {
             session_.submit(
                 {localPlayer_, nextCommandSequence_++, ReleaseUnitCommand{possessedEntity_}});
@@ -1071,8 +1194,7 @@ void PlayState::handleEvent(const SDL_Event& event) {
         }
         return;
     }
-    if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == bound("pause", SDLK_ESCAPE) &&
-        !event.key.repeat) {
+    if (pressed("pause") || pressed("cancel_placement")) {
         if (powerLinkMode_ != PowerLinkMode::none) {
             powerLinkMode_ = PowerLinkMode::none;
             powerLinkSource_ = 0;
@@ -1099,13 +1221,8 @@ void PlayState::handleEvent(const SDL_Event& event) {
         mousePanning_ = false;
         return;
     }
-    if (paused_) {
-        handlePauseEvent(event);
-        return;
-    }
-    if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_LEFT &&
-        viewMode_ == ViewMode::strategy) {
-        if (const auto world = minimapWorldAt(event.button.x, event.button.y)) {
+    if ((pressed("select") || pressed("place")) && viewMode_ == ViewMode::strategy) {
+        if (const auto world = minimapWorldAt(eventPoint.x, eventPoint.y)) {
             camera_.focusAt({world->x, camera_.focus().y, world->y});
             draggingSelection_ = false;
             return;
@@ -1117,76 +1234,84 @@ void PlayState::handleEvent(const SDL_Event& event) {
             return;
         if ((event.type == SDL_EVENT_MOUSE_BUTTON_DOWN || event.type == SDL_EVENT_MOUSE_BUTTON_UP ||
              event.type == SDL_EVENT_MOUSE_WHEEL) &&
-            context_.renderer->pointerOverUi())
+            context_.renderer->pointerOverUi() && !mousePanning_ && !orbiting_)
             return;
     }
     if (event.type == SDL_EVENT_MOUSE_MOTION && constructionPlacementMode_)
         constructionCursorScreen_ = glm::vec2{event.motion.x, event.motion.y};
-    if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_LEFT &&
-        viewMode_ == ViewMode::strategy && constructionPlacementMode_) {
+    if (pressed("place") && viewMode_ == ViewMode::strategy && constructionPlacementMode_) {
         if (pendingConstructionIntent_ || pendingPlacementSequence_)
             return;
-        constructionCursorScreen_ = glm::vec2{event.button.x, event.button.y};
+        constructionCursorScreen_ = eventPoint;
         pendingConstructionScreen_ = constructionCursorScreen_;
+        pendingConstructionRangeLock_ = config_.keybinds.held("range_lock", input_);
+        pendingRepeatPlacement_ = config_.keybinds.held("repeat_build", input_);
         std::vector<EntityId> builders = selectedUnits_;
         if (builders.empty())
             builders.push_back(selectedEntity_);
-        pendingConstructionIntent_ = PlaceBuildingCommand{
-            builders.front(), constructionRecipeId_, {}, builders, constructionRotationDegrees_};
+        pendingConstructionIntent_ =
+            PlaceBuildingCommand{builders.front(),
+                                 constructionRecipeId_,
+                                 {},
+                                 builders,
+                                 constructionRotationDegrees_,
+                                 pendingRepeatPlacement_ || constructionBatchActive_};
         draggingSelection_ = false;
         return;
     }
-    if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_LEFT &&
-        viewMode_ == ViewMode::strategy) {
+    if (pressed("select") && viewMode_ == ViewMode::strategy) {
         draggingSelection_ = true;
-        selectionStart_ = {event.button.x, event.button.y};
+        selectionStart_ = eventPoint;
         selectionEnd_ = selectionStart_;
         return;
     }
-    if (event.type == SDL_EVENT_MOUSE_BUTTON_UP && event.button.button == SDL_BUTTON_LEFT &&
-        viewMode_ == ViewMode::strategy && draggingSelection_) {
+    if (released("select") && viewMode_ == ViewMode::strategy && draggingSelection_) {
         draggingSelection_ = false;
-        selectionEnd_ = {event.button.x, event.button.y};
+        selectionEnd_ = eventPoint;
         if (glm::length(selectionEnd_ - selectionStart_) >= 6.0F)
             pendingSelectionRectangle_ = glm::vec4{selectionStart_, selectionEnd_};
         else {
             pendingSelection_ = selectionEnd_;
-            pendingSelectionAdditive_ = (SDL_GetModState() & SDL_KMOD_SHIFT) != 0;
-            pendingSelectionDoubleClick_ = event.button.clicks >= 2;
+            pendingSelectionAdditive_ = config_.keybinds.held("selection_add", input_);
+            pendingSelectionDoubleClick_ = mouseEvent && event.button.clicks >= 2;
         }
         return;
     }
-    if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_MIDDLE &&
-        viewMode_ == ViewMode::strategy) {
+    if (pressed("camera_orbit")) {
         orbiting_ = true;
         return;
     }
-    if (event.type == SDL_EVENT_MOUSE_BUTTON_UP && event.button.button == SDL_BUTTON_MIDDLE &&
-        viewMode_ == ViewMode::strategy) {
+    if (released("camera_orbit")) {
         orbiting_ = false;
         return;
     }
-    if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_RIGHT &&
-        viewMode_ == ViewMode::strategy) {
-        if (const auto world = minimapWorldAt(event.button.x, event.button.y);
-            world && !constructionPlacementMode_) {
-            pendingOrderTarget_ = 0;
-            pendingMoveDestination_ = glm::vec3{world->x, 0.0F, world->y};
-            return;
-        }
-        mousePanning_ = true;
-        rightDragDistance_ = 0.0F;
+    if (!mouseEvent && pressed("rotate_building")) {
+        constructionRotationDegrees_ = std::remainder(constructionRotationDegrees_ + 45.F, 360.F);
         return;
     }
-    if (event.type == SDL_EVENT_MOUSE_BUTTON_UP && event.button.button == SDL_BUTTON_RIGHT &&
-        viewMode_ == ViewMode::strategy) {
+    if (!mouseEvent && pressed("order")) {
+        pendingMoveScreen_ = eventPoint;
+        return;
+    }
+    if (pressed("camera_pan") || (mouseEvent && (pressed("order") || pressed("rotate_building")))) {
+        mousePanning_ = pressed("camera_pan");
+        rightDragDistance_ = 0;
+        return;
+    }
+    if (released("camera_pan") ||
+        (mouseEvent && (released("order") || released("rotate_building")))) {
         mousePanning_ = false;
-        if (rightDragDistance_ < 4.0F) {
-            if (constructionPlacementMode_)
+        if (rightDragDistance_ < 4) {
+            if (released("rotate_building"))
                 constructionRotationDegrees_ =
                     std::remainder(constructionRotationDegrees_ + 45.F, 360.F);
-            else
-                pendingMoveScreen_ = glm::vec2{event.button.x, event.button.y};
+            else if (released("order")) {
+                if (const auto world = minimapWorldAt(eventPoint.x, eventPoint.y)) {
+                    pendingOrderTarget_ = 0;
+                    pendingMoveDestination_ = glm::vec3{world->x, 0, world->y};
+                } else
+                    pendingMoveScreen_ = eventPoint;
+            }
         }
         return;
     }
@@ -1209,55 +1334,36 @@ void PlayState::handleEvent(const SDL_Event& event) {
         selectionEnd_ = {event.motion.x, event.motion.y};
         return;
     }
-    if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
-        viewMode_ == ViewMode::strategy && (event.key.mod & SDL_KMOD_ALT) &&
-        ((event.key.key >= SDLK_0 && event.key.key <= SDLK_9) ||
-         event.key.key == SDLK_MINUS || event.key.key == SDLK_EQUALS)) {
-        updateGameplayHud(*context_.renderer, session_.players().find(localPlayer_));
-        const std::size_t index = event.key.key == SDLK_MINUS ? 10 : event.key.key == SDLK_EQUALS ? 11 :
-                                  event.key.key == SDLK_0 ? 9 : event.key.key - SDLK_1;
-        if (index < hudShortcuts_.size() && !hudShortcuts_[index].empty())
-            handleGameplayHudAction(hudShortcuts_[index]);
-        return;
-    }
     if (event.type == SDL_EVENT_MOUSE_MOTION && viewMode_ == ViewMode::strategy) {
         pointerScreen_ = glm::vec2{event.motion.x, event.motion.y};
         hoverPosition_ = pointerScreen_;
         return;
     }
-    if (event.type == SDL_EVENT_MOUSE_WHEEL) {
-        if (viewMode_ == ViewMode::unitControl)
-            thirdPersonCamera_.zoom(event.wheel.y);
-        else
-            camera_.zoom(event.wheel.y);
-        return;
-    }
-    if (event.type != SDL_EVENT_KEY_DOWN && event.type != SDL_EVENT_KEY_UP) {
-        return;
-    }
-
-    const bool pressed = event.type == SDL_EVENT_KEY_DOWN;
-    if (event.key.key == bound("forward", SDLK_W))
-        forward_ = pressed;
-    else if (event.key.key == bound("backward", SDLK_S))
-        backward_ = pressed;
-    else if (event.key.key == bound("left", SDLK_A))
-        left_ = pressed;
-    else if (event.key.key == bound("right", SDLK_D))
-        right_ = pressed;
-    else
-        switch (event.key.key) {
-        case SDLK_LSHIFT:
-            leftShift_ = pressed;
-            running_ = leftShift_ || rightShift_;
-            break;
-        case SDLK_RSHIFT:
-            rightShift_ = pressed;
-            running_ = leftShift_ || rightShift_;
-            break;
-        default:
-            break;
+    for (int i = 0; i < 12; ++i)
+        if (pressed("action_" + std::to_string(i + 1))) {
+            updateGameplayHud(*context_.renderer, session_.players().find(localPlayer_));
+            if (static_cast<std::size_t>(i) < hudShortcuts_.size() && !hudShortcuts_[i].empty())
+                handleGameplayHudAction(hudShortcuts_[i]);
+            return;
         }
+    for (const auto& action : inputActions())
+        if ((action.id == "focus_hub" || action.id == "idle_drone" ||
+             action.id == "all_idle_drones" || action.id == "copy_building" ||
+             action.id == "stop" || action.id.starts_with("group_") ||
+             action.id.starts_with("assign_group_")) &&
+            pressed(action.id)) {
+            handleSelectionShortcut(action.id);
+            return;
+        }
+    if (pressed("zoom_in") || pressed("zoom_out")) {
+        const float amount =
+            (pressed("zoom_in") ? 1.F : -1.F) *
+            (event.type == SDL_EVENT_MOUSE_WHEEL ? std::max(1.F, std::abs(event.wheel.y)) : 1.F);
+        if (viewMode_ == ViewMode::unitControl)
+            thirdPersonCamera_.zoom(amount);
+        else
+            camera_.zoom(amount);
+    }
 }
 
 void PlayState::handlePauseEvent(const SDL_Event& event) {
@@ -1302,6 +1408,19 @@ void PlayState::handlePauseEvent(const SDL_Event& event) {
 }
 
 void PlayState::update(float deltaSeconds) {
+    if (settingsRevision_ != context_.settingsRevision) {
+        config_ = GameConfig::load(context_.configPath);
+        settingsRevision_ = context_.settingsRevision;
+        input_.clear();
+        orbiting_ = mousePanning_ = false;
+    }
+    const bool direct = viewMode_ == ViewMode::unitControl;
+    forward_ = config_.keybinds.held(direct ? "unit_forward" : "forward", input_);
+    backward_ = config_.keybinds.held(direct ? "unit_backward" : "backward", input_);
+    left_ = config_.keybinds.held(direct ? "unit_left" : "left", input_);
+    right_ = config_.keybinds.held(direct ? "unit_right" : "right", input_);
+    running_ = config_.keybinds.held(direct ? "unit_run" : "camera_fast", input_) &&
+               !constructionPlacementMode_;
     placementRejectionRemaining_ = std::max(0.0F, placementRejectionRemaining_ - deltaSeconds);
     entryFadeRemaining_ = std::max(0.0F, entryFadeRemaining_ - deltaSeconds);
     for (HudAlert& alert : hudAlerts_)
@@ -1320,7 +1439,12 @@ void PlayState::update(float deltaSeconds) {
         pickedEntity_.reset();
         if (powerLinkMode_ != PowerLinkMode::none) {
             if (clicked != 0 && clicked != powerLinkSource_) {
-                if (powerLinkMode_ == PowerLinkMode::connect)
+                const auto* source = session_.world().findEntity(powerLinkSource_);
+                const bool linked = source && source->power &&
+                                    std::find(source->power.connections.begin(),
+                                              source->power.connections.end(),
+                                              clicked) != source->power.connections.end();
+                if (!linked)
                     session_.submit({localPlayer_,
                                      nextCommandSequence_++,
                                      ConnectPowerCommand{powerLinkSource_, clicked}});
@@ -1420,7 +1544,10 @@ void PlayState::update(float deltaSeconds) {
                                      GatherResourceCommand{id, target->id}});
                 else if (target && target->construction && !isOperational(*target))
                     session_.submit(
-                        {localPlayer_, nextCommandSequence_++, ConstructCommand{id, target->id}});
+                        {localPlayer_,
+                         nextCommandSequence_++,
+                         ConstructCommand{
+                             id, target->id, config_.keybinds.held("repeat_build", input_)}});
                 else if (target && target->health && target->authority.owner != 0 &&
                          target->authority.owner != localPlayer_)
                     session_.submit({localPlayer_,
@@ -1473,9 +1600,16 @@ void PlayState::update(float deltaSeconds) {
             event.sequence != *pendingPlacementSequence_)
             continue;
         pendingPlacementSequence_.reset();
-        if (event.accepted())
-            cancelConstructionPlacement();
-        else {
+        if (event.accepted()) {
+            if (pendingRepeatPlacement_) {
+                constructionBatchActive_ = true;
+                // Continue a Ctrl+Shift pole chain from the blueprint just accepted.
+                constructionPowerAssist_ = {};
+                if (pendingConstructionRangeLock_)
+                    constructionPowerAssist_.anchor = event.building;
+            } else
+                cancelConstructionPlacement();
+        } else {
             placementRejection_ = Text::get(placementFailureKey(event));
             placementRejectionRemaining_ = 4;
         }
@@ -1534,7 +1668,7 @@ void PlayState::update(float deltaSeconds) {
             message = Text::get("power.alert.shutdown");
             break;
         case PowerEventKind::commandRejected:
-            powerLinkMode_ = PowerLinkMode::connect;
+            powerLinkMode_ = PowerLinkMode::toggle;
             powerLinkSource_ = event.source;
             switch (event.reason) {
             case PowerFailureReason::outOfRange:
@@ -1556,7 +1690,7 @@ void PlayState::update(float deltaSeconds) {
                 message = Text::get("power.alert.not_operational");
                 break;
             case PowerFailureReason::notConnected:
-                powerLinkMode_ = PowerLinkMode::disconnect;
+                powerLinkMode_ = PowerLinkMode::toggle;
                 message = Text::get("power.alert.not_connected");
                 break;
             default:
@@ -1654,10 +1788,11 @@ void PlayState::render(Renderer& renderer) const {
     }
     if (pendingConstructionScreen_ && pendingConstructionIntent_) {
         pendingConstructionIntent_->position =
-            renderer.screenToTerrain(pendingConstructionScreen_->x,
-                                     pendingConstructionScreen_->y,
-                                     view,
-                                     &session_.terrain());
+            assistedConstructionPosition(renderer.screenToTerrain(pendingConstructionScreen_->x,
+                                                                  pendingConstructionScreen_->y,
+                                                                  view,
+                                                                  &session_.terrain()),
+                                         pendingConstructionRangeLock_);
         if (local) {
             const auto p = pendingConstructionIntent_->position;
             const auto cell =
@@ -1717,8 +1852,12 @@ void PlayState::render(Renderer& renderer) const {
             return;
         }
         const std::string& buildingId = selectedRecipe->product.id;
-        const glm::vec3 position = renderer.screenToTerrain(
-            constructionCursorScreen_->x, constructionCursorScreen_->y, view, &session_.terrain());
+        const glm::vec3 position =
+            assistedConstructionPosition(renderer.screenToTerrain(constructionCursorScreen_->x,
+                                                                  constructionCursorScreen_->y,
+                                                                  view,
+                                                                  &session_.terrain()),
+                                         config_.keybinds.held("range_lock", input_));
         bool currentlyVisible = true;
         bool previouslyExplored = true;
         const EntityArchetype* buildingDefinition = context_.definitions.archetype(buildingId);
@@ -1798,17 +1937,6 @@ void PlayState::render(Renderer& renderer) const {
                                                 ? &*terrainPlacement.leveling
                                                 : nullptr);
         drawScene();
-        if (!constructionGhost_ || constructionGhost_->archetype.value != buildingId) {
-            constructionGhost_.emplace();
-            auto& ghost = *constructionGhost_;
-            ghost.id = std::numeric_limits<EntityId>::max();
-            ghost.archetype = EntityArchetypeId{buildingId};
-            ghost.presentation = PresentationId{buildingId};
-            ghost.authority.owner = localPlayer_;
-            context_.definitions.initializeEntity(ghost);
-            ghost.construction.emplace();
-            ghost.construction.state = BuildingLifecycleState::planned;
-        }
         auto& ghost = *constructionGhost_;
         ghost.transform.position = {position.x, 0.F, position.z};
         ghost.transform.rotationDegrees.y = constructionRotationDegrees_;
@@ -1830,8 +1958,46 @@ void PlayState::render(Renderer& renderer) const {
                                                   view);
         if (plan.blocker && currentlyVisible)
             renderer.drawEntityOutline(session_.world(), plan.blocker, view, visibilityPlayer);
-        if (ghost.power)
-            renderer.drawPowerPlacementConnection(session_.world(), view, localPlayer_, ghost);
+        if (ghost.power) {
+            const auto targets = findPowerPlacementTargets(session_.world(), localPlayer_, ghost);
+            const Entity* endpoint = targets.inRange;
+            const bool connected = endpoint != nullptr;
+            const Entity* nearest = endpoint ? endpoint : targets.nearest;
+            const Entity* anchor = session_.world().findEntity(constructionPowerAssist_.anchor);
+            const auto number = [](float value) {
+                std::ostringstream text;
+                text << std::fixed << std::setprecision(1) << value;
+                return text.str();
+            };
+            std::string status = Text::get("placement.power.none");
+            if (nearest) {
+                const float range = powerPlacementRange(ghost, *nearest, localPlayer_);
+                const float distance =
+                    glm::length(glm::vec2{position.x - nearest->transform.position.x,
+                                          position.z - nearest->transform.position.z});
+                const auto* definition = context_.definitions.archetype(nearest->archetype);
+                const std::string name =
+                    definition ? Text::get(definition->nameKey) : nearest->name;
+                const auto slots =
+                    nearest->power.maximumConnections - nearest->power.connections.size();
+                status = connected ? Text::format("placement.power.connected",
+                                                  {name,
+                                                   number(std::max(0.0F, range - distance)),
+                                                   std::to_string(slots)})
+                                   : Text::format("placement.power.out_of_range",
+                                                  {name, number(std::max(0.0F, distance - range))});
+                renderer.drawPowerPlacementConnection(
+                    view, ghost, *nearest, anchor ? *anchor : *nearest);
+            }
+            constructionPreviewSummary_ += "\n" + status;
+            constructionPreviewSummary_ +=
+                "\n" + Text::format(constructionPowerAssist_.lockLost ? "placement.power.lock_lost"
+                                    : anchor                          ? "placement.power.locked"
+                                                                      : "placement.power.lock_hint",
+                                    {config_.keybinds.label("range_lock")});
+            if (connected)
+                constructionPreviewSummary_ += "\n" + Text::get("placement.power.supply_hint");
+        }
     } else {
         renderer.setPlacementTerrainPreview(nullptr);
         renderer.setTerrainFoundations(session_.world().foundations());

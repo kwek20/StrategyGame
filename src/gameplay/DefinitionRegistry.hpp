@@ -203,6 +203,7 @@ struct EntityArchetype {
     std::string resourceType, upgradeTo;
     float resourceCapacity{0.0F};
     float rawProductionPerTick{0.0F};
+    bool visionHeightBonus{true};
     float processorCapacity{0.0F}; // zero means unlimited
     MovementDefinition movement;
     std::optional<BatteryDefinition> battery;

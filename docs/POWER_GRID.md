@@ -28,8 +28,10 @@ acyclic routes from sources over those connections.
 - Connections require operational, enabled endpoints of the same owner, overlapping connection
   ranges, and free slots. Invalid commands return explicit failure reasons.
 - Placing a connectable power building automatically creates one reciprocal link to the nearest
-  eligible operational friendly device in mutual range. The planned endpoint may be unfinished;
-  the link joins active topology when construction completes. Distance ties use stable entity ID.
+  eligible friendly device in mutual range, including unfinished buildings. Blueprint links reserve
+  slots but join active topology only when both endpoints are operational. Distance ties use stable
+  entity ID. Ctrl placement range assistance uses the same eligibility; Ctrl+Shift continues a
+  chain from each newly accepted blueprint.
 - Disabling a device removes it from active topology but retains physical links. Destruction
   immediately removes reciprocal links; rebuilding does not recreate them.
 
@@ -68,6 +70,11 @@ All controls are authoritative, serializable commands and are included in save s
 - **Discharge enabled:** permits use of stored energy. Turning it off preserves generation,
   charging, intake, and forwarding.
 - **Priority:** low, medium, or high.
+
+The HUD uses one **Toggle connection** action: click an endpoint to connect or disconnect its
+existing link. Discharge remains simulation/save state, but has no HUD toggle. Ordinary gameplay
+shows sagging cables for local connections and dashed cyan cables for unfinished links; the
+diagnostic overlay still shows power flow and failures.
 
 Generators retain their no-intake rule regardless of these controls.
 

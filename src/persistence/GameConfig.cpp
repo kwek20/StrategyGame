@@ -57,12 +57,48 @@ GameConfig GameConfig::load(const std::filesystem::path& path) {
         if (audio.HasMember("muted") && audio["muted"].IsBool())
             result.muted = audio["muted"].GetBool();
     }
-    if (configuration.HasMember("keybinds") && configuration["keybinds"].IsObject())
+    if (configuration.HasMember("keybinds") && configuration["keybinds"].IsObject()) {
         for (auto item = configuration["keybinds"].MemberBegin();
              item != configuration["keybinds"].MemberEnd();
-             ++item)
-            if (item->value.IsInt())
-                result.keybinds[item->name.GetString()] = item->value.GetInt();
+             ++item) {
+            const std::string id = item->name.GetString();
+            if (!inputAction(id))
+                continue;
+            // Preserve existing user preferences when opening a pre-rewrite settings file.
+            if (item->value.IsInt()) {
+                result.keybinds.values[id][0] = {BindingDevice::key, item->value.GetInt()};
+                continue;
+            }
+            if (!item->value.IsArray() || item->value.Size() != 2)
+                throw std::runtime_error("Binding requires primary and secondary slots: " + id);
+            BindingSlots slots{};
+            for (unsigned i = 0; i < 2; ++i) {
+                const auto& value = item->value[i];
+                if (!value.IsObject() || !value.HasMember("device") || !value["device"].IsUint() ||
+                    !value.HasMember("code") || !value["code"].IsInt() ||
+                    !value.HasMember("modifiers") || !value["modifiers"].IsUint() ||
+                    value["device"].GetUint() > static_cast<unsigned>(BindingDevice::modifier) ||
+                    value["modifiers"].GetUint() > 15)
+                    throw std::runtime_error("Invalid input binding: " + id);
+                slots[i] = {static_cast<BindingDevice>(value["device"].GetUint()),
+                            value["code"].GetInt(),
+                            value["modifiers"].GetUint()};
+                if ((slots[i].device == BindingDevice::modifier &&
+                     (slots[i].code < 0 || slots[i].code > 15)) ||
+                    ((slots[i].device == BindingDevice::mouse ||
+                      slots[i].device == BindingDevice::drag) &&
+                     (slots[i].code < 0 || slots[i].code > 5)) ||
+                    (slots[i].device == BindingDevice::wheel && slots[i].code != -1 &&
+                     slots[i].code != 0 && slots[i].code != 1))
+                    throw std::runtime_error("Invalid input binding code: " + id);
+            }
+            for (const auto& binding : slots)
+                if (inputAction(id)->requiresRelease && binding.device == BindingDevice::wheel &&
+                    binding)
+                    throw std::runtime_error("Continuous action cannot use the mouse wheel: " + id);
+            result.keybinds.values[id] = slots;
+        }
+    }
     if (result.saveDirectory.is_absolute()) {
         throw std::runtime_error("saveDirectory must be relative to the game directory");
     }
@@ -114,11 +150,20 @@ void GameConfig::write(const std::filesystem::path& path) const {
     writer.EndObject();
     writer.Key("keybinds");
     writer.StartObject();
-    std::vector<std::pair<std::string, std::int32_t>> sorted(keybinds.begin(), keybinds.end());
-    std::sort(sorted.begin(), sorted.end());
-    for (const auto& [name, key] : sorted) {
+    for (const auto& [name, slots] : keybinds.values) {
         writer.Key(name.c_str());
-        writer.Int(key);
+        writer.StartArray();
+        for (const auto& binding : slots) {
+            writer.StartObject();
+            writer.Key("device");
+            writer.Uint(static_cast<unsigned>(binding.device));
+            writer.Key("code");
+            writer.Int(binding.code);
+            writer.Key("modifiers");
+            writer.Uint(binding.modifiers);
+            writer.EndObject();
+        }
+        writer.EndArray();
     }
     writer.EndObject();
     writer.EndObject();

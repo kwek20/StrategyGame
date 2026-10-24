@@ -10,6 +10,7 @@
 #include "simulation/GameSession.hpp"
 #include "ui/EntityHudModel.hpp"
 #include "ui/ResourceFieldSelection.hpp"
+#include "world/PowerPlacement.hpp"
 
 #include <cstdint>
 #include <glm/vec3.hpp>
@@ -54,8 +55,9 @@ class PlayState final : public GameState {
     bool left_{false};
     bool right_{false};
     bool running_{false};
-    bool leftShift_{false};
-    bool rightShift_{false};
+    InputState input_;
+    std::uint64_t settingsRevision_{};
+    std::array<std::vector<EntityId>, 10> controlGroups_;
     bool orbiting_{false};
     bool mousePanning_{false};
     float rightDragDistance_{0.0F};
@@ -72,7 +74,7 @@ class PlayState final : public GameState {
     int waterDebugMode_{0};
     bool powerDebug_{false};
     bool powerOverlayVisible_{false};
-    enum class PowerLinkMode { none, connect, disconnect };
+    enum class PowerLinkMode { none, toggle };
     PowerLinkMode powerLinkMode_{PowerLinkMode::none};
     EntityId powerLinkSource_{0};
     struct HudAlert {
@@ -116,6 +118,11 @@ class PlayState final : public GameState {
     std::string constructionRecipeId_{"construct.command_hub"};
     mutable std::optional<glm::vec2> pendingConstructionScreen_;
     mutable std::optional<PlaceBuildingCommand> pendingConstructionIntent_;
+    mutable bool pendingConstructionRangeLock_{};
+    bool pendingRepeatPlacement_{};
+    bool constructionBatchActive_{};
+    std::map<std::string, float> constructionRotations_;
+    mutable PowerPlacementAssist constructionPowerAssist_;
     float constructionRotationDegrees_{};
     mutable TerrainPlacementCache constructionTerrainCache_;
     mutable std::optional<Entity> constructionGhost_;
@@ -130,7 +137,9 @@ class PlayState final : public GameState {
     mutable GameplayParticlePresenter particlePresenter_;
 
     void setMouseCaptured(bool captured);
+    void handleSelectionShortcut(std::string_view action);
     void cancelConstructionPlacement();
+    [[nodiscard]] glm::vec3 assistedConstructionPosition(glm::vec3 position, bool lockRange) const;
     void sanitizeEntityReferences();
     void initializeStartingView();
     [[nodiscard]] std::optional<glm::vec2> minimapWorldAt(float screenX, float screenY) const;

@@ -145,10 +145,10 @@ class Renderer final {
                               PlayerId owner,
                               bool diagnostics = false) const;
     void drawPowerRanges(const World& world, const CameraView& camera, PlayerId owner) const;
-    void drawPowerPlacementConnection(const World& world,
-                                      const CameraView& camera,
-                                      PlayerId owner,
-                                      const Entity& placementPreview) const;
+    void drawPowerPlacementConnection(const CameraView& camera,
+                                      const Entity& placementPreview,
+                                      const Entity& endpoint,
+                                      const Entity& rangeAnchor) const;
     void drawPowerDebugHud(const World& world, PlayerId owner, glm::vec3 worldPosition) const;
     void drawDebugHud(const RtsCamera& camera, std::size_t entityCount) const;
     void drawDetailedDebugHud(const CameraView& camera,
@@ -387,6 +387,7 @@ class Renderer final {
                           bool powerOverlayVisible,
                           const TerrainFoundation* plane) const;
     void flushModelCommands(const CameraView& camera) const;
+    void drawPowerCables(const World& world, const CameraView& camera, const Player* player) const;
     void bindTerrainTextures() const;
     void ensureTerrainChunks();
     void drawIcon(const std::string& id,

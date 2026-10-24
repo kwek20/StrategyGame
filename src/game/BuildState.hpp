@@ -28,6 +28,7 @@ class BuildState final : public GameState {
     mutable World world_;
     RtsCamera camera_;
     GameConfig config_;
+    InputState input_;
     const DefinitionRegistry& gameplay_;
     PlayerId team_{1};
     std::size_t paletteIndex_{0};
@@ -36,7 +37,7 @@ class BuildState final : public GameState {
     mutable std::optional<glm::vec2> hoverPosition_;
     mutable EntityId hoveredEntity_{0};
     bool forward_{false}, backward_{false}, left_{false}, right_{false}, orbiting_{false},
-        mousePanning_{false}, acceleratedCamera_{false}, leftShift_{false}, rightShift_{false};
+        mousePanning_{false}, acceleratedCamera_{false};
     StateRequest request_{StateRequest::none};
     RmlUiScreenHandle screen_{};
 

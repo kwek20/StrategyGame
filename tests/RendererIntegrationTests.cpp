@@ -5,17 +5,19 @@
 #include "diagnostics/Logger.hpp"
 #include "game/PlayState.hpp"
 #include "game/RtsCamera.hpp"
+#include "game/SettingsState.hpp"
 #include "gameplay/DefinitionRegistry.hpp"
 #include "localization/Text.hpp"
 #include "render/Renderer.hpp"
 #include "render/ShaderManager.hpp"
 #include "simulation/GameSession.hpp"
 #include "simulation/StateChecksum.hpp"
-#include "world/GenerationProgress.hpp"
 #include "terrain/Terrain.hpp"
 #include "terrain/TerrainGenerationPipeline.hpp"
 #include "terrain/TerrainV2Recipe.hpp"
 #include "world/Collision.hpp"
+#include "world/GenerationProgress.hpp"
+#include "world/PowerPlacement.hpp"
 #include "world/Vegetation.hpp"
 #include "world/World.hpp"
 #include "world/WorldGeneration.hpp"
@@ -727,6 +729,85 @@ bool checkRememberedCulling(strategy::Renderer& renderer) {
     return valid && noGlErrors("remembered entity culling");
 }
 
+bool checkPowerBuildingVisuals(strategy::Renderer& renderer) {
+    using namespace strategy;
+    const DefinitionRegistry definitions;
+    auto terrain = test::levelingFixture(0);
+    renderer.stageGeneratedTerrain(terrain, 7, 10);
+    while (!renderer.terrainUploadFinished()) {
+        renderer.beginFrame(1280, 720);
+        renderer.drawLoadingScreen(.5F, "POWER BUILDING VISUALS");
+        renderer.endFrame();
+    }
+    renderer.finishLoadingScreen();
+    CameraView camera;
+    camera.target = {0, terrain.heightAt(0, 0), 0};
+    camera.position = camera.target + glm::vec3{35, 42, 48};
+    camera.view = glm::lookAt(camera.position, camera.target, glm::vec3{0, 1, 0});
+    camera.projection = glm::ortho(-28.F, 28.F, -16.F, 16.F, .1F, 200.F);
+    Player player;
+    player.id = 1;
+    std::fill(player.discovered.begin(), player.discovered.end(), 1);
+    std::fill(player.visible.begin(), player.visible.end(), 1);
+    const auto frame = [&](const World& world) {
+        renderer.beginFrame(1280, 720);
+        renderer.drawTerrain(camera, &player);
+        renderer.drawWorld(world, camera, &player);
+        renderer.endFrame();
+        std::vector<unsigned char> pixels(1280 * 720 * 4);
+        glReadPixels(0, 0, 1280, 720, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+        return pixels;
+    };
+    const auto difference = [](const auto& a, const auto& b) {
+        std::size_t count = 0;
+        for (std::size_t i = 0; i < a.size(); i += 4)
+            if (std::abs(int(a[i]) - int(b[i])) + std::abs(int(a[i + 1]) - int(b[i + 1])) +
+                    std::abs(int(a[i + 2]) - int(b[i + 2])) >
+                25)
+                ++count;
+        return count;
+    };
+    World world;
+    const auto ground = frame(world);
+    auto& mine = world.createEntity("Empty mine", "synthetic_mine", 1);
+    definitions.initializeEntity(mine);
+    mine.resource.remaining = 0;
+    mine.transform.position = {0, 0, 6};
+    const auto emptyMine = frame(world);
+    bool valid = difference(ground, emptyMine) > 500;
+    const auto clip = camera.viewProjection() * glm::vec4{0, terrain.heightAt(0, 6) + 2, 6, 1};
+    valid &=
+        renderer.pickEntity(
+            (clip.x / clip.w + 1) * 640, (1 - clip.y / clip.w) * 360, world, camera, &player) ==
+        mine.id;
+    const auto a = world.createEntity("Pole", "electricity_pole", 1).id;
+    definitions.initializeEntity(*world.findEntity(a));
+    world.findEntity(a)->transform.position = {-12, 0, -6};
+    const auto b = world.createEntity("Pole", "electricity_pole", 1).id;
+    definitions.initializeEntity(*world.findEntity(b));
+    world.findEntity(b)->transform.position = {12, 0, -6};
+    const auto disconnected = frame(world);
+    world.findEntity(a)->power.connections = {b};
+    world.findEntity(b)->power.connections = {a};
+    const auto connected = frame(world);
+    valid &= difference(disconnected, connected) > 150;
+    valid &= captureTerrain("power-cords-empty-mine.bmp");
+    world.findEntity(b)->construction.emplace();
+    world.findEntity(b)->construction.state = BuildingLifecycleState::planned;
+    frame(world);
+    valid &= captureTerrain("power-cords-planned.bmp");
+    // Cables belong to the owner's view, never a hidden enemy network.
+    world.findEntity(a)->authority.owner = 2;
+    world.findEntity(b)->authority.owner = 2;
+    const auto enemyLinked = frame(world);
+    world.findEntity(a)->power.connections.clear();
+    world.findEntity(b)->power.connections.clear();
+    valid &= difference(enemyLinked, frame(world)) == 0;
+    if (!valid)
+        std::cerr << "Power cord rendering or empty mine presentation failed\n";
+    return valid && noGlErrors("power building visuals");
+}
+
 bool checkExploredStaticVisibility(strategy::Renderer& renderer) {
     using namespace strategy;
     const DefinitionRegistry definitions;
@@ -949,7 +1030,135 @@ bool checkMatchPreparation(strategy::Renderer& renderer, strategy::Logger& logge
     return valid;
 }
 
-bool checkPlacementControls(strategy::Renderer& renderer, strategy::Logger& logger, bool satellite = false) {
+bool checkKeybindSettings(strategy::Renderer& renderer, strategy::Logger& logger) {
+    using namespace strategy;
+    DefinitionRegistry definitions;
+    AudioSystem audio;
+    EventBus events;
+    const auto directory = std::filesystem::path{"build/debug/audits/keybind-settings"};
+    std::filesystem::create_directories(directory);
+    const auto configPath = directory / "config.json";
+    GameConfig{}.write(configPath);
+    StateContext context{audio, events, logger, definitions, configPath, &renderer};
+    SettingsState settings{context};
+    settings.update(.6F);
+    const auto frame = [&] {
+        renderer.beginFrame(1280, 720);
+        settings.render(renderer);
+        renderer.endFrame();
+    };
+    const auto click = [&](const std::string& id) {
+        const auto bounds = renderer.uiBounds(id);
+        if (!bounds)
+            throw std::runtime_error("Missing settings control: " + id);
+        const float x = (bounds->left + bounds->right) * .5F,
+                    y = (bounds->top + bounds->bottom) * .5F;
+        SDL_Event event{};
+        event.type = SDL_EVENT_MOUSE_BUTTON_DOWN;
+        event.button.button = SDL_BUTTON_LEFT;
+        event.button.x = x;
+        event.button.y = y;
+        settings.handleEvent(event);
+        event.type = SDL_EVENT_MOUSE_BUTTON_UP;
+        settings.handleEvent(event);
+        frame();
+    };
+    const auto key =
+        [&](SDL_EventType type, SDL_Keycode code, SDL_Keymod modifiers = SDL_KMOD_NONE) {
+            SDL_Event event{};
+            event.type = type;
+            event.key.key = code;
+            event.key.mod = modifiers;
+            settings.handleEvent(event);
+            frame();
+        };
+    const auto filter = [&](const std::string& text) {
+        renderer.setUiValue("keybind-search", text);
+        settings.update(.01F);
+        frame();
+    };
+    frame();
+    bool valid = captureTerrain("settings-video.bmp");
+    click("settings.tab.audio");
+    valid &= captureTerrain("settings-audio.bmp");
+    click("settings.tab.keybinds");
+    frame();
+    valid &= captureTerrain("settings-keybinds.bmp");
+    click("keybind-search");
+    SDL_Event text{};
+    text.type = SDL_EVENT_TEXT_INPUT;
+    text.text.text = "power";
+    settings.handleEvent(text);
+    settings.update(.01F);
+    frame();
+    valid &= renderer.uiValue("keybind-search") == "power";
+    filter("Maintain power");
+    click("settings.bind.range_lock.0");
+    key(SDL_EVENT_KEY_DOWN, SDLK_LALT, SDL_KMOD_LALT);
+    key(SDL_EVENT_KEY_UP, SDLK_LALT);
+    click("settings.apply");
+    valid &= context.settingsRevision == 1 &&
+             GameConfig::load(configPath).keybinds.values.at("range_lock")[0] ==
+                 InputBinding{BindingDevice::modifier, 4};
+    click("settings.bind.range_lock.1");
+    key(SDL_EVENT_KEY_DOWN, SDLK_L);
+    key(SDL_EVENT_KEY_UP, SDLK_L);
+    click("settings.apply");
+    valid &= GameConfig::load(configPath).keybinds.values.at("range_lock")[1].code ==
+             static_cast<int>(SDLK_L);
+    click("settings.bind.range_lock.0");
+    key(SDL_EVENT_KEY_DOWN, SDLK_LSHIFT, SDL_KMOD_LSHIFT);
+    key(SDL_EVENT_KEY_UP, SDLK_LSHIFT);
+    valid &= captureTerrain("settings-keybind-conflict.bmp");
+    const auto before = context.settingsRevision;
+    click("settings.capture.cancel");
+    valid &= context.settingsRevision == before &&
+             GameConfig::load(configPath).keybinds.values.at("range_lock")[0].code == 4;
+    click("settings.bind.range_lock.0");
+    key(SDL_EVENT_KEY_DOWN, SDLK_LSHIFT, SDL_KMOD_LSHIFT);
+    key(SDL_EVENT_KEY_UP, SDLK_LSHIFT);
+    click("settings.capture.replace");
+    click("settings.apply");
+    valid &= GameConfig::load(configPath).keybinds.values.at("repeat_build")[0].code == 0;
+    filter("");
+    renderer.setUiValue("keybind-category", "building");
+    settings.update(.01F);
+    frame();
+    valid &= captureTerrain("settings-building-bindings.bmp");
+    click("settings.reset.category");
+    click("settings.apply");
+    valid &= GameConfig::load(configPath).keybinds.values.at("range_lock")[0].code == 1;
+    valid &= captureTerrain("settings-building-defaults.bmp");
+    renderer.setUiValue("keybind-category", "");
+    settings.update(.01F);
+    frame();
+    click("settings.preset.grid");
+    click("settings.apply");
+    valid &= GameConfig::load(configPath).keybinds.values.at("forward")[0].code ==
+             static_cast<int>(SDLK_UP);
+    for (float scale : {.75F, 1.5F}) {
+        renderer.setUiScale(scale);
+        frame();
+        valid &= captureTerrain(scale > 1 ? "settings-keybinds-large.bmp"
+                                          : "settings-keybinds-small.bmp");
+        const auto list = renderer.uiBounds("binding-list"),
+                   apply = renderer.uiBounds("settings.apply");
+        valid &= list && apply && list->top >= 0 && list->bottom - list->top >= 70 &&
+                 list->bottom < apply->top && apply->bottom <= 720;
+    }
+    renderer.setUiScale(1);
+    frame();
+    if (!valid)
+        std::cerr << "Keybind settings capture/filter/layout failed\n";
+    return valid && noGlErrors("keybind settings");
+}
+
+bool checkPlacementControls(strategy::Renderer& renderer,
+                            strategy::Logger& logger,
+                            bool satellite = false,
+                            bool powerAssist = false,
+                            bool repeatBuild = false,
+                            bool navigation = false) {
     using namespace strategy;
     DefinitionRegistry definitions;
     GameSession session{definitions,
@@ -968,6 +1177,7 @@ bool checkPlacementControls(strategy::Renderer& renderer, strategy::Logger& logg
     Entity* blocker = nullptr;
     Entity* drone = nullptr;
     glm::vec3 hub{};
+    EntityId hubId{};
     for (auto& entity : session.world().entities()) {
         if (entity.authority.owner != 1)
             continue;
@@ -975,8 +1185,10 @@ bool checkPlacementControls(strategy::Renderer& renderer, strategy::Logger& logg
             blocker = &entity;
         if (entity.archetype.value == "construction_drone")
             drone = &entity;
-        if (entity.archetype.value == "command_hub")
+        if (entity.archetype.value == "command_hub") {
             hub = entity.transform.position;
+            hubId = entity.id;
+        }
     }
     if (!blocker || !drone)
         return false;
@@ -990,7 +1202,22 @@ bool checkPlacementControls(strategy::Renderer& renderer, strategy::Logger& logg
             const auto cell = MapArea{10}.gridCell({x, z}, Player::explorationCells);
             const auto index = cell.y * Player::explorationCells + cell.x;
             const auto* player = session.players().find(1);
-            const bool eligible = satellite ? !player->discovered[index] : player->visible[index] != 0;
+            bool eligible = satellite ? !player->discovered[index] : player->visible[index] != 0;
+            if (powerAssist) {
+                const glm::vec2 direction{x - hub.x, z - hub.z};
+                const float distance = glm::length(direction);
+                eligible = eligible && distance >= 16 && distance <= 22;
+                if (eligible) {
+                    const glm::vec2 far = glm::vec2{hub.x, hub.z} + direction / distance * 40.0F;
+                    const auto edge = clampPowerPlacementPosition(
+                        {far.x, 0, far.y}, *session.world().findEntity(hubId), 24);
+                    eligible =
+                        session
+                            .planBuildingPlacement(
+                                1, {drone->id, "construct.basic_generator", edge, {drone->id}, 0})
+                            .valid();
+                }
+            }
             if (eligible &&
                 !overlapsObject(
                     session.world(),
@@ -1077,6 +1304,242 @@ bool checkPlacementControls(strategy::Renderer& renderer, strategy::Logger& logg
         return panel() && panel()->IsVisible();
     };
     bool valid = activate();
+    if (navigation) {
+        const auto check = [&](bool okay, const char* stage) {
+            if (!okay)
+                std::cerr << "Navigation stage failed: " << stage << "\n";
+            valid &= okay;
+        };
+        const auto key = [&](SDL_Keycode code, SDL_Keymod mods = SDL_KMOD_NONE) {
+            SDL_Event e{};
+            e.type = SDL_EVENT_KEY_DOWN;
+            e.key.key = code;
+            e.key.mod = mods;
+            state.handleEvent(e);
+            e.type = SDL_EVENT_KEY_UP;
+            state.handleEvent(e);
+            frame();
+        };
+        key(SDLK_ESCAPE);
+        key(SDLK_H);
+        check(renderer.uiBounds("action.command_hub.train_construction_drone").has_value(),
+              "hub focus");
+        key(SDLK_PERIOD);
+        check(renderer.uiBounds("action.construct.basic_generator").has_value(), "idle drone");
+        key(SDLK_1, SDL_KMOD_LCTRL);
+        key(SDLK_H);
+        key(SDLK_1);
+        check(renderer.uiBounds("action.construct.basic_generator").has_value(), "group recall");
+        key(SDLK_P);
+        state.update(1.F / 30);
+        const Entity* controlled = nullptr;
+        for (const auto& e : state.session().world().entities())
+            if (e.authority.directController == 1)
+                controlled = &e;
+        if (!controlled)
+            return false;
+        const auto yaw = controlled->transform.rotationDegrees.y;
+        SDL_Event motionEvent{};
+        motionEvent.type = SDL_EVENT_MOUSE_MOTION;
+        motionEvent.motion.xrel = 40;
+        motionEvent.motion.yrel = 5;
+        state.handleEvent(motionEvent);
+        state.update(1.F / 30);
+        check(std::abs(controlled->transform.rotationDegrees.y - yaw) > .1F, "direct camera orbit");
+        SDL_Event movement{};
+        movement.type = SDL_EVENT_KEY_DOWN;
+        movement.key.key = SDLK_W;
+        state.handleEvent(movement);
+        state.update(1.F / 30);
+        check(glm::length(controlled->unitControl.directInput) > .9F, "direct movement");
+        movement.type = SDL_EVENT_KEY_UP;
+        state.handleEvent(movement);
+        state.update(1.F / 30);
+        check(glm::length(controlled->unitControl.directInput) == 0, "movement release");
+        key(SDLK_P);
+        state.update(1.F / 30);
+        check(controlled->authority.directController == 0, "leave direct control");
+        if (!valid)
+            std::cerr << "Navigation, groups or direct-control input failed\n";
+        return valid && noGlErrors("navigation hotkeys");
+    }
+    if (repeatBuild) {
+        const auto project = [&](glm::vec3 p) {
+            p.y = state.session().terrain().heightAt(p.x, p.z);
+            const auto clip = camera.viewProjection() * glm::vec4{p, 1};
+            return glm::vec2{(clip.x / clip.w + 1) * 640, (1 - clip.y / clip.w) * 360};
+        };
+        EntityId first{};
+        std::vector<EntityId> placed;
+        for (int i = 0; i < 3; ++i) {
+            glm::vec3 point = target;
+            if (i) {
+                bool available = false;
+                for (float z = hub.z - 36; z <= hub.z + 36 && !available; z += 3)
+                    for (float x = hub.x - 36; x <= hub.x + 36 && !available; x += 3) {
+                        PlaceBuildingCommand intent{drone->id,
+                                                    "construct.basic_generator",
+                                                    {x, 0, z},
+                                                    {drone->id},
+                                                    0,
+                                                    true};
+                        const auto cell = MapArea{10}.gridCell({x, z}, Player::explorationCells);
+                        const auto index = cell.y * Player::explorationCells + cell.x;
+                        const auto screen = project(intent.position);
+                        if (state.session().players().find(1)->discovered[index] && screen.x > 20 &&
+                            screen.x < 1100 && screen.y > 80 && screen.y < 350 &&
+                            state.session().planBuildingPlacement(1, intent).valid()) {
+                            point = intent.position;
+                            available = true;
+                        }
+                    }
+                if (!available)
+                    return false;
+            }
+            const auto screen = project(point);
+            SDL_SetModState(i < 2 ? SDL_KMOD_LSHIFT : SDL_KMOD_NONE);
+            motion(screen.x, screen.y);
+            frame();
+            const auto before = state.session().world().size();
+            button(SDL_EVENT_MOUSE_BUTTON_DOWN, SDL_BUTTON_LEFT, screen.x, screen.y);
+            button(SDL_EVENT_MOUSE_BUTTON_UP, SDL_BUTTON_LEFT, screen.x, screen.y);
+            frame();
+            state.update(1.F / 30);
+            frame();
+            if (state.session().world().size() != before + 1) {
+                std::cerr << "Repeat placement rejected step " << i << " at " << point.x << ","
+                          << point.z << " panel=" << (panel() ? panel()->GetInnerRML() : "missing")
+                          << "\n";
+                return false;
+            }
+            const auto id = state.session().world().entities().back().id;
+            placed.push_back(id);
+            if (i == 0)
+                first = id;
+            valid &=
+                state.session().world().findEntity(drone->id)->unitControl.orderTarget == first;
+            valid &= panel() && panel()->IsVisible() == (i < 2);
+        }
+        const auto* builder = state.session().world().findEntity(drone->id);
+        valid &=
+            builder->unitControl.constructionQueue == std::deque<EntityId>{placed[1], placed[2]};
+        valid &= captureTerrain("repeat-placement-queue.bmp");
+        if (!valid)
+            std::cerr << "Shift repeat-placement did not retain FIFO construction\n";
+        return valid && noGlErrors("repeat placement controls");
+    }
+    if (powerAssist) {
+        motion(targetScreen.x, targetScreen.y);
+        frame();
+        frame();
+        valid &= panel() && panel()->GetInnerRML().find("CONNECTS TO") != std::string::npos;
+        SDL_SetModState(SDL_KMOD_LCTRL);
+        frame();
+        const glm::vec2 direction = glm::normalize(glm::vec2{target.x - hub.x, target.z - hub.z});
+        const glm::vec2 far = glm::vec2{hub.x, hub.z} + direction * 40.0F;
+        const glm::vec3 farGround{far.x, state.session().terrain().heightAt(far.x, far.y), far.y};
+        const auto farClip = camera.viewProjection() * glm::vec4{farGround, 1};
+        const glm::vec2 farScreen{(farClip.x / farClip.w + 1) * 640,
+                                  (1 - farClip.y / farClip.w) * 360};
+        motion(farScreen.x, farScreen.y);
+        frame();
+        frame();
+        valid &= panel() &&
+                 panel()->GetInnerRML().find(Text::format("placement.power.locked", {"Ctrl"})) !=
+                     std::string::npos;
+        valid &= captureTerrain("power-placement-locked.bmp");
+        if (const auto bounds = renderer.uiBounds("placement-reason"))
+            valid &= bounds->left >= 0 && bounds->top >= 0 && bounds->right <= 1280 &&
+                     bounds->bottom <= 720;
+        const auto before = state.session().world().size();
+        button(SDL_EVENT_MOUSE_BUTTON_DOWN, SDL_BUTTON_LEFT, farScreen.x, farScreen.y);
+        button(SDL_EVENT_MOUSE_BUTTON_UP, SDL_BUTTON_LEFT, farScreen.x, farScreen.y);
+        SDL_SetModState(
+            SDL_KMOD_NONE); // Click must retain its own modifier, even before the next render.
+        frame();
+        state.update(1.0F / 30);
+        frame();
+        valid &= state.session().world().size() == before + 1;
+        if (state.session().world().size() == before + 1) {
+            const auto& placed = state.session().world().entities().back();
+            const float distance = glm::length(glm::vec2{placed.transform.position.x - hub.x,
+                                                         placed.transform.position.z - hub.z});
+            valid &= distance > 23.9F && distance <= 24 && placed.power.connections.size() == 1 &&
+                     placed.power.connections.front() == hubId;
+        }
+        {
+            SettingsState settings{context};
+            settings.update(.6F);
+            const auto settingsFrame = [&] {
+                renderer.beginFrame(1280, 720);
+                settings.render(renderer);
+                renderer.endFrame();
+            };
+            const auto settingsClick = [&](const std::string& id) {
+                const auto bounds = renderer.uiBounds(id);
+                if (!bounds)
+                    throw std::runtime_error("Missing live settings action: " + id);
+                SDL_Event e{};
+                e.type = SDL_EVENT_MOUSE_BUTTON_DOWN;
+                e.button.button = SDL_BUTTON_LEFT;
+                e.button.x = (bounds->left + bounds->right) * .5F;
+                e.button.y = (bounds->top + bounds->bottom) * .5F;
+                settings.handleEvent(e);
+                e.type = SDL_EVENT_MOUSE_BUTTON_UP;
+                settings.handleEvent(e);
+                settingsFrame();
+            };
+            settingsFrame();
+            settingsClick("settings.tab.keybinds");
+            renderer.setUiValue("keybind-search", "Maintain power");
+            settings.update(.01F);
+            settingsFrame();
+            settingsClick("settings.bind.range_lock.0");
+            SDL_Event e{};
+            e.type = SDL_EVENT_KEY_DOWN;
+            e.key.key = SDLK_LALT;
+            e.key.mod = SDL_KMOD_LALT;
+            settings.handleEvent(e);
+            e.type = SDL_EVENT_KEY_UP;
+            e.key.mod = SDL_KMOD_NONE;
+            settings.handleEvent(e);
+            settingsFrame();
+            settingsClick("settings.apply");
+        }
+        state.update(0);
+        frame();
+        valid &= activate();
+        motion(targetScreen.x, targetScreen.y);
+        frame();
+        SDL_SetModState(SDL_KMOD_LALT);
+        frame();
+        frame();
+        valid &= panel() && panel()->GetInnerRML().find(Text::format("placement.power.locked",
+                                                                     {"Alt"})) != std::string::npos;
+        valid &= captureTerrain("power-placement-live-rebind.bmp");
+        SDL_SetModState(SDL_KMOD_NONE);
+        SDL_Event key{};
+        key.type = SDL_EVENT_KEY_DOWN;
+        key.key.key = SDLK_ESCAPE;
+        state.handleEvent(key);
+        key.type = SDL_EVENT_KEY_UP;
+        state.handleEvent(key);
+        key.type = SDL_EVENT_KEY_DOWN;
+        key.key.key = SDLK_H;
+        state.handleEvent(key);
+        key.type = SDL_EVENT_KEY_UP;
+        state.handleEvent(key);
+        frame();
+        valid &= renderer.uiBounds("action.power.connection").has_value() &&
+                 !renderer.uiBounds("action.power.connect").has_value() &&
+                 !renderer.uiBounds("action.power.disconnect").has_value() &&
+                 !renderer.uiBounds("action.power.discharge").has_value();
+        valid &= noGlErrors("assisted power placement");
+        if (!valid)
+            std::cerr << "Power placement controls or click/preview agreement failed\n";
+        return valid;
+    }
+
     valid &= captureTerrain("placement-controls.bmp");
     if (auto bounds = renderer.uiBounds("placement-reason"))
         valid &=
@@ -1124,7 +1587,7 @@ bool checkPlacementControls(strategy::Renderer& renderer, strategy::Logger& logg
     state.update(1.0F / 30);
     frame();
     valid &= state.session().world().size() == before + 1;
-    valid &= state.session().world().entities().back().transform.rotationDegrees.y == 0;
+    valid &= state.session().world().entities().back().transform.rotationDegrees.y == 45;
     valid &= panel() && !panel()->IsVisible();
     valid &= activate();
     button(SDL_EVENT_MOUSE_BUTTON_DOWN, SDL_BUTTON_RIGHT, 800, 300);
@@ -1331,7 +1794,12 @@ int strategyTestMain() {
     }
 
     if (const char* testCase = SDL_getenv("STRATEGY_RENDER_CASE");
-        testCase && std::string_view{testCase} == "explored_static") {
+        testCase && (std::string_view{testCase} == "explored_static" ||
+                     std::string_view{testCase} == "power_placement" ||
+                     std::string_view{testCase} == "power_buildings" ||
+                     std::string_view{testCase} == "keybind_settings" ||
+                     std::string_view{testCase} == "repeat_placement" ||
+                     std::string_view{testCase} == "navigation_keys")) {
         bool result = false;
         {
             strategy::Logger logger{"build/debug/audits/explored-static-render.log"};
@@ -1343,7 +1811,17 @@ int strategyTestMain() {
                 renderer.endFrame();
             }
             renderer.finishLoadingScreen();
-            result = checkExploredStaticVisibility(renderer);
+            result = std::string_view{testCase} == "power_buildings"
+                         ? checkPowerBuildingVisuals(renderer)
+                     : std::string_view{testCase} == "navigation_keys"
+                         ? checkPlacementControls(renderer, logger, false, false, false, true)
+                     : std::string_view{testCase} == "repeat_placement"
+                         ? checkPlacementControls(renderer, logger, false, false, true)
+                     : std::string_view{testCase} == "keybind_settings"
+                         ? checkKeybindSettings(renderer, logger)
+                     : std::string_view{testCase} == "power_placement"
+                         ? checkPlacementControls(renderer, logger, false, true)
+                         : checkExploredStaticVisibility(renderer);
         }
         SDL_GL_DestroyContext(context);
         SDL_DestroyWindow(window);
@@ -1845,9 +2323,15 @@ out vec4 color;void main(){color=vec4(1);})";
         placementPreview.power.demand = 4.0F;
         placementPreview.power.connectionRange = 24.0F;
         placementPreview.power.maximumConnections = 2;
-        renderer.drawPowerPlacementConnection(world, camera, 1, placementPreview);
+        placementPreview.authority.owner = 1;
+        if (const auto* endpoint =
+                strategy::findPowerPlacementTarget(world, 1, placementPreview, false))
+            renderer.drawPowerPlacementConnection(camera, placementPreview, *endpoint, *endpoint);
         placementPreview.transform.position = {1000.0F, 0.0F, 1000.0F};
-        renderer.drawPowerPlacementConnection(world, camera, 1, placementPreview);
+        placementPreview.authority.owner = 1;
+        if (const auto* endpoint =
+                strategy::findPowerPlacementTarget(world, 1, placementPreview, false))
+            renderer.drawPowerPlacementConnection(camera, placementPreview, *endpoint, *endpoint);
         renderer.drawPowerConnections(world, camera, 1, true);
         renderer.drawTerrainDebugHud({0.0F, 0.0F, 0.0F}, {});
         renderer.drawPowerDebugHud(world, 1, {0.0F, 0.0F, 0.0F});
@@ -1899,6 +2383,8 @@ out vec4 color;void main(){color=vec4(1);})";
                                    {"settings.resolution.left", "settings.apply"},
                                    1.0F});
         renderer.setUiText("resolution-label", "RESOLUTION");
+        renderer.setUiProperty("page-video", "display", "block");
+        renderer.setUiProperty("page-keybinds", "display", "none");
         renderer.setUiText("settings.resolution.value", "1280 x 720");
         renderer.setUiText("settings-controls", "CONTROLS");
         renderer.setUiText("bind.forward.label", "MOVE FORWARD");

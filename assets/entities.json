@@ -286,7 +286,7 @@
       "selection": { "radius": 5.0, "height": 5.0 }, "animations": {}
     },
     "synthetic_mine": {
-      "icon": "building_synthetic_mine", "model": "buildings/Market_FirstAge_Level1", "scale": 6.0,
+      "icon": "building_synthetic_mine", "model": "buildings/Mine", "scale": 6.0,
       "grounding": { "groundOffset": 0.0, "alignToTerrain": false, "maximumTilt": 0.0, "foundationRadius": 4.5, "maximumFoundationSlope": 10.0 },
       "selection": { "radius": 5.0, "height": 5.0 }, "animations": {}
     },
