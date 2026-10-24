@@ -496,6 +496,12 @@ void DefinitionRegistry::loadArchetypes(const std::filesystem::path& path,
                                          "' has invalid starting resource guarantee");
         }
 #endif
+        archetype.bodyHeight = kind == EntityKind::building ? 5.F : 2.F;
+        if (item->value.HasMember("bodyHeight")) {
+            archetype.bodyHeight = requiredNumber(item->value, "bodyHeight", "Entity body height");
+            if (!std::isfinite(archetype.bodyHeight) || archetype.bodyHeight <= 0)
+                throw std::runtime_error("Invalid entity bodyHeight");
+        }
         if (item->value.HasMember("nameKey") && item->value["nameKey"].IsString())
             archetype.nameKey = item->value["nameKey"].GetString();
         if (item->value.HasMember("presentation") && item->value["presentation"].IsString())
@@ -575,6 +581,13 @@ void DefinitionRegistry::loadArchetypes(const std::filesystem::path& path,
                                              "' ignoreEntityObstacles must be boolean");
                 archetype.movement.ignoresEntityObstacles =
                     movement["ignoreEntityObstacles"].GetBool();
+            }
+            if (movement.HasMember("turnRateDegrees")) {
+                archetype.movement.turnRateDegrees =
+                    requiredNumber(movement, "turnRateDegrees", "Movement turning");
+                if (!std::isfinite(archetype.movement.turnRateDegrees) ||
+                    archetype.movement.turnRateDegrees < 0)
+                    throw std::runtime_error("Invalid movement turnRateDegrees");
             }
             archetype.stats[GameplayStat::movementSpeed] = archetype.movement.speed;
         }
@@ -965,6 +978,27 @@ void DefinitionRegistry::loadWeapons(const std::filesystem::path& path) {
                                      "' requires positive cooldownTicks");
         definition.cooldownTicks = value["cooldownTicks"].GetUint();
         definition.accuracy = requiredNumber(value, "accuracy", "Weapon '" + definition.id + "'");
+        const auto geometry = [&](const char* name, float& field) {
+            if (value.HasMember(name)) field=requiredNumber(value,name,"Weapon geometry");
+            if (!std::isfinite(field)) throw std::runtime_error("Nonfinite weapon geometry");
+        };
+        geometry("turretTurnRateDegrees",definition.turretTurnRateDegrees);
+        geometry("turretPitchRateDegrees",definition.turretPitchRateDegrees);
+        geometry("minimumPitchDegrees",definition.minimumPitchDegrees);
+        geometry("maximumPitchDegrees",definition.maximumPitchDegrees);
+        geometry("pitchPivotForward",definition.pitchPivotForward);
+        geometry("muzzleSide",definition.muzzleSide);
+        if (definition.turretTurnRateDegrees<0 || definition.turretPitchRateDegrees<=0 ||
+            definition.minimumPitchDegrees>definition.maximumPitchDegrees ||
+            definition.minimumPitchDegrees< -89 || definition.maximumPitchDegrees>89 || definition.pitchPivotForward<0)
+            throw std::runtime_error("Invalid turret geometry");
+        if (value.HasMember("muzzleHeight"))
+            definition.muzzleHeight = requiredNumber(value, "muzzleHeight", "Weapon muzzle");
+        if (value.HasMember("muzzleForward"))
+            definition.muzzleForward = requiredNumber(value, "muzzleForward", "Weapon muzzle");
+        if (!std::isfinite(definition.muzzleHeight) || !std::isfinite(definition.muzzleForward) ||
+            definition.muzzleHeight < 0 || definition.muzzleForward < 0)
+            throw std::runtime_error("Invalid weapon muzzle geometry");
         if (definition.damage < 0.0F || definition.range < 0.0F || definition.accuracy < 0.0F ||
             definition.accuracy > 1.0F)
             throw std::runtime_error("Weapon '" + definition.id + "' has an invalid value");
@@ -1661,9 +1695,6 @@ void DefinitionRegistry::loadRules(const std::filesystem::path& path) {
             start.position = {value["position"][0].GetFloat(),
                               value["position"][1].GetFloat(),
                               value["position"][2].GetFloat()};
-            start.directlyControllable = value.HasMember("directlyControllable") &&
-                                         value["directlyControllable"].IsBool() &&
-                                         value["directlyControllable"].GetBool();
             if (value.HasMember("gatheringEnabled")) {
                 if (!value["gatheringEnabled"].IsBool())
                     throw std::runtime_error("Starting entity gatheringEnabled must be a boolean");
@@ -2094,6 +2125,21 @@ float DefinitionRegistry::collisionRadius(const std::string& entity) const {
     if (!definition)
         throw std::runtime_error("Unknown entity definition for collision: " + entity);
     return definition->collisionRadius;
+}
+
+bool DefinitionRegistry::permitsDirectControl(const Entity& entity) const {
+    const auto* type = archetype(entity.archetype);
+    return entity.kind == EntityKind::unit && entity.unitControl && type &&
+           !type->tags.contains("drone");
+}
+
+bool DefinitionRegistry::producesUnits(const Entity& entity) const {
+    if (entity.kind != EntityKind::building || !entity.production)
+        return false;
+    const auto recipes = recipesForProducer(entity.archetype.value);
+    return std::any_of(recipes.begin(), recipes.end(), [](const auto* recipe) {
+        return recipe->product.kind == RecipeProductKind::unit;
+    });
 }
 
 void DefinitionRegistry::initializeEntity(Entity& entity) const {

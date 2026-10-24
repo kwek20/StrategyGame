@@ -127,6 +127,8 @@ const std::vector<InputAction>& inputActions() {
         add("unit_left", "direct", direct, key(SDLK_A), {}, true, true);
         add("unit_right", "direct", direct, key(SDLK_D), {}, true, true);
         add("unit_run", "direct", direct, modifier(2), {}, false, true);
+        add("unit_fire", "direct", direct, mouse(SDL_BUTTON_LEFT), {}, true, true);
+        add("unit_aim_zoom", "direct", direct, mouse(SDL_BUTTON_RIGHT), {}, true, true);
         add("pause", "interface", strategy | direct, key(SDLK_ESCAPE));
         add("quick_save", "interface", strategy | placement | direct, key(SDLK_F5));
         add("quick_load", "interface", strategy | placement | direct, key(SDLK_F9));

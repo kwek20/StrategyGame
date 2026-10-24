@@ -166,6 +166,10 @@ ParticleEffectCatalogue ParticleEffectCatalogue::load(const std::filesystem::pat
             requiredString(render, "blend", id),
             {{"alpha", ParticleBlendMode::alpha}, {"additive", ParticleBlendMode::additive},
              {"premultiplied", ParticleBlendMode::premultiplied}}, id, "blend mode");
+        if (render.HasMember("luminanceMask")) {
+            if (!render["luminanceMask"].IsBool()) invalid(id,"luminanceMask must be boolean");
+            effect.render.luminanceMask=render["luminanceMask"].GetBool();
+        }
         if (render.HasMember("softParticles")) {
             if (!render["softParticles"].IsBool()) invalid(id, "softParticles must be boolean");
             effect.render.softParticles = render["softParticles"].GetBool();

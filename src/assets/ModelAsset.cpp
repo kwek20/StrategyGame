@@ -156,6 +156,7 @@ std::shared_ptr<ModelAsset> importModelAsset(const std::filesystem::path& path) 
             if (!(source->mPrimitiveTypes & aiPrimitiveType_TRIANGLE))
                 continue;
             ModelMeshAsset mesh;
+            mesh.nodeName=node->mName.C_Str();
             mesh.vertices.resize(source->mNumVertices);
             mesh.nodeTransform = nodeTransform;
             mesh.skinned = source->HasBones();

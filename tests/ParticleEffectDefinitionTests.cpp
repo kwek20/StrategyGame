@@ -9,7 +9,11 @@ int strategyTestMain() {
     bool valid = true;
     const strategy::ParticleEffectCatalogue catalogue =
         strategy::ParticleEffectCatalogue::load();
-    valid = valid && catalogue.size() == 12;
+    valid = valid && catalogue.size() == 16;
+    const auto* cannon=catalogue.effect(strategy::ParticleEffectId{"weapon.muzzle_cannon"});
+    const auto* smoke=catalogue.effect(strategy::ParticleEffectId{"destruction.vehicle_smoke"});
+    valid = valid && cannon && smoke && cannon->emission.mode==strategy::ParticleEmissionMode::burst &&
+        smoke->emission.mode==strategy::ParticleEmissionMode::burst;
 
     const strategy::ParticleEffectId alloyId{"processing.alloy"};
     const strategy::ParticleEffectHandle alloyHandle = catalogue.handle(alloyId);

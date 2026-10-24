@@ -13,6 +13,8 @@ namespace strategy {
 class Renderer;
 class World;
 struct Player;
+class EventBus;
+struct CombatShotEvent;
 
 // Translates authoritative state into disposable presentation effects. This state is never
 // saved, checksummed, or consulted by gameplay.
@@ -21,6 +23,7 @@ class GameplayParticlePresenter final {
     void sync(Renderer& renderer, const World& world, const Player* viewer,
               std::uint32_t mapChunksPerSide);
     void reset(Renderer& renderer);
+    void presentShot(Renderer&,EventBus&,const CombatShotEvent&,const Player*,std::uint32_t chunks);
 
   private:
     enum class Activity : std::uint8_t {

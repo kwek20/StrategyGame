@@ -80,6 +80,15 @@ struct RepairCommand { EntityId entity{0}; EntityId target{0}; };
 struct CancelProductionCommand { EntityId entity{0}; std::uint32_t queueIndex{0}; };
 struct RechargeCommand { EntityId entity{0}; };
 struct StopUnitCommand { EntityId entity{0}; };
+// Empty position clears the producer's rally point.
+struct SetRallyPointCommand { EntityId entity{0}; std::optional<glm::vec2> position; };
+
+struct AimWeaponCommand {
+    EntityId entity{};
+    glm::vec3 position{};
+    bool firing{};
+    bool pressed{};
+};
 
 using CommandPayload = std::variant<PossessUnitCommand,
                                     ReleaseUnitCommand,
@@ -107,7 +116,9 @@ using CommandPayload = std::variant<PossessUnitCommand,
                                     SetPowerDischargeEnabledCommand,
                                     SetPowerConsumptionEnabledCommand,
                                     SetPowerOutputEnabledCommand,
-                                    AdvanceSatelliteCommand>;
+                                    AdvanceSatelliteCommand,
+                                    SetRallyPointCommand,
+                                    AimWeaponCommand>;
 // Keep new commands appended so their serialized variant indices remain stable.
 
 struct PlayerCommand {

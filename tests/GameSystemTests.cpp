@@ -55,7 +55,7 @@ int strategyTestMain() {
     const auto* chargingPad = gameplay.building(strategy::BuildingArchetypeId{"charging_pad"});
     const auto* extractor =
         gameplay.building(strategy::BuildingArchetypeId{"resource_extractor"});
-    const auto* factory = gameplay.building(strategy::BuildingArchetypeId{"drone_factory"});
+    const auto* factory = gameplay.building(strategy::BuildingArchetypeId{"tank_factory"});
     const auto* sensorTower = gameplay.building(strategy::BuildingArchetypeId{"sensor_tower"});
     const auto* commandHubPower =
         gameplay.powerDevice(strategy::PowerDeviceId{"command_hub_integrated_grid"});
@@ -273,7 +273,7 @@ int strategyTestMain() {
     valid = valid && navigation.cellsPerSide() ==
                            static_cast<int>(std::ceil(
                                strategy::MapArea{13}.extent() / strategy::Navigation::cellSize));
-    const auto route = navigation.findPath(navigationWorld,
+    const auto route = navigation.findPath(navigationTerrain, navigationWorld,
                                            {navigationOrigin.x - 18.0F, 0.0F, navigationOrigin.y},
                                            {navigationOrigin.x + 18.0F, 0.0F, navigationOrigin.y},
                                            strategy::collisionRadius(gameplay, "worker"),
@@ -290,8 +290,7 @@ int strategyTestMain() {
     }
     const glm::vec3 blockedDestination{navigationOrigin.x, 0.0F, navigationOrigin.y};
     const glm::vec3 blockedStart{navigationOrigin.x - 30.0F, 0.0F, navigationOrigin.y};
-    const auto nearestReachableRoute = navigation.findPath(
-        navigationWorld, blockedStart, blockedDestination,
+    const auto nearestReachableRoute = navigation.findPath(navigationTerrain, navigationWorld, blockedStart, blockedDestination,
         strategy::collisionRadius(gameplay, "worker"), 999);
     valid = valid && !nearestReachableRoute.empty();
     if (!nearestReachableRoute.empty()) {
@@ -313,8 +312,7 @@ int strategyTestMain() {
              glm::vec3{navigationOrigin.x + 30.0F, 0.0F, navigationOrigin.y},
              glm::vec3{navigationOrigin.x, 0.0F, navigationOrigin.y - 30.0F},
              glm::vec3{navigationOrigin.x, 0.0F, navigationOrigin.y + 30.0F}}) {
-        const auto interactionRoute = navigation.findPath(
-            navigationWorld, start,
+        const auto interactionRoute = navigation.findPath(navigationTerrain, navigationWorld, start,
             strategy::NavigationGoalRegion{navigationTarget, 0.9F, {start.x, start.z},
                                            navigationObstacle.id},
             strategy::collisionRadius(gameplay, "worker"), 999);
@@ -328,8 +326,7 @@ int strategyTestMain() {
     navigationObstacle.transform.rotationDegrees.y = 37.0F;
     const strategy::SpatialShape rotatedTarget =
         strategy::spatialShape(gameplay, navigationObstacle);
-    const auto rotatedRoute = navigation.findPath(
-        navigationWorld, {navigationOrigin.x - 32.0F, 0.0F, navigationOrigin.y + 7.0F},
+    const auto rotatedRoute = navigation.findPath(navigationTerrain, navigationWorld, {navigationOrigin.x - 32.0F, 0.0F, navigationOrigin.y + 7.0F},
         strategy::NavigationGoalRegion{rotatedTarget, 0.9F,
                                        {navigationOrigin.x - 32.0F, navigationOrigin.y + 7.0F},
                                        navigationObstacle.id, 42},
@@ -342,8 +339,7 @@ int strategyTestMain() {
     strategy::Entity& sideBlocker =
         navigationWorld.createEntity("Side blocker", "alloy_processor", 0);
     sideBlocker.transform.position = {navigationOrigin.x - 19.0F, 0.0F, navigationOrigin.y};
-    const auto blockedSideRoute = navigation.findPath(
-        navigationWorld, {navigationOrigin.x - 36.0F, 0.0F, navigationOrigin.y},
+    const auto blockedSideRoute = navigation.findPath(navigationTerrain, navigationWorld, {navigationOrigin.x - 36.0F, 0.0F, navigationOrigin.y},
         strategy::NavigationGoalRegion{rotatedTarget, 0.9F,
                                        {navigationOrigin.x - 36.0F, navigationOrigin.y},
                                        navigationObstacle.id, 43},
@@ -424,20 +420,16 @@ int strategyTestMain() {
         }
     valid = valid && foundShore;
     if (foundShore) {
-        const auto landIntoWater = waterNavigation.findPath(
-            navigationWorld, shoreLand, shoreWater, 0.0F, 999,
+        const auto landIntoWater = waterNavigation.findPath(waterTerrain, navigationWorld, shoreLand, shoreWater, 0.0F, 999,
             {strategy::movementDomainBit(strategy::MovementDomain::land), true});
-        const auto waterIntoLand = waterNavigation.findPath(
-            navigationWorld, shoreWater, shoreLand, 0.0F, 999,
+        const auto waterIntoLand = waterNavigation.findPath(waterTerrain, navigationWorld, shoreWater, shoreLand, 0.0F, 999,
             {strategy::movementDomainBit(strategy::MovementDomain::water), true});
-        const auto amphibiousCrossing = waterNavigation.findPath(
-            navigationWorld, shoreLand, shoreWater, 0.0F, 999,
+        const auto amphibiousCrossing = waterNavigation.findPath(waterTerrain, navigationWorld, shoreLand, shoreWater, 0.0F, 999,
             {static_cast<strategy::MovementDomainMask>(
                  strategy::movementDomainBit(strategy::MovementDomain::land) |
                  strategy::movementDomainBit(strategy::MovementDomain::water)),
              true});
-        const auto airCrossing = waterNavigation.findPath(
-            navigationWorld, shoreLand, shoreWater, 0.0F, 999,
+        const auto airCrossing = waterNavigation.findPath(waterTerrain, navigationWorld, shoreLand, shoreWater, 0.0F, 999,
             {strategy::movementDomainBit(strategy::MovementDomain::air), true});
         valid = valid && !landIntoWater.empty() && !waterIntoLand.empty() &&
                 !amphibiousCrossing.empty() && !airCrossing.empty();
@@ -465,8 +457,7 @@ int strategyTestMain() {
                 break;
             }
     if (foundImpassable) {
-        const auto droneRoute = navigation.findPath(
-            navigationWorld,
+        const auto droneRoute = navigation.findPath(navigationTerrain, navigationWorld,
             {navigationOrigin.x - 18.0F, 0.0F, navigationOrigin.y},
             impassableDestination, 0.0F, 999,
             strategy::NavigationProfile{strategy::movementDomainBit(
@@ -541,9 +532,9 @@ int strategyTestMain() {
     valid = valid && playerOneHubs == 1 && playerTwoHubs == 1 &&
             playerOneDrones == 1 && playerTwoDrones == 1;
     valid = valid && playerOneUnit && playerOneUnit->unitControl &&
-            playerOneUnit->unitControl.directlyControllable && !playerOneUnit->gatherer;
+            gameplay.permitsDirectControl(*playerOneUnit) && !playerOneUnit->gatherer;
     valid = valid && playerTwoUnit && playerTwoUnit->unitControl &&
-            playerTwoUnit->unitControl.directlyControllable && !playerTwoUnit->gatherer;
+            gameplay.permitsDirectControl(*playerTwoUnit) && !playerTwoUnit->gatherer;
     if (playerOneHubs != 1 || playerTwoHubs != 1 || playerOneDrones != 1 ||
         playerTwoDrones != 1 || !playerOneUnit || playerOneUnit->gatherer ||
         !playerTwoUnit || playerTwoUnit->gatherer)

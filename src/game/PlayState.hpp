@@ -42,6 +42,7 @@ class PlayState final : public GameState {
 
   private:
     void restoreSavedPlayerProgress(SaveData& data);
+    [[nodiscard]] CameraView controlledCameraView(Renderer&,const Entity&) const;
     enum class Preparation { terrain, resources, vegetation, world, hud, frame, fence, gpu, ready };
     Preparation preparation_{Preparation::terrain};
     float preparationProgress_{};
@@ -55,6 +56,7 @@ class PlayState final : public GameState {
     bool left_{false};
     bool right_{false};
     bool running_{false};
+    bool manualFirePressed_{false};
     InputState input_;
     std::uint64_t settingsRevision_{};
     std::array<std::vector<EntityId>, 10> controlGroups_;

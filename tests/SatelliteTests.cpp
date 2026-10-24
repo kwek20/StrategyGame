@@ -14,8 +14,8 @@ void require(bool condition, const char* message) {
     if (!condition)
         throw std::runtime_error(message);
 }
-bool allCovered(const std::vector<std::uint8_t>& cells) {
-    return std::all_of(cells.begin(), cells.end(), [](auto cell) { return cell != 0; });
+bool allCovered(const strategy::VisibilityGrid& grid, bool live = false) {
+    return grid.coversArea(glm::vec2{-120}, glm::vec2{120}, live);
 }
 } // namespace
 
@@ -54,11 +54,22 @@ int strategyTestMain() {
     }
     require(hub && drone && enemy, "Starting researchers, builders and enemy exist");
     auto* player = session.players().find(1);
+    const auto dronePosition = session.world().findEntity(drone)->transform.position;
+    session.world().findEntity(drone)->transform.position = {-118, dronePosition.y, -118};
+    session.advanceTicks();
+    require(player->visibility.visibleAt({-125, -125}) &&
+                !player->visibility.visibleAt({-150, -150}),
+            "A real drone reveals a circular footprint beyond a map corner");
+    session.world().findEntity(drone)->transform.position = dronePosition;
+    session.advanceTicks();
+    require(player->visibility.exploredAt({-125, -125}) &&
+                !player->visibility.visibleAt({-125, -125}),
+            "Outside exploration remains after the drone leaves");
     player->resources["alloy"] = 10000;
     player->resources["fuel"] = 10000;
     constexpr auto low = "satellite.low_resolution";
     constexpr auto high = "satellite.high_resolution";
-    require(!allCovered(player->discovered) &&
+    require(!allCovered(player->visibility) &&
                 session.satelliteCoverage(1) == SatelliteCoverage::none,
             "No satellite coverage is granted for free");
     require(!session.canStartUpgrade(1, hub, high),
@@ -71,7 +82,7 @@ int strategyTestMain() {
     std::uint64_t sequence = 1;
     require(session.submit({1, sequence++, StartUpgradeCommand{hub, low}}), "Research submitted");
     session.advanceTicks();
-    require(!allCovered(player->discovered), "Queued research does not reveal the world early");
+    require(!allCovered(player->visibility), "Queued research does not reveal the world early");
     require(!session.canStartUpgrade(1, secondHub, low),
             "A second hub cannot duplicate player research");
     require(player->resources.at("alloy") == 9900, "Low resolution costs 100 Alloy exactly once");
@@ -85,21 +96,17 @@ int strategyTestMain() {
     session.advanceTicks();
     session.world().findEntity(hub)->production.queue.front().remainingTicks = 1;
     session.advanceTicks();
-    require(allCovered(player->discovered) && !allCovered(player->visible),
+    require(allCovered(player->visibility) && !allCovered(player->visibility, true),
             "Completed low resolution explores all terrain without granting live global vision");
     require(player->researchedUpgrades.at(low) == 1 &&
                 !session.canStartUpgrade(1, secondHub, low) &&
                 session.canStartUpgrade(1, secondHub, high),
             "Research and prerequisites are shared between the player's hubs");
     require(session.players().find(2)->researchedUpgrades.empty() &&
-                !allCovered(session.players().find(2)->discovered),
+                !allCovered(session.players().find(2)->visibility),
             "Satellite is owner-only");
 
-    const auto enemyCell =
-        MapArea{10}.gridCell({session.world().findEntity(enemy)->transform.position.x,
-                              session.world().findEntity(enemy)->transform.position.z},
-                             Player::explorationCells);
-    require(!player->visible[enemyCell.y * Player::explorationCells + enemyCell.x],
+    require(!player->visibility.visibleAt({session.world().findEntity(enemy)->transform.position.x, session.world().findEntity(enemy)->transform.position.z}),
             "Low resolution cannot see a distant enemy");
 
     // Find a legal site outside the starting drone's sight, then commit it and route the drone.
@@ -108,8 +115,7 @@ int strategyTestMain() {
     for (float z = position.z - 80; z <= position.z + 80 && !found; z += 8)
         for (float x = position.x - 80; x <= position.x + 80 && !found; x += 8) {
             distant.position = {x, 0, z};
-            const auto cell = MapArea{10}.gridCell({x, z}, Player::explorationCells);
-            if (player->visible[cell.y * Player::explorationCells + cell.x])
+            if (player->visibility.visibleAt({x, z}))
                 continue;
             found = session.planBuildingPlacement(1, distant).valid();
         }
@@ -147,13 +153,13 @@ int strategyTestMain() {
         for (std::size_t i = 0; i < 2; ++i)
             session.restorePlayerProgress(i + 1,
                                           std::move(data.resources[i]),
-                                          std::move(data.discovered[i]),
+                                          std::move(data.visibility[i]),
                                           std::move(data.intelligence[i]),
                                           std::move(data.researchedUpgrades[i]));
     };
     roundtrip();
     require(session.satelliteCoverage(1) == SatelliteCoverage::lowResolution &&
-                allCovered(player->discovered) && !allCovered(player->visible),
+                allCovered(player->visibility) && !allCovered(player->visibility, true),
             "Low-resolution coverage survives saving and loading without granting enemy vision");
     sequence = 1; // replaceWorld clears the command stream.
     require(session.submit({1, sequence++, StartUpgradeCommand{secondHub, high}}),
@@ -161,12 +167,12 @@ int strategyTestMain() {
     session.advanceTicks();
     roundtrip();
     require(session.satelliteCoverage(1) == SatelliteCoverage::lowResolution &&
-                !allCovered(player->visible) && !session.canStartUpgrade(1, hub, high),
+                !allCovered(player->visibility, true) && !session.canStartUpgrade(1, hub, high),
             "Saving queued high resolution preserves its reservation without granting it early");
     session.world().findEntity(secondHub)->production.queue.front().remainingTicks = 1;
     session.advanceTicks();
     require(session.satelliteCoverage(1) == SatelliteCoverage::highResolution &&
-                allCovered(player->visible),
+                allCovered(player->visibility, true),
             "High resolution grants live global vision on completion");
     auto* movingEnemy = session.world().findEntity(enemy);
     movingEnemy->transform.position.x -= 12;
@@ -188,11 +194,11 @@ int strategyTestMain() {
     session.world().destroyEntity(hub);
     session.world().destroyEntity(secondHub);
     session.advanceTicks();
-    require(allCovered(player->visible),
+    require(allCovered(player->visibility, true),
             "Purchased orbital coverage survives losing the research hubs");
     roundtrip();
     require(session.satelliteCoverage(1) == SatelliteCoverage::highResolution &&
-                allCovered(player->visible),
+                allCovered(player->visibility, true),
             "High resolution is restored before the first rendered frame");
     const auto originalChecksum = session.stateChecksum();
     player->researchedUpgrades.erase(high);
@@ -211,7 +217,7 @@ int strategyTestMain() {
     require(session.submit(*decoded), "First free satellite click submitted");
     session.advanceTicks();
     require(session.satelliteCoverage(2) == SatelliteCoverage::lowResolution &&
-                allCovered(opponent->discovered) && !allCovered(opponent->visible) &&
+                allCovered(opponent->visibility) && !allCovered(opponent->visibility, true) &&
                 opponent->resources.empty(),
             "First click grants low resolution without resources or research time");
     std::vector<EntityId> enemyHubs;
@@ -225,7 +231,7 @@ int strategyTestMain() {
             "Second and repeated free satellite clicks submitted");
     session.advanceTicks();
     require(session.satelliteCoverage(2) == SatelliteCoverage::highResolution &&
-                allCovered(opponent->visible) && opponent->resources.empty() &&
+                allCovered(opponent->visibility, true) && opponent->resources.empty() &&
                 session.satelliteCoverage(1) == SatelliteCoverage::lowResolution,
             "Second click grants high resolution without a hub; repeated clicks and other owners "
             "are safe");

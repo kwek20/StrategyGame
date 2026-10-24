@@ -123,6 +123,8 @@ target_link_libraries(strategy_ui_model
 )
 
 add_library(strategy_simulation STATIC
+    src/simulation/CombatRules.cpp
+    src/simulation/UnitDeployment.cpp
     src/simulation/GameSession.cpp
     src/simulation/CommandCodec.cpp
     src/simulation/PowerGridSystem.cpp
@@ -147,7 +149,7 @@ target_link_libraries(strategy_persistence
 
 add_library(strategy_audio STATIC src/audio/AudioSystem.cpp)
 strategy_target(strategy_audio)
-target_link_libraries(strategy_audio PUBLIC strategy_core RapidJSON)
+target_link_libraries(strategy_audio PUBLIC strategy_core RapidJSON SDL3::SDL3)
 
 # CPU asset import has no graphics dependency and is safe on worker threads or headless builds.
 add_library(strategy_resource_sites STATIC src/world/ResourceSiteMap.cpp)
@@ -331,6 +333,21 @@ if(STRATEGY_BUILD_TESTS)
     target_link_libraries(construction_queue_tests PRIVATE strategy_simulation strategy_persistence)
     add_test(NAME construction_queue COMMAND construction_queue_tests)
     set_tests_properties(construction_queue PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+    add_executable(tank_combat_tests tests/TankCombatTests.cpp tests/TestMain.cpp)
+    add_executable(combat_audio_tests tests/CombatAudioTests.cpp tests/TestMain.cpp)
+    strategy_target(combat_audio_tests)
+    target_link_libraries(combat_audio_tests PRIVATE strategy_audio)
+    add_test(NAME combat_audio_playback COMMAND combat_audio_tests)
+    set_tests_properties(combat_audio_playback PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+    strategy_target(tank_combat_tests)
+    target_link_libraries(tank_combat_tests PRIVATE strategy_simulation strategy_persistence)
+    add_test(NAME tank_movement_combat COMMAND tank_combat_tests)
+    set_tests_properties(tank_movement_combat PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" TIMEOUT 120)
+    add_executable(tank_production_tests tests/TankProductionTests.cpp tests/TestMain.cpp)
+    strategy_target(tank_production_tests)
+    target_link_libraries(tank_production_tests PRIVATE strategy_simulation strategy_persistence)
+    add_test(NAME tank_factory_production COMMAND tank_production_tests)
+    set_tests_properties(tank_factory_production PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" TIMEOUT 120)
     add_executable(power_placement_tests tests/PowerPlacementTests.cpp)
     strategy_target(power_placement_tests)
     target_link_libraries(power_placement_tests PRIVATE strategy_simulation)
@@ -463,6 +480,30 @@ if(STRATEGY_BUILD_TESTS)
     set_tests_properties(repeat_placement_controls PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" ENVIRONMENT "STRATEGY_RENDER_CASE=repeat_placement")
     add_test(NAME keybind_settings_controls COMMAND renderer_integration_tests)
     set_tests_properties(keybind_settings_controls PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" ENVIRONMENT "STRATEGY_RENDER_CASE=keybind_settings")
+    add_test(NAME factory_rally_controls COMMAND renderer_integration_tests)
+    set_tests_properties(factory_rally_controls PROPERTIES
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        ENVIRONMENT "STRATEGY_RENDER_CASE=factory_rally")
+    add_test(NAME edge_exploration_visuals COMMAND renderer_integration_tests)
+    add_test(NAME remembered_entity_culling COMMAND renderer_integration_tests)
+    set_tests_properties(remembered_entity_culling PROPERTIES
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        ENVIRONMENT "STRATEGY_RENDER_CASE=remembered_culling")
+    set_tests_properties(edge_exploration_visuals PROPERTIES
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        ENVIRONMENT "STRATEGY_RENDER_CASE=edge_exploration")
+    add_test(NAME tank_factory_visuals COMMAND renderer_integration_tests)
+    set_tests_properties(tank_factory_visuals PROPERTIES
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        ENVIRONMENT "STRATEGY_RENDER_CASE=tank_factory")
+    add_test(NAME tank_combat_visuals COMMAND renderer_integration_tests)
+    add_test(NAME tank_direct_controls COMMAND renderer_integration_tests)
+    set_tests_properties(tank_direct_controls PROPERTIES
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        ENVIRONMENT "STRATEGY_RENDER_CASE=tank_controls")
+    set_tests_properties(tank_combat_visuals PROPERTIES
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        ENVIRONMENT "STRATEGY_RENDER_CASE=tank_combat")
     add_test(NAME power_building_visuals COMMAND renderer_integration_tests)
     set_tests_properties(power_building_visuals PROPERTIES
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
@@ -482,7 +523,28 @@ if(STRATEGY_BUILD_TESTS)
     target_link_libraries(render_architecture_tests PRIVATE strategy_render)
     add_test(NAME render_architecture COMMAND render_architecture_tests)
 
+    add_executable(character_traversal_tests tests/CharacterTraversalTests.cpp)
+    strategy_target(character_traversal_tests)
+    target_link_libraries(character_traversal_tests PRIVATE strategy_simulation)
+    add_test(NAME character_traversal COMMAND character_traversal_tests)
+    set_tests_properties(character_traversal PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
+    add_executable(visibility_grid_tests tests/VisibilityGridTests.cpp)
+    strategy_target(visibility_grid_tests)
+    target_link_libraries(visibility_grid_tests PRIVATE strategy_simulation strategy_persistence)
+    add_test(NAME world_visibility COMMAND visibility_grid_tests)
+    set_tests_properties(world_visibility PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
+    add_executable(session_move_placement_tests tests/SessionMovePlacementTests.cpp)
+    strategy_target(session_move_placement_tests)
+    target_link_libraries(session_move_placement_tests PRIVATE strategy_simulation)
+    add_test(NAME session_move_placement COMMAND session_move_placement_tests)
+    set_tests_properties(session_move_placement PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
     set(STRATEGY_TEST_TARGETS
+        session_move_placement_tests
+        visibility_grid_tests
+        character_traversal_tests
         terrain_v2_tests
         terrain_v2_session_tests
         terrain_v2_opening_tests

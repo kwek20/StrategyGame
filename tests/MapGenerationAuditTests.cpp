@@ -91,7 +91,7 @@ void verify(const strategy::GameSession& session, const strategy::DefinitionRegi
     }
     require(workers[0] && workers[1] && drones[0] && drones[1], "Starting units missing");
     const auto* workerType = definitions.archetype(workers[0]->archetype);
-    const auto workerPath = navigation.findPath(world, workers[0]->transform.position, workers[1]->transform.position,
+    const auto workerPath = navigation.findPath(terrain, world, workers[0]->transform.position, workers[1]->transform.position,
         workerType->collisionRadius, workers[0]->id,
         {workerType->movement.domains, workerType->movement.ignoresEntityObstacles});
     require(!workerPath.empty() && glm::distance(glm::vec2{workerPath.back().x, workerPath.back().z},
@@ -115,7 +115,7 @@ void verify(const strategy::GameSession& session, const strategy::DefinitionRegi
                     if (candidate.resource && glm::vec2{candidate.transform.position.x, candidate.transform.position.z} == node.position)
                         entity = &candidate;
                 require(entity, "Generated opening node missing from world");
-                const auto path = navigation.findPath(world, drones[player]->transform.position,
+                const auto path = navigation.findPath(terrain, world, drones[player]->transform.position,
                     strategy::NavigationGoalRegion{strategy::spatialShape(definitions, *entity), 1.5F,
                         {drones[player]->transform.position.x, drones[player]->transform.position.z},
                         entity->id, drones[player]->id}, droneType->collisionRadius, drones[player]->id,

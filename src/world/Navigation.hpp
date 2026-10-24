@@ -35,10 +35,10 @@ class Navigation final {
     void rebuildTerrain(const Terrain& terrain, std::uint32_t mapChunksPerSide,
                         WorldGenerationProgress* progress = nullptr);
     [[nodiscard]] std::vector<glm::vec3> findPath(
-        const World& world, glm::vec3 start, glm::vec3 destination, float radius, EntityId ignored,
+        const Terrain& terrain, const World& world, glm::vec3 start, glm::vec3 destination, float radius, EntityId ignored,
         NavigationProfile profile = {});
     [[nodiscard]] std::vector<glm::vec3> findPath(
-        const World& world, glm::vec3 start, const NavigationGoalRegion& goal,
+        const Terrain& terrain, const World& world, glm::vec3 start, const NavigationGoalRegion& goal,
         float radius, EntityId ignored, NavigationProfile profile = {});
     [[nodiscard]] int cellsPerSide() const { return side_; }
     [[nodiscard]] float worldExtent() const { return map_.extent(); }
@@ -46,10 +46,8 @@ class Navigation final {
   private:
     MapArea map_;
     int side_{1};
-    std::optional<TerrainTerraces> v2Terraces_;
-    std::vector<std::uint8_t> v2LandClearanceMask_;
-    bool terrainPassable(std::size_t index, float radius, NavigationProfile profile) const;
-    bool canStep(int x, int z, int nx, int nz, float radius, NavigationProfile profile) const;
+    bool terrainPassable(const Terrain& terrain, std::size_t index, float radius, NavigationProfile profile) const;
+    bool canStep(const Terrain& terrain, int x, int z, int nx, int nz, float radius, NavigationProfile profile) const;
     std::vector<float> heights_;
     std::vector<std::array<float, 3>> terrainMovementCosts_;
     struct OccupancyKey {
@@ -59,18 +57,19 @@ class Navigation final {
         auto operator<=>(const OccupancyKey&) const = default;
     };
     std::map<OccupancyKey, std::vector<std::uint8_t>> occupancyByProfile_;
+    mutable std::map<OccupancyKey, std::vector<std::uint16_t>> terrainEdgesByProfile_;
     std::unordered_map<std::uint64_t, std::vector<float>> flowFields_;
     std::map<EntityId, SpatialShape> obstacleShapes_;
     const DefinitionRegistry& definitions_;
     [[nodiscard]] int indexOf(int x, int z) const;
     [[nodiscard]] int gridCoordinate(float value) const;
     [[nodiscard]] glm::vec3 positionOf(int x, int z) const;
-    void synchronizeObstacles(const World& world);
-    const std::vector<std::uint8_t>& occupancy(const World& world, float radius,
+    void synchronizeObstacles(const Terrain& terrain, const World& world);
+    const std::vector<std::uint8_t>& occupancy(const Terrain& terrain, const World& world, float radius,
                                                NavigationProfile profile);
     [[nodiscard]] float movementCost(std::size_t index, MovementDomainMask domains) const;
     [[nodiscard]] std::vector<glm::vec3> pathFromGoals(
-        const World& world, glm::vec3 start, const std::vector<int>& goals,
+        const Terrain& terrain, const World& world, glm::vec3 start, const std::vector<int>& goals,
         glm::vec2 preferredGoal, float radius, EntityId ignored, std::uint64_t goalKey,
         NavigationProfile profile);
 };

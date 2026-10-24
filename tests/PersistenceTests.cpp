@@ -143,6 +143,8 @@ int strategyTestMain() {
     const strategy::EntityId droneId = drone.id;
     world.foundations().push_back({{1.0F, 6.0F, 3.0F}, 5.0F, 7.0F});
     strategy::PlayerRegistry players{"france", "brazil"};
+    for (auto& player : players.players()) player.visibility = strategy::VisibilityGrid{1.875F};
+    players.find(1)->visibility.revealCircle({-120, 0}, 14);
     players.find(1)->resources["alloy"] = 125.0F;
     players.find(1)->intelligence.push_back(
         {42, "town_center", {8, 0, 9}, {0, 45, 0}, {1, 1, 1}, true});
@@ -161,6 +163,8 @@ int strategyTestMain() {
     valid = valid && loaded.terrainSeed == 424242U && loaded.mapChunksPerSide == 10 &&
             loaded.terrainLayout == "central_hill" &&
             loaded.entities.size() == 2;
+    valid = valid && loaded.visibility[0].exploredAt({-125, 0}) &&
+            !loaded.visibility[0].visibleAt({-125, 0});
     valid = valid && loaded.foundations.size() == 1 &&
             loaded.foundations[0].center == glm::vec3{1.0F, 6.0F, 3.0F} &&
             loaded.foundations[0].innerRadius == 5.0F &&

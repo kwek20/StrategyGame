@@ -1,4 +1,7 @@
 #include "game/GameplayParticlePresenter.hpp"
+#include "app/GameEvents.hpp"
+#include "core/EventBus.hpp"
+#include "simulation/CombatShotEvent.hpp"
 
 #include "particles/ParticleSystem.hpp"
 #include "render/Renderer.hpp"
@@ -34,18 +37,15 @@ std::uint32_t effectSeed(EntityId entity, std::uint32_t salt) {
     return value == 0 ? 1 : value;
 }
 
-bool visibleTo(const Entity& entity, const Player* viewer, std::uint32_t mapChunksPerSide) {
+bool visibleTo(const Entity& entity, const Player* viewer) {
     if (!viewer) return true;
-    const glm::ivec2 cell = MapArea{mapChunksPerSide}.gridCell(
-        {entity.transform.position.x, entity.transform.position.z}, Player::explorationCells);
-    const std::size_t index = static_cast<std::size_t>(cell.y * Player::explorationCells + cell.x);
-    return index < viewer->visible.size() && viewer->visible[index] != 0;
+    return viewer->visibility.visibleAt({entity.transform.position.x, entity.transform.position.z});
 }
 
 } // namespace
 
 void GameplayParticlePresenter::sync(Renderer& renderer, const World& world, const Player* viewer,
-                                     std::uint32_t mapChunksPerSide) {
+                                     std::uint32_t /*mapChunksPerSide*/) {
     for (auto iterator = impactCooldownFrames_.begin(); iterator != impactCooldownFrames_.end();) {
         if (iterator->second > 0) --iterator->second;
         if (iterator->second == 0) iterator = impactCooldownFrames_.erase(iterator);
@@ -69,7 +69,7 @@ void GameplayParticlePresenter::sync(Renderer& renderer, const World& world, con
 
     for (const Entity& entity : world.entities()) {
         const glm::vec3 position = shownPosition(renderer, entity);
-        const bool visible = visibleTo(entity, viewer, mapChunksPerSide);
+        const bool visible = visibleTo(entity, viewer);
         current.emplace(entity.id, Snapshot{position,
             entity.health ? entity.health.current : 0.0F, entity.kind, isOperational(entity), visible});
         if (!visible) continue;
@@ -86,7 +86,7 @@ void GameplayParticlePresenter::sync(Renderer& renderer, const World& world, con
         if (entity.unitControl && entity.unitControl.order == UnitOrderKind::gather && entity.gatherer &&
             !entity.unitControl.hasStrategicDestination) {
             const Entity* target = world.findEntity(entity.gatherer.sourceTarget);
-            if (target && target->resource && visibleTo(*target, viewer, mapChunksPerSide)) {
+            if (target && target->resource && visibleTo(*target, viewer)) {
                 const glm::vec3 resourcePosition = shownPosition(renderer, *target);
                 maintain({entity.id, Activity::mining},
                          ParticleEffectId{target->resource.type == "oil" ? "mining.oil" : "mining.scrap"},
@@ -100,7 +100,7 @@ void GameplayParticlePresenter::sync(Renderer& renderer, const World& world, con
             !entity.unitControl.hasStrategicDestination) {
             const Entity* target = world.findEntity(entity.unitControl.orderTarget);
             if (target && target->construction && !isOperational(*target) &&
-                visibleTo(*target, viewer, mapChunksPerSide)) {
+                visibleTo(*target, viewer)) {
                 const glm::vec3 destination = shownPosition(renderer, *target);
                 maintain({entity.id, Activity::construction},
                          ParticleEffectId{"construction.drone_beam"}, position,
@@ -140,6 +140,55 @@ void GameplayParticlePresenter::sync(Renderer& renderer, const World& world, con
     }
     previous_ = std::move(current);
     initialized_ = true;
+}
+
+void GameplayParticlePresenter::presentShot(Renderer& renderer,EventBus& events,const CombatShotEvent& shot,const Player* viewer,std::uint32_t /*chunks*/) {
+    const auto visible=[&](glm::vec3 p) {
+        if (!viewer) return true;
+        return viewer->visibility.visibleAt({p.x, p.z});
+    };
+    if (visible(shot.origin)) {
+        auto end=shot.origin;
+        const int samples = std::max(
+            1, static_cast<int>(std::ceil(glm::length(shot.destination - shot.origin) / .5F)));
+        for (int i = 1; i <= samples; ++i) {
+            const auto p = glm::mix(shot.origin, shot.destination, static_cast<float>(i) / samples);
+            if (!visible(p))
+                break;
+            end = p;
+        }
+        renderer.showWeaponFire(shot.attacker, shot.origin, end);
+        if (shot.cannon)
+            events.enqueue(AudioEvent{AudioCue::cannonFire});
+        const auto direction = shot.destination - shot.origin;
+        (void)renderer.emitParticle(
+            {renderer.particleEffect(
+                 ParticleEffectId{shot.cannon ? "weapon.muzzle_cannon" : "weapon.muzzle_kinetic"}),
+             shot.origin,
+             glm::length(direction) > .001F ? glm::normalize(direction) : glm::vec3{0, 1, 0},
+             effectSeed(shot.attacker, static_cast<std::uint32_t>(shot.shot))});
+    }
+    if (shot.impact && visible(shot.destination)) {
+        (void)renderer.emitParticle(
+            {renderer.particleEffect(ParticleEffectId{shot.destroyed ? "explosion.vehicle"
+                                                      : shot.cannon  ? "impact.cannon"
+                                                                     : "impact.kinetic"}),
+             shot.destination,
+             {0, 1, 0},
+             effectSeed(shot.target, static_cast<std::uint32_t>(shot.shot))});
+        if (shot.cannon)
+            events.enqueue(
+                AudioEvent{shot.destroyed ? AudioCue::vehicleDestroyed : AudioCue::cannonImpact});
+        if (shot.destroyed)
+            (void)renderer.emitParticle(
+                {renderer.particleEffect(ParticleEffectId{"destruction.vehicle_smoke"}),
+                 shot.destination,
+                 {0, 1, 0},
+                 effectSeed(shot.target, 97)});
+        impactCooldownFrames_[shot.target] = 6;
+        if (shot.destroyed)
+            previous_.erase(shot.target);
+    }
 }
 
 void GameplayParticlePresenter::reset(Renderer& renderer) {

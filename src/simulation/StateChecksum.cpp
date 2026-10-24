@@ -69,7 +69,12 @@ std::uint64_t authoritativeStateChecksum(const World& world,
         for (const auto& [id, amount] : player->resources) { hash.text(id); hash.value(amount); }
         hash.value(static_cast<std::uint64_t>(player->researchedUpgrades.size()));
         for (const auto& [id, level] : player->researchedUpgrades) { hash.text(id); hash.value(level); }
-        for (auto discovered : player->discovered) hash.value(discovered);
+        hash.value(player->visibility.cellSize());
+        hash.value(static_cast<std::uint64_t>(player->visibility.chunks().size()));
+        for (const auto& [key, cells] : player->visibility.chunks()) {
+            hash.value(key.first); hash.value(key.second);
+            for (auto cell : cells) hash.value(static_cast<std::uint8_t>(cell & VisibilityGrid::explored));
+        }
     }
     std::vector<const Entity*> entities;
     for (const Entity& entity : world.entities()) entities.push_back(&entity);
@@ -83,7 +88,7 @@ std::uint64_t authoritativeStateChecksum(const World& world,
         hash.value(static_cast<bool>(entity->health)); if(entity->health){hash.value(entity->health.current);hash.value(entity->health.maximum);}
         hash.value(static_cast<bool>(entity->vision)); if(entity->vision) { hash.value(entity->vision.sightRange); hash.value(entity->vision.heightBonus); }
         hash.value(static_cast<bool>(entity->unitControl)); if(entity->unitControl){
-            hash.value(entity->unitControl.directlyControllable); hash.value(entity->unitControl.directInput.x); hash.value(entity->unitControl.directInput.y);
+            hash.value(entity->unitControl.directInput.x); hash.value(entity->unitControl.directInput.y);
             hash.value(entity->unitControl.running); hash.vector(entity->unitControl.strategicDestination); hash.value(entity->unitControl.hasStrategicDestination);
             hash.value(entity->unitControl.movementSpeed);
             hash.value(entity->unitControl.order);
@@ -95,7 +100,25 @@ std::uint64_t authoritativeStateChecksum(const World& world,
         hash.value(static_cast<bool>(entity->gatherer)); if(entity->gatherer){hash.text(entity->gatherer.carriedResource);hash.value(entity->gatherer.carriedAmount);hash.value(entity->gatherer.carryCapacity);hash.value(entity->gatherer.gatherPerSecond);hash.value(entity->gatherer.sourceTarget);hash.value(entity->gatherer.deliveryTarget);hash.value(entity->gatherer.preferredProcessor);hash.text(entity->gatherer.preferredOutput);hash.value(entity->gatherer.repeatGathering);hash.value(entity->gatherer.waitingForProcessor);}
         hash.value(static_cast<bool>(entity->flight)); if(entity->flight){hash.value(entity->flight.altitude);hash.value(entity->flight.verticalSpeed);hash.value(entity->flight.minimumAltitude);hash.value(entity->flight.maximumAltitude);}
         hash.value(static_cast<bool>(entity->battery)); if(entity->battery){hash.value(entity->battery.charge);hash.value(entity->battery.capacity);hash.value(entity->battery.movementDrainPerSecond);hash.value(entity->battery.reserveThreshold);hash.value(entity->battery.returningToCharge);hash.value(entity->battery.hasSuspendedOrder);hash.value(entity->battery.suspendedOrder);hash.value(entity->battery.suspendedTarget);hash.vector(entity->battery.suspendedDestination);hash.value(entity->battery.suspendedHasDestination);hash.value(entity->battery.chargerTarget);hash.value(entity->battery.recoveryReason);}
-        hash.value(static_cast<bool>(entity->combat)); if(entity->combat){hash.value(entity->combat.damage);hash.value(entity->combat.range);hash.value(entity->combat.cooldownSeconds);hash.value(entity->combat.cooldownRemaining);}
+        hash.value(static_cast<bool>(entity->combat));
+        if (entity->combat) {
+            hash.value(entity->combat.damage);
+            hash.value(entity->combat.range);
+            hash.value(entity->combat.cooldownSeconds);
+            hash.value(entity->combat.cooldownRemaining);
+            hash.value(entity->combat.shotsFired);
+            hash.value(entity->combat.turretYawDegrees);
+            hash.value(entity->combat.turretPitchDegrees);
+            hash.value(entity->combat.triggerHeld);
+            hash.value(entity->combat.directAim.has_value());
+            if (entity->combat.directAim)
+                hash.vector(*entity->combat.directAim);
+            hash.value(entity->combat.lastSeenTarget.has_value());
+            if (entity->combat.lastSeenTarget) {
+                hash.value(entity->combat.lastSeenTarget->x);
+                hash.value(entity->combat.lastSeenTarget->y);
+            }
+        }
         hash.value(static_cast<bool>(entity->resource));
         if (entity->resource) {
             hash.text(entity->resource.type);
@@ -105,7 +128,7 @@ std::uint64_t authoritativeStateChecksum(const World& world,
         hash.value(static_cast<bool>(entity->processor)); if(entity->processor){hash.value(static_cast<std::uint64_t>(entity->processor.bufferedInputs.size()));for(const auto& [id,amount]:entity->processor.bufferedInputs){hash.text(id);hash.value(amount);}hash.value(entity->processor.waitingForPower);hash.value(entity->processor.lastConversionTick);hash.value(entity->processor.activityTicksRemaining);hash.value(entity->processor.state);}
         hash.value(static_cast<bool>(entity->power)); if(entity->power){hash.value(entity->power.generation);hash.value(entity->power.demand);hash.value(entity->power.supplied);hash.value(entity->power.stored);hash.value(entity->power.storageCapacity);hash.value(entity->power.connectionRange);hash.value(entity->power.transferLimit);hash.value(entity->power.maximumConnections);hash.value(entity->power.gridId);hash.value(static_cast<std::uint64_t>(entity->power.connections.size()));for(EntityId connection:entity->power.connections)hash.value(connection);hash.value(entity->power.priority);hash.value(entity->power.enabled);hash.value(entity->power.consumptionEnabled);hash.value(entity->power.outputEnabled);hash.value(entity->power.dischargeEnabled);hash.value(entity->power.state);}
         hash.value(static_cast<bool>(entity->construction)); if(entity->construction){hash.text(entity->construction.recipeId);hash.value(entity->construction.powerRequired);hash.value(entity->construction.powerProgress);hash.value(entity->construction.state);hash.value(entity->construction.placementValid);}
-        hash.value(static_cast<bool>(entity->production)); if(entity->production){hash.value(entity->production.productionSpeedMultiplier);hash.value(entity->production.productionSpeedUpgrades);hash.value(entity->production.powerProgressPermille);hash.value(static_cast<std::uint64_t>(entity->production.queue.size()));for(const auto& order:entity->production.queue){hash.value(order.kind);hash.text(order.recipeId);hash.text(order.productId);hash.text(order.upgradeId);hash.text(order.iconId);hash.value(order.amount);hash.value(order.durationTicks);hash.value(order.remainingTicks);hash.value(static_cast<std::uint64_t>(order.reservedCosts.size()));for(const auto& [id,amount]:order.reservedCosts){hash.text(id);hash.value(amount);}}}
+        hash.value(static_cast<bool>(entity->production)); if(entity->production){hash.value(entity->production.rallyPoint.has_value()); if(entity->production.rallyPoint){ hash.value(entity->production.rallyPoint->x); hash.value(entity->production.rallyPoint->y); } hash.value(entity->production.productionSpeedMultiplier);hash.value(entity->production.productionSpeedUpgrades);hash.value(entity->production.powerProgressPermille);hash.value(static_cast<std::uint64_t>(entity->production.queue.size()));for(const auto& order:entity->production.queue){hash.value(order.kind);hash.text(order.recipeId);hash.text(order.productId);hash.text(order.upgradeId);hash.text(order.iconId);hash.value(order.amount);hash.value(order.durationTicks);hash.value(order.remainingTicks);hash.value(static_cast<std::uint64_t>(order.reservedCosts.size()));for(const auto& [id,amount]:order.reservedCosts){hash.text(id);hash.value(amount);}}}
         hash.value(static_cast<bool>(entity->buildingUpgrades)); if(entity->buildingUpgrades) hash.value(entity->buildingUpgrades.level);
         hash.value(static_cast<bool>(entity->upgrades)); if(entity->upgrades){hash.value(static_cast<std::uint64_t>(entity->upgrades.levels.size()));for(const auto& [id,level]:entity->upgrades.levels){hash.text(id);hash.value(level);}}
     }

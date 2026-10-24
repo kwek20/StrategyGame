@@ -1,6 +1,7 @@
 #include "simulation/CommandCodec.hpp"
 
 #include <bit>
+#include <cmath>
 #include <type_traits>
 
 namespace strategy {
@@ -38,20 +39,30 @@ bool readString(std::span<const std::byte>& input, std::string& value) {
 
 std::vector<std::byte> CommandCodec::encode(const PlayerCommand& command) {
     std::vector<std::byte> result;
-    result.push_back(std::byte{10});
+    result.push_back(std::byte{12});
     write(result, command.player);
     write(result, command.sequence);
     result.push_back(static_cast<std::byte>(command.payload.index()));
     std::visit([&](const auto& payload) {
         write(result, payload.entity);
         using T = std::decay_t<decltype(payload)>;
-        if constexpr (std::is_same_v<T, DirectUnitInputCommand>) {
+        if constexpr (std::is_same_v<T, AimWeaponCommand>) {
+            write(result,payload.position.x); write(result,payload.position.y); write(result,payload.position.z);
+            result.push_back(payload.firing ? std::byte{1} : std::byte{0});
+            result.push_back(payload.pressed ? std::byte{1} : std::byte{0});
+        } else if constexpr (std::is_same_v<T, DirectUnitInputCommand>) {
             write(result, payload.movement.x); write(result, payload.movement.y);
             result.push_back(payload.running ? std::byte{1} : std::byte{0});
             write(result, payload.facingDegrees);
         } else if constexpr (std::is_same_v<T, MoveUnitCommand>) {
             write(result, payload.destination.x); write(result, payload.destination.y);
             write(result, payload.destination.z);
+        } else if constexpr (std::is_same_v<T, SetRallyPointCommand>) {
+            result.push_back(payload.position ? std::byte{1} : std::byte{0});
+            if (payload.position) {
+                write(result, payload.position->x);
+                write(result, payload.position->y);
+            }
         } else if constexpr (std::is_same_v<T, GatherResourceCommand>) {
             write(result, payload.resource); write(result, payload.processor);
         }
@@ -88,7 +99,7 @@ std::vector<std::byte> CommandCodec::encode(const PlayerCommand& command) {
 }
 
 std::optional<PlayerCommand> CommandCodec::decode(std::span<const std::byte> input) {
-    if (input.empty() || input.front() != std::byte{10})
+    if (input.empty() || input.front() != std::byte{12})
         return std::nullopt;
     input = input.subspan(1);
     PlayerCommand result;
@@ -172,6 +183,28 @@ std::optional<PlayerCommand> CommandCodec::decode(std::span<const std::byte> inp
         if (entity != 0) return std::nullopt;
         result.payload = AdvanceSatelliteCommand{};
         break;
+    }
+    case 27: {
+        if (input.empty() || std::to_integer<unsigned>(input.front()) > 1) return std::nullopt;
+        const bool enabled = input.front() == std::byte{1}; input = input.subspan(1);
+        SetRallyPointCommand value{entity, std::nullopt};
+        if (enabled) {
+            glm::vec2 position;
+            if (!read(input,position.x) || !read(input,position.y) ||
+                !std::isfinite(position.x) || !std::isfinite(position.y)) return std::nullopt;
+            value.position = position;
+        }
+        result.payload = value;
+        break;
+    }
+    case 28: {
+        AimWeaponCommand value{entity};
+        if (!read(input,value.position.x) || !read(input,value.position.y) || !read(input,value.position.z) ||
+            !std::isfinite(value.position.x) || !std::isfinite(value.position.y) || !std::isfinite(value.position.z) ||
+            input.empty() || std::to_integer<unsigned>(input.front())>1) return std::nullopt;
+        value.firing=input.front()==std::byte{1}; input=input.subspan(1);
+        if (input.empty() || std::to_integer<unsigned>(input.front())>1) return std::nullopt;
+        value.pressed=input.front()==std::byte{1}; input=input.subspan(1); result.payload=value; break;
     }
     default: return std::nullopt;
     }

@@ -1,6 +1,7 @@
 #include "render/TerrainBackdrop.hpp"
 
 #include "terrain/Terrain.hpp"
+#include "world/MapArea.hpp"
 
 #include <array>
 #include <cmath>
@@ -34,7 +35,7 @@ void TerrainBackdrop::rebuild(const Terrain& terrain, float extent) {
     const float half = extent * 0.5F;
     const int segments = static_cast<int>(std::ceil(extent / Terrain::spacing));
     const int perimeter = segments * 4;
-    constexpr std::array distances{0.0F, 0.75F, 2.0F, 5.0F, 10.0F, 20.0F, 36.0F, 60.0F, 96.0F};
+    constexpr std::array distances{0.0F, 0.75F, 2.0F, 5.0F, 10.0F, 20.0F, 36.0F, 60.0F, MapArea::sceneryMargin};
     std::vector<BackdropVertex> vertices;
     vertices.reserve(perimeter * distances.size());
     struct EdgeSample {

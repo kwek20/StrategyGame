@@ -17,6 +17,9 @@
     "gather_order": "",
     "delivery_complete": "",
     "conversion_complete": "",
-    "resource_warning": ""
+    "resource_warning": "",
+    "cannon_fire": "combat/cannon_fire.wav",
+    "cannon_impact": "combat/cannon_impact.wav",
+    "vehicle_destroyed": "combat/vehicle_destroyed.wav"
   }
 }

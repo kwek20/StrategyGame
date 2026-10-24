@@ -286,8 +286,6 @@ void BuildState::render(Renderer& renderer) const {
                                       footprint.gradient});
                 renderer.setTerrainFoundations(world_.foundations());
             }
-            if (entity.unitControl)
-                entity.unitControl.directlyControllable = true;
             status_ = Text::format("status.placed", {entity.name});
         }
         pendingPlacement_.reset();

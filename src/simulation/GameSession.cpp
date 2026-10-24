@@ -1,5 +1,7 @@
 #include "simulation/GameSession.hpp"
 #include "simulation/StateChecksum.hpp"
+#include "simulation/UnitDeployment.hpp"
+#include "simulation/CombatRules.hpp"
 
 #include "localization/Text.hpp"
 #include "terrain/Terrain.hpp"
@@ -184,6 +186,8 @@ void GameSession::finishRecharge(Entity& entity) {
 
 void GameSession::stopUnit(Entity& entity) {
     if (!entity.unitControl) return;
+    if (entity.combat) entity.combat.lastSeenTarget.reset();
+    entity.transient.firingLineBlocked=false;
     entity.unitControl.order = UnitOrderKind::idle;
     entity.unitControl.orderTarget = 0;
     entity.unitControl.hasStrategicDestination = false;
@@ -329,8 +333,6 @@ GameSession::GameSession(const DefinitionRegistry& definitions,
             else
                 entity.flight.altitude = start.position.y;
             entity.transform.rotationDegrees.y = rotation;
-            if (entity.unitControl)
-                entity.unitControl.directlyControllable = start.directlyControllable;
             if (!start.gatheringEnabled)
                 entity.gatherer.reset();
         }
@@ -683,22 +685,38 @@ void GameSession::apply(const PlayerCommand& command) {
                         {command.player, command.sequence, 0, PlacementFailure::invalidBuilder});
                 return;
             } else if constexpr (std::is_same_v<Type, PossessUnitCommand>) {
-                if (entity->unitControl && entity->unitControl.directlyControllable &&
+                if (gameplay_.permitsDirectControl(*entity) &&
                     (entity->authority.directController == 0 ||
                      entity->authority.directController == command.player)) {
                     entity->authority.directController = command.player;
+                    if (entity->combat) {
+                        entity->combat.triggerHeld = false;
+                        entity->combat.directAim.reset();
+                    }
                 }
             } else if constexpr (std::is_same_v<Type, ReleaseUnitCommand>) {
                 if (entity->unitControl && entity->authority.directController == command.player) {
                     entity->authority.directController = 0;
                     entity->unitControl.directInput = {0.0F, 0.0F};
                     entity->unitControl.running = false;
+                    if (entity->combat) {
+                        entity->combat.triggerHeld = false;
+                        entity->combat.directAim.reset();
+                    }
                 }
+            } else if constexpr (std::is_same_v<Type, AimWeaponCommand>) {
+                const auto* weapon = primaryWeapon(gameplay_, *entity);
+                if (entity->authority.directController != command.player || !weapon ||
+                    weapon->turretTurnRateDegrees <= 0 || !std::isfinite(payload.position.x) ||
+                    !std::isfinite(payload.position.y) || !std::isfinite(payload.position.z))
+                    return;
+                entity->combat.directAim = payload.position;
+                entity->combat.triggerHeld = payload.firing;
+                entity->transient.directFirePressed |= payload.pressed;
             } else if constexpr (std::is_same_v<Type, DirectUnitInputCommand>) {
                 if (entity->unitControl && entity->authority.directController == command.player) {
                     if (entity->battery &&
-                        (entity->battery.charge <= 0.0F ||
-                         entity->battery.returningToCharge)) {
+                        (entity->battery.charge <= 0.0F || entity->battery.returningToCharge)) {
                         if (!entity->battery.returningToCharge)
                             beginRecharge(*entity);
                         entity->unitControl.directInput = {0.0F, 0.0F};
@@ -707,45 +725,25 @@ void GameSession::apply(const PlayerCommand& command) {
                     }
                     entity->unitControl.directInput = payload.movement;
                     entity->unitControl.running = payload.running;
-                    entity->transform.rotationDegrees.y = payload.facingDegrees;
+                    const auto* type = gameplay_.archetype(entity->archetype);
+                    if (!type || type->movement.turnRateDegrees <= 0)
+                        entity->transform.rotationDegrees.y = payload.facingDegrees;
                     if (glm::length(entity->unitControl.directInput) > 1.0F) {
                         entity->unitControl.directInput =
                             glm::normalize(entity->unitControl.directInput);
                     }
                 }
+            } else if constexpr (std::is_same_v<Type, SetRallyPointCommand>) {
+                if (!gameplay_.producesUnits(*entity))
+                    return;
+                if (payload.position &&
+                    (!std::isfinite(payload.position->x) || !std::isfinite(payload.position->y) ||
+                     !MapArea{mapChunksPerSide_}.contains(
+                         *payload.position, gameplay_.matchRules().terrainEdgeMargin)))
+                    return;
+                entity->production.rallyPoint = payload.position;
             } else if constexpr (std::is_same_v<Type, MoveUnitCommand>) {
-                if (!entity->unitControl)
-                    return;
-                if (entity->battery &&
-                    (entity->battery.charge <= 0.0F ||
-                     entity->battery.returningToCharge)) {
-                    if (!entity->battery.returningToCharge)
-                        beginRecharge(*entity);
-                    return;
-                }
-                clearGatherLoop(*entity);
-                entity->unitControl.constructionQueue.clear();
-                entity->unitControl.order = UnitOrderKind::move;
-                entity->unitControl.orderTarget = 0;
-                entity->unitControl.strategicDestination = payload.destination;
-                entity->unitControl.hasStrategicDestination = true;
-                entity->transient.navigationPath =
-                    navigation_.findPath(world_,
-                                         entity->transform.position,
-                                         payload.destination,
-                                         collisionRadius(gameplay_, entity->archetype),
-                                         entity->id,
-                                         navigationProfile(gameplay_, *entity));
-                entity->transient.navigationWaypoint = 0;
-                if (!entity->transient.navigationPath.empty()) {
-                    entity->unitControl.strategicDestination =
-                        entity->transient.navigationPath.back();
-                    entity->transient.navigationRetrySeconds = 0.0F;
-                } else {
-                    entity->unitControl.hasStrategicDestination = false;
-                    entity->unitControl.order = UnitOrderKind::idle;
-                    entity->transient.navigationRetrySeconds = 0.0F;
-                }
+                orderMove(*entity, payload.destination);
             } else if constexpr (std::is_same_v<Type, GatherResourceCommand>) {
                 Entity* resource = world_.findEntity(payload.resource);
                 if (entity->battery && entity->battery.charge <= 0.0F) {
@@ -769,8 +767,7 @@ void GameSession::apply(const PlayerCommand& command) {
                     }
                     const float reach = interactionRange(gameplay_, *entity, "gather");
                     if (boundaryClearance(gameplay_, *entity, *resource) > reach &&
-                        navigation_.findPath(
-                            world_, entity->transform.position,
+                        navigation_.findPath(terrain_, world_, entity->transform.position,
                             NavigationGoalRegion{spatialShape(gameplay_, *resource), reach,
                                 {entity->transform.position.x, entity->transform.position.z},
                                 resource->id, entity->id},
@@ -901,13 +898,16 @@ void GameSession::apply(const PlayerCommand& command) {
                     entity->power.outputEnabled = payload.enabled;
             } else if constexpr (std::is_same_v<Type, AttackEntityCommand>) {
                 Entity* target = world_.findEntity(payload.target);
-                if (entity->unitControl && entity->combat &&
-                    entity->unitControl.directlyControllable && target && target->health &&
-                    target->authority.owner != 0 && target->authority.owner != command.player) {
+                if (entity->unitControl && entity->combat && target &&
+                    validCombatTarget(gameplay_,players_,*entity,*target) &&
+                    combatTargetVisible(players_,*entity,*target,mapChunksPerSide_)) {
                     clearGatherLoop(*entity);
                     entity->unitControl.constructionQueue.clear();
                     entity->unitControl.order = UnitOrderKind::attack;
                     entity->unitControl.orderTarget = target->id;
+                    entity->unitControl.hasStrategicDestination = false;
+                    entity->combat.lastSeenTarget = glm::vec2{target->transform.position.x,target->transform.position.z};
+                    entity->transient.navigationGoalEntity=0;
                     entity->transient.navigationPath.clear();
                 }
             } else if constexpr (std::is_same_v<Type, StartRecipeCommand>) {
@@ -1093,31 +1093,234 @@ void GameSession::apply(const PlayerCommand& command) {
         command.payload);
 }
 
+void GameSession::orderMove(Entity& entity, glm::vec3 destination) {
+    if (!entity.unitControl)
+        return;
+    if (entity.battery && (entity.battery.charge <= 0.0F || entity.battery.returningToCharge)) {
+        if (!entity.battery.returningToCharge)
+            beginRecharge(entity);
+        return;
+    }
+    clearGatherLoop(entity);
+    if (entity.combat) entity.combat.lastSeenTarget.reset();
+    entity.transient.firingLineBlocked=false;
+    entity.unitControl.constructionQueue.clear();
+    entity.unitControl.order = UnitOrderKind::move;
+    entity.unitControl.orderTarget = 0;
+    entity.unitControl.strategicDestination = destination;
+    entity.unitControl.hasStrategicDestination = true;
+    entity.transient.navigationPath =
+        navigation_.findPath(terrain_, world_,
+                             entity.transform.position,
+                             destination,
+                             collisionRadius(gameplay_, entity.archetype),
+                             entity.id,
+                             navigationProfile(gameplay_, entity));
+    entity.transient.navigationWaypoint = 0;
+    if (!entity.transient.navigationPath.empty()) {
+        entity.unitControl.strategicDestination = entity.transient.navigationPath.back();
+        entity.transient.navigationRetrySeconds = 0.0F;
+    } else {
+        entity.unitControl.hasStrategicDestination = false;
+        entity.unitControl.order = UnitOrderKind::idle;
+        entity.transient.navigationRetrySeconds = 0.0F;
+    }
+}
+
+void GameSession::seekFiringPosition(Entity& actor, const Entity& target, float range) {
+    if (actor.unitControl.hasStrategicDestination && actor.transient.navigationGoalEntity == 0)
+        return;
+    if (actor.transient.navigationRetrySeconds > 0)
+        return;
+    const auto* weapon = primaryWeapon(gameplay_, actor);
+    if (!weapon)
+        return;
+    const glm::vec2 center{target.transform.position.x, target.transform.position.z};
+    const glm::vec2 origin{actor.transform.position.x, actor.transform.position.z};
+    const float radius = collisionRadius(gameplay_, actor.archetype);
+    const float distance = radius + collisionRadius(gameplay_, target.archetype) + range * .7F;
+    const float base = std::atan2(origin.y - center.y, origin.x - center.x);
+    Entity candidate = actor;
+    for (int index = 0; index < 16; ++index) {
+        const int offset = index % 2 ? (index + 1) / 2 : -index / 2;
+        const float angle = base + offset * glm::two_pi<float>() / 16;
+        const auto point = center + glm::vec2{std::cos(angle), std::sin(angle)} * distance;
+        if (!MapArea{mapChunksPerSide_}.contains(
+                point, radius + gameplay_.matchRules().terrainEdgeMargin) ||
+            overlapsObject(world_, gameplay_, point, radius, actor.id) ||
+            terrain_.movementCostAt(
+                point.x, point.y, navigationProfile(gameplay_, actor).domains) <= 0)
+            continue;
+        candidate.transform.position = {point.x, actor.transform.position.y, point.y};
+        if (boundaryClearance(gameplay_, candidate, target) > range ||
+            !clearFiringLine(world_, terrain_, gameplay_, candidate, target, *weapon))
+            continue;
+        auto path = navigation_.findPath(terrain_, world_,
+                                         actor.transform.position,
+                                         candidate.transform.position,
+                                         radius,
+                                         actor.id,
+                                         navigationProfile(gameplay_, actor));
+        if (path.empty())
+            continue;
+        candidate.transform.position = path.back();
+        if (boundaryClearance(gameplay_, candidate, target) > range ||
+            !clearFiringLine(world_, terrain_, gameplay_, candidate, target, *weapon))
+            continue;
+        actor.unitControl.strategicDestination = path.back();
+        actor.unitControl.hasStrategicDestination = true;
+        actor.transient.navigationPath = std::move(path);
+        actor.transient.navigationWaypoint = 0;
+        actor.transient.navigationGoalEntity = 0;
+        return;
+    }
+    actor.unitControl.hasStrategicDestination = false;
+    actor.transient.navigationRetrySeconds = .5F;
+}
+
+void GameSession::updateAttack(Entity& actor, std::vector<EntityId>& destroyed) {
+    auto* target = world_.findEntity(actor.unitControl.orderTarget);
+    if (!target || !combatTargetVisible(players_, actor, *target, mapChunksPerSide_)) {
+        const auto last = actor.combat.lastSeenTarget;
+        if (last)
+            orderMove(actor, {last->x, 0, last->y});
+        else
+            stopUnit(actor);
+        return;
+    }
+    if (!validCombatTarget(gameplay_, players_, actor, *target)) {
+        stopUnit(actor);
+        return;
+    }
+    actor.combat.lastSeenTarget =
+        glm::vec2{target->transform.position.x, target->transform.position.z};
+    const auto* weapon = primaryWeapon(gameplay_, actor);
+    const float aimError = aimWeapon(actor,
+                                     terrain_,
+                                     *weapon,
+                                     combatAimPoint(gameplay_, terrain_, *target),
+                                     static_cast<float>(fixedTickSeconds));
+    const float range = stat(actor, GameplayStat::attackRange);
+    actor.transient.firingLineBlocked = false;
+    if (boundaryClearance(gameplay_, actor, *target) > range) {
+        // A route around cover may briefly leave weapon range. Finish that route rather
+        // than replacing it with an approach to the same blocked edge of the range ring.
+        if (!(actor.unitControl.hasStrategicDestination &&
+              actor.transient.navigationGoalEntity == 0))
+            routeToInteraction(gameplay_, actor, *target, range);
+        return;
+    }
+    if (!clearFiringLine(world_, terrain_, gameplay_, actor, *target, *weapon)) {
+        actor.transient.firingLineBlocked = true;
+        seekFiringPosition(actor, *target, range);
+        return;
+    }
+    actor.unitControl.hasStrategicDestination = false;
+    actor.transient.navigationPath.clear();
+    actor.transient.navigationWaypoint = 0;
+    actor.transient.navigationGoalEntity = 0;
+    if (aimError > 1 || actor.combat.cooldownRemaining > .00001F)
+        return;
+    fireWeapon(actor, target, destroyed);
+}
+
+void GameSession::fireWeapon(Entity& actor, Entity* target, std::vector<EntityId>& destroyed) {
+    const auto* weapon = primaryWeapon(gameplay_, actor);
+    if (!weapon || actor.combat.cooldownRemaining > .00001F)
+        return;
+    actor.combat.cooldownRemaining =
+        std::max(static_cast<float>(fixedTickSeconds), stat(actor, GameplayStat::attackCooldown));
+    ++actor.combat.shotsFired;
+    const bool hit = weaponHits(terrainSeed_, actor.id, actor.combat.shotsFired, weapon->accuracy);
+    auto origin = combatMuzzle(terrain_, actor, *weapon);
+    auto end = target ? combatAimPoint(gameplay_, terrain_, *target) : origin;
+    bool impact = target != nullptr;
+    if (!target) {
+        auto direction = weaponDirection(actor, *weapon);
+        if (!hit)
+            direction = glm::normalize(direction + glm::vec3{.06F, .02F, -.04F});
+        auto contact = traceWeapon(world_,
+                                   terrain_,
+                                   gameplay_,
+                                   players_,
+                                   actor,
+                                   origin,
+                                   direction,
+                                   stat(actor, GameplayStat::attackRange),
+                                   mapChunksPerSide_);
+        // A long barrel can protrude through a narrow building. Check the short hull-to-
+        // muzzle segment as well so manual fire cannot bypass cover behind the muzzle.
+        auto breech = actor.transform.position;
+        breech.y += terrain_.entityBaseHeight(actor.id, breech.x, breech.z) + weapon->muzzleHeight;
+        const auto barrel = origin - breech;
+        if (glm::length(barrel) > .001F) {
+            const auto blocked = traceWeapon(world_,
+                                             terrain_,
+                                             gameplay_,
+                                             players_,
+                                             actor,
+                                             breech,
+                                             barrel,
+                                             glm::length(barrel),
+                                             mapChunksPerSide_);
+            if (blocked.impact) {
+                contact = blocked;
+                origin = breech;
+            }
+        }
+        end = contact.position;
+        impact = contact.impact;
+        target = world_.findEntity(contact.entity);
+    } else if (!hit)
+        end += glm::vec3{2, 0, -2};
+    const bool damage = hit && target && validCombatTarget(gameplay_, players_, actor, *target) &&
+                        combatTargetVisible(players_, actor, *target, mapChunksPerSide_);
+    combatShots_.push_back({actor.id,
+                            target ? target->id : 0,
+                            actor.combat.shotsFired,
+                            origin,
+                            end,
+                            damage,
+                            false,
+                            impact,
+                            weapon->tags.contains("cannon")});
+    if (!damage)
+        return;
+    target->health.current =
+        std::max(0.F, target->health.current - stat(actor, GameplayStat::attackDamage));
+    if (target->construction && target->health.current > 0 && isOperational(*target))
+        target->construction.state = BuildingLifecycleState::damaged;
+    if (target->health.current <= 0) {
+        destroyed.push_back(target->id);
+        combatShots_.back().destroyed = true;
+        if (actor.authority.directController == 0)
+            stopUnit(actor);
+    }
+}
+
 void GameSession::simulateTick() {
     while (!commands_.empty()) {
         apply(commands_.front());
         commands_.pop_front();
     }
 
-    struct CompletedCharacter {
-        PlayerId owner;
-        glm::vec3 townPosition;
-        std::string producerId;
-        std::string productId;
-        std::uint32_t amount;
-    };
-    std::vector<CompletedCharacter> completed;
+    std::vector<EntityId> completedProducers;
     std::vector<EntityId> destroyed;
     bool foundationInfluenceChanged = false;
     powerGridSystem_.simulate(world_, players_, gameplay_, tick_, powerEvents_);
     for (Entity& entity : world_.entities()) {
+        if (entity.combat)
+            entity.combat.cooldownRemaining = std::max(
+                0.F, entity.combat.cooldownRemaining - static_cast<float>(fixedTickSeconds));
+        if (entity.kind == EntityKind::unit && entity.health && entity.health.current <= 0)
+            continue;
+
         if (entity.resource && isOperational(entity)) {
             const EntityArchetype* type = gameplay_.archetype(entity.archetype);
             if (type && type->rawProductionPerTick > 0.0F && entity.power &&
                 entity.power.state == PowerOperationalState::powered)
                 entity.resource.remaining = std::min(
-                    type->resourceCapacity,
-                    entity.resource.remaining + type->rawProductionPerTick);
+                    type->resourceCapacity, entity.resource.remaining + type->rawProductionPerTick);
         }
         if (entity.unitControl) {
             auto& unit = entity.unitControl;
@@ -1180,8 +1383,7 @@ void GameSession::simulateTick() {
                                   gameplay_.matchRules().terrainEdgeMargin))
                     return false;
                 if (boundaryClearance(gameplay_, entity, candidate) <= range) return true;
-                return !navigation_.findPath(
-                    world_, entity.transform.position,
+                return !navigation_.findPath(terrain_, world_, entity.transform.position,
                     NavigationGoalRegion{spatialShape(gameplay_, candidate), range,
                                          {entity.transform.position.x,
                                           entity.transform.position.z},
@@ -1249,35 +1451,34 @@ void GameSession::simulateTick() {
         }
         if (entity.production && isOperational(entity) && !entity.production.queue.empty()) {
             ProductionOrder& order = entity.production.queue.front();
+            const bool awaitingDeployment = order.remainingTicks == 0;
             std::uint32_t progress = 1000;
             if (entity.power && (!entity.power.enabled || !entity.power.consumptionEnabled))
                 progress = 0;
             else if (entity.power && entity.power.demand > 0.0F)
                 progress = static_cast<std::uint32_t>(std::clamp(
-                    std::lround(entity.power.supplied / entity.power.demand * 1000.0F),
-                    0L, 1000L));
-            entity.production.powerProgressPermille += progress;
+                    std::lround(entity.power.supplied / entity.power.demand * 1000.0F), 0L, 1000L));
+            if (!awaitingDeployment)
+                entity.production.powerProgressPermille += progress;
             while (order.remainingTicks > 0 && entity.production.powerProgressPermille >= 1000) {
                 --order.remainingTicks;
                 entity.production.powerProgressPermille -= 1000;
             }
             if (order.remainingTicks == 0) {
-                if (order.kind == ProductionKind::trainCharacter)
-                    completed.push_back({entity.authority.owner,
-                                         entity.transform.position,
-                                         entity.archetype.value,
-                                         order.productId,
-                                         order.amount});
-                else if (order.kind == ProductionKind::processResource) {
+                if (order.kind == ProductionKind::trainCharacter) {
+                    // Retain the paid order until its units have actually been deployed.
+                    // A map with no legal space retries without busy-scanning every tick.
+                    if (!awaitingDeployment || tick_ % 15 == 0)
+                        completedProducers.push_back(entity.id);
+                } else if (order.kind == ProductionKind::processResource) {
                     if (Player* player = players_.find(entity.authority.owner))
                         player->resources[order.productId] += static_cast<float>(order.amount);
-                }
-                else if (order.kind == ProductionKind::upgradeBuilding) {
+                } else if (order.kind == ProductionKind::upgradeBuilding) {
                     ++entity.buildingUpgrades.level;
                     const EntityArchetype* current = gameplay_.archetype(entity.archetype);
                     if (current && !current->upgradeTo.empty())
                         entity.archetype = EntityArchetypeId{current->upgradeTo};
-                        entity.presentation = PresentationId{current->upgradeTo};
+                    entity.presentation = PresentationId{current->upgradeTo};
                     const float previousRatio = entity.health && entity.health.maximum > 0
                                                     ? entity.health.current / entity.health.maximum
                                                     : 1.0F;
@@ -1297,8 +1498,10 @@ void GameSession::simulateTick() {
                             entity.upgrades.emplace();
                         if (const UpgradeDefinition* upgrade = gameplay_.upgrade(order.upgradeId)) {
                             auto* player = players_.find(entity.authority.owner);
-                            auto& levels = upgrade->satelliteCoverage != SatelliteCoverage::none && player
-                                               ? player->researchedUpgrades : entity.upgrades.levels;
+                            auto& levels =
+                                upgrade->satelliteCoverage != SatelliteCoverage::none && player
+                                    ? player->researchedUpgrades
+                                    : entity.upgrades.levels;
                             auto& level = levels[order.upgradeId];
                             if (level < upgrade->maximumLevel)
                                 ++level;
@@ -1311,7 +1514,8 @@ void GameSession::simulateTick() {
                         }
                     }
                 }
-                entity.production.queue.pop_front();
+                if (order.kind != ProductionKind::trainCharacter)
+                    entity.production.queue.pop_front();
             }
         }
         if (!entity.unitControl)
@@ -1490,8 +1694,7 @@ void GameSession::simulateTick() {
                 const auto reachable = [&](Entity& candidate) {
                     if (boundaryClearance(gameplay_, entity, candidate) <= depositReach)
                         return true;
-                    return !navigation_.findPath(
-                        world_, entity.transform.position,
+                    return !navigation_.findPath(terrain_, world_, entity.transform.position,
                         NavigationGoalRegion{spatialShape(gameplay_, candidate), depositReach,
                             {entity.transform.position.x, entity.transform.position.z},
                             candidate.id, entity.id},
@@ -1602,29 +1805,10 @@ void GameSession::simulateTick() {
                         routeToInteraction(gameplay_, entity, *hall, reach);
                 }
             }
-            if (entity.unitControl.order == UnitOrderKind::attack) {
-                Entity* target = world_.findEntity(entity.unitControl.orderTarget);
-                if (!target || !target->health ||
-                    (target->health.current <= 0 &&
-                     (!target->construction || isOperational(*target))) ||
-                    target->authority.owner == entity.authority.owner)
-                    entity.unitControl.order = UnitOrderKind::idle;
-                else {
-                    const float range = stat(entity, GameplayStat::attackRange);
-                    if (boundaryClearance(gameplay_, entity, *target) <= range) {
-                        entity.unitControl.hasStrategicDestination = false;
-                        target->health.current -= stat(entity, GameplayStat::attackDamage) *
-                                                  static_cast<float>(fixedTickSeconds);
-                        if (target->construction && target->health.current > 0.0F &&
-                            isOperational(*target))
-                            target->construction.state = BuildingLifecycleState::damaged;
-                        if (target->health.current <= 0)
-                            destroyed.push_back(target->id);
-                    } else
-                        routeToInteraction(gameplay_, entity, *target, range);
-                }
-            }
+            if (entity.unitControl.order == UnitOrderKind::attack)
+                updateAttack(entity,destroyed);
         }
+
         glm::vec2 movement{0.0F};
         if (entity.authority.directController != 0) {
             movement = entity.unitControl.directInput;
@@ -1635,8 +1819,7 @@ void GameSession::simulateTick() {
                 const Entity* navigationTarget =
                     world_.findEntity(entity.transient.navigationGoalEntity);
                 if (navigationTarget) {
-                    entity.transient.navigationPath = navigation_.findPath(
-                        world_, entity.transform.position,
+                    entity.transient.navigationPath = navigation_.findPath(terrain_, world_, entity.transform.position,
                         NavigationGoalRegion{
                             spatialShape(gameplay_, *navigationTarget),
                             entity.transient.navigationInteractionRange,
@@ -1646,8 +1829,7 @@ void GameSession::simulateTick() {
                         collisionRadius(gameplay_, entity.archetype), entity.id,
                         navigationProfile(gameplay_, entity));
                 } else {
-                    entity.transient.navigationPath = navigation_.findPath(
-                        world_, entity.transform.position,
+                    entity.transient.navigationPath = navigation_.findPath(terrain_, world_, entity.transform.position,
                         entity.unitControl.strategicDestination,
                         collisionRadius(gameplay_, entity.archetype), entity.id,
                         navigationProfile(gameplay_, entity));
@@ -1697,11 +1879,10 @@ void GameSession::simulateTick() {
                 }
             }
         }
-        if (!entity.flight && glm::length(movement) > 0.001F &&
-            entity.unitControl.directlyControllable) {
+        if (!entity.flight && glm::length(movement) > 0.001F) {
             glm::vec2 separation{0};
             for (const Entity& other : world_.entities())
-                if (other.id != entity.id && !other.flight && other.unitControl.directlyControllable) {
+                if (other.id != entity.id && !other.flight && other.unitControl) {
                     const glm::vec2 away{entity.transform.position.x - other.transform.position.x,
                                          entity.transform.position.z - other.transform.position.z};
                     const float distance = glm::length(away),
@@ -1714,21 +1895,26 @@ void GameSession::simulateTick() {
             if (glm::length(movement) > 1.0F)
                 movement = glm::normalize(movement);
         }
-        if (glm::length(movement) > 0.001F && entity.authority.directController == 0) {
-            entity.transform.rotationDegrees.y = glm::degrees(std::atan2(movement.x, movement.y));
-        }
-        const float speedMultiplier = entity.unitControl.running ? 1.65F : 1.0F;
+        const auto* movementType = gameplay_.archetype(entity.archetype);
+        const float turnRate =
+            !entity.flight && movementType ? movementType->movement.turnRateDegrees : 0;
+        if (turnRate > 0 || entity.authority.directController == 0)
+            movement = turnLimitedMovement(
+                entity, movement, turnRate, static_cast<float>(fixedTickSeconds));
+        const float speedMultiplier = entity.unitControl.running && turnRate <= 0 ? 1.65F : 1.0F;
         const glm::vec2 current{entity.transform.position.x, entity.transform.position.z};
         const float resolvedMovementSpeed = entity.authority.owner
                                                 ? stat(entity, GameplayStat::movementSpeed)
                                                 : entity.unitControl.movementSpeed;
         const float terrainSpeedMultiplier =
-            !entity.flight && terrain_.traversalAt(current.x, current.y) ==
-                                  TerrainTraversalClass::difficult
+            !entity.flight &&
+                    terrain_.traversalAt(current.x, current.y) == TerrainTraversalClass::difficult
                 ? 0.65F
                 : 1.0F;
+        const float slopeSpeedMultiplier = entity.flight ? 1.0F :
+            std::max(0.65F, terrain_.walkingSpeedScaleAt(current.x, current.y));
         const glm::vec2 delta = movement * resolvedMovementSpeed * speedMultiplier *
-                                terrainSpeedMultiplier *
+                                std::min(terrainSpeedMultiplier, slopeSpeedMultiplier) *
                                 static_cast<float>(fixedTickSeconds);
         const bool flying = entity.flight.present;
         if (flying && entity.battery && glm::length(delta) > 0.001F) {
@@ -1754,9 +1940,9 @@ void GameSession::simulateTick() {
         if (validPosition(current + delta)) {
             entity.transform.position.x = current.x + delta.x;
             entity.transform.position.z = current.y + delta.y;
-        } else if (validPosition(current + glm::vec2{delta.x, 0.0F})) {
+        } else if (turnRate<=0 && validPosition(current + glm::vec2{delta.x, 0.0F})) {
             entity.transform.position.x = current.x + delta.x;
-        } else if (validPosition(current + glm::vec2{0.0F, delta.y})) {
+        } else if (turnRate<=0 && validPosition(current + glm::vec2{0.0F, delta.y})) {
             entity.transform.position.z = current.y + delta.y;
         } else if (entity.unitControl.hasStrategicDestination) {
             entity.transient.navigationPath.clear();
@@ -1769,6 +1955,18 @@ void GameSession::simulateTick() {
                                                 entity.flight.maximumAltitude);
             entity.transform.position.y = entity.flight.altitude;
         }
+        if (entity.authority.directController != 0 && entity.combat && entity.combat.directAim) {
+            if (const auto* weapon = primaryWeapon(gameplay_, entity)) {
+                const float error = aimWeapon(entity,
+                                              terrain_,
+                                              *weapon,
+                                              *entity.combat.directAim,
+                                              static_cast<float>(fixedTickSeconds));
+                if (error <= 1 && (entity.combat.triggerHeld || entity.transient.directFirePressed))
+                    fireWeapon(entity, nullptr, destroyed);
+            }
+        }
+        entity.transient.directFirePressed = false;
     }
     // Multiple drones and projects may update foundations in one simulation tick. Rebuild the
     // affected terrain regions once after all authoritative work contributions are applied.
@@ -1859,34 +2057,40 @@ void GameSession::simulateTick() {
                 entity.processor.state = ProcessorOperationalState::powered;
         }
     }
-    for (const CompletedCharacter& character : completed) {
-        const EntityArchetype* producer = gameplay_.archetype(character.producerId);
-        if (!producer)
+    for (EntityId producerId : completedProducers) {
+        // Destruction earlier in this tick cancels production; do not create ghost units.
+        auto* producer = world_.findEntity(producerId);
+        if (!producer || !producer->production || producer->production.queue.empty())
             continue;
-        const float spawnDistance = collisionRadius(gameplay_, character.producerId) +
-                                    collisionRadius(gameplay_, character.productId) +
-                                    producer->spawnClearance;
-        for (std::uint32_t produced = 0; produced < character.amount; ++produced) {
-          for (std::uint32_t candidate = 0; candidate < producer->spawnCandidateCount; ++candidate) {
-            const float angle = static_cast<float>(candidate) * glm::two_pi<float>() /
-                                static_cast<float>(producer->spawnCandidateCount);
-            const glm::vec2 position{character.townPosition.x + std::cos(angle) * spawnDistance,
-                                     character.townPosition.z + std::sin(angle) * spawnDistance};
-            if (overlapsObject(
-                    world_, gameplay_, position, collisionRadius(gameplay_, character.productId)))
-                continue;
-            const EntityArchetype* definition = gameplay_.archetype(character.productId);
-            Entity& unit = world_.createEntity(definition && !definition->nameKey.empty()
-                                                   ? Text::get(definition->nameKey)
-                                                   : character.productId,
-                                               character.productId,
-                                               character.owner);
+        const std::string product = producer->production.queue.front().productId;
+        const PlayerId owner = producer->authority.owner;
+        while (producer->production.queue.front().amount > 0) {
+            const auto position = findUnitDeployment(
+                world_, terrain_, gameplay_, mapChunksPerSide_, *producer, product);
+            if (!position)
+                break; // Only a map-wide lack of legal space can retain a completed order.
+            const auto* definition = gameplay_.archetype(product);
+            const auto remaining = producer->production.queue.front().amount - 1;
+            const auto rally = producer->production.rallyPoint;
+            auto& unit = world_.createEntity(definition && !definition->nameKey.empty()
+                                                 ? Text::get(definition->nameKey)
+                                                 : product,
+                                             product,
+                                             owner);
             initializeEntity(unit);
-            unit.transform.position = {position.x, 0.0F, position.y};
-            unit.unitControl.directlyControllable = unit.archetype.value != "construction_drone";
-            break;
-          }
+            unit.transform.position = {
+                position->x, unit.flight ? unit.flight.altitude : 0.F, position->y};
+            if (rally)
+                orderMove(unit, {rally->x, 0, rally->y});
+            // Entity creation can reallocate World storage. Reacquire before touching the queue.
+            producer = world_.findEntity(producerId);
+            auto& order = producer->production.queue.front();
+            for (auto& [resource, cost] : order.reservedCosts)
+                cost *= static_cast<float>(remaining) / order.amount;
+            order.amount = remaining;
         }
+        if (producer->production.queue.front().amount == 0)
+            producer->production.queue.pop_front();
     }
     updateExploration();
     ++tick_;
@@ -1896,7 +2100,9 @@ void GameSession::updateExploration() {
     const MapArea map{mapChunksPerSide_};
     const float extent = map.extent();
     for (Player& player : players_.players()) {
-        std::fill(player.visible.begin(), player.visible.end(), 0);
+        const float cellSize = extent / VisibilityGrid::referenceCells;
+        if (player.visibility.cellSize() != cellSize) player.visibility = VisibilityGrid{cellSize};
+        player.visibility.beginTick();
         for (const Entity& entity : world_.entities()) {
             if (entity.authority.owner != player.id || !entity.vision || !isOperational(entity))
                 continue;
@@ -1912,45 +2118,20 @@ void GameSession::updateExploration() {
                 terrain_.heightAt(entity.transform.position.x, entity.transform.position.z);
             const float radius =
                 effectiveSightRange(stat(entity, GameplayStat::sightRange), elevation, entity.vision.heightBonus) * powerFactor;
-            const glm::ivec2 center = map.gridCell(
-                {entity.transform.position.x, entity.transform.position.z},
-                Player::explorationCells);
-            const int cells = static_cast<int>(radius / extent * Player::explorationCells) + 1;
-            for (int z = std::max(0, center.y - cells);
-                 z <= std::min(Player::explorationCells - 1, center.y + cells);
-                 ++z)
-                for (int x = std::max(0, center.x - cells);
-                     x <= std::min(Player::explorationCells - 1, center.x + cells);
-                     ++x) {
-                    const glm::vec2 world =
-                        map.gridCellCenter({x, z}, Player::explorationCells);
-                    const float wx = world.x;
-                    const float wz = world.y;
-                    if ((wx - entity.transform.position.x) * (wx - entity.transform.position.x) +
-                            (wz - entity.transform.position.z) *
-                                (wz - entity.transform.position.z) <=
-                        radius * radius) {
-                        const auto index =
-                            static_cast<std::size_t>(z * Player::explorationCells + x);
-                        player.visible[index] = 255;
-                        player.discovered[index] = 255;
-                    }
-                }
+            player.visibility.revealCircle({entity.transform.position.x, entity.transform.position.z}, radius);
         }
         const auto coverage = satelliteCoverage(player.id);
-        if (coverage != SatelliteCoverage::none)
-            std::fill(player.discovered.begin(), player.discovered.end(), 255);
-        if (coverage == SatelliteCoverage::highResolution)
-            std::fill(player.visible.begin(), player.visible.end(), 255);
+        if (coverage != SatelliteCoverage::none) {
+            const float half = extent * .5F + MapArea::sceneryMargin;
+            player.visibility.revealArea(glm::vec2{-half}, glm::vec2{half},
+                                         coverage == SatelliteCoverage::highResolution);
+        }
         // Full coverage replaces the entire snapshot each tick. Reuse its storage and
         // append in world order instead of searching every old entry for every entity.
         if (coverage == SatelliteCoverage::highResolution)
             player.intelligence.clear();
         const auto cellVisible = [&](glm::vec3 position) {
-            const glm::ivec2 cell =
-                map.gridCell({position.x, position.z}, Player::explorationCells);
-            return player.visible[static_cast<std::size_t>(
-                       cell.y * Player::explorationCells + cell.x)] != 0;
+            return player.visibility.visibleAt({position.x, position.z});
         };
         for (const Entity& entity : world_.entities())
             if (entity.authority.owner != player.id && cellVisible(entity.transform.position)) {
@@ -2017,13 +2198,14 @@ void GameSession::replaceWorld(std::vector<Entity> entities,
     lastSequence_.clear();
     powerGridSystem_.reset();
     powerEvents_.clear();
+    combatShots_.clear();
     placementEvents_.clear();
     updateExploration();
 }
 
 void GameSession::restorePlayerProgress(PlayerId id,
                                         std::map<std::string, float> resources,
-                                        std::vector<std::uint8_t> discovered,
+                                        VisibilityGrid visibility,
                                         std::vector<LastKnownEntity> intelligence,
                                         std::map<std::string, std::uint32_t> researchedUpgrades) {
     for (const auto& [upgradeId, level] : researchedUpgrades) {
@@ -2036,9 +2218,10 @@ void GameSession::restorePlayerProgress(PlayerId id,
                 throw std::runtime_error("Restored player research is missing its prerequisite");
     }
     if (Player* player = players_.find(id)) {
+        if (visibility.cellSize() != MapArea{mapChunksPerSide_}.extent() / VisibilityGrid::referenceCells)
+            throw std::runtime_error("Restored visibility resolution does not match the world");
         player->resources = std::move(resources);
-        if (discovered.size() == player->discovered.size())
-            player->discovered = std::move(discovered);
+        player->visibility = std::move(visibility);
         player->intelligence = std::move(intelligence);
         player->researchedUpgrades = std::move(researchedUpgrades);
         updateExploration();

@@ -72,6 +72,7 @@ Model::Model(std::shared_ptr<ModelAsset> asset) {
     std::unordered_map<const ModelTextureAsset*, std::uint32_t> uploadedTextures;
     for (ModelMeshAsset& source : asset->meshes) {
         Mesh mesh;
+        mesh.nodeName=std::move(source.nodeName);
         mesh.indexCount = static_cast<std::uint32_t>(source.indices.size());
         mesh.nodeTransform = source.nodeTransform;
         mesh.skinned = source.skinned;
@@ -190,7 +191,7 @@ void Model::draw(const ModelShaderBindings& shader,
                  const glm::mat4& world,
                  const std::string& animation,
                  double seconds,
-                 std::uint32_t overrideTexture) const {
+                 std::uint32_t overrideTexture,std::span<const ModelPartPose> parts) const {
     std::array<glm::mat4, maxBones> bones;
     bones.fill(glm::mat4(1));
     bool animated = false;
@@ -215,6 +216,9 @@ void Model::draw(const ModelShaderBindings& shader,
     glUniform1i(shader.baseColorTexture, 0);
     for (const auto& m : meshes_) {
         glm::mat4 model = world * (m.skinned ? glm::mat4(1) : m.nodeTransform);
+        if (!m.skinned)
+            for (const auto& part:parts)
+                if (part.node==m.nodeName) { model=world*part.transform*m.nodeTransform;break; }
         glUniformMatrix4fv(shader.model, 1, GL_FALSE, glm::value_ptr(model));
         glUniform1i(shader.useSkinning, animated && m.skinned);
         glUniform3fv(shader.materialDiffuse, 1, glm::value_ptr(m.material.diffuse));

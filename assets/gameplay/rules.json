@@ -11,15 +11,15 @@
   },
   "playerOneStart": [
     { "archetype": "command_hub", "nameKey": "entity.player_one_base", "position": [0, 0, 0] },
-    { "archetype": "worker", "nameKey": "entity.player_one_unit", "position": [12, 0, 8], "directlyControllable": true, "gatheringEnabled": false },
-    { "archetype": "construction_drone", "nameKey": "unit.construction_drone", "position": [6, 6, -8], "directlyControllable": false }
+    { "archetype": "worker", "nameKey": "entity.player_one_unit", "position": [12, 0, 8], "gatheringEnabled": false },
+    { "archetype": "construction_drone", "nameKey": "unit.construction_drone", "position": [6, 6, -8] }
   ],
   "playerTwoStart": [
     { "archetype": "command_hub", "nameKey": "entity.player_two_base", "position": [0, 0, 0] },
-    { "archetype": "worker", "nameKey": "entity.player_two_unit", "position": [-12, 0, -8], "directlyControllable": true, "gatheringEnabled": false },
-    { "archetype": "construction_drone", "nameKey": "unit.construction_drone", "position": [-6, 6, 8], "directlyControllable": false }
+    { "archetype": "worker", "nameKey": "entity.player_two_unit", "position": [-12, 0, -8], "gatheringEnabled": false },
+    { "archetype": "construction_drone", "nameKey": "unit.construction_drone", "position": [-6, 6, 8] }
   ],
-  "buildPalette": ["command_hub", "alloy_processor", "fuel_processor", "synthetic_mine", "basic_generator", "storage_silo", "electricity_pole", "charging_pad", "resource_extractor", "drone_factory", "sensor_tower"],
+  "buildPalette": ["command_hub", "alloy_processor", "fuel_processor", "synthetic_mine", "basic_generator", "storage_silo", "electricity_pole", "charging_pad", "resource_extractor", "tank_factory", "sensor_tower"],
   "generatedResourceFields": ["scrap_field", "oil_field", "uranium_field"],
   "foliageDensityMultiplier": 2.0,
   "vegetation": [

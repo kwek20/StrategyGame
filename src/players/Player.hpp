@@ -1,6 +1,8 @@
 #pragma once
+#include "players/VisibilityGrid.hpp"
 
 #include <cstdint>
+#include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 #include <map>
 #include <string>
@@ -21,7 +23,6 @@ struct LastKnownEntity {
 };
 
 struct Player {
-    static constexpr int explorationCells = 128;
     PlayerId id{0};
     TeamId team{0};
     std::string name;
@@ -30,10 +31,7 @@ struct Player {
     std::map<std::string, float> resources;
     // Player research survives the loss of its original researcher.
     std::map<std::string, std::uint32_t> researchedUpgrades;
-    std::vector<std::uint8_t> discovered =
-        std::vector<std::uint8_t>(explorationCells * explorationCells, 0);
-    std::vector<std::uint8_t> visible =
-        std::vector<std::uint8_t>(explorationCells * explorationCells, 0);
+    VisibilityGrid visibility;
     std::vector<LastKnownEntity> intelligence;
 };
 

@@ -22,7 +22,15 @@ glm::vec2 ThirdPersonCamera::groundMovement(float forward, float right) const {
         movement = glm::normalize(movement);
     return {movement.x, movement.z};
 }
-CameraView ThirdPersonCamera::view(float aspect, const glm::vec3& feet) const {
+void ThirdPersonCamera::updateAimZoom(bool held, float dt) {
+    aimZoom_ += ((held ? 1.F : 0.F) - aimZoom_) * (1.F - std::exp(-14.F * std::max(0.F, dt)));
+}
+void ThirdPersonCamera::faceWeapon(float yaw) {
+    yawDegrees_ = std::remainder(yaw - 180.F, 360.F);
+    pitchDegrees_ = 8.F;
+    aimZoom_ = 0.F;
+}
+CameraView ThirdPersonCamera::view(float aspect, const glm::vec3& feet, bool weaponView) const {
     const glm::vec3 target = feet + glm::vec3{0, 1.35F, 0};
     const float yaw = glm::radians(yawDegrees_), pitch = glm::radians(pitchDegrees_);
     const float horizontal = std::cos(pitch) * distance_;
@@ -32,8 +40,16 @@ CameraView ThirdPersonCamera::view(float aspect, const glm::vec3& feet) const {
     CameraView result;
     result.position = eye;
     result.target = target;
-    result.view = glm::lookAt(eye, target, {0, 1, 0});
-    result.projection = glm::perspective(glm::radians(68.0F), aspect, 0.05F, 350.0F);
+    if (weaponView) {
+        result.position += glm::vec3{std::cos(yaw) * 1.8F, 1.1F, -std::sin(yaw) * 1.8F};
+        result.target = result.position + glm::vec3{-std::sin(yaw) * std::cos(pitch),
+                                                    -std::sin(pitch),
+                                                    -std::cos(yaw) * std::cos(pitch)} *
+                                              100.F;
+    }
+    result.view = glm::lookAt(result.position, result.target, {0, 1, 0});
+    result.projection = glm::perspective(
+        glm::radians(68.0F - (weaponView ? 36.F * aimZoom_ : 0.F)), aspect, 0.05F, 350.0F);
     result.detailDistance = 12.0F;
     return result;
 }

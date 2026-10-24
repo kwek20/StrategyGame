@@ -1,6 +1,7 @@
 #pragma once
 
 #include "assets/ResourceHandle.hpp"
+#include "assets/Model.hpp"
 
 #include <glm/mat4x4.hpp>
 #include <glm/vec3.hpp>
@@ -18,6 +19,7 @@ struct ModelRenderCommand {
     glm::vec3 tint{1.0F};
     // 1 draws currently visible fragments, -1 draws remembered/fogged fragments.
     int visibilityMode{0};
+    std::vector<ModelPartPose> parts;
 };
 
 class RenderCommandQueue final {

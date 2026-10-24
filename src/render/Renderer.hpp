@@ -139,6 +139,9 @@ class Renderer final {
                                      glm::vec3 direction);
     void updateParticles(float deltaSeconds);
     void drawParticles(const CameraView& camera) const;
+    void showShotTrace(glm::vec3 origin, glm::vec3 destination);
+    void showWeaponFire(EntityId actor,glm::vec3 origin,glm::vec3 destination);
+    void drawWeaponReticle(bool ready,float reload) const;
     void clearParticles();
     void drawPowerConnections(const World& world,
                               const CameraView& camera,
@@ -175,7 +178,8 @@ class Renderer final {
     void drawOrderMarkers(const World& world,
                           EntityId selected,
                           const std::vector<EntityId>& selection,
-                          const CameraView& camera) const;
+                          const CameraView& camera,
+                          PlayerId owner) const;
     [[nodiscard]] glm::vec3 screenToTerrain(float pixelX,
                                             float pixelY,
                                             const CameraView& camera,
@@ -192,7 +196,8 @@ class Renderer final {
                            const Player* player = nullptr) const;
     [[nodiscard]] CameraView constrainThirdPersonCamera(const CameraView& desired,
                                                         const World& world,
-                                                        EntityId followed) const;
+                                                        EntityId followed,
+                                                        std::optional<glm::vec3> anchor=std::nullopt) const;
     [[nodiscard]] float aspectRatio() const {
         return static_cast<float>(viewportWidth_) / static_cast<float>(viewportHeight_);
     }
@@ -291,6 +296,14 @@ class Renderer final {
     ParticleEffectCatalogue particleEffects_;
     std::unique_ptr<ParticleSystem> particleSystem_;
     std::unique_ptr<ParticleRenderer> particleRenderer_;
+    struct ShotTrace {
+        glm::vec3 origin{}, destination{};
+        float remaining{.12F};
+    };
+    std::vector<ShotTrace> shotTraces_;
+    std::map<EntityId,float> weaponRecoils_;
+    [[nodiscard]] std::vector<ModelPartPose> weaponPose(const Entity&,const EntityDefinition*,const glm::mat4& hull) const;
+    void drawShotTraces(const CameraView& camera) const;
     MaterialManager materials_;
     ShaderHandle program_;
     ShaderHandle waterProgram_;
@@ -306,6 +319,9 @@ class Renderer final {
     std::uint32_t hudVao_{0};
     std::uint32_t hudVbo_{0};
     std::uint32_t explorationTexture_{0};
+    mutable int explorationTextureSide_{};
+    mutable float visibilityTextureExtent_{672.0F};
+    void updateExplorationTexture(const Player& player) const;
     Terrain terrain_{Terrain::DeferredInitialization{}};
     std::uint32_t terrainSeed_{0x5EED1234U};
     std::uint32_t activeTerrainChunksPerSide_{Terrain::chunksPerSide};

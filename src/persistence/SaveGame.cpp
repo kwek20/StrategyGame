@@ -151,12 +151,21 @@ void SaveGame::write(const std::filesystem::path& path,
                 writer.Uint(level);
             }
             writer.EndObject();
-            std::string explored;
-            explored.reserve(player.discovered.size());
-            for (auto cell : player.discovered)
-                explored.push_back(cell ? '1' : '0');
-            writer.Key("discovered");
-            writer.String(explored.c_str(), static_cast<rapidjson::SizeType>(explored.size()));
+            writer.Key("visibility");
+            writer.StartObject();
+            writer.Key("cellSize"); writer.Double(player.visibility.cellSize());
+            writer.Key("chunks"); writer.StartArray();
+            for (const auto& [key, cells] : player.visibility.chunks()) {
+                writer.StartObject();
+                writer.Key("x"); writer.Int(key.first);
+                writer.Key("z"); writer.Int(key.second);
+                std::string explored;
+                explored.reserve(VisibilityGrid::chunkCells);
+                for (auto cell : cells) explored.push_back(cell & VisibilityGrid::explored ? '1' : '0');
+                writer.Key("explored"); writer.String(explored.c_str());
+                writer.EndObject();
+            }
+            writer.EndArray(); writer.EndObject();
             writer.Key("intelligence");
             writer.StartArray();
             for (const LastKnownEntity& known : player.intelligence) {
@@ -216,8 +225,6 @@ void SaveGame::write(const std::filesystem::path& path,
         if (entity.unitControl) {
             writer.Key("unit");
             writer.StartObject();
-            writer.Key("directlyControllable");
-            writer.Bool(entity.unitControl.directlyControllable);
             writer.Key("directInput");
             writer.StartArray();
             writer.Double(entity.unitControl.directInput.x);
@@ -280,6 +287,31 @@ void SaveGame::write(const std::filesystem::path& path,
         if (entity.combat) {
             writer.Key("combat");
             writer.StartObject();
+            writer.Key("shotsFired");
+            writer.Uint64(entity.combat.shotsFired);
+            writer.Key("turretYawDegrees");
+            writer.Double(entity.combat.turretYawDegrees);
+            writer.Key("turretPitchDegrees");
+            writer.Double(entity.combat.turretPitchDegrees);
+            writer.Key("triggerHeld");
+            writer.Bool(entity.combat.triggerHeld);
+            writer.Key("directAim");
+            if (entity.combat.directAim) {
+                writer.StartArray();
+                writer.Double(entity.combat.directAim->x);
+                writer.Double(entity.combat.directAim->y);
+                writer.Double(entity.combat.directAim->z);
+                writer.EndArray();
+            } else
+                writer.Null();
+            writer.Key("lastSeenTarget");
+            if (entity.combat.lastSeenTarget) {
+                writer.StartArray();
+                writer.Double(entity.combat.lastSeenTarget->x);
+                writer.Double(entity.combat.lastSeenTarget->y);
+                writer.EndArray();
+            } else
+                writer.Null();
             writer.Key("cooldownRemaining");
             writer.Double(entity.combat.cooldownRemaining);
             writer.EndObject();
@@ -347,6 +379,14 @@ void SaveGame::write(const std::filesystem::path& path,
         if (entity.production) {
             writer.Key("production");
             writer.StartObject();
+            writer.Key("rallyPoint");
+            if (entity.production.rallyPoint) {
+                writer.StartArray();
+                writer.Double(entity.production.rallyPoint->x);
+                writer.Double(entity.production.rallyPoint->y);
+                writer.EndArray();
+            } else
+                writer.Null();
             writer.Key("speedMultiplier");
             writer.Double(entity.production.productionSpeedMultiplier);
             writer.Key("speedUpgrades");
@@ -522,7 +562,7 @@ SaveData SaveGame::read(const std::filesystem::path& path) {
             !player.HasMember("specialization") || !player["specialization"].IsString() ||
             !player.HasMember("resources") || !player["resources"].IsObject() ||
             !player.HasMember("researchedUpgrades") || !player["researchedUpgrades"].IsObject() ||
-            !player.HasMember("discovered") || !player["discovered"].IsString() ||
+            !player.HasMember("visibility") || !player["visibility"].IsObject() ||
             !player.HasMember("intelligence") || !player["intelligence"].IsArray())
             throw std::runtime_error("Invalid player in current save format");
         const auto id = player["id"].GetUint64();
@@ -550,12 +590,27 @@ SaveData SaveGame::read(const std::filesystem::path& path) {
                                                          upgrade->value.GetUint()).second)
                 throw std::runtime_error("Invalid player research level");
         }
-        const std::string cells = player["discovered"].GetString();
-        result.discovered[index].reserve(cells.size());
-        for (char cell : cells) {
-            if (cell != '0' && cell != '1')
-                throw std::runtime_error("Invalid discovered-map encoding");
-            result.discovered[index].push_back(cell == '1' ? 255 : 0);
+        const auto& fog = player["visibility"];
+        const float expectedCellSize = result.mapChunksPerSide * Terrain::chunkCellCount *
+                                       Terrain::spacing / VisibilityGrid::referenceCells;
+        if (!fog.HasMember("cellSize") || !fog["cellSize"].IsNumber() ||
+            fog["cellSize"].GetFloat() != expectedCellSize ||
+            !fog.HasMember("chunks") || !fog["chunks"].IsArray() || fog["chunks"].Size() > 4096)
+            throw std::runtime_error("Invalid world visibility grid");
+        result.visibility[index] = VisibilityGrid{expectedCellSize};
+        for (const auto& chunk : fog["chunks"].GetArray()) {
+            if (!chunk.IsObject() || !chunk.HasMember("x") || !chunk["x"].IsInt() ||
+                !chunk.HasMember("z") || !chunk["z"].IsInt() ||
+                !chunk.HasMember("explored") || !chunk["explored"].IsString() ||
+                chunk["explored"].GetStringLength() != VisibilityGrid::chunkCells)
+                throw std::runtime_error("Invalid saved visibility chunk");
+            VisibilityGrid::Chunk cells{};
+            for (int i = 0; i < VisibilityGrid::chunkCells; ++i) {
+                const char cell = chunk["explored"].GetString()[i];
+                if (cell != '0' && cell != '1') throw std::runtime_error("Invalid visibility encoding");
+                cells[i] = cell == '1' ? VisibilityGrid::explored : 0;
+            }
+            result.visibility[index].restoreChunk({chunk["x"].GetInt(), chunk["z"].GetInt()}, cells);
         }
         auto& records = result.intelligence[index];
         for (const auto& item : player["intelligence"].GetArray()) {
@@ -611,8 +666,7 @@ SaveData SaveGame::read(const std::filesystem::path& path) {
             if (components.HasMember("unit")) {
                 const auto& item = components["unit"];
                 entity.unitControl.emplace();
-                if (!item.IsObject() || !item.HasMember("directlyControllable") ||
-                    !item["directlyControllable"].IsBool() || !item.HasMember("directInput") ||
+                if (!item.IsObject() || !item.HasMember("directInput") ||
                     !item["directInput"].IsArray() || item["directInput"].Size() != 2 ||
                     !item.HasMember("running") || !item["running"].IsBool() ||
                     !item.HasMember("destination") || !item["destination"].IsArray() ||
@@ -622,7 +676,6 @@ SaveData SaveGame::read(const std::filesystem::path& path) {
                     !item.HasMember("constructionQueue") || !item["constructionQueue"].IsArray() ||
                     item["constructionQueue"].Size() > 1024)
                     throw std::runtime_error("Invalid unit component");
-                entity.unitControl.directlyControllable = item["directlyControllable"].GetBool();
                 entity.unitControl.directInput = {item["directInput"][0].GetFloat(),
                                                   item["directInput"][1].GetFloat()};
                 entity.unitControl.running = item["running"].GetBool();
@@ -714,6 +767,38 @@ SaveData SaveGame::read(const std::filesystem::path& path) {
                     throw std::runtime_error("Invalid combat component");
                 entity.combat.emplace();
                 entity.combat.cooldownRemaining = item["cooldownRemaining"].GetFloat();
+                if (!std::isfinite(entity.combat.cooldownRemaining) ||
+                    entity.combat.cooldownRemaining < 0 || !item.HasMember("shotsFired") ||
+                    !item["shotsFired"].IsUint64() || !item.HasMember("lastSeenTarget"))
+                    throw std::runtime_error("Invalid combat shot state");
+                entity.combat.shotsFired = item["shotsFired"].GetUint64();
+                for (const char* field : {"turretYawDegrees", "turretPitchDegrees"})
+                    if (!item.HasMember(field) || !item[field].IsNumber() ||
+                        !std::isfinite(item[field].GetFloat()))
+                        throw std::runtime_error("Invalid turret orientation");
+                entity.combat.turretYawDegrees = item["turretYawDegrees"].GetFloat();
+                entity.combat.turretPitchDegrees = item["turretPitchDegrees"].GetFloat();
+                if (std::abs(entity.combat.turretYawDegrees) > 360 ||
+                    std::abs(entity.combat.turretPitchDegrees) > 89 ||
+                    !item.HasMember("triggerHeld") || !item["triggerHeld"].IsBool() ||
+                    !item.HasMember("directAim"))
+                    throw std::runtime_error("Invalid direct weapon state");
+                entity.combat.triggerHeld = item["triggerHeld"].GetBool();
+                if (!item["directAim"].IsNull()) {
+                    const auto aim = readVector(item, "directAim");
+                    if (!std::isfinite(aim.x) || !std::isfinite(aim.y) || !std::isfinite(aim.z))
+                        throw std::runtime_error("Invalid manual aim point");
+                    entity.combat.directAim = aim;
+                }
+                const auto& last = item["lastSeenTarget"];
+                if (!last.IsNull()) {
+                    if (!last.IsArray() || last.Size() != 2 || !last[0].IsNumber() ||
+                        !last[1].IsNumber() || !std::isfinite(last[0].GetFloat()) ||
+                        !std::isfinite(last[1].GetFloat()))
+                        throw std::runtime_error("Invalid combat target memory");
+                    entity.combat.lastSeenTarget =
+                        glm::vec2{last[0].GetFloat(), last[1].GetFloat()};
+                }
             }
             if (components.HasMember("resource")) {
                 const auto& item = components["resource"];
@@ -840,6 +925,17 @@ SaveData SaveGame::read(const std::filesystem::path& path) {
                     !item["powerProgressPermille"].IsUint() || !item.HasMember("queue") ||
                     !item["queue"].IsArray())
                     throw std::runtime_error("Invalid production component");
+                if (!item.HasMember("rallyPoint"))
+                    throw std::runtime_error("Missing production rally point");
+                const auto& rally = item["rallyPoint"];
+                if (!rally.IsNull()) {
+                    if (!rally.IsArray() || rally.Size() != 2 || !rally[0].IsNumber() ||
+                        !rally[1].IsNumber() || !std::isfinite(rally[0].GetFloat()) ||
+                        !std::isfinite(rally[1].GetFloat()))
+                        throw std::runtime_error("Invalid production rally point");
+                    entity.production.rallyPoint =
+                        glm::vec2{rally[0].GetFloat(), rally[1].GetFloat()};
+                }
                 entity.production.productionSpeedMultiplier = item["speedMultiplier"].GetFloat();
                 entity.production.productionSpeedUpgrades = item["speedUpgrades"].GetUint();
                 entity.production.powerProgressPermille = item["powerProgressPermille"].GetUint();

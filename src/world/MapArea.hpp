@@ -12,6 +12,7 @@ namespace strategy {
 // Canonical conversion between match-space coordinates and normalized/grid space.
 class MapArea final {
   public:
+    static constexpr float sceneryMargin = 96.0F;
     explicit MapArea(std::uint32_t chunksPerSide)
         : chunksPerSide_(std::clamp(chunksPerSide, 1U,
               static_cast<std::uint32_t>(Terrain::chunksPerSide))) {}

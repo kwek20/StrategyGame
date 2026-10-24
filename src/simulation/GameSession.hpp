@@ -4,6 +4,7 @@
 #include "players/PlayerRegistry.hpp"
 #include "simulation/BuildingPlacementPlan.hpp"
 #include "simulation/Command.hpp"
+#include "simulation/CombatShotEvent.hpp"
 #include "simulation/PlacementEvent.hpp"
 #include "simulation/PowerEvent.hpp"
 #include "simulation/PowerGridSystem.hpp"
@@ -67,7 +68,7 @@ class GameSession final {
                       WorldGenerationProgress* generationProgress = nullptr);
     void restorePlayerProgress(PlayerId player,
                                std::map<std::string, float> resources,
-                               std::vector<std::uint8_t> discovered,
+                               VisibilityGrid visibility,
                                std::vector<LastKnownEntity> intelligence = {},
                                std::map<std::string, std::uint32_t> researchedUpgrades = {});
 
@@ -110,6 +111,9 @@ class GameSession final {
         powerEvents_.clear();
         return result;
     }
+    [[nodiscard]] std::vector<CombatShotEvent> consumeCombatShots() {
+        auto result=std::move(combatShots_); combatShots_.clear(); return result;
+    }
     [[nodiscard]] std::vector<PlacementEvent> consumePlacementEvents() {
         auto result = std::move(placementEvents_);
         placementEvents_.clear();
@@ -137,9 +141,14 @@ class GameSession final {
     std::vector<ResourceEvent> resourceEvents_;
     std::vector<PowerEvent> powerEvents_;
     std::vector<PlacementEvent> placementEvents_;
+    std::vector<CombatShotEvent> combatShots_;
     PowerGridSystem powerGridSystem_;
 
     void simulateTick();
+    void orderMove(Entity& entity, glm::vec3 destination);
+    void updateAttack(Entity& entity, std::vector<EntityId>& destroyed);
+    void fireWeapon(Entity& entity, Entity* target, std::vector<EntityId>& destroyed);
+    void seekFiringPosition(Entity& entity, const Entity& target, float range);
     void apply(const PlayerCommand& command);
     void orderConstruction(Entity& builder, Entity& building, bool queued);
     void beginRecharge(Entity& entity);

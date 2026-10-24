@@ -1,6 +1,12 @@
 {
   "version": 1,
   "entities": {
+    "light_tank": {
+      "icon": "unit_light_tank", "model": "gen/vehicles/light_tank", "scale": 1.0,
+      "weaponParts": { "turret": "Turret", "barrel": "Barrel", "pivot": [0.1, 1.97, 0.7] },
+      "grounding": { "groundOffset": 0.0, "alignToTerrain": true, "maximumTilt": 12.0, "foundationRadius": 0.0 },
+      "selection": { "radius": 2.2, "height": 2.4 }, "animations": {}
+    },
     "foliage_conifer_1": {"icon": "status_asset_ready", "model": "environment/terrain_v2/conifer_1", "scale": 1.0, "grounding": {"groundOffset": -0.08, "alignToTerrain": false, "maximumTilt": 0.0, "foundationRadius": 0.0}, "selection": {"radius": 0.0, "height": 4.0}, "animations": {}},
     "foliage_conifer_2": {"icon": "status_asset_ready", "model": "environment/terrain_v2/conifer_2", "scale": 1.0, "grounding": {"groundOffset": -0.08, "alignToTerrain": false, "maximumTilt": 0.0, "foundationRadius": 0.0}, "selection": {"radius": 0.0, "height": 4.0}, "animations": {}},
     "town_center": {
@@ -322,10 +328,10 @@
       "selection": { "radius": 5.0, "height": 5.0 },
       "animations": {}
     },
-    "drone_factory": {
-      "icon": "building_drone_factory",
-      "model": "buildings/Barracks_SecondAge_Level1",
-      "scale": 8.0,
+    "tank_factory": {
+      "icon": "building_tank_factory",
+      "model": "gen/vehicles/tank_factory",
+      "scale": 1.0,
       "grounding": { "groundOffset": 0.0, "alignToTerrain": false, "maximumTilt": 0.0, "foundationRadius": 7.0, "maximumFoundationSlope": 10.0 },
       "selection": { "radius": 7.0, "height": 6.0 },
       "animations": {}

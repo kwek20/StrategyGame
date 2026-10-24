@@ -16,6 +16,23 @@
       "cooldownTicks": 30,
       "accuracy": 0.8,
       "validTargets": ["ground", "air"]
+    },
+    "tank_light_cannon": {
+      "tags": ["ranged", "kinetic", "vehicle", "cannon"],
+      "muzzleHeight": 1.97,
+      "muzzleForward": 3.1,
+      "muzzleSide": 0.1,
+      "pitchPivotForward": 0.7,
+      "turretTurnRateDegrees": 150,
+      "turretPitchRateDegrees": 90,
+      "minimumPitchDegrees": -10,
+      "maximumPitchDegrees": 30,
+      "damage": { "type": "kinetic", "amount": 32 },
+      "range": 16,
+      "cooldownTicks": 60,
+      "accuracy": 1.0,
+      "validTargets": ["ground"]
     }
+
   }
 }

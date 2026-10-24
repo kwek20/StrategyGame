@@ -46,7 +46,10 @@ glm::vec3 Navigation::positionOf(int x, int z) const {
 }
 
 void Navigation::refreshTerrainHeights(const Terrain& terrain, const TerrainFoundation* cut) {
-    // Bounded dry-land cuts preserve the canonical cliff/water mask; only path rise costs change.
+    // Grading can also change walking slope eligibility.
+    occupancyByProfile_.clear();
+    terrainEdgesByProfile_.clear();
+    flowFields_.clear();
     const float reach = cut ? cut->outerRadius + cut->levelingBlendWidth + Terrain::spacing * 3 : 0;
     const int x0 = cut ? gridCoordinate(cut->center.x - reach) : 0;
     const int x1 = cut ? gridCoordinate(cut->center.x + reach) : side_ - 1;
@@ -62,9 +65,6 @@ void Navigation::refreshTerrainHeights(const Terrain& terrain, const TerrainFoun
 void Navigation::rebuildTerrain(const Terrain& terrain, std::uint32_t mapChunksPerSide,
                                 WorldGenerationProgress* progress) {
     if (progress) progress->report(WorldGenerationPhase::navigation, 0.0F);
-    v2Terraces_.reset();
-    if (terrain.v2Landscape())
-        v2Terraces_ = terrain.v2Landscape()->terraces;
     map_ = MapArea{mapChunksPerSide};
     side_ = std::max(1, static_cast<int>(std::ceil(map_.extent() / cellSize)));
     heights_.resize(static_cast<std::size_t>(side_ * side_));
@@ -90,47 +90,19 @@ void Navigation::rebuildTerrain(const Terrain& terrain, std::uint32_t mapChunksP
             }
         }
     }
-    v2LandClearanceMask_.clear();
-    if (v2Terraces_) {
-        v2LandClearanceMask_.resize(static_cast<std::size_t>(Terrain::cellCount) *
-                                    Terrain::cellCount);
-        const float half = terrain.worldExtent() * 0.5F;
-        const int first = std::max(
-            0, static_cast<int>(std::floor((half - map_.halfExtent()) / Terrain::spacing)));
-        const int end =
-            std::min(Terrain::cellCount,
-                     static_cast<int>(std::ceil((half + map_.halfExtent()) / Terrain::spacing)));
-        const int width = end - first + 1;
-        std::vector<std::uint8_t> vertices(static_cast<std::size_t>(width) * width);
-        for (int z = first; z <= end; ++z) {
-            if (progress && z % 16 == 0)
-                progress->throwIfCancellationRequested();
-            for (int x = first; x <= end; ++x) {
-                const auto point = glm::vec2{x, z} * Terrain::spacing - glm::vec2{half};
-                vertices[static_cast<std::size_t>((z - first) * width + x - first)] =
-                    terrain.movementCostAt(
-                        point.x, point.y, movementDomainBit(MovementDomain::land)) > 0;
-            }
-        }
-        for (int z = first; z < end; ++z)
-            for (int x = first; x < end; ++x) {
-                const auto local = static_cast<std::size_t>((z - first) * width + x - first);
-                v2LandClearanceMask_[static_cast<std::size_t>(z * Terrain::cellCount + x)] =
-                    vertices[local] && vertices[local + 1] && vertices[local + width] &&
-                    vertices[local + width + 1];
-            }
-    }
     obstacleShapes_.clear();
     occupancyByProfile_.clear();
+    terrainEdgesByProfile_.clear();
     flowFields_.clear();
     if (progress) progress->report(WorldGenerationPhase::navigation, 1.0F);
 }
 
-void Navigation::synchronizeObstacles(const World& world) {
+void Navigation::synchronizeObstacles(const Terrain& terrain, const World& world) {
     std::map<EntityId, SpatialShape> current;
     for (const Entity& entity : world.entities())
         if (!entity.unitControl && !entity.flight &&
-            (!entity.resource || entity.resource.remaining > 0.0F))
+            (entity.kind != EntityKind::resource || !entity.resource ||
+             entity.resource.remaining > 0.0F))
             current.emplace(entity.id, spatialShape(definitions_, entity));
 
     std::vector<SpatialShape> dirtyShapes;
@@ -164,7 +136,7 @@ void Navigation::synchronizeObstacles(const World& world) {
         for (std::size_t index = 0; index < dirty.size(); ++index)
             if (dirty[index])
                 occupancyGrid[index] =
-                    terrainPassable(index, radius, {key.domains, key.ignoresEntityObstacles}) ? 1
+                    terrainPassable(terrain, index, radius, {key.domains, key.ignoresEntityObstacles}) ? 1
                                                                                               : 0;
         for (const auto& [id, obstacle] : current) {
             (void)id;
@@ -188,21 +160,23 @@ void Navigation::synchronizeObstacles(const World& world) {
     flowFields_.clear();
 }
 
-const std::vector<std::uint8_t>& Navigation::occupancy(const World& world, float radius,
+const std::vector<std::uint8_t>& Navigation::occupancy(const Terrain& terrain, const World& world, float radius,
                                                        NavigationProfile profile) {
-    synchronizeObstacles(world);
+    synchronizeObstacles(terrain, world);
     const OccupancyKey key{static_cast<int>(std::round(radius * 10.0F)), profile.domains,
                            profile.ignoresEntityObstacles};
     if (const auto found = occupancyByProfile_.find(key); found != occupancyByProfile_.end())
         return found->second;
     std::vector<std::uint8_t> result(terrainMovementCosts_.size(), 0);
     for (std::size_t index = 0; index < result.size(); ++index)
-        result[index] = terrainPassable(index, radius, profile) ? 1 : 0;
+        result[index] = terrainPassable(terrain, index, radius, profile) ? 1 : 0;
     if (profile.ignoresEntityObstacles)
         return occupancyByProfile_.emplace(key, std::move(result)).first->second;
     for (const Entity& entity : world.entities()) {
         if (entity.flight || entity.unitControl ||
-            (entity.resource && entity.resource.remaining <= 0.0F)) continue;
+            (entity.kind == EntityKind::resource && entity.resource &&
+             entity.resource.remaining <= 0.0F))
+            continue;
         const SpatialShape blocked = expanded(spatialShape(definitions_, entity), radius);
         const glm::vec2 bounds = axisAlignedHalfExtents(blocked);
         const int minimumX = gridCoordinate(blocked.center.x - bounds.x - cellSize),
@@ -219,43 +193,41 @@ const std::vector<std::uint8_t>& Navigation::occupancy(const World& world, float
     return occupancyByProfile_.emplace(key, std::move(result)).first->second;
 }
 
-bool Navigation::terrainPassable(std::size_t index, float radius, NavigationProfile profile) const {
+bool Navigation::terrainPassable(const Terrain& terrain, std::size_t index, float radius, NavigationProfile profile) const {
     if (movementCost(index, profile.domains) <= 0)
         return false;
-    if (!v2Terraces_ || hasMovementDomain(profile.domains, MovementDomain::air) ||
+    if (!terrain.v2Landscape() || hasMovementDomain(profile.domains, MovementDomain::air) ||
         !hasMovementDomain(profile.domains, MovementDomain::land))
         return true;
-    const auto point = positionOf(static_cast<int>(index) % side_, static_cast<int>(index) / side_);
-    const float half = Terrain::cellCount * Terrain::spacing * 0.5F;
-    const auto grid = [&](float value) {
-        return static_cast<int>(std::floor((value + half) / Terrain::spacing));
-    };
-    const int x0 = grid(point.x - radius), x1 = grid(point.x + radius), z0 = grid(point.z - radius),
-              z1 = grid(point.z + radius);
-    for (int z = z0; z <= z1; ++z)
-        for (int x = x0; x <= x1; ++x) {
-            if (x < 0 || z < 0 || x >= Terrain::cellCount || z >= Terrain::cellCount ||
-                !v2LandClearanceMask_[static_cast<std::size_t>(z * Terrain::cellCount + x)])
-                return false;
-        }
-    return true;
+    const auto p = positionOf(static_cast<int>(index) % side_, static_cast<int>(index) / side_);
+    return terrain.permitsMovementSegment({p.x, p.z}, {p.x, p.z}, radius, profile.domains);
 }
 
 bool Navigation::canStep(
-    int x, int z, int nx, int nz, float radius, NavigationProfile profile) const {
-    if (!v2Terraces_ || hasMovementDomain(profile.domains, MovementDomain::air) ||
+    const Terrain& terrain, int x, int z, int nx, int nz, float radius, NavigationProfile profile) const {
+    if (!terrain.v2Landscape() || hasMovementDomain(profile.domains, MovementDomain::air) ||
         !hasMovementDomain(profile.domains, MovementDomain::land))
         return true;
     const auto a = positionOf(x, z), b = positionOf(nx, nz);
-    const glm::vec2 start{a.x, a.z}, end{b.x, b.z};
-    for (auto offset : {glm::vec2{0, 0},
-                        glm::vec2{radius, 0},
-                        glm::vec2{-radius, 0},
-                        glm::vec2{0, radius},
-                        glm::vec2{0, -radius}})
-        if (v2Terraces_->crossesCliff(start + offset, end + offset))
-            return false;
-    return true;
+    const OccupancyKey key{static_cast<int>(std::round(radius * 10.0F)), profile.domains,
+                           profile.ignoresEntityObstacles};
+    auto& edges = terrainEdgesByProfile_[key];
+    if (edges.empty()) edges.resize(static_cast<std::size_t>(side_ * side_));
+    const auto direction = std::find(directions.begin(), directions.end(),
+                                     std::array<int, 2>{nx - x, nz - z});
+    const auto bit = static_cast<unsigned>(direction - directions.begin());
+    auto& flags = edges[indexOf(x, z)];
+    if (!(flags & (1U << (bit + 8)))) {
+        const bool allowed = terrain.permitsMovementSegment(
+            {a.x, a.z}, {b.x, b.z}, radius, profile.domains);
+        flags |= static_cast<std::uint16_t>((1U << (bit + 8)) | (allowed ? 1U << bit : 0));
+        const auto reverse = std::find(directions.begin(), directions.end(),
+                                      std::array<int, 2>{x - nx, z - nz});
+        const auto reverseBit = static_cast<unsigned>(reverse - directions.begin());
+        edges[indexOf(nx, nz)] |= static_cast<std::uint16_t>(
+            (1U << (reverseBit + 8)) | (allowed ? 1U << reverseBit : 0));
+    }
+    return (flags & (1U << bit)) != 0;
 }
 
 float Navigation::movementCost(std::size_t index, MovementDomainMask domains) const {
@@ -269,22 +241,27 @@ float Navigation::movementCost(std::size_t index, MovementDomainMask domains) co
 }
 
 std::vector<glm::vec3> Navigation::findPath(
-    const World& world, glm::vec3 start, glm::vec3 destination, float radius, EntityId ignored,
+    const Terrain& terrain, const World& world, glm::vec3 start, glm::vec3 destination, float radius, EntityId ignored,
     NavigationProfile profile) {
     const int target = indexOf(gridCoordinate(destination.x), gridCoordinate(destination.z));
-    const auto& cached = occupancy(world, radius, profile);
+    const auto& cached = occupancy(terrain, world, radius, profile);
     const int source = indexOf(gridCoordinate(start.x), gridCoordinate(start.z));
     const SpatialShape actorAtDestination{FootprintShape::circle,
                                           {destination.x, destination.z}, radius,
                                           glm::vec2{radius}, 0.0F};
     const bool preciseDestinationValid =
         cached[target] != 0 && map_.contains({destination.x, destination.z}, radius) &&
+        terrain.permitsMovementSegment({destination.x, destination.z},
+                                         {destination.x, destination.z}, radius, profile.domains) &&
         (profile.ignoresEntityObstacles ||
          !overlapsObject(world, definitions_, actorAtDestination, ignored));
-    auto direct = pathFromGoals(world, start, {target}, {destination.x, destination.z}, radius,
+    auto direct = pathFromGoals(terrain, world, start, {target}, {destination.x, destination.z}, radius,
                                 ignored, static_cast<std::uint64_t>(target), profile);
     if (!direct.empty() && cached[target] != 0) {
-        if (preciseDestinationValid) direct.back() = destination;
+        const auto last = direct.back();
+        if (preciseDestinationValid && terrain.permitsMovementSegment(
+                {last.x, last.z}, {destination.x, destination.z}, radius, profile.domains))
+            direct.push_back(destination);
         return direct;
     }
 
@@ -319,7 +296,7 @@ std::vector<glm::vec3> Navigation::findPath(
         for (const auto& direction : directions) {
             const int nx = x + direction[0], nz = z + direction[1];
             if (nx < 0 || nz < 0 || nx >= side_ || nz >= side_ ||
-                !canStep(x, z, nx, nz, radius, profile))
+                !canStep(terrain, x, z, nx, nz, radius, profile))
                 continue;
             const int next = indexOf(nx, nz);
             if (visited[next] || !passable[next]) continue;
@@ -335,17 +312,21 @@ std::vector<glm::vec3> Navigation::findPath(
     if (resolved == source) return {start};
     std::uint64_t goalKey = static_cast<std::uint64_t>(target);
     mix(goalKey, static_cast<std::uint64_t>(resolved));
-    auto result = pathFromGoals(world, start, {resolved}, {destination.x, destination.z}, radius,
+    auto result = pathFromGoals(terrain, world, start, {resolved}, {destination.x, destination.z}, radius,
                                 ignored, goalKey, profile);
-    if (!result.empty() && resolved == target && preciseDestinationValid)
-        result.back() = destination;
+    if (!result.empty() && resolved == target && preciseDestinationValid) {
+        const auto last = result.back();
+        if (terrain.permitsMovementSegment(
+                {last.x, last.z}, {destination.x, destination.z}, radius, profile.domains))
+            result.push_back(destination);
+    }
     return result;
 }
 
 std::vector<glm::vec3> Navigation::findPath(
-    const World& world, glm::vec3 start, const NavigationGoalRegion& goal,
+    const Terrain& terrain, const World& world, glm::vec3 start, const NavigationGoalRegion& goal,
     float radius, EntityId ignored, NavigationProfile profile) {
-    const auto& passable = occupancy(world, radius, profile);
+    const auto& passable = occupancy(terrain, world, radius, profile);
     const SpatialShape actorBoundary = expanded(
         goal.target, radius + std::max(0.0F, goal.interactionRange * 0.5F));
     const float outerDistance = radius + std::max(0.0F, goal.interactionRange) + cellSize * 0.75F;
@@ -385,11 +366,13 @@ std::vector<glm::vec3> Navigation::findPath(
     mix(goalKey, std::bit_cast<std::uint32_t>(goal.interactionRange));
     mix(goalKey, static_cast<std::uint64_t>(gridCoordinate(preferred.x)));
     mix(goalKey, static_cast<std::uint64_t>(gridCoordinate(preferred.y)));
-    auto result = pathFromGoals(world, start, goals, preferred, radius, ignored, goalKey,
+    auto result = pathFromGoals(terrain, world, start, goals, preferred, radius, ignored, goalKey,
                                 profile);
     const SpatialShape actorAtPreferred{
         FootprintShape::circle, preferred, radius, glm::vec2{radius}, 0.0F};
     if (!result.empty() && map_.contains(preferred, radius) &&
+        terrain.permitsMovementSegment({result.back().x, result.back().z}, preferred,
+                                         radius, profile.domains) &&
         (profile.ignoresEntityObstacles ||
          !overlapsObject(world, definitions_, actorAtPreferred, ignored))) {
         result.push_back({preferred.x, 0.0F, preferred.y});
@@ -398,11 +381,11 @@ std::vector<glm::vec3> Navigation::findPath(
 }
 
 std::vector<glm::vec3> Navigation::pathFromGoals(
-    const World& world, glm::vec3 start, const std::vector<int>& goals,
+    const Terrain& terrain, const World& world, glm::vec3 start, const std::vector<int>& goals,
     glm::vec2 preferredGoal, float radius, EntityId ignored, std::uint64_t goalKey,
     NavigationProfile profile) {
     (void)ignored;
-    const auto& cached = occupancy(world, radius, profile);
+    const auto& cached = occupancy(terrain, world, radius, profile);
     std::vector<std::uint8_t> passable = cached;
     const int sx = gridCoordinate(start.x), sz = gridCoordinate(start.z), source = indexOf(sx, sz);
     passable[source] = 1;
@@ -432,7 +415,7 @@ std::vector<glm::vec3> Navigation::pathFromGoals(
             for (const auto& direction : directions) {
                 const int nx = x + direction[0], nz = z + direction[1];
                 if (nx < 0 || nz < 0 || nx >= side_ || nz >= side_ || !passable[indexOf(nx, nz)] ||
-                    !canStep(x, z, nx, nz, radius, profile))
+                    !canStep(terrain, x, z, nx, nz, radius, profile))
                     continue;
                 if (direction[0] && direction[1] &&
                     (!passable[indexOf(x + direction[0], z)] || !passable[indexOf(x, z + direction[1])])) continue;
@@ -461,7 +444,7 @@ std::vector<glm::vec3> Navigation::pathFromGoals(
         for (const auto& direction : directions) {
             const int nx = x + direction[0], nz = z + direction[1];
             if (nx < 0 || nz < 0 || nx >= side_ || nz >= side_ || !passable[indexOf(nx, nz)] ||
-                !canStep(x, z, nx, nz, radius, profile))
+                !canStep(terrain, x, z, nx, nz, radius, profile))
                 continue;
             if (direction[0] && direction[1] &&
                 (!passable[indexOf(x + direction[0], z)] || !passable[indexOf(x, z + direction[1])])) continue;
@@ -471,6 +454,14 @@ std::vector<glm::vec3> Navigation::pathFromGoals(
         if (best == current) return {};
         current = best;
         path.push_back(positionOf(current % side_, current / side_));
+    }
+    if (!path.empty() && !terrain.permitsMovementSegment(
+            {start.x, start.z}, {path.front().x, path.front().z}, radius, profile.domains)) {
+        const auto centre = positionOf(sx, sz);
+        if (!terrain.permitsMovementSegment(
+                {start.x, start.z}, {centre.x, centre.z}, radius, profile.domains))
+            return {};
+        path.insert(path.begin(), centre);
     }
     return path;
 }

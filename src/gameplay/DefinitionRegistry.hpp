@@ -116,6 +116,10 @@ struct WeaponDefinition {
     float range{0.0F};
     std::uint32_t cooldownTicks{1};
     float accuracy{1.0F};
+    float muzzleHeight{0.9F}, muzzleForward{0.0F};
+    float turretTurnRateDegrees{0.F}, turretPitchRateDegrees{60.F};
+    float minimumPitchDegrees{-10.F}, maximumPitchDegrees{30.F};
+    float pitchPivotForward{0.F}, muzzleSide{0.F};
     std::unordered_set<std::string> validTargets;
 };
 
@@ -156,6 +160,7 @@ struct CountryDefinition {
 struct MovementDefinition {
     std::string type{"ground"};
     float speed{0.0F};
+    float turnRateDegrees{0.0F};
     MovementDomainMask domains{movementDomainBit(MovementDomain::land)};
     bool ignoresEntityObstacles{false};
 };
@@ -197,6 +202,7 @@ struct EntityArchetype {
     std::vector<std::string> requiredUpgrades;
     EntityKind kind{EntityKind::decoration};
     float collisionRadius{1.0F};
+    float bodyHeight{2.0F};
     float interactionMargin{0.0F}, spawnClearance{0.0F};
     std::unordered_map<std::string, float> interactionRanges;
     std::uint32_t spawnCandidateCount{0};
@@ -220,7 +226,6 @@ struct EntityArchetype {
 struct StartingEntityDefinition {
     std::string archetype, nameKey;
     glm::vec3 position{0.0F};
-    bool directlyControllable{false};
     bool gatheringEnabled{true};
 };
 
@@ -350,13 +355,21 @@ class DefinitionRegistry final {
     productionRecipe(const std::string& producer, const std::string& product) const;
     [[nodiscard]] std::vector<const RecipeDefinition*> recipesForProducer(const std::string& producer) const;
     [[nodiscard]] std::vector<const UpgradeDefinition*> upgradesForResearcher(const std::string& researcher) const;
-    [[nodiscard]] const std::vector<CountryDefinition>& countries() const { return countryList_; }
-    [[nodiscard]] const MatchRulesDefinition& matchRules() const { return matchRules_; }
+    [[nodiscard]] const std::vector<CountryDefinition>& countries() const {
+        return countryList_;
+    }
+    [[nodiscard]] const MatchRulesDefinition& matchRules() const {
+        return matchRules_;
+    }
     [[nodiscard]] const UpgradeDefinition* upgrade(const std::string& id) const;
     [[nodiscard]] const std::string& presentationIcon(PresentationId id) const;
-    [[nodiscard]] const std::unordered_map<std::string, UpgradeDefinition>& upgrades() const { return upgrades_; }
+    [[nodiscard]] const std::unordered_map<std::string, UpgradeDefinition>& upgrades() const {
+        return upgrades_;
+    }
     [[nodiscard]] float collisionRadius(const std::string& entity) const;
     void initializeEntity(Entity& entity) const;
+    [[nodiscard]] bool permitsDirectControl(const Entity& entity) const;
+    [[nodiscard]] bool producesUnits(const Entity& entity) const;
 
   private:
     std::unordered_map<std::string, EntityArchetype> entities_;

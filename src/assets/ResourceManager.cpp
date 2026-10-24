@@ -87,6 +87,18 @@ void ResourceManager::loadEntityDefinitions(const std::filesystem::path& path) {
                 }
             }
         }
+        if (member.value.HasMember("weaponParts")) {
+            const auto& parts=member.value["weaponParts"];
+            if (!parts.IsObject() || !parts.HasMember("turret") || !parts["turret"].IsString() ||
+                !parts.HasMember("barrel") || !parts["barrel"].IsString() ||
+                !parts.HasMember("pivot") || !parts["pivot"].IsArray() || parts["pivot"].Size()!=3)
+                throw std::runtime_error("Invalid weapon part bindings");
+            definition.turretNode=parts["turret"].GetString();definition.barrelNode=parts["barrel"].GetString();
+            for (int i=0;i<3;++i) {
+                if (!parts["pivot"][i].IsNumber()) throw std::runtime_error("Invalid barrel pivot");
+                definition.barrelPivot[i]=parts["pivot"][i].GetFloat();
+            }
+        }
         entityDefinitions_.insert_or_assign(normalizedKey(member.name.GetString()),
                                             std::move(definition));
     }

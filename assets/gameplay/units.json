@@ -44,6 +44,22 @@
         "gatherRate": 4,
         "trainingTime": 12
       }
+    },
+    "light_tank": {
+      "nameKey": "unit.light_tank",
+      "presentation": "light_tank",
+      "collisionRadius": 2.2,
+      "bodyHeight": 2.4,
+      "interactionMargin": 0.9,
+      "components": ["health", "vision", "unit", "combat", "upgrades"],
+      "availableUpgrades": [],
+      "tags": ["unit", "military", "vehicle", "tank", "ground", "ranged"],
+      "health": 350,
+      "movement": { "type": "ground", "domains": ["land"], "speed": 4, "turnRateDegrees": 90 },
+      "vision": { "range": 18 },
+      "weapons": ["tank_light_cannon"],
+      "stats": { "trainingTime": 20 }
     }
+
   }
 }

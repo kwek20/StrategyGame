@@ -1,6 +1,14 @@
 {
   "version": 1,
   "recipes": [
+    {
+      "id": "tank_factory.train_light_tank",
+      "producer": "tank_factory",
+      "product": { "unit": "light_tank", "amount": 1 },
+      "cost": { "alloy": 125, "fuel": 25 },
+      "durationTicks": 600,
+      "tags": ["training", "military", "vehicle", "tank"]
+    },
     { "id": "town_center.research_level_2", "producer": "town_center", "product": { "building": "town_center_level_2", "amount": 1 }, "cost": {}, "durationTicks": 450, "tags": ["research", "upgrade", "transformation"] },
     {
       "id": "research.efficient_training",
@@ -132,14 +140,14 @@
       "tags": ["construction", "economic", "extractor"]
     },
     {
-      "id": "construct.drone_factory",
-      "product": { "building": "drone_factory", "amount": 1 },
+      "id": "construct.tank_factory",
+      "product": { "building": "tank_factory", "amount": 1 },
       "cost": { "alloy": 175 },
       "durationTicks": 660,
       "constructionPower": 140,
       "workStep": 2,
       "dronePowerPerStep": 1,
-      "tags": ["construction", "factory", "production", "drone"]
+      "tags": ["construction", "factory", "production", "vehicle"]
     },
     {
       "id": "construct.sensor_tower",

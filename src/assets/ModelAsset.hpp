@@ -34,6 +34,7 @@ struct ModelMaterialAsset {
 };
 
 struct ModelMeshAsset {
+    std::string nodeName;
     std::vector<ModelVertex> vertices;
     std::vector<std::uint32_t> indices;
     glm::mat4 nodeTransform{1};

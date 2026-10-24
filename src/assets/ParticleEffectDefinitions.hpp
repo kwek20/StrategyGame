@@ -60,6 +60,7 @@ struct ParticleRenderDefinition {
     ParticleBillboardMode billboard{ParticleBillboardMode::camera};
     ParticleBlendMode blend{ParticleBlendMode::alpha};
     bool softParticles{false};
+    bool luminanceMask{false};
 };
 
 struct ParticleEffectDefinition {

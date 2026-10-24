@@ -13,6 +13,7 @@ uniform float timeSeconds;
 uniform vec2 fogRange;
 uniform sampler2D explorationMap;
 uniform float explorationExtent;
+uniform float visibilityExtent;
 uniform bool useExploration;
 uniform bool exactWaterSurface;
 uniform int waterDebugMode;
@@ -105,7 +106,7 @@ void main() {
     float fog = smoothstep(fogRange.x, fogRange.y, distanceToCamera);
     water = mix(water, vec3(0.30, 0.37, 0.42), fog * 0.70);
     float explored = useExploration
-        ? texture(explorationMap, worldPosition.xz / explorationExtent + 0.5).r
+        ? texture(explorationMap, worldPosition.xz / visibilityExtent + 0.5).r
         : 1.0;
     if (explored < 0.12)
         water = vec3(0.008, 0.012, 0.018);

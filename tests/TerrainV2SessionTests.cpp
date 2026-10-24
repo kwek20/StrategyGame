@@ -118,11 +118,11 @@ int strategyTestMain() {
         Navigation navigation{session.terrain(), definitions, 10};
         World empty;
         const auto a = session.startingAnchors()[0], b = session.startingAnchors()[1];
-        require(!navigation.findPath(empty, {a.x, 0, a.y}, {b.x, 0, b.y}, 0.5F, 0).empty(),
+        require(!navigation.findPath(session.terrain(), empty, {a.x, 0, a.y}, {b.x, 0, b.y}, 0.5F, 0).empty(),
                 "Ground workers can travel between player regions without crossing water");
         const glm::vec3 approachA{a.x + 18, 0, a.y + 18};
         const glm::vec3 approachB{b.x - 18, 0, b.y - 18};
-        require(!navigation.findPath(session.world(), approachA, approachB, 0.65F, 0).empty(),
+        require(!navigation.findPath(session.terrain(), session.world(), approachA, approachB, 0.65F, 0).empty(),
                 "Final buildings and resource nodes keep a ground route between openings");
         for (const auto& entity : session.world().entities())
             if (entity.kind == EntityKind::building) {
@@ -219,7 +219,7 @@ int strategyTestMain() {
                 Navigation fallbackNavigation{fallback, definitions, chunks};
                 const auto a = anchors[0], b = anchors[1];
                 require(!fallbackNavigation
-                             .findPath(fallbackWorld,
+                             .findPath(fallback, fallbackWorld,
                                        {a.x + 18, 0, a.y + 18},
                                        {b.x - 18, 0, b.y - 18},
                                        0.65F,

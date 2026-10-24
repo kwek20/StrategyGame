@@ -132,7 +132,7 @@ int strategyTestMain() {
             const auto anchor = session.startingAnchors()[player];
             // Reserve the largest footprint first: this is a joint capacity check,
             // not a prescribed player build order or a greedy fragmentation test.
-            for (const char* id : {"drone_factory",
+            for (const char* id : {"tank_factory",
                                    "alloy_processor",
                                    "fuel_processor",
                                    "charging_pad",
@@ -173,7 +173,7 @@ int strategyTestMain() {
                 require(placed, "Every opening accommodates a joint processing and charging plan");
             }
         }
-        require(!navigation.findPath(earlyWorld, approachA, approachB, 0.65F, 0).empty(),
+        require(!navigation.findPath(session.terrain(), earlyWorld, approachA, approachB, 0.65F, 0).empty(),
                 "Joint early building plans retain usable ground exits");
         std::cout << layoutId << ": joint opening plan and exits passed\n";
     }

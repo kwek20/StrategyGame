@@ -332,8 +332,9 @@ Renderer::Renderer(Logger* logger, std::function<void()> keepResponsive)
     glBindTexture(GL_TEXTURE_2D, explorationTexture_);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+
 }
 
 void Renderer::ensureTerrainChunks() {
@@ -494,23 +495,144 @@ void Renderer::setParticleEmitterTransform(ParticleEmitterHandle emitter,
 }
 
 void Renderer::updateParticles(float deltaSeconds) {
+    for (auto& [id,remaining]:weaponRecoils_) remaining-=deltaSeconds;
+    std::erase_if(weaponRecoils_,[](const auto& pair){return pair.second<=0;});
     particleSystem_->update(deltaSeconds);
+    for (auto& trace : shotTraces_)
+        trace.remaining -= deltaSeconds;
+    std::erase_if(shotTraces_, [](const auto& trace) { return trace.remaining <= 0; });
 }
 
 void Renderer::drawParticles(const CameraView& camera) const {
     particleRenderer_->draw(*particleSystem_, particleEffects_, camera);
+    drawShotTraces(camera);
+}
+
+void Renderer::showShotTrace(glm::vec3 origin, glm::vec3 destination) {
+    if (shotTraces_.size() >= 512)
+        shotTraces_.erase(shotTraces_.begin());
+    shotTraces_.push_back({origin, destination, .12F});
+}
+void Renderer::showWeaponFire(EntityId actor, glm::vec3 origin, glm::vec3 destination) {
+    weaponRecoils_[actor] = .25F;
+    showShotTrace(origin, destination);
+}
+std::vector<ModelPartPose> Renderer::weaponPose(const Entity& entity,
+                                                const EntityDefinition* definition,
+                                                const glm::mat4& hull) const {
+    if (!definition || definition->turretNode.empty() || !entity.combat)
+        return {};
+    const float worldYaw = glm::radians(entity.combat.turretYawDegrees),
+                worldPitch = glm::radians(entity.combat.turretPitchDegrees);
+    const glm::vec3 direction{std::sin(worldYaw) * std::cos(worldPitch),
+                              std::sin(worldPitch),
+                              std::cos(worldYaw) * std::cos(worldPitch)};
+    const auto local = glm::normalize(glm::vec3{glm::inverse(hull) * glm::vec4{direction, 0}});
+    const auto yaw = glm::rotate(glm::mat4{1.F}, std::atan2(local.x, local.z), glm::vec3{0, 1, 0});
+    const auto found = weaponRecoils_.find(entity.id);
+    const float recoil = found == weaponRecoils_.end()
+                             ? 0.F
+                             : definition->recoilDistance * std::pow(found->second / .25F, 2.F);
+    const auto barrel = yaw * glm::translate(glm::mat4{1.F}, definition->barrelPivot) *
+                        glm::rotate(glm::mat4{1.F},
+                                    -std::asin(std::clamp(local.y, -1.F, 1.F)),
+                                    glm::vec3{1, 0, 0}) *
+                        glm::translate(glm::mat4{1.F}, -definition->barrelPivot) *
+                        glm::translate(glm::mat4{1.F}, glm::vec3{0, 0, -recoil});
+    return {{definition->turretNode, yaw}, {definition->barrelNode, barrel}};
+}
+void Renderer::drawWeaponReticle(bool ready, float reload) const {
+    const float x = viewportWidth_ * .5F, y = viewportHeight_ * .5F;
+    const glm::vec3 color = ready ? glm::vec3{.4F, 1.F, .8F} : glm::vec3{1.F, .7F, .25F};
+    RenderPass pass(RenderPassKind::userInterface);
+    for (float sign : {-1.F, 1.F}) {
+        uiRenderer_->rectangle(x + sign * 11 - 4,
+                               y - 1,
+                               x + sign * 11 + 4,
+                               y + 1,
+                               color,
+                               viewportWidth_,
+                               viewportHeight_);
+        uiRenderer_->rectangle(x - 1,
+                               y + sign * 11 - 4,
+                               x + 1,
+                               y + sign * 11 + 4,
+                               color,
+                               viewportWidth_,
+                               viewportHeight_);
+    }
+    uiRenderer_->rectangle(
+        x - 20, y + 22, x + 20, y + 25, {.08F, .12F, .14F}, viewportWidth_, viewportHeight_);
+    uiRenderer_->rectangle(x - 20,
+                           y + 22,
+                           x - 20 + 40 * std::clamp(reload, 0.F, 1.F),
+                           y + 25,
+                           color,
+                           viewportWidth_,
+                           viewportHeight_);
+}
+void Renderer::drawShotTraces(const CameraView& camera) const {
+    if (shotTraces_.empty())
+        return;
+    RenderPass pass(RenderPassKind::overlay);
+    renderGraph_.enter(RenderPassKind::overlay);
+    std::vector<TerrainVertex> vertices;
+    for (const auto& trace : shotTraces_) {
+        vertices.push_back({trace.origin, {0, 1, 0}, {1, .72F, .25F}});
+        vertices.push_back({trace.destination, {0, 1, 0}, {1, .85F, .45F}});
+    }
+    shaders_.use(powerOverlayProgram_);
+    const auto vp = camera.viewProjection();
+    glUniformMatrix4fv(
+        shaders_.uniform(powerOverlayProgram_, "viewProjection"), 1, GL_FALSE, glm::value_ptr(vp));
+    glUniform1i(shaders_.uniform(powerOverlayProgram_, "clipPlacementDisk"), 0);
+    glUniform1f(shaders_.uniform(powerOverlayProgram_, "overlayAlpha"), 1.F);
+    glBindVertexArray(hudVao_);
+    glBindBuffer(GL_ARRAY_BUFFER, hudVbo_);
+    glBufferData(GL_ARRAY_BUFFER,
+                 static_cast<GLsizeiptr>(vertices.size() * sizeof(TerrainVertex)),
+                 vertices.data(),
+                 GL_DYNAMIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(0,
+                          3,
+                          GL_FLOAT,
+                          GL_FALSE,
+                          sizeof(TerrainVertex),
+                          reinterpret_cast<void*>(offsetof(TerrainVertex, position)));
+    glVertexAttribPointer(2,
+                          3,
+                          GL_FLOAT,
+                          GL_FALSE,
+                          sizeof(TerrainVertex),
+                          reinterpret_cast<void*>(offsetof(TerrainVertex, color)));
+    glDepthMask(GL_FALSE);
+    glLineWidth(2.F);
+    glDrawArrays(GL_LINES, 0, static_cast<GLsizei>(vertices.size()));
+    glLineWidth(1.F);
+    glDepthMask(GL_TRUE);
+    glDisableVertexAttribArray(2);
 }
 
 void Renderer::clearParticles() {
     particleSystem_->clear();
+    shotTraces_.clear();
+    weaponRecoils_.clear();
 }
 
 void Renderer::drawScreenFade(float opacity) const {
-    if (opacity <= 0.001F) return;
+    if (opacity <= 0.001F)
+        return;
     renderGraph_.enter(RenderPassKind::userInterface);
-    uiRenderer_->rectangle(0.0F, 0.0F, static_cast<float>(viewportWidth_),
-                           static_cast<float>(viewportHeight_), {0.0F, 0.0F, 0.0F},
-                           viewportWidth_, viewportHeight_, std::clamp(opacity, 0.0F, 1.0F));
+    uiRenderer_->rectangle(0.0F,
+                           0.0F,
+                           static_cast<float>(viewportWidth_),
+                           static_cast<float>(viewportHeight_),
+                           {0.0F, 0.0F, 0.0F},
+                           viewportWidth_,
+                           viewportHeight_,
+                           std::clamp(opacity, 0.0F, 1.0F));
 }
 
 void Renderer::drawMenuBackground(float pan) const {
@@ -978,6 +1100,33 @@ std::vector<ResourceSiteSource> Renderer::resourceSiteSources(const World& world
     return sources;
 }
 
+void Renderer::updateExplorationTexture(const Player& player) const {
+    const float cellSize = player.visibility.cellSize();
+    const int padding = static_cast<int>(std::ceil(MapArea::sceneryMargin / cellSize));
+    const int side = VisibilityGrid::referenceCells + padding * 2;
+    visibilityTextureExtent_ = side * cellSize;
+    std::vector<std::uint8_t> pixels(static_cast<std::size_t>(side * side));
+    for (const auto& [key, cells] : player.visibility.chunks())
+        for (int z = 0; z < VisibilityGrid::chunkSide; ++z)
+            for (int x = 0; x < VisibilityGrid::chunkSide; ++x) {
+                const int tx = key.first * VisibilityGrid::chunkSide + x + side / 2;
+                const int tz = key.second * VisibilityGrid::chunkSide + z + side / 2;
+                if (tx < 0 || tz < 0 || tx >= side || tz >= side) continue;
+                const auto cell = cells[z * VisibilityGrid::chunkSide + x];
+                pixels[static_cast<std::size_t>(tz * side + tx)] =
+                    cell & VisibilityGrid::visible ? 255 : (cell & VisibilityGrid::explored ? 90 : 0);
+            }
+    glActiveTexture(GL_TEXTURE7);
+    glBindTexture(GL_TEXTURE_2D, explorationTexture_);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    if (explorationTextureSide_ != side) {
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, side, side, 0, GL_RED, GL_UNSIGNED_BYTE, pixels.data());
+        explorationTextureSide_ = side;
+    } else {
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, side, side, GL_RED, GL_UNSIGNED_BYTE, pixels.data());
+    }
+}
+
 void Renderer::drawTerrain(const CameraView& camera,
                            const Player* player,
                            bool terrainDebug,
@@ -1027,24 +1176,11 @@ void Renderer::drawTerrain(const CameraView& camera,
                 player && !terrainDebug && waterDebugMode == 0 ? 1 : 0);
     glUniform1f(shaders_.uniform(program_, "explorationExtent"), activeWorldExtent());
     if (player) {
-        std::vector<std::uint8_t> map(player->discovered.size());
-        for (std::size_t i = 0; i < map.size(); ++i)
-            map[i] = player->visible[i] ? 255 : (player->discovered[i] ? 90 : 0);
-        glActiveTexture(GL_TEXTURE7);
-        glBindTexture(GL_TEXTURE_2D, explorationTexture_);
-        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-        glTexImage2D(GL_TEXTURE_2D,
-                     0,
-                     GL_R8,
-                     Player::explorationCells,
-                     Player::explorationCells,
-                     0,
-                     GL_RED,
-                     GL_UNSIGNED_BYTE,
-                     map.data());
+        updateExplorationTexture(*player);
         glUniform1i(shaders_.uniform(program_, "explorationMap"), 7);
         glActiveTexture(GL_TEXTURE0);
     }
+    glUniform1f(shaders_.uniform(program_, "visibilityExtent"), visibilityTextureExtent_);
     for (const TerrainChunk& chunk : terrainChunks_) {
         const float half = activeWorldExtent() * 0.5F;
         constexpr float halfChunk = Terrain::chunkCellCount * Terrain::spacing * 0.5F;
@@ -1131,6 +1267,7 @@ void Renderer::drawWater(const CameraView& camera, const Player* player, int deb
                 static_cast<float>(SDL_GetTicks()) * 0.001F);
     glUniform2fv(shaders_.uniform(waterProgram_, "fogRange"), 1, glm::value_ptr(worldFogRange()));
     glUniform1f(shaders_.uniform(waterProgram_, "explorationExtent"), activeWorldExtent());
+    glUniform1f(shaders_.uniform(waterProgram_, "visibilityExtent"), visibilityTextureExtent_);
     glUniform1i(shaders_.uniform(waterProgram_, "explorationMap"), 7);
     glUniform1i(shaders_.uniform(waterProgram_, "useExploration"),
                 player && debugMode == 0 ? 1 : 0);
@@ -1169,7 +1306,7 @@ void Renderer::drawEntityModels(std::span<const Entity> entities,
     glUniform2fv(shaders_.uniform(modelProgram_, "fogRange"), 1, glm::value_ptr(worldFogRange()));
     glUniform1i(shaders_.uniform(modelProgram_, "rememberedEntity"), 0);
     glUniform1i(shaders_.uniform(modelProgram_, "explorationMap"), 7);
-    glUniform1f(shaders_.uniform(modelProgram_, "explorationExtent"), activeWorldExtent());
+    glUniform1f(shaders_.uniform(modelProgram_, "explorationExtent"), visibilityTextureExtent_);
 
     for (const Entity& entity : entities) {
         if (entity.kind == EntityKind::resource && entity.resource &&
@@ -1230,7 +1367,7 @@ void Renderer::drawEntityModels(std::span<const Entity> entities,
                               player ? (entity.resource || entity.kind == EntityKind::decoration ? 2
                                         : entity.authority.owner != player->id                   ? 1
                                                                                : 0)
-                                     : 0});
+                                     : 0, weaponPose(entity,definition,transform)});
     }
     flushModelCommands(camera);
 }
@@ -1272,7 +1409,8 @@ void Renderer::flushModelCommands(const CameraView& camera) const {
                         command.transform,
                         command.animation,
                         command.animationSeconds,
-                        albedo ? albedo->id() : 0);
+                        albedo ? albedo->id() : 0,
+                        command.parts);
     }
     glDepthMask(GL_TRUE);
     glUniform1i(shaders_.uniform(modelProgram_, "rememberedEntity"), 0);
@@ -1332,11 +1470,9 @@ void Renderer::drawWorld(const World& world,
         for (const auto& [buffer, group] : groups)
             group.model->drawInstancedRanges(modelBindings_, viewProjection, buffer, group.ranges);
     }
-    // A fully live map has no remembered-only geometry to draw. In particular,
-    // satellite intelligence must not submit a second, shader-discarded copy of the world.
-    const bool fullyVisible = player && std::all_of(player->visible.begin(), player->visible.end(),
-                                                   [](auto cell) { return cell != 0; });
-    if (player && !fullyVisible)
+    // Visibility is evaluated against each object's bounds, independently of the
+    // playable rectangle. Live objects never submit redundant remembered geometry.
+    if (player)
         for (const LastKnownEntity& known : player->intelligence) {
             const auto* current = world.findEntity(known.id);
             if (current && current->resource && current->resource.remaining > 0)
@@ -1358,16 +1494,9 @@ void Renderer::drawWorld(const World& world,
             // Use conservative model bounds, not just its center: an object straddling
             // the vision boundary still needs the shader's per-fragment fog clipping.
             // The fog texture is linearly filtered, so include adjacent texels too.
-            const auto first = glm::max(activeMapArea().gridCell(glm::vec2{center.x, center.z} - radius,
-                                                                 Player::explorationCells) - glm::ivec2{1},
-                                        glm::ivec2{0});
-            const auto last = glm::min(activeMapArea().gridCell(glm::vec2{center.x, center.z} + radius,
-                                                                Player::explorationCells) + glm::ivec2{1},
-                                       glm::ivec2{Player::explorationCells - 1});
-            bool live = true;
-            for (int z = first.y; z <= last.y && live; ++z)
-                for (int x = first.x; x <= last.x && live; ++x)
-                    live = player->visible[z * Player::explorationCells + x] != 0;
+            const float margin = radius + player->visibility.cellSize();
+            const bool live = player->visibility.coversArea(
+                glm::vec2{center.x, center.z} - margin, glm::vec2{center.x, center.z} + margin, true);
             if (live)
                 continue;
             const glm::vec3 tint =
@@ -1387,11 +1516,7 @@ void Renderer::drawWorld(const World& world,
         if (!constructing && !damaged)
             continue;
         if (player && entity.authority.owner != player->id) {
-            const glm::ivec2 cell =
-                activeMapArea().gridCell({entity.transform.position.x, entity.transform.position.z},
-                                         Player::explorationCells);
-            if (!player->visible[static_cast<std::size_t>(cell.y * Player::explorationCells +
-                                                          cell.x)])
+            if (!player->visibility.visibleAt({entity.transform.position.x, entity.transform.position.z}))
                 continue;
         }
         const EntityDefinition* definition = resources_.entityDefinition(entity.renderId());
@@ -1483,7 +1608,7 @@ void Renderer::drawVegetation(const VegetationField& vegetation,
     glUniform1i(shaders_.uniform(modelProgram_, "rememberedEntity"), 0);
     glUniform1i(shaders_.uniform(modelProgram_, "visibilityMode"), player ? 2 : 0);
     glUniform1i(shaders_.uniform(modelProgram_, "explorationMap"), 7);
-    glUniform1f(shaders_.uniform(modelProgram_, "explorationExtent"), activeWorldExtent());
+    glUniform1f(shaders_.uniform(modelProgram_, "explorationExtent"), visibilityTextureExtent_);
     const RenderMaterial& material = materials_.get(worldMaterial_);
     // Most natural ground-cover meshes use crossed alpha cards and need both faces.
     glDisable(GL_CULL_FACE);
@@ -3224,14 +3349,10 @@ void Renderer::drawStrategyHud(const World& world,
     if (player)
         for (int z = 0; z < 16; ++z)
             for (int x = 0; x < 16; ++x) {
-                const int sourceX =
-                              x * Player::explorationCells / 16 + Player::explorationCells / 32,
-                          sourceZ =
-                              z * Player::explorationCells / 16 + Player::explorationCells / 32;
-                const auto index =
-                    static_cast<std::size_t>(sourceZ * Player::explorationCells + sourceX);
-                auto& layer = player->visible[index] ? visibleFog : rememberedFog;
-                if (player->visible[index] || player->discovered[index]) {
+                const auto point = map.gridCellCenter({x, z}, 16);
+                const bool live = player->visibility.visibleAt(point);
+                auto& layer = live ? visibleFog : rememberedFog;
+                if (player->visibility.exploredAt(point)) {
                     const float l = mapLeft + x * (mapRight - mapLeft) / 16.0F,
                                 t = mapTop + z * (mapBottom - mapTop) / 16.0F;
                     appendHudRectangle(layer,
@@ -3248,12 +3369,10 @@ void Renderer::drawStrategyHud(const World& world,
             continue;
         bool rememberedResource = false;
         if (player && entity.authority.owner != player->id) {
-            const glm::ivec2 cell =
-                activeMapArea().gridCell({entity.transform.position.x, entity.transform.position.z},
-                                         Player::explorationCells);
-            const auto index = static_cast<std::size_t>(cell.y * Player::explorationCells + cell.x);
-            rememberedResource = entity.resource && player->discovered[index] && !player->visible[index];
-            if (!player->visible[index] && !rememberedResource)
+            const glm::vec2 point{entity.transform.position.x, entity.transform.position.z};
+            const bool live = player->visibility.visibleAt(point);
+            rememberedResource = entity.resource && player->visibility.exploredAt(point) && !live;
+            if (!live && !rememberedResource)
                 continue;
         }
         const glm::vec2 normalized =
@@ -3268,10 +3387,7 @@ void Renderer::drawStrategyHud(const World& world,
             const auto* current = world.findEntity(known.id);
             if (current && current->resource && current->resource.remaining > 0)
                 continue;
-            const glm::ivec2 cell = activeMapArea().gridCell({known.position.x, known.position.z},
-                                                             Player::explorationCells);
-            if (player
-                    ->visible[static_cast<std::size_t>(cell.y * Player::explorationCells + cell.x)])
+            if (player->visibility.visibleAt({known.position.x, known.position.z}))
                 continue;
             const glm::vec2 normalized = map.normalized({known.position.x, known.position.z});
             const float x = mapLeft + normalized.x * (mapRight - mapLeft),
@@ -3309,10 +3425,7 @@ void Renderer::drawStrategyHud(const World& world,
         for (const Entity& e : world.entities())
             if (e.authority.owner == team) {
                 if (player && team != player->id) {
-                    const glm::ivec2 cell = activeMapArea().gridCell(
-                        {e.transform.position.x, e.transform.position.z}, Player::explorationCells);
-                    if (!player->visible[static_cast<std::size_t>(
-                            cell.y * Player::explorationCells + cell.x)])
+                    if (!player->visibility.visibleAt({e.transform.position.x, e.transform.position.z}))
                         continue;
                 }
                 const glm::vec2 normalized =
@@ -3440,17 +3553,22 @@ std::vector<EntityId> Renderer::unitsInScreenRectangle(const glm::vec2& start,
 void Renderer::drawOrderMarkers(const World& world,
                                 EntityId selected,
                                 const std::vector<EntityId>& selection,
-                                const CameraView& camera) const {
+                                const CameraView& camera,
+                                PlayerId owner) const {
     renderGraph_.enter(RenderPassKind::overlay);
     std::vector<glm::vec2> destinations;
     const auto add = [&](EntityId id) {
         const Entity* entity = world.findEntity(id);
-        if (!entity)
+        if (!entity || entity->authority.owner != owner)
             return;
-        if (!entity->unitControl || !entity->unitControl.hasStrategicDestination)
+        glm::vec2 destination;
+        if (entity->production && entity->production.rallyPoint)
+            destination = *entity->production.rallyPoint;
+        else if (entity->unitControl && entity->unitControl.hasStrategicDestination)
+            destination = {entity->unitControl.strategicDestination.x,
+                           entity->unitControl.strategicDestination.z};
+        else
             return;
-        const glm::vec2 destination{entity->unitControl.strategicDestination.x,
-                                    entity->unitControl.strategicDestination.z};
         for (const glm::vec2& existing : destinations)
             if (glm::dot(existing - destination, existing - destination) < 0.25F)
                 return;
@@ -3582,15 +3700,12 @@ EntityId Renderer::pickEntity(float pixelX,
             continue;
         glm::vec3 pickPosition = entity.transform.position;
         if (player && entity.authority.owner != player->id) {
-            const glm::ivec2 cell =
-                activeMapArea().gridCell({entity.transform.position.x, entity.transform.position.z},
-                                         Player::explorationCells);
-            const std::size_t index =
-                static_cast<std::size_t>(cell.y * Player::explorationCells + cell.x);
-            if (!player->discovered[index] ||
-                (currentlyVisibleOnly && !player->visible[index] && !entity.resource))
+            const glm::vec2 point{entity.transform.position.x, entity.transform.position.z};
+            const bool live = player->visibility.visibleAt(point);
+            if (!player->visibility.exploredAt(point) ||
+                (currentlyVisibleOnly && !live && !entity.resource))
                 continue;
-            if (!player->visible[index] && !entity.resource) {
+            if (!live && !entity.resource) {
                 const auto known =
                     std::find_if(player->intelligence.begin(),
                                  player->intelligence.end(),
@@ -3646,12 +3761,10 @@ void Renderer::drawEntityOutline(const World& world,
     Transform shown = entity->transform;
     bool remembered = false;
     if (player && entity->authority.owner != player->id) {
-        const glm::ivec2 cell = activeMapArea().gridCell({shown.position.x, shown.position.z},
-                                                         Player::explorationCells);
-        const auto index = static_cast<std::size_t>(cell.y * Player::explorationCells + cell.x);
-        if (entity->resource && (!player->discovered[index] || (entity->kind == EntityKind::resource && entity->resource.remaining <= 0)))
+        const glm::vec2 point{shown.position.x, shown.position.z};
+        if (entity->resource && (!player->visibility.exploredAt(point) || (entity->kind == EntityKind::resource && entity->resource.remaining <= 0)))
             return;
-        if (!player->visible[index] && !entity->resource) {
+        if (!player->visibility.visibleAt(point) && !entity->resource) {
             const auto known =
                 std::find_if(player->intelligence.begin(),
                              player->intelligence.end(),
@@ -3687,15 +3800,17 @@ void Renderer::drawEntityOutline(const World& world,
     outlineMaterial.blending ? glEnable(GL_BLEND) : glDisable(GL_BLEND);
     glDepthMask(outlineMaterial.depthWrite ? GL_TRUE : GL_FALSE);
     glCullFace(GL_FRONT);
-    model->draw(outlineBindings_, camera.viewProjection(), transform, animation, seconds);
+    model->draw(outlineBindings_, camera.viewProjection(), transform, animation, seconds,0,
+                remembered ? std::vector<ModelPartPose>{} : weaponPose(*entity,definition,transform));
     glDepthMask(GL_TRUE);
     glCullFace(GL_BACK);
 }
 
 CameraView Renderer::constrainThirdPersonCamera(const CameraView& desired,
                                                 const World& world,
-                                                EntityId followed) const {
-    const glm::vec3 segment = desired.position - desired.target;
+                                                EntityId followed,std::optional<glm::vec3> anchor) const {
+    const auto pivot=anchor.value_or(desired.target);
+    const glm::vec3 segment = desired.position - pivot;
     const float desiredDistance = glm::length(segment);
     if (desiredDistance < 0.001F)
         return desired;
@@ -3703,7 +3818,7 @@ CameraView Renderer::constrainThirdPersonCamera(const CameraView& desired,
     float allowed = desiredDistance;
     const float half = activeWorldExtent() * 0.5F - 0.5F;
     for (float distance = 0.5F; distance <= desiredDistance; distance += 0.25F) {
-        const glm::vec3 point = desired.target + direction * distance;
+        const glm::vec3 point = pivot + direction * distance;
         if (std::abs(point.x) > half || std::abs(point.z) > half ||
             point.y < terrain_.heightAt(point.x, point.z) + 0.45F) {
             allowed = std::max(0.5F, distance - 0.35F);
@@ -3723,7 +3838,7 @@ CameraView Renderer::constrainThirdPersonCamera(const CameraView& desired,
         const glm::vec3 center{entity.transform.position.x,
                                ground + definition->selectionHeight * 0.5F,
                                entity.transform.position.z};
-        const glm::vec3 offset = desired.target - center;
+        const glm::vec3 offset = pivot - center;
         const float radius = definition->selectionRadius + 0.3F;
         const float b = glm::dot(offset, direction);
         const float c = glm::dot(offset, offset) - radius * radius;
@@ -3735,7 +3850,8 @@ CameraView Renderer::constrainThirdPersonCamera(const CameraView& desired,
             allowed = std::max(0.5F, hit - 0.3F);
     }
     CameraView result = desired;
-    result.position = desired.target + direction * allowed;
+    result.position = pivot + direction * allowed;
+    if (anchor) result.target=result.position+glm::normalize(desired.target-desired.position)*100.F;
     result.view = glm::lookAt(result.position, result.target, {0.0F, 1.0F, 0.0F});
     return result;
 }

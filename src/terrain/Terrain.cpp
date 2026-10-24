@@ -19,6 +19,13 @@
 #include <stdexcept>
 
 namespace strategy {
+namespace {
+constexpr float maximumWalkingStep = 0.4F;
+constexpr float maximumWalkingSlope = 40.0F;
+constexpr float walkingSlowdownSlope = 25.0F;
+constexpr float minimumWalkingSpeedScale = 0.65F;
+constexpr float traversalHeightTolerance = 0.0001F;
+} // namespace
 std::uint64_t Terrain::nextPlacementRevision() {
     static std::atomic<std::uint64_t> serial{0};
     return ++serial;
@@ -240,7 +247,40 @@ void Terrain::repairV2Resources(std::uint32_t seed,
 }
 
 bool Terrain::permitsLandSegment(glm::vec2 start, glm::vec2 end) const {
-    return !v2_ || !v2_->terraces.crossesCliff(start, end);
+    return !v2_ || v2_->terraces.maximumCliffDrop(start, end) <=
+                       maximumWalkingStep + traversalHeightTolerance;
+}
+
+float Terrain::walkingSpeedScaleAt(float worldX, float worldZ) const {
+    if (!v2_) return 1.0F;
+    const glm::vec2 point{worldX, worldZ};
+    // Match the rendered triangle instead of averaging across a neighbouring cliff.
+    const auto grid = (point + glm::vec2{worldExtent() * .5F}) / spacing;
+    const int x = std::clamp(static_cast<int>(std::floor(grid.x)), 0, cellCount - 1);
+    const int z = std::clamp(static_cast<int>(std::floor(grid.y)), 0, cellCount - 1);
+    glm::vec2 gradient;
+    if ((grid.x - x) + (grid.y - z) <= 1) {
+        const float h = vertexHeight(x, z);
+        gradient = {vertexHeight(x + 1, z) - h, vertexHeight(x, z + 1) - h};
+    } else {
+        const float h = vertexHeight(x + 1, z + 1);
+        gradient = {h - vertexHeight(x, z + 1), h - vertexHeight(x + 1, z)};
+    }
+    gradient /= spacing;
+    const float angle = glm::degrees(std::atan(glm::length(gradient)));
+    if (angle > maximumWalkingSlope) {
+        // Only steep faces need the authored-step exception. Ordinary hills do
+        // not need two extra terrace-boundary queries for every path sample.
+        const auto& terraces = v2_->terraces;
+        const float drop = std::max(
+            terraces.maximumCliffDrop(point - glm::vec2{spacing, 0}, point + glm::vec2{spacing, 0}),
+            terraces.maximumCliffDrop(point - glm::vec2{0, spacing}, point + glm::vec2{0, spacing}));
+        return drop > 0 && drop <= maximumWalkingStep + traversalHeightTolerance
+                   ? minimumWalkingSpeedScale : 0.0F;
+    }
+    return std::lerp(1.0F, minimumWalkingSpeedScale,
+        std::clamp((angle - walkingSlowdownSlope) / (maximumWalkingSlope - walkingSlowdownSlope),
+                   0.0F, 1.0F));
 }
 
 bool Terrain::permitsMovementSegment(glm::vec2 start,
@@ -251,17 +291,22 @@ bool Terrain::permitsMovementSegment(glm::vec2 start,
         return true;
     const int steps =
         std::max(1, static_cast<int>(std::ceil(glm::length(end - start) / (spacing * 0.5F))));
+    const float diagonal = radius * 0.70710678F;
     for (auto offset : {glm::vec2{0, 0},
-                        glm::vec2{radius, radius},
-                        glm::vec2{radius, -radius},
-                        glm::vec2{-radius, radius},
-                        glm::vec2{-radius, -radius}}) {
+                        glm::vec2{radius, 0}, glm::vec2{-radius, 0},
+                        glm::vec2{0, radius}, glm::vec2{0, -radius},
+                        glm::vec2{diagonal, diagonal}, glm::vec2{diagonal, -diagonal},
+                        glm::vec2{-diagonal, diagonal}, glm::vec2{-diagonal, -diagonal}}) {
         if (hasMovementDomain(domains, MovementDomain::land) &&
-            !permitsLandSegment(start + offset, end + offset))
+            (!permitsLandSegment(start + offset, end + offset) ||
+             !permitsLandSegment(start, start + offset) ||
+             !permitsLandSegment(end, end + offset)))
             return false;
         for (int step = 0; step <= steps; ++step) {
             const auto point = glm::mix(start, end, static_cast<float>(step) / steps) + offset;
-            if (movementCostAt(point.x, point.y, domains) <= 0)
+            if (movementCostAt(point.x, point.y, domains) <= 0 ||
+                (hasMovementDomain(domains, MovementDomain::land) &&
+                 walkingSpeedScaleAt(point.x, point.y) <= 0))
                 return false;
         }
     }
@@ -1537,17 +1582,16 @@ float Terrain::movementCostAt(float worldX, float worldZ, MovementDomainMask dom
     if (v2_) {
         if (hasMovementDomain(domains, MovementDomain::air))
             return 1.0F;
-        const bool wet = waterCoverageAt(worldX, worldZ) > 0.0F &&
+        const bool wet = v2_->plan.hasWater() && waterCoverageAt(worldX, worldZ) > 0.0F &&
                          waterSurfaceAt(worldX, worldZ) > heightAt(worldX, worldZ);
         if (wet)
             return hasMovementDomain(domains, MovementDomain::water) ? 1.0F : 0.0F;
         if (!hasMovementDomain(domains, MovementDomain::land))
             return 0.0F;
-        const glm::vec2 point{worldX, worldZ};
-        if (!permitsLandSegment(point - glm::vec2{spacing, 0}, point + glm::vec2{spacing, 0}) ||
-            !permitsLandSegment(point - glm::vec2{0, spacing}, point + glm::vec2{0, spacing}))
-            return 0.0F;
-        return sample.movementCosts[0];
+        if (sample.tags & terrainTagBit(TerrainTag::universalBarrier)) return 0.0F;
+        // V2 cliffs and physical slope determine access. A coarse highland biome or
+        // V1 mountain signal must not veto an otherwise walkable dry surface.
+        return sample.movementCosts[0] > 0 ? sample.movementCosts[0] : 1.0F;
     }
     float result = std::numeric_limits<float>::max();
     for (const MovementDomain domain : movementDomains) {

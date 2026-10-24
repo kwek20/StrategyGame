@@ -26,6 +26,7 @@ struct ModelInstanceRange {
     std::uint32_t first{0};
     std::uint32_t count{0};
 };
+struct ModelPartPose { std::string node; glm::mat4 transform{1.F}; };
 class Model final {
   public:
     explicit Model(std::shared_ptr<ModelAsset> asset);
@@ -37,7 +38,8 @@ class Model final {
               const glm::mat4& worldTransform,
               const std::string& animation = {},
               double animationSeconds = 0.0,
-              std::uint32_t overrideTexture = 0) const;
+              std::uint32_t overrideTexture = 0,
+              std::span<const ModelPartPose> parts = {}) const;
     void drawInstanced(const ModelShaderBindings& shader,
                        const glm::mat4& viewProjection,
                        const std::vector<glm::mat4>& transforms,
@@ -64,6 +66,7 @@ class Model final {
   private:
     static constexpr std::size_t maxBones = ModelAsset::maxBones;
     struct Mesh {
+        std::string nodeName;
         std::uint32_t vao{0}, vbo{0}, ebo{0}, indexCount{0};
         glm::mat4 nodeTransform{1};
         Material material;

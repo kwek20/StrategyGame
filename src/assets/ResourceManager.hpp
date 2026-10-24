@@ -31,6 +31,9 @@ struct EntityDefinition {
     float foundationRadius{0.0F};
     float maximumFoundationSlope{8.0F};
     std::unordered_map<std::string, std::string> animations;
+    std::string turretNode, barrelNode;
+    glm::vec3 barrelPivot{};
+    float recoilDistance{.25F};
 };
 
 struct AssetPreloadSet {

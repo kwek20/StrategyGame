@@ -32,6 +32,8 @@ settings bindings are read to preserve user preferences; new writes use the stru
 | Cycle idle construction drones / select all idle drones | . / Shift+. |
 | Recall / assign control groups 1-9,0 | Number / Ctrl+number |
 | Contextual unit order | Right-click |
+| Set/move selected producer’s rally point | Right-click ground or minimap |
+| Clear rally point | Clear rally point in the command panel |
 | Stop selected units | X |
 | Command panel slots 1-12 | Alt+1 through Alt+0, Alt+-, Alt+= |
 | Copy hovered owned building, including rotation | B |
@@ -96,3 +98,21 @@ is 10, with existing command variant indices preserved.
 - `repeat_placement_controls`: three real placements retain work and close on the final plain click.
 - `power_placement_controls`: constrained clicks and a real Settings change applied to active Play.
 - `navigation_keybind_controls`: hub/idle/group shortcuts and direct-control camera/movement/release.
+
+Rally flags appear for selected owned producers. New units move to the current rally point after
+deployment; changing or clearing it preserves orders already given to existing units. Power
+Toggle connection mode uses a left-click on another device and suppresses rally orders until it
+finishes or is cancelled with Escape.
+
+Every unit-producing building uses the same rally and deployment rules, including command hubs
+and every town-center tier. Flying output uses air traversal and then flies to the rally.
+Double-click can possess any owned non-drone unit; the possession shortcut uses the same
+unit-definition rule. Drone-tagged units remain indirect-control only. Eligibility is no longer
+saved per instance or overridden by the starting roster.
+
+Power priority displays its current state: one tier for Low, two for Medium and the existing
+three-tier icon for High. Clicking continues cycling Low/Medium/High.
+Direct tank control: mouse movement aims the turret independently of the hull. Left Mouse fires;
+hold to repeat at the cannon cooldown. Hold Right Mouse to zoom around the crosshair without
+changing its aiming ray. These actions are rebindable as Fire weapon and Zoom at aim point in the
+Direct control category. The reticle is amber while aiming/reloading and green when ready.

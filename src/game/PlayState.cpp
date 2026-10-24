@@ -1,4 +1,5 @@
 #include "game/PlayState.hpp"
+#include "simulation/CombatRules.hpp"
 
 #include "app/GameEvents.hpp"
 #include "core/EventBus.hpp"
@@ -332,14 +333,25 @@ PlayState::PlayState(StateContext& context, SaveData data, WorldGenerationProgre
 }
 
 void PlayState::restoreSavedPlayerProgress(SaveData& data) {
+    // Held device input belongs to the old local controller, not the restored match.
+    for (const auto& entity : session_.world().entities())
+        if (entity.authority.directController == localPlayer_)
+            session_.submit({localPlayer_, nextCommandSequence_++, ReleaseUnitCommand{entity.id}});
+    possessedEntity_ = 0;
+    viewMode_ = ViewMode::strategy;
+    input_.clear();
+    manualFirePressed_ = false;
+    setMouseCaptured(false);
     for (std::size_t index = 0; index < data.resources.size(); ++index) {
         const PlayerId id = index + 1;
         if (auto* player = session_.players().find(id)) {
             player->countryId = index == 0 ? data.playerOneCountry : data.playerTwoCountry;
-            player->specializationId = index == 0 ? data.playerOneSpecialization : data.playerTwoSpecialization;
+            player->specializationId =
+                index == 0 ? data.playerOneSpecialization : data.playerTwoSpecialization;
         }
-        session_.restorePlayerProgress(id, std::move(data.resources[index]),
-                                       std::move(data.discovered[index]),
+        session_.restorePlayerProgress(id,
+                                       std::move(data.resources[index]),
+                                       std::move(data.visibility[index]),
                                        std::move(data.intelligence[index]),
                                        std::move(data.researchedUpgrades[index]));
     }
@@ -423,13 +435,23 @@ void PlayState::updateGameplayHud(Renderer& renderer, const Player* player) cons
     std::ostringstream entityInfo;
     std::ostringstream entityQueue;
     std::optional<EntityHudModel> hud;
-    const Entity* selected = session_.world().findEntity(possessedEntity_ ? possessedEntity_ : selectedEntity_);
-    const bool sameType = selected && isHomogeneousSelection(session_.world(), selectedUnits_, selected->archetype.value);
+    const Entity* selected =
+        session_.world().findEntity(possessedEntity_ ? possessedEntity_ : selectedEntity_);
+    const bool sameType =
+        selected &&
+        isHomogeneousSelection(session_.world(), selectedUnits_, selected->archetype.value);
     if (viewMode_ == ViewMode::unitControl && selected) {
-        hud = EntityHudModelBuilder::build(session_.world(), selected->id, {}, context_.definitions);
+        hud =
+            EntityHudModelBuilder::build(session_.world(), selected->id, {}, context_.definitions);
         hud->footer =
             Text::format("keybind.direct_hint",
                          {config_.keybinds.label("possess"), config_.keybinds.label("pause")});
+        if (const auto* weapon = primaryWeapon(context_.definitions, *selected);
+            weapon && weapon->turretTurnRateDegrees > 0)
+            hud->footer = Text::format("keybind.tank_hint",
+                                       {config_.keybinds.label("unit_fire"),
+                                        config_.keybinds.label("unit_aim_zoom"),
+                                        config_.keybinds.label("pause")});
     } else if (selectedResourceField_ && selected) {
         hud = EntityHudModelBuilder::build(
             session_.world(), selectedEntity_, selectedUnits_, context_.definitions, true);
@@ -586,6 +608,7 @@ void PlayState::setPaused(bool paused) {
         return;
     paused_ = paused;
     input_.clear();
+    manualFirePressed_=false;
     if (paused_) {
         pauseScreen_ =
             context_.renderer->pushUiScreen({"assets/ui/pause_menu.rml",
@@ -707,8 +730,16 @@ EntityHudModel PlayState::buildEntityActionHudModel(const Entity& selected,
     EntityHudModel hud = EntityHudModelBuilder::build(
         session_.world(), selected.id, selectedUnits_, context_.definitions);
     const std::vector<EntityId> targets = actionTargets(selected.id, selectedUnits_);
-    for (const RecipeDefinition* recipe :
-         context_.definitions.recipesForProducer(selected.archetype.value)) {
+    const auto producerRecipes = context_.definitions.recipesForProducer(selected.archetype.value);
+    const bool trainsUnits = context_.definitions.producesUnits(selected);
+    if (trainsUnits) {
+        hud.stats.push_back({Text::get("production.rally.label"),
+                             Text::format(selected.production.rallyPoint ? "production.rally.set"
+                                                                         : "production.rally.unset",
+                                          {config_.keybinds.label("order")})});
+    }
+
+    for (const RecipeDefinition* recipe : producerRecipes) {
         const EntityArchetype* product = context_.definitions.archetype(recipe->product.id);
         HudActionModel action;
         action.id = recipe->id;
@@ -828,7 +859,10 @@ EntityHudModel PlayState::buildEntityActionHudModel(const Entity& selected,
         priority.name = Text::get("power.action.priority");
         priority.description = Text::format("power.action.priority.description",
                                             {powerPriorityName(selected.power.priority)});
-        priority.icon = "action_power_priority";
+        priority.icon = selected.power.priority == PowerPriority::low ? "action_power_priority_low"
+                        : selected.power.priority == PowerPriority::medium
+                            ? "action_power_priority_medium"
+                            : "action_power_priority";
         priority.cost = Text::get("entity_hud.free");
         priority.enabled = true;
         hud.actions.push_back(std::move(priority));
@@ -859,6 +893,15 @@ EntityHudModel PlayState::buildEntityActionHudModel(const Entity& selected,
             control.enabled = true;
             hud.actions.push_back(std::move(control));
         }
+    }
+    if (trainsUnits && selected.production.rallyPoint) {
+        HudActionModel clear;
+        clear.id = "production.clear_rally";
+        clear.name = Text::get("production.rally.clear");
+        clear.description = Text::get("production.rally.clear.description");
+        clear.icon = "action_move";
+        clear.cost = Text::get("entity_hud.free");
+        hud.actions.push_back(std::move(clear));
     }
     appendSyntheticRoutes(hud, session_.world(), context_.definitions, localPlayer_, targets);
     return hud;
@@ -915,7 +958,16 @@ bool PlayState::handleGameplayHudAction(const std::string& action) {
         constructionPlacementMode_ = true;
         return true;
     }
+    if (id == "production.clear_rally") {
+        for (EntityId target : targets)
+            session_.submit(
+                {localPlayer_, nextCommandSequence_++, SetRallyPointCommand{target, std::nullopt}});
+        return true;
+    }
     if (id == "power.connection") {
+        pendingMoveScreen_.reset();
+        pendingMoveDestination_.reset();
+        pendingOrderTarget_ = 0;
         powerLinkMode_ = PowerLinkMode::toggle;
         powerLinkSource_ = selected->id;
         powerOverlayVisible_ = true;
@@ -1052,8 +1104,10 @@ void PlayState::handleSelectionShortcut(std::string_view action) {
 
 void PlayState::handleEvent(const SDL_Event& event) {
     input_.observe(event);
-    if (event.type == SDL_EVENT_WINDOW_FOCUS_LOST)
+    if (event.type == SDL_EVENT_WINDOW_FOCUS_LOST) {
         mousePanning_ = orbiting_ = draggingSelection_ = false;
+        manualFirePressed_=false;
+    }
     const InputContext inputContext = constructionPlacementMode_           ? InputContext::placement
                                       : viewMode_ == ViewMode::unitControl ? InputContext::direct
                                                                            : InputContext::strategy;
@@ -1181,8 +1235,10 @@ void PlayState::handleEvent(const SDL_Event& event) {
         } else {
             for (const Entity& entity : session_.world().entities()) {
                 if (entity.authority.owner == localPlayer_ && entity.unitControl &&
-                    entity.unitControl.directlyControllable) {
+                    context_.definitions.permitsDirectControl(entity)) {
                     possessedEntity_ = entity.id;
+                    if (const auto* weapon=primaryWeapon(context_.definitions,entity);weapon && weapon->turretTurnRateDegrees>0)
+                        thirdPersonCamera_.faceWeapon(entity.combat.turretYawDegrees);
                     session_.submit(
                         {localPlayer_, nextCommandSequence_++, PossessUnitCommand{entity.id}});
                     viewMode_ = ViewMode::unitControl;
@@ -1234,11 +1290,13 @@ void PlayState::handleEvent(const SDL_Event& event) {
             return;
         if ((event.type == SDL_EVENT_MOUSE_BUTTON_DOWN || event.type == SDL_EVENT_MOUSE_BUTTON_UP ||
              event.type == SDL_EVENT_MOUSE_WHEEL) &&
-            context_.renderer->pointerOverUi() && !mousePanning_ && !orbiting_)
+            context_.renderer->pointerOverUi() && !minimapWorldAt(eventPoint.x, eventPoint.y) &&
+            !mousePanning_ && !orbiting_)
             return;
     }
     if (event.type == SDL_EVENT_MOUSE_MOTION && constructionPlacementMode_)
         constructionCursorScreen_ = glm::vec2{event.motion.x, event.motion.y};
+    if (viewMode_==ViewMode::unitControl && pressed("unit_fire")) manualFirePressed_=true;
     if (pressed("place") && viewMode_ == ViewMode::strategy && constructionPlacementMode_) {
         if (pendingConstructionIntent_ || pendingPlacementSequence_)
             return;
@@ -1412,6 +1470,7 @@ void PlayState::update(float deltaSeconds) {
         config_ = GameConfig::load(context_.configPath);
         settingsRevision_ = context_.settingsRevision;
         input_.clear();
+    manualFirePressed_=false;
         orbiting_ = mousePanning_ = false;
     }
     const bool direct = viewMode_ == ViewMode::unitControl;
@@ -1490,8 +1549,10 @@ void PlayState::update(float deltaSeconds) {
                                    : AudioCue::selection});
             if (const Entity* selected = session_.world().findEntity(selectedEntity_);
                 confirmedDoubleClick && selected && selected->authority.owner == localPlayer_ &&
-                selected->unitControl && selected->unitControl.directlyControllable) {
+                context_.definitions.permitsDirectControl(*selected)) {
                 possessedEntity_ = selectedEntity_;
+                if (const auto* weapon=primaryWeapon(context_.definitions,*selected);weapon && weapon->turretTurnRateDegrees>0)
+                    thirdPersonCamera_.faceWeapon(selected->combat.turretYawDegrees);
                 session_.submit(
                     {localPlayer_, nextCommandSequence_++, PossessUnitCommand{possessedEntity_}});
                 viewMode_ = ViewMode::unitControl;
@@ -1519,15 +1580,27 @@ void PlayState::update(float deltaSeconds) {
         (!selectedUnits_.empty() && !homogeneousDrones)) {
         cancelConstructionPlacement();
     }
+    if (powerLinkMode_ != PowerLinkMode::none) {
+        pendingMoveScreen_.reset();
+        pendingMoveDestination_.reset();
+        pendingOrderTarget_ = 0;
+    }
     if (pendingMoveDestination_) {
         const glm::vec3 destination = *pendingMoveDestination_;
         pendingMoveDestination_.reset();
         const Entity* target = session_.world().findEntity(pendingOrderTarget_);
         context_.events.enqueue(AudioEvent{AudioCue::moveOrder});
         const auto order = [&](EntityId id) {
-            if (const Entity* entity = session_.world().findEntity(id);
-                entity && entity->authority.owner == localPlayer_ && entity->unitControl &&
-                entity->authority.directController == 0) {
+            const Entity* producer = session_.world().findEntity(id);
+            if (producer && producer->authority.owner == localPlayer_ &&
+                context_.definitions.producesUnits(*producer)) {
+                session_.submit(
+                    {localPlayer_,
+                     nextCommandSequence_++,
+                     SetRallyPointCommand{id, glm::vec2{destination.x, destination.z}}});
+            } else if (const Entity* entity = producer;
+                       entity && entity->authority.owner == localPlayer_ && entity->unitControl &&
+                       entity->authority.directController == 0) {
                 if (target && target->processor && target->authority.owner == localPlayer_ &&
                     entity->gatherer) {
                     if (entity->gatherer.carriedAmount > 0.0F)
@@ -1538,11 +1611,12 @@ void PlayState::update(float deltaSeconds) {
                         session_.submit({localPlayer_,
                                          nextCommandSequence_++,
                                          SetPreferredProcessorCommand{id, target->id}});
-                } else if (target && target->resource)
+                } else if (target && target->resource && entity->gatherer)
                     session_.submit({localPlayer_,
                                      nextCommandSequence_++,
                                      GatherResourceCommand{id, target->id}});
-                else if (target && target->construction && !isOperational(*target))
+                else if (target && target->construction && !isOperational(*target) &&
+                         target->authority.owner==localPlayer_ && entity->flight && entity->battery)
                     session_.submit(
                         {localPlayer_,
                          nextCommandSequence_++,
@@ -1584,6 +1658,8 @@ void PlayState::update(float deltaSeconds) {
     }
     const float forward = static_cast<float>(forward_) - static_cast<float>(backward_);
     const float right = static_cast<float>(right_) - static_cast<float>(left_);
+    thirdPersonCamera_.updateAimZoom(
+        possessedEntity_ && config_.keybinds.held("unit_aim_zoom", input_), deltaSeconds);
     if (possessedEntity_ != 0) {
         session_.submit({localPlayer_,
                          nextCommandSequence_++,
@@ -1591,10 +1667,40 @@ void PlayState::update(float deltaSeconds) {
                                                 thirdPersonCamera_.groundMovement(forward, right),
                                                 running_,
                                                 thirdPersonCamera_.characterFacingDegrees()}});
+        if (const auto* actor = session_.world().findEntity(possessedEntity_);
+            actor && context_.renderer) {
+            if (const auto* weapon = primaryWeapon(context_.definitions, *actor);
+                weapon && weapon->turretTurnRateDegrees > 0) {
+                const auto view = controlledCameraView(*context_.renderer, *actor);
+                const auto contact = traceWeapon(session_.world(),
+                                                 session_.terrain(),
+                                                 context_.definitions,
+                                                 session_.players(),
+                                                 *actor,
+                                                 view.position,
+                                                 view.target - view.position,
+                                                 200.F,
+                                                 session_.mapChunksPerSide());
+                session_.submit({localPlayer_,
+                                 nextCommandSequence_++,
+                                 AimWeaponCommand{actor->id,
+                                                  contact.position,
+                                                  config_.keybinds.held("unit_fire", input_),
+                                                  manualFirePressed_}});
+            }
+        }
     } else {
         camera_.pan(forward, right, deltaSeconds, running_);
     }
+    manualFirePressed_ = false;
     session_.update(deltaSeconds);
+    for (const auto& shot : session_.consumeCombatShots())
+        if (context_.renderer)
+            particlePresenter_.presentShot(*context_.renderer,
+                                           context_.events,
+                                           shot,
+                                           session_.players().find(localPlayer_),
+                                           session_.mapChunksPerSide());
     for (const auto& event : session_.consumePlacementEvents()) {
         if (event.player != localPlayer_ || !pendingPlacementSequence_ ||
             event.sequence != *pendingPlacementSequence_)
@@ -1769,13 +1875,7 @@ void PlayState::render(Renderer& renderer) const {
         camera_.view(renderer.aspectRatio(), session_.terrain().heightAt(focus.x, focus.z));
     if (viewMode_ == ViewMode::unitControl && possessedEntity_ != 0) {
         if (const Entity* entity = session_.world().findEntity(possessedEntity_)) {
-            const float ground = renderer.terrainHeightAt(entity->transform.position.x,
-                                                          entity->transform.position.z);
-            view = thirdPersonCamera_.view(renderer.aspectRatio(),
-                                           {entity->transform.position.x,
-                                            ground + entity->transform.position.y,
-                                            entity->transform.position.z});
-            view = renderer.constrainThirdPersonCamera(view, session_.world(), possessedEntity_);
+            view = controlledCameraView(renderer,*entity);
         }
     }
     if (pendingMoveScreen_) {
@@ -1795,10 +1895,7 @@ void PlayState::render(Renderer& renderer) const {
                                          pendingConstructionRangeLock_);
         if (local) {
             const auto p = pendingConstructionIntent_->position;
-            const auto cell =
-                MapArea{session_.mapChunksPerSide()}.gridCell({p.x, p.z}, Player::explorationCells);
-            const auto index = static_cast<std::size_t>(cell.y * Player::explorationCells + cell.x);
-            if (index >= local->discovered.size() || !local->discovered[index]) {
+            if (!local->visibility.exploredAt({p.x, p.z})) {
                 pendingConstructionIntent_.reset();
                 pendingUnexploredPlacement_ = true;
             }
@@ -1862,14 +1959,8 @@ void PlayState::render(Renderer& renderer) const {
         bool previouslyExplored = true;
         const EntityArchetype* buildingDefinition = context_.definitions.archetype(buildingId);
         if (local) {
-            const glm::ivec2 cell = MapArea{session_.mapChunksPerSide()}.gridCell(
-                {position.x, position.z}, Player::explorationCells);
-            const auto index = static_cast<std::size_t>(
-                cell.y * Player::explorationCells + cell.x);
-            currentlyVisible = index < visibilityPlayer->visible.size() &&
-                               visibilityPlayer->visible[index] != 0;
-            previouslyExplored = index < visibilityPlayer->discovered.size() &&
-                                 visibilityPlayer->discovered[index] != 0;
+            currentlyVisible = visibilityPlayer->visibility.visibleAt({position.x, position.z});
+            previouslyExplored = visibilityPlayer->visibility.exploredAt({position.x, position.z});
         }
         const EntityId builder = selectedUnits_.empty() ? selectedEntity_ : selectedUnits_.front();
         const auto analysisStarted = FrameProfiler::Clock::now();
@@ -2004,7 +2095,7 @@ void PlayState::render(Renderer& renderer) const {
         drawScene();
     }
     if (viewMode_ == ViewMode::strategy)
-        renderer.drawOrderMarkers(session_.world(), selectedEntity_, selectedUnits_, view);
+        renderer.drawOrderMarkers(session_.world(), selectedEntity_, selectedUnits_, view, localPlayer_);
     if (!selectedUnits_.empty())
         for (EntityId selected : selectedUnits_)
             renderer.drawEntityOutline(session_.world(), selected, view, visibilityPlayer);
@@ -2021,10 +2112,7 @@ void PlayState::render(Renderer& renderer) const {
                     node.resource.fieldId == hovered->resource.fieldId &&
                     node.resource.type == hovered->resource.type) {
                     if (visibilityPlayer) {
-                        const auto cell = MapArea{session_.mapChunksPerSide()}.gridCell(
-                            {node.transform.position.x, node.transform.position.z},
-                            Player::explorationCells);
-                        if (!visibilityPlayer->discovered[cell.y * Player::explorationCells + cell.x])
+                        if (!visibilityPlayer->visibility.exploredAt({node.transform.position.x, node.transform.position.z}))
                             continue;
                     }
                     renderer.drawEntityOutline(session_.world(), node.id, view, visibilityPlayer);
@@ -2074,8 +2162,37 @@ void PlayState::render(Renderer& renderer) const {
         if (pauseTransition_ >= 0.0F)
             renderer.drawScreenFade(std::clamp(pauseTransition_ / 0.24F, 0.0F, 1.0F));
     }
+    if (viewMode_ == ViewMode::unitControl && !paused_)
+        if (const auto* actor = session_.world().findEntity(possessedEntity_);
+            actor && actor->combat)
+            if (const auto* weapon = primaryWeapon(context_.definitions, *actor);
+                weapon && weapon->turretTurnRateDegrees > 0)
+                renderer.drawWeaponReticle(
+                    actor->combat.cooldownRemaining <= 0 && actor->combat.directAim &&
+                        glm::dot(weaponDirection(*actor, *weapon),
+                                 glm::normalize(
+                                     *actor->combat.directAim -
+                                     combatMuzzle(session_.terrain(), *actor, *weapon))) > .9995F,
+                    1.F - actor->combat.cooldownRemaining /
+                              std::max(.001F, actor->combat.cooldownSeconds));
     if (entryFadeRemaining_ > 0.0F)
         renderer.drawScreenFade(std::clamp(entryFadeRemaining_ / 0.35F, 0.0F, 1.0F));
+}
+
+CameraView PlayState::controlledCameraView(Renderer& renderer, const Entity& actor) const {
+    const float ground =
+        renderer.terrainHeightAt(actor.transform.position.x, actor.transform.position.z);
+    const glm::vec3 feet{actor.transform.position.x,
+                         ground + actor.transform.position.y,
+                         actor.transform.position.z};
+    const auto* weapon = primaryWeapon(context_.definitions, actor);
+    const bool weaponView = weapon && weapon->turretTurnRateDegrees > 0;
+    const auto view = thirdPersonCamera_.view(renderer.aspectRatio(), feet, weaponView);
+    return renderer.constrainThirdPersonCamera(view,
+                                               session_.world(),
+                                               actor.id,
+                                               weaponView ? std::optional{feet + glm::vec3{0, 2, 0}}
+                                                          : std::nullopt);
 }
 
 StateRequest PlayState::takeRequest() {

@@ -28,6 +28,7 @@ struct ParticleVertex {
 struct ParticleBatch {
     ParticleBlendMode blend{ParticleBlendMode::alpha};
     std::uint32_t texture{0};
+    bool luminanceMask{};
     std::vector<ParticleVertex> vertices;
 };
 
@@ -97,10 +98,10 @@ void ParticleRenderer::draw(const ParticleSystem& particles,
         const Texture* loaded = resources_->textureOrMarker(texture->second);
         if (!loaded) continue;
         auto batch = std::find_if(batches.begin(), batches.end(), [&](const ParticleBatch& candidate) {
-            return candidate.blend == effect->render.blend && candidate.texture == loaded->id();
+            return candidate.blend == effect->render.blend && candidate.texture == loaded->id() && candidate.luminanceMask==effect->render.luminanceMask;
         });
         if (batch == batches.end()) {
-            batches.push_back({effect->render.blend, loaded->id(), {}});
+            batches.push_back({effect->render.blend, loaded->id(),effect->render.luminanceMask, {}});
             batch = std::prev(batches.end());
             batch->vertices.reserve(particles.particles().size() * 6);
         }
@@ -139,6 +140,7 @@ void ParticleRenderer::draw(const ParticleSystem& particles,
         setBlend(batch.blend);
         glUniform1i(shaders_->uniform(program_, "premultiplyAlpha"),
                     batch.blend == ParticleBlendMode::premultiplied ? 1 : 0);
+        glUniform1i(shaders_->uniform(program_,"luminanceMask"),batch.luminanceMask ? 1 : 0);
         glBindTexture(GL_TEXTURE_2D, batch.texture);
         glBindBuffer(GL_ARRAY_BUFFER, vbo_);
         glBufferData(GL_ARRAY_BUFFER,

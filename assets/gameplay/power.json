@@ -67,7 +67,7 @@
       "transferLimit": 8,
       "maximumConnections": 2
     },
-    "drone_factory": {
+    "tank_factory": {
       "tags": ["consumer", "factory", "production"],
       "consumption": 12,
       "connectionRange": 24,

@@ -59,7 +59,6 @@ inline float effectiveSightRange(float resolvedRange, float terrainHeight, bool 
 }
 
 struct UnitComponent {
-    bool directlyControllable{false};
     glm::vec2 directInput{0.0F};
     bool running{false};
     glm::vec3 strategicDestination{0.0F};
@@ -132,6 +131,11 @@ struct CombatComponent {
     float range{0.0F};
     float cooldownSeconds{0.0F};
     float cooldownRemaining{0.0F};
+    std::uint64_t shotsFired{};
+    std::optional<glm::vec2> lastSeenTarget;
+    float turretYawDegrees{}, turretPitchDegrees{};
+    std::optional<glm::vec3> directAim;
+    bool triggerHeld{false};
 };
 struct ResourceComponent {
     std::uint64_t fieldId{0}; // Generated field membership; zero for independent/legacy sources.
@@ -180,6 +184,8 @@ struct EntityTransientState {
     float navigationRetrySeconds{0.0F};
     EntityId navigationGoalEntity{0};
     float navigationInteractionRange{0.0F};
+    bool firingLineBlocked{false};
+    bool directFirePressed{false}; // Consumed within the same simulation tick as the input command.
     // Rebuilt power diagnostics. These are presentation caches, not authoritative state.
     EntityId powerParent{0};
     EntityId powerRoot{0};
@@ -215,6 +221,7 @@ struct ProductionComponent {
     std::uint32_t productionSpeedUpgrades{0};
     std::uint32_t powerProgressPermille{0};
     std::deque<ProductionOrder> queue;
+    std::optional<glm::vec2> rallyPoint;
 };
 
 struct BuildingUpgradeComponent {

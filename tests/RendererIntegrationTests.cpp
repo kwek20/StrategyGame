@@ -1,6 +1,7 @@
 #include "TerrainLevelingFixture.hpp"
 #include "TerrainTiltFixture.hpp"
 #include "audio/AudioSystem.hpp"
+#include "app/GameEvents.hpp"
 #include "core/EventBus.hpp"
 #include "diagnostics/Logger.hpp"
 #include "game/PlayState.hpp"
@@ -11,6 +12,7 @@
 #include "render/Renderer.hpp"
 #include "render/ShaderManager.hpp"
 #include "simulation/GameSession.hpp"
+#include "simulation/CombatRules.hpp"
 #include "simulation/StateChecksum.hpp"
 #include "terrain/Terrain.hpp"
 #include "terrain/TerrainGenerationPipeline.hpp"
@@ -693,7 +695,8 @@ bool checkRememberedCulling(strategy::Renderer& renderer) {
     camera.projection = glm::ortho(-20.F, 20.F, -20.F, 20.F, .1F, 200.F);
     World empty;
     Player player;
-    std::fill(player.discovered.begin(), player.discovered.end(), 255);
+    player.visibility = VisibilityGrid{MapArea{10}.extent() / VisibilityGrid::referenceCells};
+    player.visibility.revealArea(glm::vec2{-216}, glm::vec2{216}, false);
     player.intelligence.push_back({99999, "basic_generator", {0, 0, 0}, {0, 0, 0}, {1, 1, 1}, true});
     GLuint query = 0;
     glGenQueries(1, &query);
@@ -712,15 +715,14 @@ bool checkRememberedCulling(strategy::Renderer& renderer) {
     player.intelligence.front().position.x = 10000;
     valid &= primitives() == 0; // Off-screen memory never reaches the GPU.
     player.intelligence.front().position.x = 0;
-    std::fill(player.visible.begin(), player.visible.end(), 255);
+    player.visibility.revealArea(glm::vec2{-216}, glm::vec2{216}, true);
     valid &= primitives() == 0; // Full satellite coverage has no remembered-only draws.
-    player.visible.back() = 0;
+    player.visibility.hideCell({63, 63});
     valid &= primitives() == 0; // Local live coverage also removes redundant memory.
-    const auto cell = MapArea{10}.gridCell({0, 0}, Player::explorationCells);
-    player.visible[cell.y * Player::explorationCells + cell.x + 1] = 0;
+    player.visibility.hideCell({1, 0});
     player.intelligence.front().scale = {10, 10, 10};
     valid &= primitives() > 0; // A large object crossing a fog boundary must remain.
-    std::fill(player.visible.begin(), player.visible.end(), 0);
+    player.visibility.beginTick();
     player.intelligence.front().position.x = 21;
     valid &= primitives() > 0; // Its origin is outside the camera, but its bounds overlap.
     glDeleteQueries(1, &query);
@@ -729,7 +731,7 @@ bool checkRememberedCulling(strategy::Renderer& renderer) {
     return valid && noGlErrors("remembered entity culling");
 }
 
-bool checkPowerBuildingVisuals(strategy::Renderer& renderer) {
+bool checkPowerBuildingVisuals(strategy::Renderer& renderer, bool tanks = false, bool combat = false) {
     using namespace strategy;
     const DefinitionRegistry definitions;
     auto terrain = test::levelingFixture(0);
@@ -746,13 +748,15 @@ bool checkPowerBuildingVisuals(strategy::Renderer& renderer) {
     camera.view = glm::lookAt(camera.position, camera.target, glm::vec3{0, 1, 0});
     camera.projection = glm::ortho(-28.F, 28.F, -16.F, 16.F, .1F, 200.F);
     Player player;
+    player.visibility = VisibilityGrid{MapArea{10}.extent() / VisibilityGrid::referenceCells};
     player.id = 1;
-    std::fill(player.discovered.begin(), player.discovered.end(), 1);
-    std::fill(player.visible.begin(), player.visible.end(), 1);
+    player.visibility.revealArea(glm::vec2{-216}, glm::vec2{216}, false);
+    player.visibility.revealArea(glm::vec2{-216}, glm::vec2{216}, true);
     const auto frame = [&](const World& world) {
         renderer.beginFrame(1280, 720);
         renderer.drawTerrain(camera, &player);
         renderer.drawWorld(world, camera, &player);
+        renderer.drawParticles(camera);
         renderer.endFrame();
         std::vector<unsigned char> pixels(1280 * 720 * 4);
         glReadPixels(0, 0, 1280, 720, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
@@ -769,6 +773,66 @@ bool checkPowerBuildingVisuals(strategy::Renderer& renderer) {
     };
     World world;
     const auto ground = frame(world);
+    if (tanks) {
+        const auto factory = world.createEntity("Tank factory", "tank_factory", 1).id;
+        definitions.initializeEntity(*world.findEntity(factory));
+        world.findEntity(factory)->transform.position = {0, 0, -5};
+        const auto tank = world.createEntity("Light tank", "light_tank", 1).id;
+        definitions.initializeEntity(*world.findEntity(tank));
+        world.findEntity(tank)->transform.position = {0, 0, 10};
+        world.findEntity(tank)->transform.rotationDegrees.y = -35;
+        const auto picture = frame(world);
+        bool valid = difference(ground, picture) > 3000;
+        const auto clip =
+            camera.viewProjection() * glm::vec4{0, terrain.heightAt(0, 10) + 1, 10, 1};
+        valid &=
+            renderer.pickEntity(
+                (clip.x / clip.w + 1) * 640, (1 - clip.y / clip.w) * 360, world, camera, &player) ==
+            tank;
+        valid &= captureTerrain("tank-factory-light-tank.bmp");
+        if (combat) {
+            world.findEntity(tank)->transform.rotationDegrees.y = 90;
+            const auto hullOnly=frame(world);
+            world.findEntity(tank)->combat.turretYawDegrees = 90;
+            valid &= difference(hullOnly,frame(world))>20;
+            const auto enemy = world.createEntity("Enemy", "light_tank", 2).id;
+            definitions.initializeEntity(*world.findEntity(enemy));
+            world.findEntity(enemy)->transform.position = {16, 0, 10};
+            const auto before = frame(world);
+            renderer.showWeaponFire(tank,
+                combatMuzzle(terrain, *world.findEntity(tank),
+                             *primaryWeapon(definitions, *world.findEntity(tank))),
+                combatAimPoint(definitions, terrain, *world.findEntity(enemy)));
+            valid &= difference(before, frame(world)) > 20;
+            valid &= captureTerrain("tank-shot-trace.bmp");
+            renderer.updateParticles(.13F);
+            valid &= difference(before,frame(world))>3;
+            valid &= captureTerrain("tank-barrel-recoil.bmp");
+            renderer.updateParticles(.2F);
+            valid &= difference(before, frame(world)) == 0;
+            const auto impact=combatAimPoint(definitions,terrain,*world.findEntity(enemy));
+            const auto muzzle=combatMuzzle(terrain,*world.findEntity(tank),*primaryWeapon(definitions,*world.findEntity(tank)));
+            world.destroyEntity(enemy);
+            const auto destroyedFrame=frame(world);
+            GameplayParticlePresenter presenter;
+            EventBus feedback;
+            unsigned cues{};
+            feedback.subscribe<AudioEvent>([&](const auto&){++cues;});
+            presenter.presentShot(renderer,feedback,{tank,enemy,1,muzzle,impact,true,true,true,true},&player,10);
+            feedback.dispatchQueued();
+            renderer.updateParticles(.03F);
+            valid &= difference(destroyedFrame,frame(world))>100 && cues==2;
+            valid &= captureTerrain("tank-destruction-effects.bmp");
+            return valid && noGlErrors("tank combat visuals");
+        }
+        camera.target = {0, terrain.heightAt(0, 10) + 1, 10};
+        camera.position = camera.target + glm::vec3{8, 7, 10};
+        camera.view = glm::lookAt(camera.position, camera.target, glm::vec3{0, 1, 0});
+        camera.projection = glm::ortho(-5.F, 5.F, -2.8F, 2.8F, .1F, 100.F);
+        frame(world);
+        valid &= captureTerrain("light-tank-closeup.bmp");
+        return valid && noGlErrors("tank factory visuals");
+    }
     auto& mine = world.createEntity("Empty mine", "synthetic_mine", 1);
     definitions.initializeEntity(mine);
     mine.resource.remaining = 0;
@@ -808,6 +872,86 @@ bool checkPowerBuildingVisuals(strategy::Renderer& renderer) {
     return valid && noGlErrors("power building visuals");
 }
 
+bool checkEdgeExploration(strategy::Renderer& renderer) {
+    using namespace strategy;
+    auto terrain = test::levelingFixture(0);
+    renderer.stageGeneratedTerrain(terrain, 7, 10);
+    while (!renderer.terrainUploadFinished()) {
+        renderer.beginFrame(1280, 720);
+        renderer.drawLoadingScreen(.5F, "EDGE EXPLORATION");
+        renderer.endFrame();
+    }
+    renderer.finishLoadingScreen();
+    const MapArea map{10};
+    CameraView camera;
+    camera.target = {-map.halfExtent(), terrain.heightAt(-map.halfExtent(), 0), 0};
+    camera.position = camera.target + glm::vec3{0, 100, 0};
+    camera.view = glm::lookAt(camera.position, camera.target, glm::vec3{0, 0, -1});
+    camera.projection = glm::ortho(-45.F, 45.F, -25.3125F, 25.3125F, .1F, 200.F);
+    Player player;
+    player.visibility = VisibilityGrid{MapArea{10}.extent() / VisibilityGrid::referenceCells};
+    player.id = 1;
+    const auto frame = [&]() {
+        renderer.beginFrame(1280, 720);
+        renderer.drawTerrain(camera, &player);
+        renderer.endFrame();
+        std::vector<unsigned char> pixels(1280 * 720 * 4);
+        glReadPixels(0, 0, 1280, 720, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+        return pixels;
+    };
+    const auto hidden = frame();
+    // Reveal a real circular edge footprint, matching a drone reaching the playable border.
+    player.visibility.revealCircle({-map.halfExtent(), 0}, 14);
+    const auto visible = frame();
+    const auto differenceAt = [&](const auto& a, const auto& b, glm::vec2 p) {
+        const auto clip = camera.viewProjection() * glm::vec4{p.x, camera.target.y, p.y, 1};
+        const int x = std::clamp(static_cast<int>((clip.x / clip.w + 1) * 640), 0, 1279);
+        const int y = std::clamp(static_cast<int>((clip.y / clip.w + 1) * 360), 0, 719);
+        const auto index = (y * 1280 + x) * 4;
+        return std::abs(int(a[index]) - int(b[index])) +
+               std::abs(int(a[index + 1]) - int(b[index + 1])) +
+               std::abs(int(a[index + 2]) - int(b[index + 2]));
+    };
+    bool valid = differenceAt(hidden, visible, {-map.halfExtent() + 3, 0}) > 25;
+    for (const float outside : {5.F, 10.F})
+        valid &= differenceAt(hidden, visible, {-map.halfExtent() - outside, 0}) > 25;
+    for (const float outside : {20.F, 30.F})
+        valid &= differenceAt(hidden, visible, {-map.halfExtent() - outside, 0}) == 0;
+    // Outside the circle, including its diagonal, the backdrop stays hidden.
+    valid &= differenceAt(hidden, visible, {-map.halfExtent() - 12, 12}) == 0;
+    valid &= differenceAt(hidden, visible, {-map.halfExtent() - 5, 18}) == 0;
+    valid &= captureTerrain("drone-edge-exploration.bmp");
+    player.visibility.beginTick();
+    const auto remembered = frame();
+    valid &= differenceAt(hidden, remembered, {-map.halfExtent() + 3, 0}) > 10;
+    valid &= differenceAt(hidden, remembered, {-map.halfExtent() - 5, 0}) > 10;
+    valid &= differenceAt(hidden, remembered, {-map.halfExtent() - 20, 0}) == 0;
+    // An inward source reveals less beyond the edge: it must not make a circle
+    // centred on the border or reflect the interior fog texture across it.
+    player.id = 2;
+    player.visibility.clear();
+    player.visibility.revealCircle({-map.halfExtent() + 5, 0}, 14);
+    const auto inward = frame();
+    valid &= differenceAt(hidden, inward, {-map.halfExtent() - 5, 0}) > 25;
+    valid &= differenceAt(hidden, inward, {-map.halfExtent() - 12, 0}) == 0;
+    valid &= differenceAt(hidden, inward, {-map.halfExtent() - 5, 12}) == 0;
+    // Corner crossings use Euclidean radius, rather than revealing an outside square.
+    player.id = 3;
+    player.visibility.clear();
+    camera.target.z = -map.halfExtent();
+    camera.position = camera.target + glm::vec3{0, 100, 0};
+    camera.view = glm::lookAt(camera.position, camera.target, glm::vec3{0, 0, -1});
+    const auto cornerHidden = frame();
+    player.visibility.revealCircle({-map.halfExtent(), -map.halfExtent()}, 14);
+    const auto corner = frame();
+    valid &= differenceAt(cornerHidden, corner, {-map.halfExtent() - 8, -map.halfExtent() - 8}) > 25;
+    valid &= differenceAt(cornerHidden, corner, {-map.halfExtent() - 12, -map.halfExtent() - 12}) == 0;
+    valid &= captureTerrain("drone-corner-exploration.bmp");
+    if (!valid)
+        std::cerr << "Edge exploration stretched beyond the playable fog map\n";
+    return valid && noGlErrors("edge exploration");
+}
+
 bool checkExploredStaticVisibility(strategy::Renderer& renderer) {
     using namespace strategy;
     const DefinitionRegistry definitions;
@@ -825,6 +969,7 @@ bool checkExploredStaticVisibility(strategy::Renderer& renderer) {
     camera.view = glm::lookAt(camera.position, camera.target, glm::vec3{0, 0, -1});
     camera.projection = glm::ortho(-20.F, 20.F, -20.F, 20.F, .1F, 200.F);
     Player player;
+    player.visibility = VisibilityGrid{MapArea{10}.extent() / VisibilityGrid::referenceCells};
     player.id = 1;
     World empty, resources, enemies;
     auto& node = resources.createEntity("Scrap", "scrap_node_small", 0);
@@ -869,7 +1014,7 @@ bool checkExploredStaticVisibility(strategy::Renderer& renderer) {
     bool valid = measure(hidden, frame(resources)).first == 0 &&
                  measure(hidden, frame(empty, true)).first == 0 &&
                  renderer.pickEntity(640, 360, resources, camera, &player, true) == 0;
-    std::fill(player.discovered.begin(), player.discovered.end(), 255);
+    player.visibility.revealArea(glm::vec2{-216}, glm::vec2{216}, false);
     const auto explored = frame(empty);
     const auto dimResource = measure(explored, frame(resources));
     valid &= dimResource.first > 20 &&
@@ -880,7 +1025,7 @@ bool checkExploredStaticVisibility(strategy::Renderer& renderer) {
     valid &= dimField.first > 20 && dimTrees.first > 20 &&
              measure(explored, frame(enemies)).first == 0 &&
              renderer.pickEntity(640, 360, enemies, camera, &player, true) == 0;
-    std::fill(player.visible.begin(), player.visible.end(), 255);
+    player.visibility.revealArea(glm::vec2{-216}, glm::vec2{216}, true);
     const auto live = frame(empty);
     const auto brightField = measure(live, frame(resources));
     frame(resources); // A visibility change must reuse the warmed field allocation.
@@ -1158,7 +1303,8 @@ bool checkPlacementControls(strategy::Renderer& renderer,
                             bool satellite = false,
                             bool powerAssist = false,
                             bool repeatBuild = false,
-                            bool navigation = false) {
+                            bool navigation = false,
+                            bool rally = false,bool tankControls=false) {
     using namespace strategy;
     DefinitionRegistry definitions;
     GameSession session{definitions,
@@ -1199,10 +1345,8 @@ bool checkPlacementControls(strategy::Renderer& renderer,
     const float searchRadius = satellite ? 48.F : 24.F;
     for (float z = hub.z - searchRadius; z <= hub.z + searchRadius && !found; z += 2)
         for (float x = hub.x - searchRadius; x <= hub.x + searchRadius && !found; x += 2) {
-            const auto cell = MapArea{10}.gridCell({x, z}, Player::explorationCells);
-            const auto index = cell.y * Player::explorationCells + cell.x;
             const auto* player = session.players().find(1);
-            bool eligible = satellite ? !player->discovered[index] : player->visible[index] != 0;
+            bool eligible = satellite ? !player->visibility.exploredAt({x, z}) : player->visibility.visibleAt({x, z});
             if (powerAssist) {
                 const glm::vec2 direction{x - hub.x, z - hub.z};
                 const float distance = glm::length(direction);
@@ -1234,7 +1378,7 @@ bool checkPlacementControls(strategy::Renderer& renderer,
         return false;
     if (satellite) {
         const auto* player = session.players().find(1);
-        session.restorePlayerProgress(1, player->resources, player->discovered, player->intelligence,
+        session.restorePlayerProgress(1, player->resources, player->visibility, player->intelligence,
                                       {{"satellite.low_resolution", 1}});
     }
     RtsCamera projectionCamera;
@@ -1303,6 +1447,173 @@ bool checkPlacementControls(strategy::Renderer& renderer,
         frame();
         return panel() && panel()->IsVisible();
     };
+    if (rally) {
+        auto& world = const_cast<World&>(state.session().world());
+        bool allValid = true;
+        for (const auto* producerType : {"tank_factory", "command_hub"}) {
+            Entity factory;
+            factory.id = hubId;
+            factory.archetype = EntityArchetypeId{producerType};
+            factory.name = Text::get(definitions.archetype(factory.archetype)->nameKey);
+            factory.authority.owner = 1;
+            definitions.initializeEntity(factory);
+            factory.transform.position = hub;
+            *world.findEntity(hubId) = std::move(factory);
+            const auto project = [&](glm::vec3 p) {
+                const auto c = camera.viewProjection() * glm::vec4{p, 1};
+                return glm::vec2{(c.x / c.w + 1) * 640, (1 - c.y / c.w) * 360};
+            };
+            const auto select =
+                project({hub.x, state.session().terrain().heightAt(hub.x, hub.z) + 3, hub.z});
+            const auto click = [&](Uint8 b, glm::vec2 point) {
+                motion(point.x, point.y);
+                button(SDL_EVENT_MOUSE_BUTTON_DOWN, b, point.x, point.y);
+                button(SDL_EVENT_MOUSE_BUTTON_UP, b, point.x, point.y);
+                frame();
+                state.update(1.F / 30);
+                frame();
+            };
+            const auto action = [&](const char* id) {
+                const auto bounds = renderer.uiBounds(id);
+                if (!bounds)
+                    throw std::runtime_error(std::string{"Missing rally action: "} + id);
+                click(SDL_BUTTON_LEFT,
+                      {(bounds->left + bounds->right) * .5F, (bounds->top + bounds->bottom) * .5F});
+            };
+            click(SDL_BUTTON_LEFT, select);
+            const auto trainingAction =
+                std::string{"action."} + producerType +
+                (std::string_view{producerType} == "tank_factory" ? ".train_light_tank"
+                                                                  : ".train_construction_drone");
+            bool valid = renderer.uiBounds(trainingAction).has_value();
+            const auto check = [&](bool okay, const char* stage) {
+                if (!okay)
+                    std::cerr << "Rally stage failed: " << stage << "\n";
+                valid &= okay;
+            };
+            const auto trainSlot = renderer.uiBounds(trainingAction);
+            click(SDL_BUTTON_RIGHT, targetScreen);
+            const auto* producer = state.session().world().findEntity(hubId);
+            check(producer->production.rallyPoint && glm::length(*producer->production.rallyPoint -
+                                                                 glm::vec2{target.x, target.z}) < 1,
+                  "world click");
+            const auto rallyTrainSlot = renderer.uiBounds(trainingAction);
+            check(trainSlot && rallyTrainSlot && trainSlot->left == rallyTrainSlot->left &&
+                      trainSlot->top == rallyTrainSlot->top,
+                  "stable production shortcut slot");
+            valid &= captureTerrain((std::string{producerType} + "-rally-point.bmp").c_str());
+            const auto priorityIcon = [&]() {
+                auto* context = Rml::GetContext("strategy_ui");
+                auto* element =
+                    context ? context->GetRootElement()->GetElementById("action.power.priority")
+                            : nullptr;
+                auto* icon = element ? element->GetChild(0) : nullptr;
+                return icon ? icon->GetAttribute<Rml::String>("src", "") : Rml::String{};
+            };
+            for (int i = 0; i < 3; ++i) {
+                const auto priority = world.findEntity(hubId)->power.priority;
+                const auto expected =
+                    priority == PowerPriority::low      ? "action_power_priority_low.png"
+                    : priority == PowerPriority::medium ? "action_power_priority_medium.png"
+                                                        : "action_power_priority.png";
+                check(priorityIcon().find(expected) != Rml::String::npos,
+                      "priority icon reflects current state");
+                action("action.power.priority");
+            }
+            const auto previous = producer->production.rallyPoint;
+            action("action.power.connection");
+            click(
+                SDL_BUTTON_RIGHT,
+                project({hub.x + 5, state.session().terrain().heightAt(hub.x + 5, hub.z), hub.z}));
+            check(state.session().world().findEntity(hubId)->production.rallyPoint == previous,
+                  "power-mode precedence");
+            SDL_Event escape{};
+            escape.type = SDL_EVENT_KEY_DOWN;
+            escape.key.key = SDLK_ESCAPE;
+            state.handleEvent(escape);
+            escape.type = SDL_EVENT_KEY_UP;
+            state.handleEvent(escape);
+            frame();
+            action("action.production.clear_rally");
+            check(!state.session().world().findEntity(hubId)->production.rallyPoint,
+                  "clear action");
+            if (const auto bounds = renderer.uiBounds("minimap-content")) {
+                click(SDL_BUTTON_RIGHT,
+                      {(bounds->left + bounds->right) * .5F, (bounds->top + bounds->bottom) * .5F});
+                check(state.session().world().findEntity(hubId)->production.rallyPoint.has_value(),
+                      "minimap click");
+            } else
+                valid = false;
+            if (std::string_view{producerType} == "command_hub") {
+                const auto beforeDrag =
+                    state.session().world().findEntity(hubId)->production.rallyPoint;
+                button(
+                    SDL_EVENT_MOUSE_BUTTON_DOWN, SDL_BUTTON_RIGHT, targetScreen.x, targetScreen.y);
+                SDL_Event drag{};
+                drag.type = SDL_EVENT_MOUSE_MOTION;
+                drag.motion.x = targetScreen.x + 20;
+                drag.motion.y = targetScreen.y + 5;
+                drag.motion.xrel = 20;
+                drag.motion.yrel = 5;
+                state.handleEvent(drag);
+                button(SDL_EVENT_MOUSE_BUTTON_UP, SDL_BUTTON_RIGHT, drag.motion.x, drag.motion.y);
+                frame();
+                state.update(1.F / 30);
+                frame();
+                check(state.session().world().findEntity(hubId)->production.rallyPoint ==
+                          beforeDrag,
+                      "camera drag preserves rally");
+            }
+            if (!valid)
+                std::cerr << "Factory rally controls, minimap or power-mode precedence failed\n";
+            allValid &= valid && noGlErrors("producer rally controls");
+            // Connection editing leaves its diagnostic panel visible. Hide it before the
+            // next producer so it cannot cover that producer's ground-order click.
+            action("resources.power");
+        }
+        return allValid;
+    }
+    if (tankControls) {
+        auto& world=const_cast<World&>(state.session().world());
+        EntityId tank{};
+        for (const auto& entity:world.entities())
+            if (entity.authority.owner==1 && entity.unitControl && !entity.flight) {tank=entity.id;break;}
+        if (!tank) return false;
+        Entity replacement; replacement.id=tank;replacement.archetype=EntityArchetypeId{"light_tank"};replacement.authority.owner=1;
+        definitions.initializeEntity(replacement);replacement.transform.position=world.findEntity(tank)->transform.position;
+        *world.findEntity(tank)=std::move(replacement);
+        SDL_Event key{};key.type=SDL_EVENT_KEY_DOWN;key.key.key=SDLK_P;state.handleEvent(key);
+        key.type=SDL_EVENT_KEY_UP;state.handleEvent(key);state.update(1.F/30);frame();
+        bool valid=world.findEntity(tank)->authority.directController==1;
+        const auto shotCount=[&]{return world.findEntity(tank)->combat.shotsFired;};
+        const auto pixels=[&] {std::vector<unsigned char> p(1280*720*4);glReadPixels(0,0,1280,720,GL_RGBA,GL_UNSIGNED_BYTE,p.data());return p;};
+        const auto normal=pixels();
+        button(SDL_EVENT_MOUSE_BUTTON_DOWN,SDL_BUTTON_RIGHT,640,360);
+        for (int i=0;i<15;++i) state.update(1.F/30);
+        frame();const auto zoomed=pixels();
+        std::size_t changed=0;for(std::size_t i=0;i<normal.size();i+=4)
+            changed+=std::abs(int(normal[i])-int(zoomed[i]))+std::abs(int(normal[i+1])-int(zoomed[i+1]))>30;
+        valid &= changed>1000 && shotCount()==0;
+        valid &= captureTerrain("tank-aim-zoom.bmp");
+        button(SDL_EVENT_MOUSE_BUTTON_UP,SDL_BUTTON_RIGHT,640,360);
+        button(SDL_EVENT_MOUSE_BUTTON_DOWN,SDL_BUTTON_LEFT,640,360);
+        state.update(1.F/30);frame();valid &= shotCount()==1;
+        valid &= captureTerrain("tank-manual-fire.bmp");
+        for (int i=0;i<59;++i) state.update(1.F/30);
+        valid &= shotCount()==1;
+        state.update(1.F/30);valid &= shotCount()==2;
+        SDL_Event focus{};focus.type=SDL_EVENT_WINDOW_FOCUS_LOST;state.handleEvent(focus);
+        for (int i=0;i<65;++i) state.update(1.F/30);
+        valid &= shotCount()==2;
+        button(SDL_EVENT_MOUSE_BUTTON_UP,SDL_BUTTON_LEFT,640,360);
+        button(SDL_EVENT_MOUSE_BUTTON_DOWN,SDL_BUTTON_LEFT,640,360);
+        button(SDL_EVENT_MOUSE_BUTTON_UP,SDL_BUTTON_LEFT,640,360);
+        state.update(.001F); // Both events may arrive before the next fixed tick.
+        state.update(1.F/30);
+        valid &= shotCount()==3;
+        if (!valid) std::cerr<<"Direct tank firing, held zoom, cooldown or focus-loss input failed\n";
+        return valid && noGlErrors("tank direct controls");
+    }
     bool valid = activate();
     if (navigation) {
         const auto check = [&](bool okay, const char* stage) {
@@ -1383,10 +1694,8 @@ bool checkPlacementControls(strategy::Renderer& renderer,
                                                     {drone->id},
                                                     0,
                                                     true};
-                        const auto cell = MapArea{10}.gridCell({x, z}, Player::explorationCells);
-                        const auto index = cell.y * Player::explorationCells + cell.x;
                         const auto screen = project(intent.position);
-                        if (state.session().players().find(1)->discovered[index] && screen.x > 20 &&
+                        if (state.session().players().find(1)->visibility.exploredAt({x, z}) && screen.x > 20 &&
                             screen.x < 1100 && screen.y > 80 && screen.y < 350 &&
                             state.session().planBuildingPlacement(1, intent).valid()) {
                             point = intent.position;
@@ -1627,7 +1936,7 @@ bool checkPlacementControls(strategy::Renderer& renderer,
         auto withoutCoverage = savedPlayers;
         auto* unknown = withoutCoverage.find(1);
         unknown->researchedUpgrades.clear();
-        std::fill(unknown->discovered.begin(), unknown->discovered.end(), 0);
+        unknown->visibility.clear();
         unknown->resources["alloy"] = 777;
         const auto quickload = [&](const PlayerRegistry& players) {
             const auto& current = state.session();
@@ -1645,8 +1954,7 @@ bool checkPlacementControls(strategy::Renderer& renderer,
         quickload(savedPlayers);
         const auto* restored = state.session().players().find(1);
         valid &= state.session().satelliteCoverage(1) == SatelliteCoverage::highResolution &&
-                 std::all_of(restored->discovered.begin(), restored->discovered.end(),
-                             [](auto cell) { return cell != 0; }) &&
+                 restored->visibility.coversArea(glm::vec2{-120}, glm::vec2{120}, false) &&
                  restored->resources == savedPlayers.find(1)->resources;
         frame();
     }
@@ -1795,8 +2103,14 @@ int strategyTestMain() {
 
     if (const char* testCase = SDL_getenv("STRATEGY_RENDER_CASE");
         testCase && (std::string_view{testCase} == "explored_static" ||
+                     std::string_view{testCase} == "remembered_culling" ||
+                     std::string_view{testCase} == "edge_exploration" ||
                      std::string_view{testCase} == "power_placement" ||
                      std::string_view{testCase} == "power_buildings" ||
+                     std::string_view{testCase} == "tank_factory" ||
+                     std::string_view{testCase} == "tank_combat" ||
+                     std::string_view{testCase} == "tank_controls" ||
+                     std::string_view{testCase} == "factory_rally" ||
                      std::string_view{testCase} == "keybind_settings" ||
                      std::string_view{testCase} == "repeat_placement" ||
                      std::string_view{testCase} == "navigation_keys")) {
@@ -1811,7 +2125,19 @@ int strategyTestMain() {
                 renderer.endFrame();
             }
             renderer.finishLoadingScreen();
-            result = std::string_view{testCase} == "power_buildings"
+            result = std::string_view{testCase} == "remembered_culling"
+                         ? checkRememberedCulling(renderer)
+                     : std::string_view{testCase} == "tank_controls"
+                         ? checkPlacementControls(renderer,logger,false,false,false,false,false,true)
+                     : std::string_view{testCase} == "edge_exploration"
+                         ? checkEdgeExploration(renderer)
+                     : std::string_view{testCase} == "factory_rally"
+                         ? checkPlacementControls(renderer,logger,false,false,false,false,true)
+                     : std::string_view{testCase} == "tank_combat"
+                         ? checkPowerBuildingVisuals(renderer, true, true)
+                     : std::string_view{testCase} == "tank_factory"
+                         ? checkPowerBuildingVisuals(renderer, true)
+                     : std::string_view{testCase} == "power_buildings"
                          ? checkPowerBuildingVisuals(renderer)
                      : std::string_view{testCase} == "navigation_keys"
                          ? checkPlacementControls(renderer, logger, false, false, false, true)

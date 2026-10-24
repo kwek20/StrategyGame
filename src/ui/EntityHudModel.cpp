@@ -71,6 +71,12 @@ void presentGatherer(const Entity& entity, const DefinitionRegistry& definitions
 }
 
 void presentMovement(const Entity& entity, const DefinitionRegistry&, EntityHudModel& model) {
+    if (entity.combat && entity.unitControl && entity.unitControl.order == UnitOrderKind::attack)
+        model.stats.push_back({Text::get("combat.weapon"),
+                               Text::get(entity.transient.firingLineBlocked    ? "combat.blocked"
+                                         : entity.combat.cooldownRemaining > 0 ? "combat.reloading"
+                                                                               : "combat.aiming"),
+                               "action_move"});
     if (entity.unitControl)
         model.stats.push_back(
             {Text::get("entity_hud.speed"), decimal(entity.unitControl.movementSpeed), "action_move"});

@@ -46,7 +46,8 @@ EntityId firstPlacementBlocker(const World& world,
                                EntityId ignored) {
     for (const Entity& entity : world.entities()) {
         if (entity.id == ignored || entity.flight ||
-            (entity.resource && entity.resource.remaining <= 0.0F))
+            (entity.kind == EntityKind::resource && entity.resource &&
+             entity.resource.remaining <= 0.0F))
             continue;
         const EntityArchetype* definition = definitions.archetype(entity.archetype);
         if (definition && definition->collisionRadius <= 0.0F)

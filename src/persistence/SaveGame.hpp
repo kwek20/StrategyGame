@@ -1,6 +1,7 @@
 #pragma once
 
 #include "world/Entity.hpp"
+#include "players/VisibilityGrid.hpp"
 #include "terrain/Terrain.hpp"
 
 #include <array>
@@ -28,7 +29,7 @@ struct SaveData {
     std::string playerTwoSpecialization{"unassigned"};
     std::array<std::map<std::string, float>, 2> resources;
     std::array<std::map<std::string, std::uint32_t>, 2> researchedUpgrades;
-    std::array<std::vector<std::uint8_t>, 2> discovered;
+    std::array<VisibilityGrid, 2> visibility;
     std::array<std::vector<LastKnownEntity>, 2> intelligence;
 };
 

@@ -302,6 +302,7 @@ class Terrain final {
         return v2_;
     }
     [[nodiscard]] bool permitsLandSegment(glm::vec2 start, glm::vec2 end) const;
+    [[nodiscard]] float walkingSpeedScaleAt(float worldX, float worldZ) const;
     [[nodiscard]] bool permitsMovementSegment(glm::vec2 start,
                                               glm::vec2 end,
                                               float radius,

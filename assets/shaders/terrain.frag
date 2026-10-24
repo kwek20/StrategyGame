@@ -10,6 +10,7 @@ uniform vec3 cameraPosition;
 uniform vec2 fogRange;
 uniform sampler2D explorationMap;
 uniform float explorationExtent;
+uniform float visibilityExtent;
 uniform sampler2D grassTexture;
 uniform sampler2D dirtTexture;
 uniform sampler2D rockTexture;
@@ -79,7 +80,7 @@ void main() {
     }
 
     float explored = useExploration
-        ? texture(explorationMap, worldPosition.xz / explorationExtent + 0.5).r : 1.0;
+        ? texture(explorationMap, worldPosition.xz / visibilityExtent + 0.5).r : 1.0;
     if (useScaffoldMaterial) {
         // Static member stages: progress reveals steel without moving the floor or uploading meshes.
         float reveal = smoothstep(traversalClass, traversalClass + 0.06, foundationProgress);
