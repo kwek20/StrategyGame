@@ -19,6 +19,24 @@ int strategyTestMain() {
     SDL_Event event{};
     event.type = SDL_EVENT_KEY_DOWN;
     event.key.key = SDLK_W;
+    require(keys.matches("unit_forward", event, InputContext::direct) &&
+                keys.matches("vehicle_forward", event, InputContext::vehicle) &&
+                keys.matches("aircraft_throttle_up", event, InputContext::aircraft) &&
+                !keys.matches("unit_forward", event, InputContext::vehicle) &&
+                !keys.matches("vehicle_forward", event, InputContext::aircraft),
+            "Foot, vehicle and aircraft movement use independent contexts");
+    event.key.key = SDLK_ESCAPE;
+    require(keys.matches("pause", event, InputContext::vehicle) &&
+                keys.matches("pause", event, InputContext::aircraft),
+            "Shared controls remain available in every direct-control context");
+    require(!keys.conflicts("vehicle_forward", 0, {BindingDevice::key, static_cast<int>(SDLK_ESCAPE)}).empty(),
+            "Shared controls conflict with vehicle bindings");
+    keys.values["vehicle_forward"][0] = {BindingDevice::key, static_cast<int>(SDLK_I)};
+    keys.reset("foot");
+    require(keys.values.at("vehicle_forward")[0].code == static_cast<int>(SDLK_I),
+            "Resetting foot controls preserves vehicle bindings");
+    keys.reset("vehicle");
+    event.key.key = SDLK_W;
     require(keys.matches("forward", event, InputContext::strategy) &&
                 !keys.matches("unit_forward", event, InputContext::strategy),
             "Camera and direct-control actions are context-specific");
@@ -75,6 +93,8 @@ int strategyTestMain() {
     config.keybinds = keys;
     config.keybinds.values["range_lock"][1] = {BindingDevice::mouse, SDL_BUTTON_X1, 4};
     config.keybinds.values["stop"] = {};
+    config.keybinds.values["vehicle_fire"][0] = {BindingDevice::key, static_cast<int>(SDLK_SPACE)};
+    config.keybinds.values["aircraft_roll_left"][1] = {BindingDevice::key, static_cast<int>(SDLK_LEFT)};
     config.write(path);
     const auto restored = GameConfig::load(path);
     require(restored.keybinds.values == config.keybinds.values,

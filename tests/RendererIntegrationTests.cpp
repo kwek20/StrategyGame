@@ -12,6 +12,7 @@
 #include "render/Renderer.hpp"
 #include "render/ShaderManager.hpp"
 #include "simulation/GameSession.hpp"
+#include "simulation/CommandCodec.hpp"
 #include "simulation/CombatRules.hpp"
 #include "simulation/StateChecksum.hpp"
 #include "terrain/Terrain.hpp"
@@ -872,6 +873,70 @@ bool checkPowerBuildingVisuals(strategy::Renderer& renderer, bool tanks = false,
     return valid && noGlErrors("power building visuals");
 }
 
+bool checkResourceGrant(strategy::Renderer& renderer, strategy::Logger& logger) {
+    using namespace strategy;
+    DefinitionRegistry definitions;
+    AudioSystem audio;
+    EventBus events;
+    const auto path = std::filesystem::path{"build/debug/audits/resource-grant-config.json"};
+    GameConfig::load("gamedata/config.json").write(path);
+    StateContext context{audio, events, logger, definitions, path, &renderer};
+    PlayState state{context, MatchSetupOptions{}, GameSession{definitions, 7, "spain", "japan",
+        "unassigned", "unassigned", 10, 1, 1, TerrainLayoutId{"open_plains"}, nullptr, TerrainMode::v2}};
+    state.beginPresentationPreparation(renderer);
+    bool ready = false;
+    for (int step = 0; step < 500 && !ready; ++step) {
+        renderer.beginFrame(1280, 720);
+        ready = state.advancePresentationPreparation(renderer);
+        renderer.drawLoadingScreen(.9F, "RESOURCE BUTTON CHECK");
+        renderer.endFrame();
+    }
+    renderer.finishLoadingScreen();
+    if (!ready) return false;
+    state.update(.5F);
+    const auto frame = [&] {
+        renderer.beginFrame(1280, 720);
+        state.render(renderer);
+        renderer.endFrame();
+    };
+    frame();
+    const auto before = state.session().players().find(1)->resources;
+    const auto opponent = state.session().players().find(2)->resources;
+    bool valid = true;
+    for (int click = 1; click <= 2; ++click) {
+        const auto button = renderer.uiBounds("hud.resources"),
+                   satellite = renderer.uiBounds("hud.satellite"), menu = renderer.uiBounds("hud.menu");
+        if (!button || !satellite || !menu) { valid = false; break; }
+        valid &= satellite->right <= button->left && button->right <= menu->left;
+        const float x = (button->left + button->right) * .5F, y = (button->top + button->bottom) * .5F;
+        SDL_Event motion{};
+        motion.type = SDL_EVENT_MOUSE_MOTION; motion.motion.x = x; motion.motion.y = y;
+        state.handleEvent(motion);
+        for (auto type : {SDL_EVENT_MOUSE_BUTTON_DOWN, SDL_EVENT_MOUSE_BUTTON_UP}) {
+            SDL_Event event{};
+            event.type = type; event.button.button = SDL_BUTTON_LEFT;
+            event.button.x = x; event.button.y = y;
+            state.handleEvent(event);
+        }
+        state.update(.05F);
+        frame();
+        const auto& balances = state.session().players().find(1)->resources;
+        for (const auto* resource : definitions.enabledResources()) {
+            if (resource->storage == ResourceStorageKind::network) continue;
+            const float initial = before.contains(resource->id) ? before.at(resource->id) : 0;
+            valid &= balances.contains(resource->id) && balances.at(resource->id) == initial + click * 1000;
+        }
+        valid &= state.session().players().find(2)->resources == opponent && !balances.contains("power");
+    }
+    const auto decoded = CommandCodec::decode(CommandCodec::encode({1, 1, GrantResourcesCommand{}}));
+    valid &= decoded && std::holds_alternative<GrantResourcesCommand>(decoded->payload);
+    valid &= !CommandCodec::decode(CommandCodec::encode({1, 1, GrantResourcesCommand{42}}));
+    valid &= captureTerrain("resource-grant-button.bmp");
+    std::filesystem::remove(path);
+    if (!valid) std::cerr << "Resource grant button, balances or command codec failed\n";
+    return valid && noGlErrors("resource grant");
+}
+
 bool checkEdgeExploration(strategy::Renderer& renderer) {
     using namespace strategy;
     auto terrain = test::levelingFixture(0);
@@ -1229,6 +1294,18 @@ bool checkKeybindSettings(strategy::Renderer& renderer, strategy::Logger& logger
     click("settings.tab.keybinds");
     frame();
     valid &= captureTerrain("settings-keybinds.bmp");
+    for (const std::string section : {"foot", "vehicle", "aircraft"}) {
+        renderer.setUiValue("keybind-category", section);
+        settings.update(.01F);
+        frame();
+        const std::string action = section == "foot" ? "unit_forward" :
+                                   section == "vehicle" ? "vehicle_forward" : "aircraft_throttle_up";
+        valid &= renderer.uiBounds("settings.bind." + action + ".0").has_value();
+        valid &= captureTerrain(("settings-keybinds-" + section + ".bmp").c_str());
+    }
+    renderer.setUiValue("keybind-category", "");
+    settings.update(.01F);
+    frame();
     click("keybind-search");
     SDL_Event text{};
     text.type = SDL_EVENT_TEXT_INPUT;
@@ -2103,6 +2180,7 @@ int strategyTestMain() {
 
     if (const char* testCase = SDL_getenv("STRATEGY_RENDER_CASE");
         testCase && (std::string_view{testCase} == "explored_static" ||
+                     std::string_view{testCase} == "resource_grant" ||
                      std::string_view{testCase} == "remembered_culling" ||
                      std::string_view{testCase} == "edge_exploration" ||
                      std::string_view{testCase} == "power_placement" ||
@@ -2125,7 +2203,9 @@ int strategyTestMain() {
                 renderer.endFrame();
             }
             renderer.finishLoadingScreen();
-            result = std::string_view{testCase} == "remembered_culling"
+            result = std::string_view{testCase} == "resource_grant"
+                         ? checkResourceGrant(renderer, logger)
+                     : std::string_view{testCase} == "remembered_culling"
                          ? checkRememberedCulling(renderer)
                      : std::string_view{testCase} == "tank_controls"
                          ? checkPlacementControls(renderer,logger,false,false,false,false,false,true)

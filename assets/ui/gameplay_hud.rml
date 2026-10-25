@@ -19,6 +19,9 @@
             <button id="hud.satellite" class="art-button top-action top-menu-button">
                 <span id="hud.satellite.label">SAT</span>
             </button>
+            <button id="hud.resources" class="art-button top-action top-menu-button">
+                <span id="hud.resources.label">+1000 ALL</span>
+            </button>
             <button id="hud.menu" class="art-button top-action top-menu-button">
                 <span>MENU</span>
             </button>

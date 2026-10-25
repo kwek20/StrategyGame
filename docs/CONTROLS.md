@@ -116,3 +116,14 @@ Direct tank control: mouse movement aims the turret independently of the hull. L
 hold to repeat at the cannon cooldown. Hold Right Mouse to zoom around the crosshair without
 changing its aiming ray. These actions are rebindable as Fire weapon and Zoom at aim point in the
 Direct control category. The reticle is amber while aiming/reloading and green when ready.
+
+## Top bar resource grant
+
+The +1000 ALL button beside SAT gives the local player 1,000 of every enabled non-network resource per click. It is immediate and repeatable; power continues to come from the electricity network.
+
+
+## Direct-control binding sections
+
+Settings > Keybinds separates On foot, Vehicles, and Aircraft, with independent primary/secondary bindings, category reset, and context-aware conflicts. Shared direct control contains possession/release; pause, diagnostics, save/load and zoom remain shared across these contexts. Existing unit_* preferences remain on-foot bindings. Ground vehicles with turn-limited movement use vehicle_* bindings, including the HUD fire/zoom hints. Vehicle movement physics are unchanged by this settings split; hull-relative throttle/reverse is a separate implementation step.
+
+Aircraft bindings are reserved and explicitly labeled: W/S throttle, arrow down/up pitch up/down, A/D roll, Q/E yaw, LMB fire, RMB aiming zoom. They can be edited and saved, but no playable aircraft or flight controller exists yet. Construction drones remain indirect-control only.

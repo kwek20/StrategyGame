@@ -485,6 +485,10 @@ if(STRATEGY_BUILD_TESTS)
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
         ENVIRONMENT "STRATEGY_RENDER_CASE=factory_rally")
     add_test(NAME edge_exploration_visuals COMMAND renderer_integration_tests)
+    add_test(NAME resource_grant_controls COMMAND renderer_integration_tests)
+    set_tests_properties(resource_grant_controls PROPERTIES
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        ENVIRONMENT "STRATEGY_RENDER_CASE=resource_grant")
     add_test(NAME remembered_entity_culling COMMAND renderer_integration_tests)
     set_tests_properties(remembered_entity_culling PROPERTIES
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"

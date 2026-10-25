@@ -369,14 +369,14 @@ void PlayState::ensureGameplayHud(Renderer& renderer) const {
         return;
     hudScreen_ = renderer.pushUiScreen({"assets/ui/gameplay_hud.rml",
                                         {},
-                                        {"resources.power", "hud.satellite", "hud.menu"},
-                                        {"resources.power", "hud.satellite", "hud.menu"},
+                                        {"resources.power", "hud.satellite", "hud.resources", "hud.menu"},
+                                        {"resources.power", "hud.satellite", "hud.resources", "hud.menu"},
                                         config_.uiScale});
 }
 
 void PlayState::updateGameplayHud(Renderer& renderer, const Player* player) const {
     ensureGameplayHud(renderer);
-    std::vector<std::string> focus{"resources.power", "hud.satellite", "hud.menu"};
+    std::vector<std::string> focus{"resources.power", "hud.satellite", "hud.resources", "hud.menu"};
     std::vector<std::string> actions = focus;
     std::ostringstream resources;
     if (player) {
@@ -415,6 +415,7 @@ void PlayState::updateGameplayHud(Renderer& renderer, const Player* player) cons
                        std::to_string(static_cast<int>(demand)) + "/" +
                            std::to_string(static_cast<int>(generation)) + " kW");
     const auto coverage = session_.satelliteCoverage(localPlayer_);
+    renderer.setUiText("hud.resources.label", Text::get("hud.resources"));
     renderer.setUiText("hud.satellite.label",
                        Text::get(coverage == SatelliteCoverage::highResolution ? "hud.satellite.high"
                                  : coverage == SatelliteCoverage::lowResolution ? "hud.satellite.low"
@@ -449,8 +450,8 @@ void PlayState::updateGameplayHud(Renderer& renderer, const Player* player) cons
         if (const auto* weapon = primaryWeapon(context_.definitions, *selected);
             weapon && weapon->turretTurnRateDegrees > 0)
             hud->footer = Text::format("keybind.tank_hint",
-                                       {config_.keybinds.label("unit_fire"),
-                                        config_.keybinds.label("unit_aim_zoom"),
+                                       {config_.keybinds.label(controlledAction("fire")),
+                                        config_.keybinds.label(controlledAction("aim_zoom")),
                                         config_.keybinds.label("pause")});
     } else if (selectedResourceField_ && selected) {
         hud = EntityHudModelBuilder::build(
@@ -927,6 +928,10 @@ bool PlayState::handleGameplayHudAction(const std::string& action) {
         session_.submit({localPlayer_, nextCommandSequence_++, AdvanceSatelliteCommand{}});
         return true;
     }
+    if (action == "hud.resources") {
+        session_.submit({localPlayer_, nextCommandSequence_++, GrantResourcesCommand{}});
+        return true;
+    }
     if (action.starts_with("selection.")) {
         selectedResourceField_ = {};
         const std::string chosen = action.substr(10);
@@ -1102,6 +1107,18 @@ void PlayState::handleSelectionShortcut(std::string_view action) {
     }
 }
 
+InputContext PlayState::controlledInputContext() const {
+    const auto* entity = session_.world().findEntity(possessedEntity_);
+    const auto* type = entity ? context_.definitions.archetype(entity->archetype) : nullptr;
+    return entity && !entity->flight && type && type->movement.turnRateDegrees > 0
+               ? InputContext::vehicle : InputContext::direct;
+}
+
+std::string PlayState::controlledAction(std::string_view suffix) const {
+    return std::string{controlledInputContext() == InputContext::vehicle ? "vehicle_" : "unit_"} +
+           std::string{suffix};
+}
+
 void PlayState::handleEvent(const SDL_Event& event) {
     input_.observe(event);
     if (event.type == SDL_EVENT_WINDOW_FOCUS_LOST) {
@@ -1109,7 +1126,7 @@ void PlayState::handleEvent(const SDL_Event& event) {
         manualFirePressed_=false;
     }
     const InputContext inputContext = constructionPlacementMode_           ? InputContext::placement
-                                      : viewMode_ == ViewMode::unitControl ? InputContext::direct
+                                      : viewMode_ == ViewMode::unitControl ? controlledInputContext()
                                                                            : InputContext::strategy;
     const auto pressed = [&](std::string_view action) {
         return config_.keybinds.matches(action, event, inputContext);
@@ -1296,7 +1313,7 @@ void PlayState::handleEvent(const SDL_Event& event) {
     }
     if (event.type == SDL_EVENT_MOUSE_MOTION && constructionPlacementMode_)
         constructionCursorScreen_ = glm::vec2{event.motion.x, event.motion.y};
-    if (viewMode_==ViewMode::unitControl && pressed("unit_fire")) manualFirePressed_=true;
+    if (viewMode_==ViewMode::unitControl && pressed(controlledAction("fire"))) manualFirePressed_=true;
     if (pressed("place") && viewMode_ == ViewMode::strategy && constructionPlacementMode_) {
         if (pendingConstructionIntent_ || pendingPlacementSequence_)
             return;
@@ -1474,11 +1491,12 @@ void PlayState::update(float deltaSeconds) {
         orbiting_ = mousePanning_ = false;
     }
     const bool direct = viewMode_ == ViewMode::unitControl;
-    forward_ = config_.keybinds.held(direct ? "unit_forward" : "forward", input_);
-    backward_ = config_.keybinds.held(direct ? "unit_backward" : "backward", input_);
-    left_ = config_.keybinds.held(direct ? "unit_left" : "left", input_);
-    right_ = config_.keybinds.held(direct ? "unit_right" : "right", input_);
-    running_ = config_.keybinds.held(direct ? "unit_run" : "camera_fast", input_) &&
+    forward_ = config_.keybinds.held(direct ? controlledAction("forward") : "forward", input_);
+    backward_ = config_.keybinds.held(direct ? controlledAction("backward") : "backward", input_);
+    left_ = config_.keybinds.held(direct ? controlledAction("left") : "left", input_);
+    right_ = config_.keybinds.held(direct ? controlledAction("right") : "right", input_);
+    running_ = (!direct || controlledInputContext() == InputContext::direct) &&
+               config_.keybinds.held(direct ? "unit_run" : "camera_fast", input_) &&
                !constructionPlacementMode_;
     placementRejectionRemaining_ = std::max(0.0F, placementRejectionRemaining_ - deltaSeconds);
     entryFadeRemaining_ = std::max(0.0F, entryFadeRemaining_ - deltaSeconds);
@@ -1659,7 +1677,7 @@ void PlayState::update(float deltaSeconds) {
     const float forward = static_cast<float>(forward_) - static_cast<float>(backward_);
     const float right = static_cast<float>(right_) - static_cast<float>(left_);
     thirdPersonCamera_.updateAimZoom(
-        possessedEntity_ && config_.keybinds.held("unit_aim_zoom", input_), deltaSeconds);
+        possessedEntity_ && config_.keybinds.held(controlledAction("aim_zoom"), input_), deltaSeconds);
     if (possessedEntity_ != 0) {
         session_.submit({localPlayer_,
                          nextCommandSequence_++,
@@ -1685,7 +1703,7 @@ void PlayState::update(float deltaSeconds) {
                                  nextCommandSequence_++,
                                  AimWeaponCommand{actor->id,
                                                   contact.position,
-                                                  config_.keybinds.held("unit_fire", input_),
+                                                  config_.keybinds.held(controlledAction("fire"), input_),
                                                   manualFirePressed_}});
             }
         }

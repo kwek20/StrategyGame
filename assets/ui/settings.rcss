@@ -169,6 +169,19 @@ p {
     background-color: #07151b88;
 }
 
+.binding-section {
+    padding: 8dp 7dp;
+    color: #b7e9f5;
+    background-color: #16313b;
+    font-size: 13dp;
+}
+
+.binding-section-note {
+    padding: 5dp 7dp;
+    color: #c7b680;
+    font-size: 11dp;
+}
+
 .binding-row {
     display: flex;
     align-items: center;

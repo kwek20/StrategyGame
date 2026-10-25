@@ -9,7 +9,9 @@
 #include <vector>
 
 namespace strategy {
-enum class InputContext : unsigned { strategy = 1, placement = 2, direct = 4, editor = 8 };
+enum class InputContext : unsigned {
+    strategy = 1, placement = 2, direct = 4, editor = 8, vehicle = 16, aircraft = 32
+};
 enum class BindingDevice { key, mouse, drag, wheel, modifier };
 struct InputBinding {
     BindingDevice device{BindingDevice::key};

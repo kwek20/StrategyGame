@@ -643,7 +643,14 @@ void GameSession::apply(const PlayerCommand& command) {
         [this, &command](const auto& payload) {
             using Type = std::decay_t<decltype(payload)>;
             Entity* entity = world_.findEntity(payload.entity);
-            if constexpr (std::is_same_v<Type, AdvanceSatelliteCommand>) {
+            if constexpr (std::is_same_v<Type, GrantResourcesCommand>) {
+                auto* player = players_.find(command.player);
+                if (!player || payload.entity != 0) return;
+                for (const auto* resource : gameplay_.enabledResources())
+                    if (resource->storage != ResourceStorageKind::network)
+                        player->resources[resource->id] += 1000.0F;
+                return;
+            } else if constexpr (std::is_same_v<Type, AdvanceSatelliteCommand>) {
                 auto* player = players_.find(command.player);
                 if (!player || payload.entity != 0)
                     return;

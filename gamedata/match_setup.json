@@ -1,13 +1,13 @@
 {
     "matchSetup": {
         "biomes": {},
-        "terrainSeed": 1,
-        "playerOneCountry": "china",
-        "playerTwoCountry": "spain",
         "mapChunksPerSide": 15,
+        "startingResourcesScale": 2.0,
         "resourceAbundanceScale": 1.5,
         "terrainLayout": "central_water",
-        "startingResourcesScale": 2.0,
+        "playerOneCountry": "china",
+        "playerTwoCountry": "spain",
+        "terrainSeed": 1,
         "terrainGeneration": "v2"
     }
 }

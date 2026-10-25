@@ -28,7 +28,7 @@ button:hover, button:focus {
 #resources-content {
     position: absolute;
     left: 2.5%;
-    right: 190dp;
+    right: 268dp;
     top: 10%;
     height: 80%;
     display: flex;
@@ -66,6 +66,10 @@ button:hover, button:focus {
     color: #f2f8dd;
 }
 #hud\.satellite {
+    right: 168dp;
+    width: 72dp;
+}
+#hud\.resources {
     right: 90dp;
     width: 72dp;
 }

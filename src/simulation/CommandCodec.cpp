@@ -39,7 +39,7 @@ bool readString(std::span<const std::byte>& input, std::string& value) {
 
 std::vector<std::byte> CommandCodec::encode(const PlayerCommand& command) {
     std::vector<std::byte> result;
-    result.push_back(std::byte{12});
+    result.push_back(std::byte{13});
     write(result, command.player);
     write(result, command.sequence);
     result.push_back(static_cast<std::byte>(command.payload.index()));
@@ -99,7 +99,7 @@ std::vector<std::byte> CommandCodec::encode(const PlayerCommand& command) {
 }
 
 std::optional<PlayerCommand> CommandCodec::decode(std::span<const std::byte> input) {
-    if (input.empty() || input.front() != std::byte{12})
+    if (input.empty() || input.front() != std::byte{13})
         return std::nullopt;
     input = input.subspan(1);
     PlayerCommand result;
@@ -182,6 +182,11 @@ std::optional<PlayerCommand> CommandCodec::decode(std::span<const std::byte> inp
     case 26: {
         if (entity != 0) return std::nullopt;
         result.payload = AdvanceSatelliteCommand{};
+        break;
+    }
+    case 29: {
+        if (entity != 0) return std::nullopt;
+        result.payload = GrantResourcesCommand{};
         break;
     }
     case 27: {

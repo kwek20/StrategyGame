@@ -103,7 +103,10 @@
                         <option id="keybind.option.selection" value="selection">Selection</option>
                         <option id="keybind.option.building" value="building">Building</option>
                         <option id="keybind.option.orders" value="orders">Orders</option>
-                        <option id="keybind.option.direct" value="direct">Direct</option>
+                        <option id="keybind.option.direct" value="direct">Shared direct control</option>
+                        <option id="keybind.option.foot" value="foot">On foot</option>
+                        <option id="keybind.option.vehicle" value="vehicle">Vehicles</option>
+                        <option id="keybind.option.aircraft" value="aircraft">Aircraft (reserved)</option>
                         <option id="keybind.option.interface" value="interface">Interface</option>
                         <option id="keybind.option.diagnostics" value="diagnostics">Diagnostics</option>
                         <option id="keybind.option.editor" value="editor">Editor</option>

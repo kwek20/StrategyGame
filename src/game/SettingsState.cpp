@@ -38,7 +38,8 @@ std::string lower(std::string text) {
 std::string contexts(unsigned mask) {
     std::string out;
     for (const auto& [bit, name] :
-         {std::pair{1U, "strategy"}, {2U, "placement"}, {4U, "direct"}, {8U, "editor"}})
+         {std::pair{1U, "strategy"}, {2U, "placement"}, {4U, "foot"}, {8U, "editor"},
+          {16U, "vehicle"}, {32U, "aircraft"}})
         if (mask & bit) {
             if (!out.empty())
                 out += " / ";
@@ -100,6 +101,9 @@ SettingsState::SettingsState(StateContext& context)
           std::pair{"keybind.option.building", "keybind.category.building"},
           std::pair{"keybind.option.orders", "keybind.category.orders"},
           std::pair{"keybind.option.direct", "keybind.category.direct"},
+          std::pair{"keybind.option.foot", "keybind.category.foot"},
+          std::pair{"keybind.option.vehicle", "keybind.category.vehicle"},
+          std::pair{"keybind.option.aircraft", "keybind.category.aircraft"},
           std::pair{"keybind.option.interface", "keybind.category.interface"},
           std::pair{"keybind.option.diagnostics", "keybind.category.diagnostics"},
           std::pair{"keybind.option.editor", "keybind.category.editor"}})
@@ -133,32 +137,46 @@ void SettingsState::refreshBindings() {
                                      "settings.preset.default",
                                      "settings.preset.grid"};
     const auto query = lower(filter_);
-    for (const auto& action : inputActions()) {
-        if (!category_.empty() && action.category != category_)
-            continue;
-        const auto& slots = config_.keybinds.values.at(action.id);
-        const auto name = Text::get(action.labelKey);
-        const auto context =
-            Text::get("keybind.category." + action.category) + " / " + contexts(action.contexts);
-        if (!query.empty() && lower(name + " " + action.id + " " + context + " " +
-                                    bindingName(slots[0]) + " " + bindingName(slots[1]))
-                                      .find(query) == std::string::npos)
-            continue;
-        markup << "<div class='binding-row'><div class='binding-label'><div class='binding-title'>"
-               << escape(name) << "</div><div class='binding-context'>" << escape(context)
-               << "</div></div>";
-        for (unsigned i = 0; i < 2; ++i) {
-            const std::string id = "settings.bind." + action.id + "." + std::to_string(i);
-            const bool capturing = captureAction_ == action.id && captureSlot_ == i;
-            markup << "<button id='" << id << "' class='binding" << (capturing ? " capturing" : "")
-                   << "'>"
-                   << escape(capturing && !proposed_ ? Text::get("settings.press_key")
-                                                     : bindingName(slots[i]))
-                   << "</button>";
-            focus.push_back(id);
-            actions.push_back(id);
+    for (const std::string section : {"camera", "selection", "building", "orders", "direct",
+                                      "foot", "vehicle", "aircraft", "interface", "diagnostics", "editor"}) {
+        bool headingAdded = false;
+        for (const auto& action : inputActions()) {
+            if (action.category != section)
+                continue;
+            if (!category_.empty() && action.category != category_)
+                continue;
+            const auto& slots = config_.keybinds.values.at(action.id);
+            const auto name = Text::get(action.labelKey);
+            const auto context =
+                Text::get("keybind.category." + action.category) + " / " + contexts(action.contexts);
+            if (!query.empty() && lower(name + " " + action.id + " " + context + " " +
+                                        bindingName(slots[0]) + " " + bindingName(slots[1]))
+                                          .find(query) == std::string::npos)
+                continue;
+            if (!headingAdded) {
+                markup << "<div class='binding-section'>"
+                       << escape(Text::get("keybind.category." + section)) << "</div>";
+                if (section == "aircraft")
+                    markup << "<div class='binding-section-note'>"
+                           << escape(Text::get("keybind.aircraft_reserved")) << "</div>";
+                headingAdded = true;
+            }
+            markup << "<div class='binding-row'><div class='binding-label'><div class='binding-title'>"
+                   << escape(name) << "</div><div class='binding-context'>" << escape(context)
+                   << "</div></div>";
+            for (unsigned i = 0; i < 2; ++i) {
+                const std::string id = "settings.bind." + action.id + "." + std::to_string(i);
+                const bool capturing = captureAction_ == action.id && captureSlot_ == i;
+                markup << "<button id='" << id << "' class='binding" << (capturing ? " capturing" : "")
+                       << "'>"
+                       << escape(capturing && !proposed_ ? Text::get("settings.press_key")
+                                                         : bindingName(slots[i]))
+                       << "</button>";
+                focus.push_back(id);
+                actions.push_back(id);
+            }
+            markup << "</div>";
         }
-        markup << "</div>";
     }
     context_.renderer->setUiText("binding-list", markup.str());
     if (!captureAction_.empty()) {

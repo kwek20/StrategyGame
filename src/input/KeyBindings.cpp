@@ -7,7 +7,8 @@
 
 namespace strategy {
 namespace {
-constexpr unsigned strategy = 1, placement = 2, direct = 4, editor = 8;
+constexpr unsigned strategy = 1, placement = 2, foot = 4, editor = 8, vehicle = 16,
+                   aircraft = 32, direct = foot | vehicle | aircraft;
 InputBinding key(SDL_Keycode code, unsigned mods = 0) {
     return {BindingDevice::key, static_cast<int>(code), mods};
 }
@@ -122,13 +123,30 @@ const std::vector<InputAction>& inputActions() {
         add("stop", "orders", strategy, key(SDLK_X));
         add("cancel_construction", "building", strategy, key(SDLK_DELETE));
         add("possess", "direct", strategy | direct, key(SDLK_P));
-        add("unit_forward", "direct", direct, key(SDLK_W), {}, true, true);
-        add("unit_backward", "direct", direct, key(SDLK_S), {}, true, true);
-        add("unit_left", "direct", direct, key(SDLK_A), {}, true, true);
-        add("unit_right", "direct", direct, key(SDLK_D), {}, true, true);
-        add("unit_run", "direct", direct, modifier(2), {}, false, true);
-        add("unit_fire", "direct", direct, mouse(SDL_BUTTON_LEFT), {}, true, true);
-        add("unit_aim_zoom", "direct", direct, mouse(SDL_BUTTON_RIGHT), {}, true, true);
+        add("unit_forward", "foot", foot, key(SDLK_W), {}, true, true);
+        add("unit_backward", "foot", foot, key(SDLK_S), {}, true, true);
+        add("unit_left", "foot", foot, key(SDLK_A), {}, true, true);
+        add("unit_right", "foot", foot, key(SDLK_D), {}, true, true);
+        add("unit_run", "foot", foot, modifier(2), {}, false, true);
+        add("unit_fire", "foot", foot, mouse(SDL_BUTTON_LEFT), {}, true, true);
+        add("unit_aim_zoom", "foot", foot, mouse(SDL_BUTTON_RIGHT), {}, true, true);
+        add("vehicle_forward", "vehicle", vehicle, key(SDLK_W), {}, true, true);
+        add("vehicle_backward", "vehicle", vehicle, key(SDLK_S), {}, true, true);
+        add("vehicle_left", "vehicle", vehicle, key(SDLK_A), {}, true, true);
+        add("vehicle_right", "vehicle", vehicle, key(SDLK_D), {}, true, true);
+        add("vehicle_fire", "vehicle", vehicle, mouse(SDL_BUTTON_LEFT), {}, true, true);
+        add("vehicle_aim_zoom", "vehicle", vehicle, mouse(SDL_BUTTON_RIGHT), {}, true, true);
+        // Aircraft bindings are reserved until a controllable aircraft and flight model exist.
+        add("aircraft_throttle_up", "aircraft", aircraft, key(SDLK_W), {}, true, true);
+        add("aircraft_throttle_down", "aircraft", aircraft, key(SDLK_S), {}, true, true);
+        add("aircraft_pitch_up", "aircraft", aircraft, key(SDLK_DOWN), {}, true, true);
+        add("aircraft_pitch_down", "aircraft", aircraft, key(SDLK_UP), {}, true, true);
+        add("aircraft_roll_left", "aircraft", aircraft, key(SDLK_A), {}, true, true);
+        add("aircraft_roll_right", "aircraft", aircraft, key(SDLK_D), {}, true, true);
+        add("aircraft_yaw_left", "aircraft", aircraft, key(SDLK_Q), {}, true, true);
+        add("aircraft_yaw_right", "aircraft", aircraft, key(SDLK_E), {}, true, true);
+        add("aircraft_fire", "aircraft", aircraft, mouse(SDL_BUTTON_LEFT), {}, true, true);
+        add("aircraft_aim_zoom", "aircraft", aircraft, mouse(SDL_BUTTON_RIGHT), {}, true, true);
         add("pause", "interface", strategy | direct, key(SDLK_ESCAPE));
         add("quick_save", "interface", strategy | placement | direct, key(SDLK_F5));
         add("quick_load", "interface", strategy | placement | direct, key(SDLK_F9));

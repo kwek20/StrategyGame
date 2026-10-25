@@ -41,6 +41,8 @@ class PlayState final : public GameState {
     }
 
   private:
+    [[nodiscard]] InputContext controlledInputContext() const;
+    [[nodiscard]] std::string controlledAction(std::string_view suffix) const;
     void restoreSavedPlayerProgress(SaveData& data);
     [[nodiscard]] CameraView controlledCameraView(Renderer&,const Entity&) const;
     enum class Preparation { terrain, resources, vegetation, world, hud, frame, fence, gpu, ready };
