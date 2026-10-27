@@ -303,6 +303,9 @@ class Terrain final {
     }
     [[nodiscard]] bool permitsLandSegment(glm::vec2 start, glm::vec2 end) const;
     [[nodiscard]] float walkingSpeedScaleAt(float worldX, float worldZ) const;
+    // Speed relative to a unit's resolved top speed. V2 navigation uses its reciprocal.
+    [[nodiscard]] float movementSpeedScaleAt(float worldX, float worldZ,
+                                            MovementDomainMask domains) const;
     [[nodiscard]] bool permitsMovementSegment(glm::vec2 start,
                                               glm::vec2 end,
                                               float radius,

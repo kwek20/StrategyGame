@@ -26,5 +26,6 @@ constexpr std::string_view movementDomainName(MovementDomain domain) {
 struct NavigationProfile {
     MovementDomainMask domains{movementDomainBit(MovementDomain::land)};
     bool ignoresEntityObstacles{false};
+    bool avoidMobileUnits{false}; // Query-local traffic detours; never part of static occupancy.
 };
 } // namespace strategy

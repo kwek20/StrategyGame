@@ -21,9 +21,6 @@
 namespace strategy {
 namespace {
 constexpr float maximumWalkingStep = 0.4F;
-constexpr float maximumWalkingSlope = 40.0F;
-constexpr float walkingSlowdownSlope = 25.0F;
-constexpr float minimumWalkingSpeedScale = 0.65F;
 constexpr float traversalHeightTolerance = 0.0001F;
 } // namespace
 std::uint64_t Terrain::nextPlacementRevision() {
@@ -268,19 +265,24 @@ float Terrain::walkingSpeedScaleAt(float worldX, float worldZ) const {
     }
     gradient /= spacing;
     const float angle = glm::degrees(std::atan(glm::length(gradient)));
-    if (angle > maximumWalkingSlope) {
-        // Only steep faces need the authored-step exception. Ordinary hills do
-        // not need two extra terrace-boundary queries for every path sample.
-        const auto& terraces = v2_->terraces;
-        const float drop = std::max(
-            terraces.maximumCliffDrop(point - glm::vec2{spacing, 0}, point + glm::vec2{spacing, 0}),
-            terraces.maximumCliffDrop(point - glm::vec2{0, spacing}, point + glm::vec2{0, spacing}));
-        return drop > 0 && drop <= maximumWalkingStep + traversalHeightTolerance
-                   ? minimumWalkingSpeedScale : 0.0F;
-    }
-    return std::lerp(1.0F, minimumWalkingSpeedScale,
-        std::clamp((angle - walkingSlowdownSlope) / (maximumWalkingSlope - walkingSlowdownSlope),
-                   0.0F, 1.0F));
+    // Slope changes travel time, never land connectivity. Canonical cliff edges
+    // are checked separately by permitsLandSegment, including diagonal junctions.
+    return v2_->plan.recipe().groundMovement.speedScale(angle);
+}
+
+float Terrain::movementSpeedScaleAt(float worldX, float worldZ, MovementDomainMask domains) const {
+    if (hasMovementDomain(domains, MovementDomain::air))
+        return 1.F;
+    if (!v2_)
+        return traversalAt(worldX, worldZ) == TerrainTraversalClass::difficult ? .65F : 1.F;
+    const float cost = movementCostAt(worldX, worldZ, domains);
+    if (cost <= 0)
+        return 0.F;
+    const auto& tuning = v2_->plan.recipe().groundMovement;
+    const float surfaceSpeed = std::clamp(1.F / cost, tuning.minimumSurfaceSpeedScale, 1.F);
+    const bool wet = v2_->plan.hasWater() && waterCoverageAt(worldX, worldZ) > 0.F &&
+                     waterSurfaceAt(worldX, worldZ) > heightAt(worldX, worldZ);
+    return wet ? surfaceSpeed : std::min(surfaceSpeed, walkingSpeedScaleAt(worldX, worldZ));
 }
 
 bool Terrain::permitsMovementSegment(glm::vec2 start,
@@ -304,9 +306,7 @@ bool Terrain::permitsMovementSegment(glm::vec2 start,
             return false;
         for (int step = 0; step <= steps; ++step) {
             const auto point = glm::mix(start, end, static_cast<float>(step) / steps) + offset;
-            if (movementCostAt(point.x, point.y, domains) <= 0 ||
-                (hasMovementDomain(domains, MovementDomain::land) &&
-                 walkingSpeedScaleAt(point.x, point.y) <= 0))
+            if (movementCostAt(point.x, point.y, domains) <= 0)
                 return false;
         }
     }

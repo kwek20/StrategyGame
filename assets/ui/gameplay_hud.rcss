@@ -440,6 +440,9 @@ button:hover, button:focus {
     white-space: nowrap;
     text-overflow: ellipsis;
 }
+.footer.control-hints {
+    white-space: pre-wrap;
+}
 #placement-reason {
     position: absolute;
     width: 360dp;

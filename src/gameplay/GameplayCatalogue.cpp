@@ -589,6 +589,17 @@ void DefinitionRegistry::loadArchetypes(const std::filesystem::path& path,
                     archetype.movement.turnRateDegrees < 0)
                     throw std::runtime_error("Invalid movement turnRateDegrees");
             }
+            for (const auto& [name, value] : {
+                     std::pair{"reverseSpeedScale", &archetype.movement.reverseSpeedScale},
+                     std::pair{"acceleration", &archetype.movement.acceleration},
+                     std::pair{"braking", &archetype.movement.braking},
+                     std::pair{"coastingDeceleration", &archetype.movement.coastingDeceleration}}) {
+                if (movement.HasMember(name))
+                    *value = requiredNumber(movement, name, "Vehicle movement");
+                if (!std::isfinite(*value) || *value <= 0 ||
+                    (std::string_view{name} == "reverseSpeedScale" && *value > 1))
+                    throw std::runtime_error(std::string{"Invalid vehicle movement "} + name);
+            }
             archetype.stats[GameplayStat::movementSpeed] = archetype.movement.speed;
         }
         if (item->value.HasMember("cargo") && item->value["cargo"].IsObject())

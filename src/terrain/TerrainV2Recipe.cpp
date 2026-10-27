@@ -47,6 +47,22 @@ TerrainRange TerrainRange::intersect(TerrainRange other) const {
     return result;
 }
 
+void TerrainGroundMovementSettings::validate() const {
+    if (!std::isfinite(slowdownStartDegrees) || !std::isfinite(slowdownFullDegrees) ||
+        slowdownStartDegrees < 0 || slowdownFullDegrees <= slowdownStartDegrees ||
+        slowdownFullDegrees > 90 || !std::isfinite(minimumSlopeSpeedScale) ||
+        minimumSlopeSpeedScale <= 0 || minimumSlopeSpeedScale > 1 ||
+        !std::isfinite(minimumSurfaceSpeedScale) || minimumSurfaceSpeedScale <= 0 ||
+        minimumSurfaceSpeedScale > 1 || !std::isfinite(minimumRouteWidth) || minimumRouteWidth <= 0)
+        throw std::runtime_error("Invalid V2 ground movement settings");
+}
+
+float TerrainGroundMovementSettings::speedScale(float slopeDegrees) const {
+    const float t = std::clamp((slopeDegrees - slowdownStartDegrees) /
+                              (slowdownFullDegrees - slowdownStartDegrees), 0.F, 1.F);
+    return std::lerp(1.F, minimumSlopeSpeedScale, t);
+}
+
 void TerrainCellSettings::validate() const {
     for (float value : {side, elevationStep, cliffRun, rampRun, sourceWeight})
         if (!std::isfinite(value) || value <= 0.0F)
@@ -65,12 +81,15 @@ float TerrainV2Recipe::lakeBedHeight(float shoreDistance) const {
 
 void TerrainV2Recipe::validate(float mapExtent, std::size_t players) const {
     cells.validate();
+    groundMovement.validate();
     (void)relief.intersect(relief);
     if (!std::isfinite(mapExtent) || mapExtent <= 0.0F || players < 1 || players > 4 ||
         !std::isfinite(baseHeight) || relief.minimum < 0.0F || !std::isfinite(openingRadius) ||
         openingRadius <= cells.side || !std::isfinite(openingBlendWidth) ||
         openingBlendWidth < cells.side || openingRadius + cells.side * 2 >= mapExtent * 0.5F)
         throw std::runtime_error("V2 recipe has insufficient opening capacity");
+    if (groundMovement.minimumRouteWidth > mapExtent - cells.side * 2)
+        throw std::runtime_error("V2 route width exceeds map capacity");
     if (!std::isfinite(openingSeparationPadding) || openingSeparationPadding < 0)
         throw std::runtime_error("Invalid V2 opening separation padding");
     if (!std::isfinite(peakHeight) || peakHeight < 0)
@@ -133,6 +152,14 @@ TerrainV2Recipes TerrainV2Recipes::load(const std::filesystem::path& path) {
         throw std::runtime_error("V2 sweeps must be an unsigned integer");
     settings.sweeps = cell["sweeps"].GetUint();
     settings.validate();
+    const auto& movement = object(document, "groundMovement");
+    TerrainGroundMovementSettings groundMovement;
+    groundMovement.slowdownStartDegrees = number(movement, "slowdownStartDegrees");
+    groundMovement.slowdownFullDegrees = number(movement, "slowdownFullDegrees");
+    groundMovement.minimumSlopeSpeedScale = number(movement, "minimumSlopeSpeedScale");
+    groundMovement.minimumSurfaceSpeedScale = number(movement, "minimumSurfaceSpeedScale");
+    groundMovement.minimumRouteWidth = number(movement, "minimumRouteWidth");
+    groundMovement.validate();
     const auto& profiles = object(document, "profiles");
     const auto& landforms = object(document, "landforms");
     const auto& layouts = object(document, "layouts");
@@ -144,6 +171,7 @@ TerrainV2Recipes TerrainV2Recipes::load(const std::filesystem::path& path) {
         TerrainV2Recipe recipe;
         recipe.layout = TerrainLayoutId{entry->name.GetString()};
         recipe.cells = settings;
+        recipe.groundMovement = groundMovement;
         recipe.openingSeparationPadding = number(landforms, "openingSeparationPadding");
         recipe.ridgeLength = range(landforms, "ridgeLength");
         recipe.ridgeWidth = range(landforms, "ridgeWidth");

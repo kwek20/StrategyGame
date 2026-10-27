@@ -94,6 +94,7 @@ int strategyTestMain() {
     config.keybinds.values["range_lock"][1] = {BindingDevice::mouse, SDL_BUTTON_X1, 4};
     config.keybinds.values["stop"] = {};
     config.keybinds.values["vehicle_fire"][0] = {BindingDevice::key, static_cast<int>(SDLK_SPACE)};
+    config.keybinds.values["vehicle_brake"][0] = {BindingDevice::key, static_cast<int>(SDLK_B)};
     config.keybinds.values["aircraft_roll_left"][1] = {BindingDevice::key, static_cast<int>(SDLK_LEFT)};
     config.write(path);
     const auto restored = GameConfig::load(path);

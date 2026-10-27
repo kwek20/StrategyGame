@@ -116,6 +116,8 @@ int strategyTestMain() {
     strategy::Entity& drone = world.createEntity("Drone", "construction_drone", 1);
     drone.kind = strategy::EntityKind::unit;
     drone.unitControl.emplace();
+    drone.unitControl.driveSpeed = -1.25F;
+    drone.unitControl.vehicleBrake = true;
     drone.flight.emplace();
     drone.flight.altitude = 9.0F;
     drone.transform.position.y = 9.0F;
@@ -160,6 +162,9 @@ int strategyTestMain() {
                 contents.find("outputEnabled") != std::string::npos;
     }
     const strategy::SaveData loaded = strategy::SaveGame::read(savePath);
+    valid = valid && loaded.entities.size() > 1 &&
+            loaded.entities[1].unitControl.driveSpeed == -1.25F &&
+            loaded.entities[1].unitControl.vehicleBrake;
     valid = valid && loaded.terrainSeed == 424242U && loaded.mapChunksPerSide == 10 &&
             loaded.terrainLayout == "central_hill" &&
             loaded.entities.size() == 2;

@@ -1,10 +1,12 @@
 #include "TerrainLevelingFixture.hpp"
+#include "TerrainTiltFixture.hpp"
 #include "gameplay/DefinitionRegistry.hpp"
 #include "persistence/SaveGame.hpp"
 #include "players/PlayerRegistry.hpp"
 #include "simulation/CombatRules.hpp"
 #include "simulation/CommandCodec.hpp"
 #include "simulation/GameSession.hpp"
+#include "simulation/VehicleControl.hpp"
 #include "world/Collision.hpp"
 #include "world/Navigation.hpp"
 #include "world/World.hpp"
@@ -14,6 +16,7 @@
 #include <filesystem>
 #include <stdexcept>
 #include <tuple>
+#include <limits>
 
 namespace {
 void require(bool value, const char* message) {
@@ -52,6 +55,30 @@ int strategyTestMain() {
     actor->transform.rotationDegrees.y = 179;
     require(turnToward(*actor, -179, 90, 1.F / 30) < .01F,
             "Vehicle turning takes the short wraparound direction");
+    actor->transform.rotationDegrees.y = 0;
+    const auto& driveTuning = definitions.archetype(actor->archetype)->movement;
+    actor->unitControl.directInput = {0, -1};
+    for (int i = 0; i < 30; ++i)
+        (void)driveVehicle(*actor, driveTuning, 4, 1.F / 30);
+    require(std::abs(actor->unitControl.driveSpeed + 2.4F) < .001F &&
+                actor->transform.rotationDegrees.y == 0,
+            "Reverse reaches sixty percent speed without turning the hull");
+    actor->unitControl.directInput = {1, 1};
+    const auto stopping = driveVehicle(*actor, driveTuning, 4, 1.F / 30);
+    require(actor->unitControl.driveSpeed < 0 && stopping.y < 0 &&
+                actor->transform.rotationDegrees.y > 0,
+            "Opposite throttle brakes while steering remains independent");
+    actor->unitControl.driveSpeed = 0;
+    actor->transform.rotationDegrees.y = 0;
+    const auto curve = driveVehicle(*actor, driveTuning, 4, 1.F / 30);
+    require(curve.x > 0 && curve.y > 0,
+            "Driving through a turn does not wait for a five-degree heading threshold");
+    actor->unitControl.directInput = {0, 0};
+    actor->unitControl.driveSpeed = 4;
+    for (int i = 0; i < 15; ++i)
+        (void)driveVehicle(*actor, driveTuning, 4, 1.F / 30);
+    require(actor->unitControl.driveSpeed == 0, "Releasing throttle stops prolonged coasting");
+    actor->unitControl.directInput = {0, 0};
     actor->transform.rotationDegrees.y = 0;
     PlayerRegistry players;
     require(validCombatTarget(definitions, players, *actor, *world.findEntity(target)),
@@ -308,5 +335,73 @@ int strategyTestMain() {
                 session.world().findEntity(pole)->health.current ==
                     session.world().findEntity(pole)->health.maximum,
             "Barrel protrusion cannot bypass friendly cover or cause friendly-fire damage");
+    // Direct driving uses the same collision/terrain checks as ordinary movement.
+    session.world().replaceEntities({});
+    const_cast<Terrain&>(session.terrain()) = test::levelingFixture(0);
+    a = add(session.world(), definitions, "light_tank", 1, {0, 0});
+    b = add(session.world(), definitions, "light_tank", 2, {0, 10});
+    require(session.submit({1, 16, PossessUnitCommand{a}}), "Possess for direct driving");
+    session.advanceTicks();
+    const auto reverseWire = CommandCodec::encode({1, 17, DirectVehicleInputCommand{a, -1, 0, false}});
+    const auto reverseCommand = CommandCodec::decode(reverseWire);
+    require(reverseCommand && std::get<DirectVehicleInputCommand>(reverseCommand->payload).throttle == -1,
+            "Throttle, steering and brake survive wire encoding");
+    auto invalidWire = reverseWire;
+    invalidWire.back() = std::byte{2};
+    require(!CommandCodec::decode(invalidWire), "Vehicle brake flag must be a strict boolean");
+    require(!CommandCodec::decode(CommandCodec::encode(
+                {1, 17, DirectVehicleInputCommand{a, std::numeric_limits<float>::quiet_NaN(), 0, false}})),
+            "Vehicle input rejects non-finite throttle");
+    require(session.submit(*reverseCommand), "Drive in reverse");
+    session.advanceTicks(30);
+    require(session.world().findEntity(a)->transform.position.z < -1.8F &&
+                session.world().findEntity(a)->transform.rotationDegrees.y == 0 &&
+                session.world().findEntity(a)->unitControl.driveSpeed < 0,
+            "S backs the actual tank away without rotating it");
+    const auto retreatAim = combatAimPoint(definitions, session.terrain(), *session.world().findEntity(b));
+    require(session.submit({1, 18, AimWeaponCommand{a, retreatAim, true}}), "Fire while retreating");
+    session.advanceTicks();
+    require(session.world().findEntity(a)->combat.shotsFired == 1 &&
+                session.world().findEntity(b)->health.current == 318,
+            "Tank can fire at the enemy while reversing away");
+    require(session.submit({1, 19, DirectVehicleInputCommand{a, 1, 1, true}}), "Brake overrides throttle");
+    const float brakeYaw = session.world().findEntity(a)->transform.rotationDegrees.y;
+    session.advanceTicks(15);
+    require(session.world().findEntity(a)->unitControl.driveSpeed == 0 &&
+                session.world().findEntity(a)->transform.rotationDegrees.y == brakeYaw,
+            "Space stops both tracks despite throttle/steering input");
+    require(session.submit({1, 20, DirectVehicleInputCommand{a, 0, -1, false}}), "Pivot left");
+    const auto pivotPosition = session.world().findEntity(a)->transform.position;
+    session.advanceTicks(10);
+    require(session.world().findEntity(a)->transform.position == pivotPosition &&
+                session.world().findEntity(a)->transform.rotationDegrees.y < -29,
+            "Steering alone pivots on the spot");
+    session.world().destroyEntity(b);
+    auto* driver = session.world().findEntity(a);
+    driver->transform.position = {0, 0, -10};
+    driver->transform.rotationDegrees.y = 0;
+    driver->unitControl.driveSpeed = 0;
+    add(session.world(), definitions, "electricity_pole", 1, {0, -4});
+    require(session.submit({1, 21, DirectVehicleInputCommand{a, 1, 0, false}}), "Drive toward obstacle");
+    session.advanceTicks(120);
+    driver = session.world().findEntity(a);
+    require(driver->transform.position.z < -4 && driver->unitControl.driveSpeed == 0 &&
+                !overlapsObject(session.world(), definitions,
+                    {driver->transform.position.x, driver->transform.position.z}, 2.2F, a),
+            "Collision blocks the tank and clears accumulated driving speed");
+    session.world().replaceEntities({*driver});
+    const_cast<Terrain&>(session.terrain()) = test::tiltFixture(3, 0, false, true);
+    driver = session.world().findEntity(a);
+    driver->transform.position = {-4, 0, 1};
+    driver->transform.rotationDegrees.y = 90;
+    driver->unitControl.driveSpeed = 0;
+    session.advanceTicks(90);
+    require(session.world().findEntity(a)->transform.position.x > 2,
+            "Direct driving crosses a walkable hillside using the common slope rules");
+    require(session.submit({1, 22, ReleaseUnitCommand{a}}), "Return to RTS movement");
+    session.advanceTicks();
+    require(session.world().findEntity(a)->unitControl.driveSpeed == 0 &&
+                session.world().findEntity(a)->unitControl.directInput == glm::vec2{0},
+            "Leaving possession clears throttle and driving momentum");
     return 0;
 }

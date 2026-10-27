@@ -61,6 +61,8 @@ inline float effectiveSightRange(float resolvedRange, float terrainHeight, bool 
 struct UnitComponent {
     glm::vec2 directInput{0.0F};
     bool running{false};
+    bool vehicleBrake{false};
+    float driveSpeed{0.0F}; // Signed world units per second; negative is reverse.
     glm::vec3 strategicDestination{0.0F};
     bool hasStrategicDestination{false};
     float movementSpeed{0.0F};

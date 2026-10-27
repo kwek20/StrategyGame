@@ -90,6 +90,12 @@ struct AimWeaponCommand {
     bool pressed{};
 };
 struct GrantResourcesCommand { EntityId entity{0}; };
+struct DirectVehicleInputCommand {
+    EntityId entity{0};
+    float throttle{0.0F};
+    float steering{0.0F};
+    bool brake{false};
+};
 
 using CommandPayload = std::variant<PossessUnitCommand,
                                     ReleaseUnitCommand,
@@ -120,7 +126,8 @@ using CommandPayload = std::variant<PossessUnitCommand,
                                     AdvanceSatelliteCommand,
                                     SetRallyPointCommand,
                                     AimWeaponCommand,
-                                    GrantResourcesCommand>;
+                                    GrantResourcesCommand,
+                                    DirectVehicleInputCommand>;
 // Keep new commands appended so their serialized variant indices remain stable.
 
 struct PlayerCommand {

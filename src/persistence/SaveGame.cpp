@@ -232,6 +232,10 @@ void SaveGame::write(const std::filesystem::path& path,
             writer.EndArray();
             writer.Key("running");
             writer.Bool(entity.unitControl.running);
+            writer.Key("vehicleBrake");
+            writer.Bool(entity.unitControl.vehicleBrake);
+            writer.Key("driveSpeed");
+            writer.Double(entity.unitControl.driveSpeed);
             writeVector(writer, "destination", entity.unitControl.strategicDestination);
             writer.Key("hasDestination");
             writer.Bool(entity.unitControl.hasStrategicDestination);
@@ -669,6 +673,9 @@ SaveData SaveGame::read(const std::filesystem::path& path) {
                 if (!item.IsObject() || !item.HasMember("directInput") ||
                     !item["directInput"].IsArray() || item["directInput"].Size() != 2 ||
                     !item.HasMember("running") || !item["running"].IsBool() ||
+                    !item.HasMember("vehicleBrake") || !item["vehicleBrake"].IsBool() ||
+                    !item.HasMember("driveSpeed") || !item["driveSpeed"].IsNumber() ||
+                    !std::isfinite(item["driveSpeed"].GetFloat()) ||
                     !item.HasMember("destination") || !item["destination"].IsArray() ||
                     !item.HasMember("hasDestination") || !item["hasDestination"].IsBool() ||
                     !item.HasMember("order") || !item["order"].IsUint() ||
@@ -679,6 +686,8 @@ SaveData SaveGame::read(const std::filesystem::path& path) {
                 entity.unitControl.directInput = {item["directInput"][0].GetFloat(),
                                                   item["directInput"][1].GetFloat()};
                 entity.unitControl.running = item["running"].GetBool();
+                entity.unitControl.vehicleBrake = item["vehicleBrake"].GetBool();
+                entity.unitControl.driveSpeed = item["driveSpeed"].GetFloat();
                 entity.unitControl.strategicDestination = readVector(item, "destination");
                 entity.unitControl.hasStrategicDestination = item["hasDestination"].GetBool();
                 entity.unitControl.order = static_cast<UnitOrderKind>(item["order"].GetUint());

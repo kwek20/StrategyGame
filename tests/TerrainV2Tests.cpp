@@ -504,6 +504,8 @@ int strategyTestMain() {
     const auto savePath = directory / "save.json";
     World world;
     PlayerRegistry players{"spain", "japan"};
+    for (auto& player : players.players())
+        player.visibility = VisibilityGrid{240.F / 128.F};
     world.foundations().push_back(levelingFoundation);
     SaveGame::write(savePath, 7, world, &players, 10, "open_plains", TerrainMode::v2);
     auto restored = SaveGame::read(savePath);
@@ -536,6 +538,8 @@ int strategyTestMain() {
                 "Loaded angled excavation reproduces the accepted surface");
     }
     world.foundations().clear();
+    for (auto& player : players.players())
+        player.visibility = VisibilityGrid{480.F / 128.F};
     SaveGame::write(savePath, 123, world, &players);
     require(SaveGame::read(savePath).terrainSeed == 123, "Legacy V1 save still loads");
     std::ifstream input(savePath);

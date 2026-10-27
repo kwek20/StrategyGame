@@ -91,6 +91,8 @@ std::uint64_t authoritativeStateChecksum(const World& world,
             hash.value(entity->unitControl.directInput.x); hash.value(entity->unitControl.directInput.y);
             hash.value(entity->unitControl.running); hash.vector(entity->unitControl.strategicDestination); hash.value(entity->unitControl.hasStrategicDestination);
             hash.value(entity->unitControl.movementSpeed);
+            hash.value(entity->unitControl.vehicleBrake);
+            hash.value(entity->unitControl.driveSpeed);
             hash.value(entity->unitControl.order);
             hash.value(entity->unitControl.orderTarget);
             hash.value(static_cast<std::uint64_t>(entity->unitControl.constructionQueue.size()));

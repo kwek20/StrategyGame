@@ -104,7 +104,7 @@ the first eligible visible enemy ground unit. Friendly buildings block without t
 damage. Right Mouse never fires. Both bindings are configurable in Settings. Quick clicks survive
 frame/fixed-tick boundaries, and losing focus or leaving possession clears weapon input.
 
-Wire version 12 appended `AimWeaponCommand`; version 13 appends the top-bar `GrantResourcesCommand`. Format 1 additionally requires turret yaw/pitch,
+Wire version 12 appended `AimWeaponCommand`; version 13 appended the top-bar `GrantResourcesCommand`; version 14 appends `DirectVehicleInputCommand` for independent throttle, steering and brake. Format 1 additionally requires turret yaw/pitch,
 nullable direct aim and trigger state in combat components; checksums include these values.
 Attack-move, hold-position, more unit content and wreck gameplay remain subsequent work.
 

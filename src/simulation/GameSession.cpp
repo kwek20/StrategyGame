@@ -1,7 +1,9 @@
 #include "simulation/GameSession.hpp"
 #include "simulation/StateChecksum.hpp"
 #include "simulation/UnitDeployment.hpp"
+#include "simulation/UnitMovement.hpp"
 #include "simulation/CombatRules.hpp"
+#include "simulation/VehicleControl.hpp"
 
 #include "localization/Text.hpp"
 #include "terrain/Terrain.hpp"
@@ -40,14 +42,6 @@ float interactionRange(const DefinitionRegistry& definitions,
     if (const auto found = definition->interactionRanges.find(std::string{action});
         found != definition->interactionRanges.end()) return found->second;
     return definition->interactionMargin;
-}
-
-NavigationProfile navigationProfile(const DefinitionRegistry& definitions,
-                                    const Entity& entity) {
-    const EntityArchetype* archetype = definitions.archetype(entity.archetype);
-    return archetype ? NavigationProfile{archetype->movement.domains,
-                                         archetype->movement.ignoresEntityObstacles}
-                     : NavigationProfile{};
 }
 
 bool canReceiveCargo(const Entity& entity) {
@@ -186,6 +180,8 @@ void GameSession::finishRecharge(Entity& entity) {
 
 void GameSession::stopUnit(Entity& entity) {
     if (!entity.unitControl) return;
+    entity.unitControl.driveSpeed = 0;
+    entity.unitControl.vehicleBrake = false;
     if (entity.combat) entity.combat.lastSeenTarget.reset();
     entity.transient.firingLineBlocked=false;
     entity.unitControl.order = UnitOrderKind::idle;
@@ -696,6 +692,9 @@ void GameSession::apply(const PlayerCommand& command) {
                     (entity->authority.directController == 0 ||
                      entity->authority.directController == command.player)) {
                     entity->authority.directController = command.player;
+                    entity->unitControl.directInput = {0, 0};
+                    entity->unitControl.driveSpeed = 0;
+                    entity->unitControl.vehicleBrake = false;
                     if (entity->combat) {
                         entity->combat.triggerHeld = false;
                         entity->combat.directAim.reset();
@@ -706,6 +705,8 @@ void GameSession::apply(const PlayerCommand& command) {
                     entity->authority.directController = 0;
                     entity->unitControl.directInput = {0.0F, 0.0F};
                     entity->unitControl.running = false;
+                    entity->unitControl.vehicleBrake = false;
+                    entity->unitControl.driveSpeed = 0;
                     if (entity->combat) {
                         entity->combat.triggerHeld = false;
                         entity->combat.directAim.reset();
@@ -720,8 +721,22 @@ void GameSession::apply(const PlayerCommand& command) {
                 entity->combat.directAim = payload.position;
                 entity->combat.triggerHeld = payload.firing;
                 entity->transient.directFirePressed |= payload.pressed;
+            } else if constexpr (std::is_same_v<Type, DirectVehicleInputCommand>) {
+                const auto* type = gameplay_.archetype(entity->archetype);
+                if (!entity->unitControl || entity->flight || !type ||
+                    type->movement.turnRateDegrees <= 0 ||
+                    entity->authority.directController != command.player ||
+                    !std::isfinite(payload.throttle) || !std::isfinite(payload.steering) ||
+                    std::abs(payload.throttle) > 1 || std::abs(payload.steering) > 1)
+                    return;
+                entity->unitControl.directInput = {payload.steering, payload.throttle};
+                entity->unitControl.vehicleBrake = payload.brake;
+                entity->unitControl.running = false;
             } else if constexpr (std::is_same_v<Type, DirectUnitInputCommand>) {
                 if (entity->unitControl && entity->authority.directController == command.player) {
+                    const auto* movementType = gameplay_.archetype(entity->archetype);
+                    if (!entity->flight && movementType && movementType->movement.turnRateDegrees > 0)
+                        return; // Vehicles use independent throttle/steering, not a world direction.
                     if (entity->battery &&
                         (entity->battery.charge <= 0.0F || entity->battery.returningToCharge)) {
                         if (!entity->battery.returningToCharge)
@@ -1116,13 +1131,8 @@ void GameSession::orderMove(Entity& entity, glm::vec3 destination) {
     entity.unitControl.orderTarget = 0;
     entity.unitControl.strategicDestination = destination;
     entity.unitControl.hasStrategicDestination = true;
-    entity.transient.navigationPath =
-        navigation_.findPath(terrain_, world_,
-                             entity.transform.position,
-                             destination,
-                             collisionRadius(gameplay_, entity.archetype),
-                             entity.id,
-                             navigationProfile(gameplay_, entity));
+    entity.transient.navigationPath = findUnitArrivalPath(
+        navigation_, world_, terrain_, gameplay_, mapChunksPerSide_, entity, destination);
     entity.transient.navigationWaypoint = 0;
     if (!entity.transient.navigationPath.empty()) {
         entity.unitControl.strategicDestination = entity.transient.navigationPath.back();
@@ -1816,6 +1826,10 @@ void GameSession::simulateTick() {
                 updateAttack(entity,destroyed);
         }
 
+        const auto* movementType = gameplay_.archetype(entity.archetype);
+        const float turnRate =
+            !entity.flight && movementType ? movementType->movement.turnRateDegrees : 0;
+        float waypointDistance = std::numeric_limits<float>::infinity();
         glm::vec2 movement{0.0F};
         if (entity.authority.directController != 0) {
             movement = entity.unitControl.directInput;
@@ -1869,24 +1883,42 @@ void GameSession::simulateTick() {
                     continue;
                 }
             }
-            if (entity.transient.navigationWaypoint < entity.transient.navigationPath.size()) {
-                const glm::vec3 waypoint = entity.transient.navigationPath[
-                    entity.transient.navigationWaypoint];
-                const glm::vec2 delta{waypoint.x - entity.transform.position.x,
-                                      waypoint.z - entity.transform.position.z};
-                if (glm::length(delta) < 0.35F) {
-                    ++entity.transient.navigationWaypoint;
-                    if (entity.transient.navigationWaypoint >= entity.transient.navigationPath.size()) {
-                        entity.unitControl.hasStrategicDestination = false;
-                        if (entity.unitControl.order == UnitOrderKind::move)
-                            entity.unitControl.order = UnitOrderKind::idle;
+            auto& waypointIndex = entity.transient.navigationWaypoint;
+            const auto& path = entity.transient.navigationPath;
+            const glm::vec2 origin{entity.transform.position.x, entity.transform.position.z};
+            bool chooseLookAhead = waypointIndex == 0;
+            while (waypointIndex < path.size() &&
+                   glm::length(glm::vec2{path[waypointIndex].x, path[waypointIndex].z} - origin) <
+                       (turnRate > 0 && waypointIndex + 1 == path.size()
+                            ? std::max(.35F, collisionRadius(gameplay_, entity.archetype) * .35F) : .35F)) {
+                ++waypointIndex;
+                chooseLookAhead = true;
+            }
+            if (waypointIndex >= path.size()) {
+                entity.unitControl.hasStrategicDestination = false;
+                if (entity.unitControl.order == UnitOrderKind::move)
+                    entity.unitControl.order = UnitOrderKind::idle;
+            } else {
+                if (turnRate > 0 && chooseLookAhead) {
+                    const auto last = std::min(path.size() - 1, waypointIndex + 4);
+                    for (auto i = last; i > waypointIndex; --i) {
+                        const glm::vec2 next{path[i].x, path[i].z};
+                        if (glm::length(next - origin) <= 8.F &&
+                            clearUnitRouteSegment(world_, terrain_, gameplay_, entity, origin, next)) {
+                            waypointIndex = i;
+                            break;
+                        }
                     }
-                } else {
-                    movement = glm::normalize(delta);
                 }
+                const glm::vec2 delta = glm::vec2{path[waypointIndex].x, path[waypointIndex].z} - origin;
+                waypointDistance = glm::length(delta);
+                if (waypointDistance > .001F) movement = delta / waypointDistance;
             }
         }
-        if (!entity.flight && glm::length(movement) > 0.001F) {
+        const bool directVehicle = entity.authority.directController != 0 && turnRate > 0;
+        if (!directVehicle)
+            entity.unitControl.driveSpeed = 0;
+        if (!directVehicle && !entity.flight && glm::length(movement) > 0.001F) {
             glm::vec2 separation{0};
             for (const Entity& other : world_.entities())
                 if (other.id != entity.id && !other.flight && other.unitControl) {
@@ -1902,10 +1934,9 @@ void GameSession::simulateTick() {
             if (glm::length(movement) > 1.0F)
                 movement = glm::normalize(movement);
         }
-        const auto* movementType = gameplay_.archetype(entity.archetype);
-        const float turnRate =
-            !entity.flight && movementType ? movementType->movement.turnRateDegrees : 0;
-        if (turnRate > 0 || entity.authority.directController == 0)
+        movement = avoidUnitTraffic(world_, gameplay_, entity, movement, waypointDistance);
+        const auto desiredMovement = movement;
+        if (!directVehicle && (turnRate > 0 || entity.authority.directController == 0))
             movement = turnLimitedMovement(
                 entity, movement, turnRate, static_cast<float>(fixedTickSeconds));
         const float speedMultiplier = entity.unitControl.running && turnRate <= 0 ? 1.65F : 1.0F;
@@ -1913,16 +1944,20 @@ void GameSession::simulateTick() {
         const float resolvedMovementSpeed = entity.authority.owner
                                                 ? stat(entity, GameplayStat::movementSpeed)
                                                 : entity.unitControl.movementSpeed;
-        const float terrainSpeedMultiplier =
-            !entity.flight &&
-                    terrain_.traversalAt(current.x, current.y) == TerrainTraversalClass::difficult
-                ? 0.65F
-                : 1.0F;
-        const float slopeSpeedMultiplier = entity.flight ? 1.0F :
-            std::max(0.65F, terrain_.walkingSpeedScaleAt(current.x, current.y));
-        const glm::vec2 delta = movement * resolvedMovementSpeed * speedMultiplier *
-                                std::min(terrainSpeedMultiplier, slopeSpeedMultiplier) *
-                                static_cast<float>(fixedTickSeconds);
+        const NavigationProfile movementProfile = navigationProfile(gameplay_, entity);
+        const float effectiveSpeed = resolvedMovementSpeed * (entity.flight ? 1.F :
+            terrain_.movementSpeedScaleAt(current.x, current.y, movementProfile.domains));
+        glm::vec2 velocity = directVehicle
+            ? driveVehicle(entity, movementType->movement, effectiveSpeed,
+                           static_cast<float>(fixedTickSeconds))
+            : movement * effectiveSpeed * speedMultiplier;
+        if (!directVehicle && turnRate > 0 && std::isfinite(waypointDistance)) {
+            const float speed = glm::length(velocity);
+            const float arrivalSpeed = waypointDistance * glm::radians(turnRate) * .75F;
+            if (speed > arrivalSpeed && speed > .001F)
+                velocity *= arrivalSpeed / speed; // Keep the turn radius below the remaining distance.
+        }
+        const glm::vec2 delta = velocity * static_cast<float>(fixedTickSeconds);
         const bool flying = entity.flight.present;
         if (flying && entity.battery && glm::length(delta) > 0.001F) {
             entity.battery.charge = std::max(0.0F, entity.battery.charge -
@@ -1931,7 +1966,6 @@ void GameSession::simulateTick() {
                 beginRecharge(entity);
         }
         const float radius = flying ? 0.0F : collisionRadius(gameplay_, entity.archetype);
-        const NavigationProfile movementProfile = navigationProfile(gameplay_, entity);
         const MapArea map{mapChunksPerSide_};
         const float edgeMargin = gameplay_.matchRules().terrainEdgeMargin;
         const auto validPosition =
@@ -1951,10 +1985,26 @@ void GameSession::simulateTick() {
             entity.transform.position.x = current.x + delta.x;
         } else if (turnRate<=0 && validPosition(current + glm::vec2{0.0F, delta.y})) {
             entity.transform.position.z = current.y + delta.y;
+        } else if (directVehicle) {
+            entity.unitControl.driveSpeed = 0; // No stored momentum pushing against an obstacle.
+        } else if (entity.unitControl.hasStrategicDestination && turnRate > 0 &&
+                   glm::length(desiredMovement) > .001F &&
+                   std::abs(std::remainder(glm::degrees(std::atan2(desiredMovement.x, desiredMovement.y)) -
+                                          entity.transform.rotationDegrees.y, 360.F)) > 5.F) {
+            // The curved step was obstructed: keep this route and pivot until aligned.
         } else if (entity.unitControl.hasStrategicDestination) {
-            entity.transient.navigationPath.clear();
-            entity.transient.navigationWaypoint = 0;
-            entity.transient.navigationRetrySeconds = 0.25F;
+            if (entity.transient.navigationRetrySeconds <= 0) {
+                auto trafficProfile = movementProfile;
+                trafficProfile.avoidMobileUnits = !flying;
+                auto detour = navigation_.findPath(terrain_, world_, entity.transform.position,
+                    entity.unitControl.strategicDestination, radius, entity.id, trafficProfile);
+                if (!detour.empty()) {
+                    entity.transient.navigationPath = std::move(detour);
+                    entity.transient.navigationWaypoint = 0;
+                }
+                // A temporary traffic blockage keeps the paid/current order and retries.
+                entity.transient.navigationRetrySeconds = .25F;
+            }
         }
         if (flying) {
             entity.flight.altitude = std::clamp(entity.flight.altitude,
@@ -2079,6 +2129,7 @@ void GameSession::simulateTick() {
             const auto* definition = gameplay_.archetype(product);
             const auto remaining = producer->production.queue.front().amount - 1;
             const auto rally = producer->production.rallyPoint;
+            const glm::vec2 producerPosition{producer->transform.position.x, producer->transform.position.z};
             auto& unit = world_.createEntity(definition && !definition->nameKey.empty()
                                                  ? Text::get(definition->nameKey)
                                                  : product,
@@ -2089,6 +2140,15 @@ void GameSession::simulateTick() {
                 position->x, unit.flight ? unit.flight.altitude : 0.F, position->y};
             if (rally)
                 orderMove(unit, {rally->x, 0, rally->y});
+            glm::vec2 facing = unit.unitControl.hasStrategicDestination
+                ? glm::vec2{unit.unitControl.strategicDestination.x, unit.unitControl.strategicDestination.z} - *position
+                : *position - producerPosition;
+            for (const auto& waypoint : unit.transient.navigationPath) {
+                const auto direction = glm::vec2{waypoint.x, waypoint.z} - *position;
+                if (glm::length(direction) > .35F) { facing = direction; break; }
+            }
+            if (glm::length(facing) > .001F)
+                unit.transform.rotationDegrees.y = glm::degrees(std::atan2(facing.x, facing.y));
             // Entity creation can reallocate World storage. Reacquire before touching the queue.
             producer = world_.findEntity(producerId);
             auto& order = producer->production.queue.front();

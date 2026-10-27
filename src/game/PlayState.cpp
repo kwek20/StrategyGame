@@ -453,6 +453,22 @@ void PlayState::updateGameplayHud(Renderer& renderer, const Player* player) cons
                                        {config_.keybinds.label(controlledAction("fire")),
                                         config_.keybinds.label(controlledAction("aim_zoom")),
                                         config_.keybinds.label("pause")});
+        if (controlledInputContext() == InputContext::vehicle) {
+            const auto& unit = selected->unitControl;
+            std::ostringstream speed;
+            speed << std::fixed << std::setprecision(1) << std::abs(unit.driveSpeed) << " u/s";
+            for (auto& stat : hud->stats)
+                if (stat.label == Text::get("entity_hud.speed"))
+                    stat.value = speed.str();
+            hud->stats.push_back({Text::get("hud.vehicle_drive"),
+                Text::get(unit.vehicleBrake ? "hud.vehicle_braking" :
+                          unit.driveSpeed < -.01F ? "hud.vehicle_reverse" :
+                          unit.driveSpeed > .01F ? "hud.vehicle_forward" : "hud.vehicle_stopped"), {}});
+            hud->footer += "\n" + Text::format("keybind.vehicle_drive_hint",
+                {config_.keybinds.label("vehicle_forward"), config_.keybinds.label("vehicle_backward"),
+                 config_.keybinds.label("vehicle_left"), config_.keybinds.label("vehicle_right"),
+                 config_.keybinds.label("vehicle_brake")});
+        }
     } else if (selectedResourceField_ && selected) {
         hud = EntityHudModelBuilder::build(
             session_.world(), selectedEntity_, selectedUnits_, context_.definitions, true);
@@ -482,7 +498,9 @@ void PlayState::updateGameplayHud(Renderer& renderer, const Player* player) cons
                        << "</span><span class='stat-value'>" << escapeRml(stat.value) << "</span></div>";
         entityInfo << "</div>";
         if (!hud->footer.empty())
-            entityInfo << "<div class='footer'>" << escapeRml(hud->footer) << "</div>";
+            entityInfo << "<div class='footer"
+                       << (viewMode_ == ViewMode::unitControl ? " control-hints" : "")
+                       << "'>" << escapeRml(hud->footer) << "</div>";
         std::size_t actionColumn = 0;
         const auto beginAction = [&]() {
             if (actionColumn == 0)
@@ -1679,7 +1697,12 @@ void PlayState::update(float deltaSeconds) {
     thirdPersonCamera_.updateAimZoom(
         possessedEntity_ && config_.keybinds.held(controlledAction("aim_zoom"), input_), deltaSeconds);
     if (possessedEntity_ != 0) {
-        session_.submit({localPlayer_,
+        if (controlledInputContext() == InputContext::vehicle)
+            session_.submit({localPlayer_, nextCommandSequence_++,
+                DirectVehicleInputCommand{possessedEntity_, forward, right,
+                    config_.keybinds.held("vehicle_brake", input_)}});
+        else
+            session_.submit({localPlayer_,
                          nextCommandSequence_++,
                          DirectUnitInputCommand{possessedEntity_,
                                                 thirdPersonCamera_.groundMovement(forward, right),

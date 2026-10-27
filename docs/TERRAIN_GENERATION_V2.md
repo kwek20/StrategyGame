@@ -798,6 +798,15 @@ player-built dams are outside this revision. A wetland tag alone does not imply 
 
 ### Crossings and movement domains
 
+Ordinary continuous dry hills are traversable for both foot and tank movement. Inclination
+changes speed smoothly and never independently blocks a rendered triangle. Canonical cliff
+edges, water capability, universal barriers and physical obstacles determine connectivity.
+Keep slopes and cliffs distinct: elevation quantization must preserve continuous source
+contours, including diagonals, as ramps rather than rows of accidental cliff blockers.
+Intended access ramps must have full footprint clearance for the supported ground units.
+Navigation uses the same terrain speed factors as simulation to compare route travel time.
+Direct control and RTS orders use identical terrain permissions; their steering differs.
+
 Shallow-looking water is blocked for ordinary ground units unless an explicit crossing rule permits
 it. Reserve river crossings with the route graph: test bank ramps, channel bed, configured wading
 depth, continuous unit clearance and approach space. Until wading is implemented, provide actual

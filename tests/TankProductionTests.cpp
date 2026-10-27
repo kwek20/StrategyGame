@@ -13,6 +13,7 @@
 #include <filesystem>
 #include <limits>
 #include <stdexcept>
+#include <glm/trigonometric.hpp>
 
 namespace {
 void require(bool value, const char* message) {
@@ -421,6 +422,49 @@ int strategyTestMain() {
                 "Friendly non-drone unit enters direct control");
         require(session.submit({1, sequence++, ReleaseUnitCommand{unit}}), "Release unit");
         session.advanceTicks();
+    }
+    // Burst deployment shares the same collision-safe arrival planner as group moves.
+    for (const auto& [producerType, product] : {
+             std::pair{"tank_factory", "light_tank"}, std::pair{"command_hub", "construction_drone"}}) {
+        session.world().replaceEntities({});
+        const auto source = add(session.world(), definitions, producerType, anchor);
+        auto* building = session.world().findEntity(source);
+        building->power.reset();
+        building->production.rallyPoint = anchor + glm::vec2{25, 0};
+        auto batch = waiting;
+        batch.productId = product;
+        batch.amount = 5;
+        batch.remainingTicks = 1;
+        building->production.queue.push_back(batch);
+        const auto balances = session.players().find(1)->resources;
+        session.advanceTicks();
+        std::vector<EntityId> deployed;
+        for (const auto& unit : session.world().entities()) {
+            if (unit.archetype.value != product) continue;
+            deployed.push_back(unit.id);
+            require(unit.unitControl.hasStrategicDestination, "Each unit in a burst receives a rally order");
+            if (!unit.flight) {
+                auto delta = unit.unitControl.strategicDestination - unit.transform.position;
+                for (const auto& waypoint : unit.transient.navigationPath)
+                    if (glm::length(waypoint - unit.transform.position) > .35F) { delta = waypoint - unit.transform.position; break; }
+                const float expected = glm::degrees(std::atan2(delta.x, delta.z));
+                require(std::abs(std::remainder(unit.transform.rotationDegrees.y - expected, 360.F)) < .01F,
+                        "A deployed tank faces its actual rally route before its first movement tick");
+            }
+        }
+        require(deployed.size() == 5 && session.world().findEntity(source)->production.queue.empty() &&
+                    session.players().find(1)->resources == balances,
+                "A completed batch deploys every paid unit without charging again");
+        for (std::size_t i = 0; i < deployed.size(); ++i)
+            for (std::size_t j = i + 1; j < deployed.size(); ++j)
+                require(glm::length(session.world().findEntity(deployed[i])->unitControl.strategicDestination -
+                                    session.world().findEntity(deployed[j])->unitControl.strategicDestination) >
+                            (std::string_view{product} == "light_tank" ? 4.9F : 1.5F),
+                        "Repeated factory and hub output does not share one exact rally destination");
+        session.advanceTicks(600);
+        for (const auto id : deployed)
+            require(!session.world().findEntity(id)->unitControl.hasStrategicDestination,
+                    "Every deployed unit clears its producer and settles at the rally area");
     }
     return 0;
 }

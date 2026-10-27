@@ -39,14 +39,18 @@ bool readString(std::span<const std::byte>& input, std::string& value) {
 
 std::vector<std::byte> CommandCodec::encode(const PlayerCommand& command) {
     std::vector<std::byte> result;
-    result.push_back(std::byte{13});
+    result.push_back(std::byte{14});
     write(result, command.player);
     write(result, command.sequence);
     result.push_back(static_cast<std::byte>(command.payload.index()));
     std::visit([&](const auto& payload) {
         write(result, payload.entity);
         using T = std::decay_t<decltype(payload)>;
-        if constexpr (std::is_same_v<T, AimWeaponCommand>) {
+        if constexpr (std::is_same_v<T, DirectVehicleInputCommand>) {
+            write(result, payload.throttle);
+            write(result, payload.steering);
+            result.push_back(payload.brake ? std::byte{1} : std::byte{0});
+        } else if constexpr (std::is_same_v<T, AimWeaponCommand>) {
             write(result,payload.position.x); write(result,payload.position.y); write(result,payload.position.z);
             result.push_back(payload.firing ? std::byte{1} : std::byte{0});
             result.push_back(payload.pressed ? std::byte{1} : std::byte{0});
@@ -99,7 +103,7 @@ std::vector<std::byte> CommandCodec::encode(const PlayerCommand& command) {
 }
 
 std::optional<PlayerCommand> CommandCodec::decode(std::span<const std::byte> input) {
-    if (input.empty() || input.front() != std::byte{13})
+    if (input.empty() || input.front() != std::byte{14})
         return std::nullopt;
     input = input.subspan(1);
     PlayerCommand result;
@@ -182,6 +186,18 @@ std::optional<PlayerCommand> CommandCodec::decode(std::span<const std::byte> inp
     case 26: {
         if (entity != 0) return std::nullopt;
         result.payload = AdvanceSatelliteCommand{};
+        break;
+    }
+    case 30: {
+        DirectVehicleInputCommand value{entity};
+        if (!read(input, value.throttle) || !read(input, value.steering) || input.empty() ||
+            !std::isfinite(value.throttle) || !std::isfinite(value.steering) ||
+            std::abs(value.throttle) > 1 || std::abs(value.steering) > 1 ||
+            std::to_integer<unsigned>(input.front()) > 1)
+            return std::nullopt;
+        value.brake = input.front() == std::byte{1};
+        input = input.subspan(1);
+        result.payload = value;
         break;
     }
     case 29: {

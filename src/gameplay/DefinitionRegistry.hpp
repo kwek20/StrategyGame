@@ -161,6 +161,10 @@ struct MovementDefinition {
     std::string type{"ground"};
     float speed{0.0F};
     float turnRateDegrees{0.0F};
+    float reverseSpeedScale{0.6F};
+    float acceleration{8.0F};
+    float braking{16.0F};
+    float coastingDeceleration{10.0F};
     MovementDomainMask domains{movementDomainBit(MovementDomain::land)};
     bool ignoresEntityObstacles{false};
 };

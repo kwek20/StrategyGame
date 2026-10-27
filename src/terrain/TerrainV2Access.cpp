@@ -97,8 +97,12 @@ void connectV2Landscape(TerrainV2Plan& plan,
             heights[i - 1] = std::clamp(heights[i - 1],
                                         heights[i] - settings.elevationStep,
                                         heights[i] + settings.elevationStep);
-        const int radius =
-            std::max(1, static_cast<int>(std::ceil(settings.rampRun / settings.side)));
+        // Include tank footprint clearance plus navigation-grid alignment margin;
+        // transition run alone can leave only a single near-width path through cliffs.
+        const int radius = std::max({1,
+            static_cast<int>(std::ceil(settings.rampRun / settings.side)),
+            static_cast<int>(std::ceil(plan.recipe().groundMovement.minimumRouteWidth /
+                                      (2.F * settings.side) - .5F))});
         for (std::size_t i = 0; i < path.size(); ++i) {
             const int x = path[i] % side, z = path[i] / side;
             for (int dz = -radius; dz <= radius; ++dz)

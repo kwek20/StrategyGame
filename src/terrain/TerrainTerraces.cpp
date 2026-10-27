@@ -160,6 +160,16 @@ void TerrainTerraces::classifyEdges() {
             const float difference = b.elevation - a.elevation;
             if (difference == 0.0F)
                 return TerrainEdgeKind::flat;
+            const auto ordinaryLand = [](TerrainCellRole role) {
+                return role == TerrainCellRole::ordinary || role == TerrainCellRole::hill;
+            };
+            const glm::vec2 gradient = (a.source.gradient + b.source.gradient) * 0.5F;
+            const float along = horizontal ? gradient.x : gradient.y;
+            // Follow continuous source contours, including diagonal and steep hills.
+            // Quantization must not turn those slopes into a staircase of blockers.
+            // Feature boundaries (peaks, basins and authored discontinuities) remain cliffs.
+            if (ordinaryLand(a.source.role) && ordinaryLand(b.source.role) && along * difference > 0)
+                return TerrainEdgeKind::ramp;
             if (std::abs(difference) > settings_.elevationStep + 0.001F)
                 return TerrainEdgeKind::cliff;
             if (a.source.role == TerrainCellRole::shore || b.source.role == TerrainCellRole::shore)
@@ -168,8 +178,6 @@ void TerrainTerraces::classifyEdges() {
                 return TerrainEdgeKind::cliff;
             if (a.source.role == TerrainCellRole::route || b.source.role == TerrainCellRole::route)
                 return TerrainEdgeKind::ramp;
-            const glm::vec2 gradient = (a.source.gradient + b.source.gradient) * 0.5F;
-            const float along = horizontal ? gradient.x : gradient.y;
             const float across = horizontal ? gradient.y : gradient.x;
             if (along * difference > 0.0F && std::abs(along) > std::abs(across) * 1.25F &&
                 a.source.role != TerrainCellRole::peak && b.source.role != TerrainCellRole::peak)

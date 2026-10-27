@@ -16,6 +16,16 @@ struct TerrainRange {
 enum class TerrainWaterPolicy { forbidden, optional, required };
 enum class TerrainWaterFeature { none, centralLake, ocean };
 
+struct TerrainGroundMovementSettings {
+    float slowdownStartDegrees{25.0F};
+    float slowdownFullDegrees{50.0F};
+    float minimumSlopeSpeedScale{0.75F};
+    float minimumSurfaceSpeedScale{0.85F};
+    float minimumRouteWidth{7.5F};
+    void validate() const;
+    [[nodiscard]] float speedScale(float slopeDegrees) const;
+};
+
 struct TerrainCellSettings {
     float side{6.0F};
     float elevationStep{2.0F};
@@ -44,6 +54,7 @@ struct TerrainV2Recipe {
     TerrainRange ridgeBend;
     TerrainRange lakeAspect;
     TerrainCellSettings cells;
+    TerrainGroundMovementSettings groundMovement;
     TerrainRange relief;
     float baseHeight{16.0F};
     float openingRadius{24.0F};

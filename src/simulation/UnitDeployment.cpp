@@ -50,21 +50,7 @@ std::optional<glm::vec2> findUnitDeployment(const World& world,
         for (const auto& obstacle : obstacles)
             if (overlaps(footprint, obstacle))
                 return false;
-        // Validate the whole footprint, not just its center, against shores and cliffs.
-        for (int z = -1; z <= 1; ++z)
-            for (int x = -1; x <= 1; ++x)
-                if (terrain.movementCostAt(position.x + x * radius,
-                                           position.y + z * radius,
-                                           unit->movement.domains) <= 0)
-                    return false;
-        return terrain.permitsMovementSegment(position - glm::vec2{radius, radius},
-                                              position + glm::vec2{radius, radius},
-                                              0,
-                                              unit->movement.domains) &&
-               terrain.permitsMovementSegment(position - glm::vec2{radius, -radius},
-                                              position + glm::vec2{radius, -radius},
-                                              0,
-                                              unit->movement.domains);
+        return terrain.permitsMovementSegment(position, position, radius, unit->movement.domains);
     };
     float preferredAngle = 0.F;
     const bool hasRally = producer.production && producer.production.rallyPoint.has_value();

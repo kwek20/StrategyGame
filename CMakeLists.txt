@@ -124,7 +124,9 @@ target_link_libraries(strategy_ui_model
 
 add_library(strategy_simulation STATIC
     src/simulation/CombatRules.cpp
+    src/simulation/VehicleControl.cpp
     src/simulation/UnitDeployment.cpp
+    src/simulation/UnitMovement.cpp
     src/simulation/GameSession.cpp
     src/simulation/CommandCodec.cpp
     src/simulation/PowerGridSystem.cpp
@@ -334,6 +336,11 @@ if(STRATEGY_BUILD_TESTS)
     add_test(NAME construction_queue COMMAND construction_queue_tests)
     set_tests_properties(construction_queue PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
     add_executable(tank_combat_tests tests/TankCombatTests.cpp tests/TestMain.cpp)
+    add_executable(unit_movement_tests tests/UnitMovementTests.cpp tests/TestMain.cpp)
+    strategy_target(unit_movement_tests)
+    target_link_libraries(unit_movement_tests PRIVATE strategy_simulation)
+    add_test(NAME unit_group_movement COMMAND unit_movement_tests)
+    set_tests_properties(unit_group_movement PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" TIMEOUT 120)
     add_executable(combat_audio_tests tests/CombatAudioTests.cpp tests/TestMain.cpp)
     strategy_target(combat_audio_tests)
     target_link_libraries(combat_audio_tests PRIVATE strategy_audio)
@@ -546,6 +553,7 @@ if(STRATEGY_BUILD_TESTS)
     set_tests_properties(session_move_placement PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
     set(STRATEGY_TEST_TARGETS
+        unit_movement_tests
         session_move_placement_tests
         visibility_grid_tests
         character_traversal_tests

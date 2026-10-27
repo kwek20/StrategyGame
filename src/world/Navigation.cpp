@@ -28,6 +28,13 @@ bool sameShape(const SpatialShape& left, const SpatialShape& right) {
 }
 constexpr std::array<std::array<int, 2>, 8> directions{
     {{{1, 0}}, {{-1, 0}}, {{0, 1}}, {{0, -1}}, {{1, 1}}, {{1, -1}}, {{-1, 1}}, {{-1, -1}}}};
+
+float terrainTravelCost(const Terrain& terrain, glm::vec3 position, MovementDomain domain) {
+    if (!terrain.v2Landscape())
+        return terrain.movementCostAt(position.x, position.z, movementDomainBit(domain));
+    const float speed = terrain.movementSpeedScaleAt(position.x, position.z, movementDomainBit(domain));
+    return speed > 0 ? 1.F / speed : 0.F;
+}
 } // namespace
 
 Navigation::Navigation(const Terrain& terrain, const DefinitionRegistry& definitions,
@@ -46,7 +53,7 @@ glm::vec3 Navigation::positionOf(int x, int z) const {
 }
 
 void Navigation::refreshTerrainHeights(const Terrain& terrain, const TerrainFoundation* cut) {
-    // Grading can also change walking slope eligibility.
+    // Grading changes both physical clearance and the travel-time cost of slopes.
     occupancyByProfile_.clear();
     terrainEdgesByProfile_.clear();
     flowFields_.clear();
@@ -59,6 +66,10 @@ void Navigation::refreshTerrainHeights(const Terrain& terrain, const TerrainFoun
         for (int x = x0; x <= x1; ++x) {
             const auto p = positionOf(x, z);
             heights_[indexOf(x, z)] = terrain.heightAt(p.x, p.z);
+            if (map_.contains({p.x, p.z}, definitions_.matchRules().terrainEdgeMargin))
+                for (const auto domain : movementDomains)
+                    terrainMovementCosts_[indexOf(x, z)][static_cast<std::size_t>(domain)] =
+                        terrainTravelCost(terrain, p, domain);
         }
 }
 
@@ -86,7 +97,7 @@ void Navigation::rebuildTerrain(const Terrain& terrain, std::uint32_t mapChunksP
             } else {
                 for (const auto domain : movementDomains)
                     terrainMovementCosts_[indexOf(x, z)][static_cast<std::size_t>(domain)] =
-                        terrain.movementCostAt(position.x, position.z, movementDomainBit(domain));
+                        terrainTravelCost(terrain, position, domain);
             }
         }
     }
@@ -388,13 +399,35 @@ std::vector<glm::vec3> Navigation::pathFromGoals(
     const auto& cached = occupancy(terrain, world, radius, profile);
     std::vector<std::uint8_t> passable = cached;
     const int sx = gridCoordinate(start.x), sz = gridCoordinate(start.z), source = indexOf(sx, sz);
+    if (profile.avoidMobileUnits && !profile.ignoresEntityObstacles)
+        for (const auto& other : world.entities()) {
+            if (other.id == ignored || other.flight || !other.unitControl) continue;
+            const auto shape = spatialShape(definitions_, other);
+            const auto bounds = axisAlignedHalfExtents(expanded(shape, radius + .2F));
+            const int minX = gridCoordinate(shape.center.x - bounds.x), maxX = gridCoordinate(shape.center.x + bounds.x);
+            const int minZ = gridCoordinate(shape.center.y - bounds.y), maxZ = gridCoordinate(shape.center.y + bounds.y);
+            for (int z = minZ; z <= maxZ; ++z)
+                for (int x = minX; x <= maxX; ++x) {
+                    const auto p = positionOf(x, z);
+                    if (overlaps(SpatialShape{FootprintShape::circle, {p.x, p.z}, radius + .2F}, shape))
+                        passable[indexOf(x, z)] = 0;
+                }
+        }
     passable[source] = 1;
     mix(goalKey, static_cast<std::uint64_t>(static_cast<int>(std::round(radius * 10.0F))));
     mix(goalKey, profile.ignoresEntityObstacles ? 1U : 0U);
     mix(goalKey, profile.domains);
-    auto flow = flowFields_.find(goalKey);
-    if (flow == flowFields_.end()) {
-        if (flowFields_.size() >= 64) flowFields_.clear();
+    const bool v2 = terrain.v2Landscape().has_value();
+    const auto edgeCost = [&](int from, int to, bool diagonal) {
+        const float rise = v2 ? 0.F : std::abs(heights_[from] - heights_[to]) * Terrain::gameplaySlopeFactor;
+        const float traversal = (movementCost(from, profile.domains) + movementCost(to, profile.domains)) * .5F;
+        return (diagonal ? 1.4142F : 1.F) * traversal + rise * .15F;
+    };
+    std::unordered_map<std::uint64_t, std::vector<float>> trafficFlow;
+    auto& fields = profile.avoidMobileUnits ? trafficFlow : flowFields_;
+    auto flow = fields.find(goalKey);
+    if (flow == fields.end()) {
+        if (fields.size() >= 64) fields.clear();
         struct Open { float cost; int node; bool operator<(const Open& other) const {
             return cost == other.cost ? node > other.node : cost > other.cost; } };
         std::priority_queue<Open> open;
@@ -420,17 +453,11 @@ std::vector<glm::vec3> Navigation::pathFromGoals(
                 if (direction[0] && direction[1] &&
                     (!passable[indexOf(x + direction[0], z)] || !passable[indexOf(x, z + direction[1])])) continue;
                 const int next = indexOf(nx, nz);
-                const float rise = std::abs(heights_[item.node] - heights_[next]) *
-                                   Terrain::gameplaySlopeFactor;
-                const float distance = direction[0] && direction[1] ? 1.4142F : 1.0F;
-                const float traversalCost =
-                    (movementCost(item.node, profile.domains) +
-                     movementCost(next, profile.domains)) * 0.5F;
-                const float nextCost = item.cost + distance * traversalCost + rise * 0.15F;
+                const float nextCost = item.cost + edgeCost(item.node, next, direction[0] && direction[1]);
                 if (nextCost < costs[next]) { costs[next] = nextCost; open.push({nextCost, next}); }
             }
         }
-        flow = flowFields_.emplace(goalKey, std::move(costs)).first;
+        flow = fields.emplace(goalKey, std::move(costs)).first;
     }
     if (!std::isfinite(flow->second[source])) return {};
     if (std::find(goals.begin(), goals.end(), source) != goals.end())
@@ -441,6 +468,7 @@ std::vector<glm::vec3> Navigation::pathFromGoals(
         if (std::find(goals.begin(), goals.end(), current) != goals.end()) break;
         const int x = current % side_, z = current / side_;
         int best = current; float bestCost = flow->second[current];
+        float bestTravelCost = std::numeric_limits<float>::max();
         for (const auto& direction : directions) {
             const int nx = x + direction[0], nz = z + direction[1];
             if (nx < 0 || nz < 0 || nx >= side_ || nz >= side_ || !passable[indexOf(nx, nz)] ||
@@ -449,7 +477,15 @@ std::vector<glm::vec3> Navigation::pathFromGoals(
             if (direction[0] && direction[1] &&
                 (!passable[indexOf(x + direction[0], z)] || !passable[indexOf(x, z + direction[1])])) continue;
             const int candidate = indexOf(nx, nz);
-            if (flow->second[candidate] < bestCost) { bestCost = flow->second[candidate]; best = candidate; }
+            if (v2) {
+                const float travel = flow->second[candidate] + edgeCost(current, candidate, direction[0] && direction[1]);
+                if (flow->second[candidate] < flow->second[current] && travel < bestTravelCost) {
+                    bestTravelCost = travel;
+                    best = candidate;
+                }
+            } else if (flow->second[candidate] < bestCost) {
+                bestCost = flow->second[candidate]; best = candidate;
+            }
         }
         if (best == current) return {};
         current = best;

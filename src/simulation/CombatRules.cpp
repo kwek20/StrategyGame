@@ -263,12 +263,12 @@ glm::vec2 turnLimitedMovement(Entity& entity, glm::vec2 desired, float rate, flo
     const float error = turnToward(entity, heading, rate, dt);
     if (rate <= 0)
         return desired;
-    // Pivot before driving into a new path segment. Driving through a sharp turn can cut
-    // an obstacle corner or orbit a waypoint closer than the vehicle's turning circle.
-    if (error > 5.F)
+    // Curve through modest heading changes; pivot for a sharp reversal. The caller
+    // checks the swept route and can hold translation while the hull clears a corner.
+    if (error > 75.F)
         return {0, 0};
     const float yaw = glm::radians(entity.transform.rotationDegrees.y);
-    return glm::vec2{std::sin(yaw), std::cos(yaw)} * magnitude *
-           std::max(0.F, std::cos(glm::radians(error)));
+    const float alignment = std::max(0.F, std::cos(glm::radians(error)));
+    return glm::vec2{std::sin(yaw), std::cos(yaw)} * magnitude * alignment * alignment;
 }
 } // namespace strategy

@@ -73,6 +73,17 @@ int strategyTestMain() {
                              "assets/gameplay/countries.json", "requires finite values", infinitePower);
     std::ifstream unitsInput("assets/gameplay/units.json");
     const std::string unitsText((std::istreambuf_iterator<char>(unitsInput)), {});
+    for (const auto& [field, value] : {
+             std::pair{"reverseSpeedScale", "1.1"}, std::pair{"acceleration", "0"},
+             std::pair{"braking", "-1"}, std::pair{"coastingDeceleration", "0"}}) {
+        auto invalidDrive = unitsText;
+        const auto begin = invalidDrive.find(std::string{"\""} + field + "\":");
+        const auto end = invalidDrive.find_first_of(",}\n", begin);
+        invalidDrive.replace(begin, end - begin, std::string{"\""} + field + "\": " + value);
+        writeFixture(invalidUnits, invalidDrive);
+        valid = rejects(invalidUnits, "assets/gameplay/recipes.json", "assets/gameplay/countries.json",
+                        "Invalid vehicle movement") && valid;
+    }
     const auto repairBegin = unitsText.find("\"repair\": {");
     const auto repairEnd = unitsText.find('}', repairBegin);
     for (const std::string repair : {

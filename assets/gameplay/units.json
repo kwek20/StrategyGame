@@ -55,7 +55,11 @@
       "availableUpgrades": [],
       "tags": ["unit", "military", "vehicle", "tank", "ground", "ranged"],
       "health": 350,
-      "movement": { "type": "ground", "domains": ["land"], "speed": 4, "turnRateDegrees": 90 },
+      "movement": {
+        "type": "ground", "domains": ["land"], "speed": 4, "turnRateDegrees": 90,
+        "reverseSpeedScale": 0.6, "acceleration": 8, "braking": 16,
+        "coastingDeceleration": 10
+      },
       "vision": { "range": 18 },
       "weapons": ["tank_light_cannon"],
       "stats": { "trainingTime": 20 }

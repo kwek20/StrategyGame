@@ -1,5 +1,19 @@
 # V2 implementation and verification
 
+## Ground movement update (2026-10-27)
+
+Continuous hills now slow ground units rather than rejecting slopes over 40 degrees.
+Explicit cliff transitions, water capabilities, obstacles and active map bounds retain
+their restrictions. Continuous ordinary/hill source contours become ramps even when diagonal
+or steep; peaks, basins and abrupt discontinuities retain cliff edges. This changes generated
+geometry/topology, so the current generation revision is 9 (save format remains 1).
+
+Shared terrain speed factors supply both simulation and navigation costs, including grading
+cache refresh. V2 flow extraction considers each edge's travel cost, not just the next cell's
+remaining cost. Initial mild tuning and the stronger comparison are documented in
+[GROUND_MOVEMENT.md](GROUND_MOVEMENT.md). Historical revision/test notes below describe their
+own implementation checkpoints rather than the current generator revision.
+
 Dry Land placement first tries a fitted tilt up to 10 degrees without earthwork. A bounded
 candidate search also considers the largest continuous dry patch, the mean gradient, a level
 plane and a blend of dominant/patch gradients. Repair heights target the area-weighted ground height first, with a median and

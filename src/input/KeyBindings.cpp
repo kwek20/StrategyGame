@@ -134,6 +134,7 @@ const std::vector<InputAction>& inputActions() {
         add("vehicle_backward", "vehicle", vehicle, key(SDLK_S), {}, true, true);
         add("vehicle_left", "vehicle", vehicle, key(SDLK_A), {}, true, true);
         add("vehicle_right", "vehicle", vehicle, key(SDLK_D), {}, true, true);
+        add("vehicle_brake", "vehicle", vehicle, key(SDLK_SPACE), {}, true, true);
         add("vehicle_fire", "vehicle", vehicle, mouse(SDL_BUTTON_LEFT), {}, true, true);
         add("vehicle_aim_zoom", "vehicle", vehicle, mouse(SDL_BUTTON_RIGHT), {}, true, true);
         // Aircraft bindings are reserved until a controllable aircraft and flight model exist.

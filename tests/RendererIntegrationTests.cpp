@@ -1473,6 +1473,10 @@ bool checkPlacementControls(strategy::Renderer& renderer,
     auto testConfig = GameConfig::load("gamedata/config.json");
     testConfig.saveDirectory = testDirectory;
     testConfig.saveFile = "quickload.json";
+    if (tankControls) {
+        testConfig.keybinds.values["vehicle_backward"][0] = {BindingDevice::key, static_cast<int>(SDLK_K)};
+        testConfig.keybinds.values["vehicle_brake"][0] = {BindingDevice::key, static_cast<int>(SDLK_B)};
+    }
     const auto configPath = testDirectory / "config.json";
     testConfig.write(configPath);
     StateContext context{audio, events, logger, definitions, configPath, &renderer};
@@ -1688,6 +1692,43 @@ bool checkPlacementControls(strategy::Renderer& renderer,
         state.update(.001F); // Both events may arrive before the next fixed tick.
         state.update(1.F/30);
         valid &= shotCount()==3;
+        world.replaceEntities({*world.findEntity(tank)});
+        auto* driven = world.findEntity(tank);
+        driven->transform.rotationDegrees.y = 0;
+        driven->unitControl.driveSpeed = 0;
+        const auto start = driven->transform.position;
+        const auto driveKey = [&](SDL_EventType type, SDL_Keycode code) {
+            SDL_Event event{}; event.type = type; event.key.key = code;
+            state.handleEvent(event);
+        };
+        driveKey(SDL_EVENT_KEY_DOWN, SDLK_S); // Remapped away from S.
+        for (int i = 0; i < 6; ++i) state.update(1.F / 30);
+        valid &= world.findEntity(tank)->transform.position == start;
+        driveKey(SDL_EVENT_KEY_UP, SDLK_S);
+        SDL_Event orbit{}; orbit.type = SDL_EVENT_MOUSE_MOTION; orbit.motion.xrel = 200;
+        state.handleEvent(orbit); // Looking elsewhere must not redirect reverse.
+        driveKey(SDL_EVENT_KEY_DOWN, SDLK_K);
+        for (int i = 0; i < 15; ++i) state.update(1.F / 30);
+        frame();
+        driven = world.findEntity(tank);
+        valid &= driven->transform.position.z < start.z - .5F &&
+                 std::abs(driven->transform.position.x - start.x) < .001F &&
+                 driven->transform.rotationDegrees.y == 0 && driven->unitControl.driveSpeed < 0;
+        valid &= captureTerrain("tank-reverse-driving.bmp");
+        driveKey(SDL_EVENT_KEY_DOWN, SDLK_B);
+        for (int i = 0; i < 10; ++i) state.update(1.F / 30);
+        frame();
+        valid &= world.findEntity(tank)->unitControl.driveSpeed == 0 &&
+                 world.findEntity(tank)->unitControl.vehicleBrake;
+        valid &= captureTerrain("tank-braking.bmp");
+        driveKey(SDL_EVENT_KEY_UP, SDLK_K);
+        driveKey(SDL_EVENT_KEY_UP, SDLK_B);
+        driveKey(SDL_EVENT_KEY_DOWN, SDLK_D);
+        const auto pivotStart = world.findEntity(tank)->transform.position;
+        for (int i = 0; i < 10; ++i) state.update(1.F / 30);
+        valid &= world.findEntity(tank)->transform.position == pivotStart &&
+                 world.findEntity(tank)->transform.rotationDegrees.y > 29;
+        driveKey(SDL_EVENT_KEY_UP, SDLK_D);
         if (!valid) std::cerr<<"Direct tank firing, held zoom, cooldown or focus-loss input failed\n";
         return valid && noGlErrors("tank direct controls");
     }

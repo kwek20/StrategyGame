@@ -1,5 +1,12 @@
 {
   "version": 1,
+  "groundMovement": {
+    "slowdownStartDegrees": 25,
+    "slowdownFullDegrees": 50,
+    "minimumSlopeSpeedScale": 0.75,
+    "minimumSurfaceSpeedScale": 0.85,
+    "minimumRouteWidth": 7.5
+  },
   "landforms": {
     "openingSeparationPadding": 24,
     "ridgeLength": [24, 56],
